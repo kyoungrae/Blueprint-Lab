@@ -51,6 +51,7 @@ export interface IERDSnapshot {
 // Project Document Interface
 export interface IProject extends Document {
     name: string;
+    projectType: 'ERD' | 'SCREEN_DESIGN';
     dbType: 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';
     description?: string;
     members: IProjectMember[];
@@ -107,6 +108,7 @@ const ERDSnapshotSchema = new Schema<IERDSnapshot>({
 
 const ProjectSchema = new Schema<IProject>({
     name: { type: String, required: true },
+    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN'], default: 'ERD' },
     dbType: { type: String, enum: ['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'], required: true },
     description: { type: String },
     members: [ProjectMemberSchema],

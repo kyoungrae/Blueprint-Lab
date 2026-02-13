@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Project, DBType, ProjectMember } from '../types/erd';
+import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -8,7 +8,7 @@ interface ProjectStore {
     projects: Project[];
     currentProjectId: string | null;
     fetchProjects: () => Promise<void>;
-    addProject: (name: string, dbType: DBType, members: ProjectMember[], description?: string) => Promise<Project>;
+    addProject: (name: string, dbType: DBType, members: ProjectMember[], description?: string, projectType?: ProjectType) => Promise<Project>;
     addRemoteProject: (id: string) => Promise<void>;
     deleteProject: (id: string) => Promise<void>;
     setCurrentProject: (id: string | null) => void;
@@ -42,6 +42,7 @@ export const useProjectStore = create<ProjectStore>()(
                         const projects = data.map((p: any) => ({
                             ...p,
                             id: p._id,
+                            projectType: p.projectType || 'ERD',
                             members: p.members?.map((m: any) => ({
                                 id: m.userId?._id || m.userId,
                                 name: m.userId?.name || 'Unknown',
@@ -58,7 +59,7 @@ export const useProjectStore = create<ProjectStore>()(
                 }
             },
 
-            addProject: async (name, dbType, _members, description) => {
+            addProject: async (name, dbType, _members, description, projectType = 'ERD') => {
                 const token = localStorage.getItem('auth-token');
 
                 // Guest / Local Mode
@@ -66,6 +67,7 @@ export const useProjectStore = create<ProjectStore>()(
                     const newProject: Project = {
                         id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                         name,
+                        projectType,
                         dbType,
                         description: description || '',
                         members: [],
@@ -86,7 +88,7 @@ export const useProjectStore = create<ProjectStore>()(
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${token}`
                         },
-                        body: JSON.stringify({ name, dbType, description }),
+                        body: JSON.stringify({ name, dbType, description, projectType }),
                     });
 
                     if (!response.ok) throw new Error('Failed to create project');
@@ -95,6 +97,7 @@ export const useProjectStore = create<ProjectStore>()(
                     const newProject: Project = {
                         ...p,
                         id: p._id,
+                        projectType: p.projectType || projectType,
                         members: p.members?.map((m: any) => ({
                             id: m.userId?._id || m.userId,
                             name: m.userId?.name || 'Unknown',

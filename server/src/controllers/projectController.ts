@@ -9,7 +9,7 @@ import crypto from 'crypto';
 
 export const createProject = async (req: AuthRequest, res: Response) => {
     try {
-        const { name, dbType, description } = req.body;
+        const { name, dbType, description, projectType } = req.body;
         const userId = req.user?.id;
 
         if (!userId) {
@@ -18,6 +18,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
 
         const project = new Project({
             name,
+            projectType: projectType || 'ERD',
             dbType,
             description,
             members: [{

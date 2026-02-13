@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Plus, FolderOpen, Trash2, Clock, ChevronRight, LogOut, Database, Users, UserPlus, UserMinus, X, Share2, AlertTriangle, Link } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, Clock, ChevronRight, LogOut, Database, Users, UserPlus, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
-import { type DBType, type ProjectMember } from '../types/erd';
+import { type DBType, type ProjectType, type ProjectMember } from '../types/erd';
 
 const ProjectListPage: React.FC = () => {
     const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, updateProjectMembers, inviteMember, joinWithCode } = useProjectStore();
     const { user, logout } = useAuthStore();
+    const [isTypeSelectionOpen, setIsTypeSelectionOpen] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [selectedProjectType, setSelectedProjectType] = useState<ProjectType>('ERD');
     const [editingMembersProject, setEditingMembersProject] = useState<string | null>(null);
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectDesc, setNewProjectDesc] = useState('');
@@ -144,6 +146,12 @@ const ProjectListPage: React.FC = () => {
         }
     };
 
+    const handleSelectProjectType = (type: ProjectType) => {
+        setSelectedProjectType(type);
+        setIsTypeSelectionOpen(false);
+        setIsCreateModalOpen(true);
+    };
+
     const handleCreateProject = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newProjectName.trim()) return;
@@ -156,7 +164,8 @@ const ProjectListPage: React.FC = () => {
                 newProjectName,
                 newProjectDbType,
                 [],
-                newProjectDesc
+                newProjectDesc,
+                selectedProjectType
             );
 
             setNewProjectName('');
@@ -237,7 +246,7 @@ const ProjectListPage: React.FC = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-10 gap-4">
                     <div>
                         <h2 className="text-3xl font-black text-gray-900 mb-2">내 프로젝트</h2>
-                        <p className="text-gray-500 font-medium">관리 중인 모든 ERD 다이어그램 리스트입니다.</p>
+                        <p className="text-gray-500 font-medium">관리 중인 모든 프로젝트 리스트입니다.</p>
                     </div>
                     <div className="flex gap-3">
                         <button
@@ -261,7 +270,7 @@ const ProjectListPage: React.FC = () => {
                             초대 코드로 참여
                         </button>
                         <button
-                            onClick={() => setIsCreateModalOpen(true)}
+                            onClick={() => setIsTypeSelectionOpen(true)}
                             className="flex items-center justify-center gap-2 px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95 whitespace-nowrap"
                         >
                             <Plus size={20} />
@@ -277,9 +286,9 @@ const ProjectListPage: React.FC = () => {
                             <FolderOpen size={48} />
                         </div>
                         <h3 className="text-xl font-bold text-gray-900 mb-2">진행 중인 프로젝트가 없습니다.</h3>
-                        <p className="text-gray-500 mb-8 max-w-xs text-center font-medium">우측 상단의 버튼을 눌러 첫 번째 ERD 프로젝트를 시작해보세요!</p>
+                        <p className="text-gray-500 mb-8 max-w-xs text-center font-medium">우측 상단의 버튼을 눌러 첫 번째 프로젝트를 시작해보세요!</p>
                         <button
-                            onClick={() => setIsCreateModalOpen(true)}
+                            onClick={() => setIsTypeSelectionOpen(true)}
                             className="text-blue-600 font-bold hover:underline py-2 px-4 rounded-lg"
                         >
                             프로젝트 생성하기 →
@@ -301,8 +310,11 @@ const ProjectListPage: React.FC = () => {
                                         <>
                                             <div className="flex items-start justify-between mb-6">
                                                 <div className="flex items-center gap-2">
-                                                    <div className="p-3 bg-gray-50 text-blue-500 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
-                                                        <Database size={24} />
+                                                    <div className={`p-3 rounded-2xl transition-colors duration-300 ${project.projectType === 'SCREEN_DESIGN'
+                                                        ? 'bg-violet-50 text-violet-500 group-hover:bg-violet-600 group-hover:text-white'
+                                                        : 'bg-gray-50 text-blue-500 group-hover:bg-blue-600 group-hover:text-white'
+                                                        }`}>
+                                                        {project.projectType === 'SCREEN_DESIGN' ? <Monitor size={24} /> : <Database size={24} />}
                                                     </div>
                                                     <div className="flex flex-col gap-1">
                                                         {isLocal && (
@@ -310,8 +322,11 @@ const ProjectListPage: React.FC = () => {
                                                                 Local
                                                             </div>
                                                         )}
-                                                        <div className="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-wider">
-                                                            {project.dbType}
+                                                        <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${project.projectType === 'SCREEN_DESIGN'
+                                                            ? 'bg-violet-50 text-violet-600'
+                                                            : 'bg-blue-50 text-blue-600'
+                                                            }`}>
+                                                            {project.projectType === 'SCREEN_DESIGN' ? '화면설계' : project.dbType}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -481,13 +496,109 @@ const ProjectListPage: React.FC = () => {
                 </div>
             )}
 
+            {/* Project Type Selection Modal */}
+            {isTypeSelectionOpen && (
+                <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden scale-in">
+                        <div className="p-8 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-2xl font-black text-gray-900 mb-2">프로젝트 유형 선택</h3>
+                                <p className="text-gray-500 font-medium text-sm">생성할 프로젝트의 유형을 선택해주세요.</p>
+                            </div>
+                            <button
+                                onClick={() => setIsTypeSelectionOpen(false)}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-8">
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* ERD Project */}
+                                <button
+                                    onClick={() => handleSelectProjectType('ERD')}
+                                    className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-blue-400 hover:bg-blue-50/80 transition-all duration-300 hover:shadow-lg hover:shadow-blue-100/50 active:scale-[0.97]"
+                                >
+                                    <div className="w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-5 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-blue-200">
+                                        <Database size={28} />
+                                    </div>
+                                    <h4 className="text-lg font-black text-gray-900 mb-2 group-hover:text-blue-700 transition-colors">ERD 프로젝트</h4>
+                                    <p className="text-xs text-gray-500 text-center font-medium leading-relaxed">데이터베이스 엔티티 관계를<br />설계하고 관리합니다</p>
+                                    <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+                                        <span className="px-2 py-0.5 bg-blue-100/80 text-blue-600 text-[9px] font-bold rounded-full">Entity</span>
+                                        <span className="px-2 py-0.5 bg-blue-100/80 text-blue-600 text-[9px] font-bold rounded-full">Relation</span>
+                                        <span className="px-2 py-0.5 bg-blue-100/80 text-blue-600 text-[9px] font-bold rounded-full">SQL</span>
+                                    </div>
+                                </button>
+
+                                {/* Screen Design Project */}
+                                <button
+                                    onClick={() => handleSelectProjectType('SCREEN_DESIGN')}
+                                    className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-violet-400 hover:bg-violet-50/80 transition-all duration-300 hover:shadow-lg hover:shadow-violet-100/50 active:scale-[0.97]"
+                                >
+                                    <div className="w-16 h-16 rounded-2xl bg-violet-100 text-violet-600 flex items-center justify-center mb-5 group-hover:bg-violet-600 group-hover:text-white transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-violet-200">
+                                        <Monitor size={28} />
+                                    </div>
+                                    <h4 className="text-lg font-black text-gray-900 mb-2 group-hover:text-violet-700 transition-colors">화면 설계서</h4>
+                                    <p className="text-xs text-gray-500 text-center font-medium leading-relaxed">UI/UX 화면 구조를<br />설계하고 관리합니다</p>
+                                    <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+                                        <span className="px-2 py-0.5 bg-violet-100/80 text-violet-600 text-[9px] font-bold rounded-full">Screen</span>
+                                        <span className="px-2 py-0.5 bg-violet-100/80 text-violet-600 text-[9px] font-bold rounded-full">Layout</span>
+                                        <span className="px-2 py-0.5 bg-violet-100/80 text-violet-600 text-[9px] font-bold rounded-full">Flow</span>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Create Project Modal */}
             {isCreateModalOpen && (
                 <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden scale-in">
-                        <div className="p-8 border-b border-gray-100">
-                            <h3 className="text-2xl font-black text-gray-900 mb-2">새 프로젝트 생성</h3>
-                            <p className="text-gray-500 font-medium text-sm">새로운 데이터베이스 설계 프로젝트를 시작합니다.</p>
+                        <div className="p-8 border-b border-gray-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsCreateModalOpen(false);
+                                        setIsTypeSelectionOpen(true);
+                                        setCreateError(null);
+                                    }}
+                                    className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+                                    title="프로젝트 유형 선택으로 돌아가기"
+                                >
+                                    <ArrowLeft size={20} />
+                                </button>
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <div className={`p-1.5 rounded-lg ${selectedProjectType === 'SCREEN_DESIGN'
+                                            ? 'bg-violet-100 text-violet-600'
+                                            : 'bg-blue-100 text-blue-600'
+                                            }`}>
+                                            {selectedProjectType === 'SCREEN_DESIGN' ? <Monitor size={16} /> : <Database size={16} />}
+                                        </div>
+                                        <h3 className="text-2xl font-black text-gray-900">
+                                            {selectedProjectType === 'SCREEN_DESIGN' ? '화면 설계서 생성' : 'ERD 프로젝트 생성'}
+                                        </h3>
+                                    </div>
+                                    <p className="text-gray-500 font-medium text-sm">
+                                        {selectedProjectType === 'SCREEN_DESIGN'
+                                            ? '새로운 화면 설계서 프로젝트를 시작합니다.'
+                                            : '새로운 데이터베이스 설계 프로젝트를 시작합니다.'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setIsCreateModalOpen(false);
+                                    setCreateError(null);
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+                            >
+                                <X size={24} />
+                            </button>
                         </div>
                         <form onSubmit={handleCreateProject} className="p-8 space-y-6">
                             <div>
@@ -497,29 +608,34 @@ const ProjectListPage: React.FC = () => {
                                     type="text"
                                     value={newProjectName}
                                     onChange={(e) => setNewProjectName(e.target.value)}
-                                    placeholder="예: 쇼핑몰 서비스 설계"
+                                    placeholder={selectedProjectType === 'SCREEN_DESIGN' ? '예: 회원관리 화면설계' : '예: 서비스 설계'}
                                     className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium"
                                 />
                             </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">데이터베이스 엔진</label>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {(['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'] as DBType[]).map((type) => (
-                                        <button
-                                            key={type}
-                                            type="button"
-                                            onClick={() => setNewProjectDbType(type)}
-                                            className={`py-3 px-4 rounded-2xl border-2 transition-all font-bold text-sm flex items-center justify-center gap-2 ${newProjectDbType === type
-                                                ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm shadow-blue-100'
-                                                : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
-                                                }`}
-                                        >
-                                            <div className={`w-2 h-2 rounded-full ${newProjectDbType === type ? 'bg-blue-500' : 'bg-gray-300'}`} />
-                                            {type}
-                                        </button>
-                                    ))}
+
+                            {/* DB Type selector - only for ERD projects */}
+                            {selectedProjectType === 'ERD' && (
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">데이터베이스 엔진</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {(['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'] as DBType[]).map((type) => (
+                                            <button
+                                                key={type}
+                                                type="button"
+                                                onClick={() => setNewProjectDbType(type)}
+                                                className={`py-3 px-4 rounded-2xl border-2 transition-all font-bold text-sm flex items-center justify-center gap-2 ${newProjectDbType === type
+                                                    ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm shadow-blue-100'
+                                                    : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
+                                                    }`}
+                                            >
+                                                <div className={`w-2 h-2 rounded-full ${newProjectDbType === type ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                                                {type}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">설명 (선택사항)</label>
                                 <textarea
@@ -530,8 +646,6 @@ const ProjectListPage: React.FC = () => {
                                     className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium resize-none"
                                 />
                             </div>
-
-
 
                             {createError && (
                                 <div className="p-3 bg-red-50 text-red-500 text-xs rounded-xl border border-red-100 animate-in fade-in slide-in-from-top-1">
@@ -556,7 +670,10 @@ const ProjectListPage: React.FC = () => {
                                 <button
                                     type="submit"
                                     disabled={isLoading}
-                                    className="flex-[2] py-4 px-6 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                                    className={`flex-[2] py-4 px-6 text-white rounded-2xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 ${selectedProjectType === 'SCREEN_DESIGN'
+                                        ? 'bg-violet-600 hover:bg-violet-700 shadow-lg shadow-violet-200'
+                                        : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200'
+                                        }`}
                                 >
                                     {isLoading ? (
                                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

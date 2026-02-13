@@ -30,6 +30,8 @@ export interface Relationship {
 
 export type DBType = 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';
 
+export type ProjectType = 'ERD' | 'SCREEN_DESIGN';
+
 export interface ProjectMember {
     id: string;
     name: string;
@@ -41,6 +43,7 @@ export interface ProjectMember {
 export interface Project {
     id: string;
     name: string;
+    projectType: ProjectType;
     dbType: DBType;
     description?: string;
     updatedAt: string;

@@ -1,4 +1,5 @@
 import ERDCanvas from './components/ERDCanvas';
+import ScreenDesignCanvas from './components/ScreenDesignCanvas';
 import LoginPage from './components/LoginPage';
 import ProjectListPage from './components/ProjectListPage';
 import { useAuthStore } from './store/authStore';
@@ -8,7 +9,7 @@ import { useEffect } from 'react';
 
 function App() {
   const { isAuthenticated, user, logout } = useAuthStore();
-  const { currentProjectId } = useProjectStore();
+  const { currentProjectId, projects } = useProjectStore();
   const { isConnected, isAuthenticatedOnSocket, connect, disconnect, authenticate, joinProject, leaveProject } = useSyncStore();
 
   // Guest Session Cleanup: Logout guest if browser was closed (sessionStorage cleared)
@@ -62,6 +63,18 @@ function App() {
 
   if (!isAuthenticated) return <LoginPage />;
   if (!currentProjectId) return <ProjectListPage />;
+
+  // Determine project type and render appropriate canvas
+  const currentProject = projects.find(p => p.id === currentProjectId);
+  const projectType = currentProject?.projectType || 'ERD';
+
+  if (projectType === 'SCREEN_DESIGN') {
+    return (
+      <div className="w-full h-screen">
+        <ScreenDesignCanvas />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-screen">
