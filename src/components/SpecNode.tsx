@@ -270,7 +270,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 transition-all group relative overflow-hidden ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 transition-all group relative ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-md'

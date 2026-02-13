@@ -219,7 +219,7 @@ export const useProjectStore = create<ProjectStore>()(
                 // Update local state immediately for responsiveness
                 set((state) => ({
                     projects: state.projects.map((p) =>
-                        p.id === id ? { ...p, data, updatedAt: new Date().toISOString() } : p
+                        p.id === id ? { ...p, data: { ...p.data, ...data }, updatedAt: new Date().toISOString() } : p
                     ),
                 }));
 

@@ -90,6 +90,7 @@ const ERDCanvasContent: React.FC = () => {
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
+    const [reconnectingSide, setReconnectingSide] = useState<'source' | 'target' | null>(null);
     const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
@@ -312,8 +313,26 @@ const ERDCanvasContent: React.FC = () => {
 
     const isValidConnection = useCallback((connection: Connection) => {
         if (connection.source === connection.target) return false;
-        return true;
-    }, []);
+
+        // If reconnecting, check against the stable side
+        if (reconnectingEdgeId && reconnectingSide) {
+            const existingRel = relationships.find(r => r.id === reconnectingEdgeId);
+            if (existingRel) {
+                const stableNodeId = reconnectingSide === 'source' ? existingRel.target : existingRel.source;
+                if (stableNodeId === connection.target) return false;
+            }
+        }
+
+        // Prevent duplicate connections unless we are reconnecting an existing line
+        const isDuplicate = relationships.some(rel =>
+            rel.id !== reconnectingEdgeId && (
+                (rel.source === connection.source && rel.target === connection.target) ||
+                (rel.source === connection.target && rel.target === connection.source)
+            )
+        );
+
+        return !isDuplicate;
+    }, [relationships, reconnectingEdgeId, reconnectingSide]);
 
     const onConnectStart = useCallback((_event: any, params: any) => {
         // Find if any relationship is already using this handle
@@ -323,30 +342,35 @@ const ERDCanvasContent: React.FC = () => {
         );
         if (existingRel) {
             setReconnectingEdgeId(existingRel.id);
+            setReconnectingSide(existingRel.source === params.nodeId && existingRel.sourceHandle === params.handleId ? 'source' : 'target');
         }
     }, [relationships]);
 
     const onConnect = useCallback(
         (connection: Connection) => {
             if (connection.source && connection.target && connection.source !== connection.target) {
-                if (reconnectingEdgeId) {
-                    const updates = {
-                        source: connection.source,
-                        target: connection.target,
-                        sourceHandle: connection.sourceHandle || undefined,
-                        targetHandle: connection.targetHandle || undefined,
-                    };
-                    updateRelationship(reconnectingEdgeId, updates, user);
+                if (reconnectingEdgeId && reconnectingSide) {
+                    const existingRel = relationships.find(r => r.id === reconnectingEdgeId);
+                    if (existingRel) {
+                        const updates = reconnectingSide === 'source' ? {
+                            source: connection.target,
+                            sourceHandle: connection.targetHandle || undefined,
+                        } : {
+                            target: connection.target,
+                            targetHandle: connection.targetHandle || undefined,
+                        };
+                        updateRelationship(reconnectingEdgeId, updates, user);
 
-                    sendOperation({
-                        type: 'RELATIONSHIP_UPDATE',
-                        targetId: reconnectingEdgeId,
-                        userId: user?.id || 'anonymous',
-                        userName: user?.name || 'Anonymous',
-                        payload: updates as unknown as Record<string, unknown>
-                    });
-
+                        sendOperation({
+                            type: 'RELATIONSHIP_UPDATE',
+                            targetId: reconnectingEdgeId,
+                            userId: user?.id || 'anonymous',
+                            userName: user?.name || 'Anonymous',
+                            payload: updates as unknown as Record<string, unknown>
+                        });
+                    }
                     setReconnectingEdgeId(null);
+                    setReconnectingSide(null);
                 } else {
                     const newRelationship = {
                         id: `rel_${Date.now()}`,
@@ -374,7 +398,10 @@ const ERDCanvasContent: React.FC = () => {
 
     const onConnectEnd = useCallback(() => {
         // Delay clearing to allow onConnect to catch it
-        setTimeout(() => setReconnectingEdgeId(null), 100);
+        setTimeout(() => {
+            setReconnectingEdgeId(null);
+            setReconnectingSide(null);
+        }, 100);
     }, []);
 
     const onReconnectStart = useCallback((_: any, edge: Edge) => {
