@@ -56,7 +56,10 @@ export interface Screen {
     specs?: ScreenSpecItem[];
 
     // ── 캔버스 위치 ──
+    // ── 캔버스 위치 ──
     position: { x: number; y: number };
+    imageWidth?: number;
+    imageHeight?: number;
     isLocked?: boolean;
 }
 

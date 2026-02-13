@@ -80,6 +80,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 const existingNode = prevNodes.find((n) => n.id === screen.id);
                 return {
                     id: screen.id,
+                    width: undefined, height: undefined, // Clear style
                     type: screen.variant === 'SPEC' ? 'spec' : 'screen',
                     position: screen.position,
                     data: { screen },
@@ -139,6 +140,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const onConnect = useCallback(
         (connection: Connection) => {
             if (connection.source && connection.target && connection.source !== connection.target) {
+                // 1. Add Edge
                 const newFlow: ScreenFlow = {
                     id: `flow_${Date.now()}`,
                     source: connection.source,
@@ -148,6 +150,30 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     label: '',
                 };
                 addFlow(newFlow);
+
+                // 2. Data Sync (UI Screen -> Function Spec)
+                // When connecting a Screen Node to a Spec Node, inherit metadata
+                const { screens, updateScreen } = useScreenDesignStore.getState();
+                const sourceScreen = screens.find(s => s.id === connection.source);
+                const targetScreen = screens.find(s => s.id === connection.target);
+
+                if (sourceScreen && targetScreen) {
+                    // Check if Source is UI and Target is SPEC
+                    const isSourceUI = !sourceScreen.variant || sourceScreen.variant === 'UI';
+                    const isTargetSpec = targetScreen.variant === 'SPEC';
+
+                    if (isSourceUI && isTargetSpec) {
+                        if (window.confirm(`'${sourceScreen.name}' 화면의 정보를 '${targetScreen.name}' 기능 명세에 적용하시겠습니까?`)) {
+                            updateScreen(targetScreen.id, {
+                                systemName: sourceScreen.systemName,
+                                author: sourceScreen.author,
+                                screenId: sourceScreen.screenId,
+                                screenType: sourceScreen.screenType,
+                                name: sourceScreen.name, // Usually name is also synced
+                            });
+                        }
+                    }
+                }
             }
         },
         [addFlow]

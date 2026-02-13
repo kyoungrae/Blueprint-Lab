@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { Screen, ScreenField } from '../types/screenDesign';
 import { SCREEN_FIELD_TYPES, SCREEN_TYPES } from '../types/screenDesign';
@@ -138,6 +138,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const { screen } = data;
     const { updateScreen, deleteScreen } = useScreenDesignStore();
     const isLocked = screen.isLocked ?? true;
+    const [isDragOver, setIsDragOver] = React.useState(false);
 
     const update = (updates: Partial<Screen>) => {
         if (isLocked) return;
@@ -196,20 +197,146 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         }
     };
 
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        if (isLocked) return;
+        setIsDragOver(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragOver(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        if (isLocked) return;
+
+        const file = e.dataTransfer.files?.[0];
+        if (file && file.type.startsWith('image/')) {
+            if (file.size > 5 * 1024 * 1024) return alert('이미지 크기는 5MB 이하여야 합니다.');
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                update({ imageUrl: reader.result as string });
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     // Label cell style: Navy(#2c3e7c) background, White text
     const labelCell = "bg-[#2c3e7c] text-white text-[11px] font-bold px-3 py-2 border-r border-[#1e2d5e] select-none text-center align-middle whitespace-nowrap";
     // Value cell style
+    // Value cell style
     const valueCell = "bg-white text-xs text-gray-800 px-2 py-1 border-r border-[#e2e8f0] align-middle";
+
+    // Image Resizing Logic
+    const [imgSize, setImgSize] = useState<{ w: number | undefined, h: number | undefined }>({ w: screen.imageWidth, h: screen.imageHeight });
+    const [isImageSelected, setIsImageSelected] = useState(false);
+    const resizeStartRef = useRef<{ x: number, y: number, w: number, h: number, dir: string, maxW: number, maxH: number } | null>(null);
+    const imageContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (imageContainerRef.current && !imageContainerRef.current.contains(e.target as Node)) {
+                setIsImageSelected(false);
+            }
+        };
+        window.addEventListener('mousedown', handleClickOutside);
+        return () => window.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    useEffect(() => {
+        setImgSize({ w: screen.imageWidth, h: screen.imageHeight });
+    }, [screen.imageWidth, screen.imageHeight]);
+
+    const handleResizeStart = (direction: string) => (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isLocked) return;
+
+        const imgWrapper = e.currentTarget.parentElement as HTMLDivElement;
+        const scrollContainer = imgWrapper.parentElement as HTMLDivElement;
+        const currentW = imgWrapper.offsetWidth;
+        const currentH = imgWrapper.offsetHeight;
+
+        // Get parent container dimensions to restrict resizing
+        // We use scrollWidth/Height if we want to allow growth up to content, but here we want to restrict to *visible* area?
+        // User said: "할당된 영역을 넘어가지 못하도록". 
+        // If we use scrollContainer.clientWidth, it's the visible width.
+        const maxW = scrollContainer.clientWidth;
+        const maxH = scrollContainer.clientHeight;
+
+        resizeStartRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            w: currentW,
+            h: currentH,
+            dir: direction,
+            maxW,
+            maxH
+        };
+
+        const handleWindowMouseMove = (moveEvent: MouseEvent) => {
+            if (!resizeStartRef.current) return;
+            const { x, y, w, h, dir, maxW, maxH } = resizeStartRef.current;
+            const dx = moveEvent.clientX - x;
+            const dy = moveEvent.clientY - y;
+
+            let newW = w;
+            let newH = h;
+
+            if (dir.includes('e')) newW = w + dx;
+            if (dir.includes('w')) newW = w - dx;
+            if (dir.includes('s')) newH = h + dy;
+            if (dir.includes('n')) newH = h - dy;
+
+            // Constrain to parent container size, keeping min size 50
+            newW = Math.max(50, Math.min(maxW, newW));
+            newH = Math.max(50, Math.min(maxH, newH));
+
+            setImgSize({ w: newW, h: newH });
+        };
+
+        const handleWindowMouseUp = (upEvent: MouseEvent) => {
+            if (resizeStartRef.current) {
+                const { x, y, w, h, dir, maxW, maxH } = resizeStartRef.current;
+                const dx = upEvent.clientX - x;
+                const dy = upEvent.clientY - y;
+
+                let newW = w;
+                let newH = h;
+
+                if (dir.includes('e')) newW = w + dx;
+                if (dir.includes('w')) newW = w - dx;
+                if (dir.includes('s')) newH = h + dy;
+                if (dir.includes('n')) newH = h - dy;
+
+                newW = Math.max(50, Math.min(maxW, newW));
+                newH = Math.max(50, Math.min(maxH, newH));
+
+                update({ imageWidth: newW, imageHeight: newH });
+            }
+            resizeStartRef.current = null;
+            window.removeEventListener('mousemove', handleWindowMouseMove);
+            window.removeEventListener('mouseup', handleWindowMouseUp);
+        };
+
+        window.addEventListener('mousemove', handleWindowMouseMove);
+        window.addEventListener('mouseup', handleWindowMouseUp);
+    };
+
+
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 transition-all group relative overflow-hidden ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 transition-all group relative h-full flex flex-col ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-md'
                     : 'border-[#2c3e7c] shadow-blue-100'
                 }`}
-            style={{ width: 1000 }}
+            style={{ width: 1000, height: 'auto' }}
         >
             {/* Lock Overlay */}
             {isLocked && (
@@ -227,7 +354,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             )}
 
             {/* ── 1. Top Header Bar (ERD Style) ── */}
-            <div className={`px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white`}>
+            <div className={`rounded-t-md px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white주`}>
                 <Monitor size={16} className="flex-shrink-0 text-white/90" />
                 <input
                     type="text"
@@ -314,53 +441,81 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             <div className="flex bg-white min-h-[500px]">
 
                 {/* [LEFT PANE 70%] - Image & Function Items */}
-                <div className="flex-[7] border-r border-gray-200 flex flex-col bg-gray-50/10">
+                <div className="rounded-bl-md flex-[7] border-r border-gray-200 flex flex-col bg-gray-50/10">
 
                     {/* Image Area */}
-                    <div className="relative group/image border-b border-gray-200 bg-white flex-1 flex items-center justify-center overflow-hidden transition-colors hover:bg-gray-50">
+                    {/* Image Area */}
+                    <div
+                        className={`nodrag relative group/image flex-1 flex items-center justify-center overflow-auto transition-colors scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent ${isDragOver && !isLocked
+                            ? 'bg-blue-50 border-2 border-dashed border-blue-400'
+                            : 'bg-white border-b border-gray-200 hover:bg-gray-50'
+                            }`}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                    >
                         {screen.imageUrl ? (
-                            <img src={screen.imageUrl} alt="UI Mockup" className="max-w-full max-h-[500px] object-contain shadow-sm" />
+                            <div
+                                ref={imageContainerRef}
+                                className={`relative inline-block m-auto transition-all ${!isLocked && isImageSelected ? 'border-[3px] border-[#3b82f6]' : 'border-[3px] border-transparent'}`}
+                                style={{ width: imgSize.w, height: imgSize.h, minWidth: 50, minHeight: 50 }}
+                                onMouseDown={(e) => {
+                                    if (!isLocked) {
+                                        // e.stopPropagation(); // Don't stop propagation completely, creating node selection issues? 
+                                        // Actually we probably want to select the image AND the node.
+                                        setIsImageSelected(true);
+                                    }
+                                }}
+                            >
+                                <img
+                                    src={screen.imageUrl}
+                                    alt="UI Mockup"
+                                    className="w-full h-full object-contain pointer-events-none select-none block"
+                                    draggable={false}
+                                />
+                                {!isLocked && isImageSelected && (
+                                    <>
+                                        {/* Resize Handles - All Corners */}
+                                        <div className="nodrag absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nwse-resize z-20" onMouseDown={handleResizeStart('nw')} />
+                                        <div className="nodrag absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nesw-resize z-20" onMouseDown={handleResizeStart('ne')} />
+                                        <div className="nodrag absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nesw-resize z-20" onMouseDown={handleResizeStart('sw')} />
+                                        <div className="nodrag absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nwse-resize z-20" onMouseDown={handleResizeStart('se')} />
+
+                                        {/* Delete Button */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (window.confirm('이미지를 삭제하시겠습니까?')) update({ imageUrl: undefined });
+                                            }}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 hover:opacity-100 transition-all shadow-sm backdrop-blur-sm z-30"
+                                            title="이미지 삭제"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center gap-2 p-8 text-gray-300 select-none">
+                            <label className={`flex flex-col items-center justify-center gap-2 p-8 text-gray-300 select-none w-full h-full ${!isLocked ? 'cursor-pointer' : ''}`}>
                                 <div className="w-16 h-16 rounded-2xl bg-gray-50/50 flex items-center justify-center mb-2 border border-dashed border-gray-200">
                                     <ImageIcon size={32} className="opacity-40" />
                                 </div>
                                 <div className="text-center">
                                     <p className="text-sm font-bold text-gray-400">UI 목업 이미지</p>
-                                    <p className="text-[10px] text-gray-400">이미지를 업로드하거나 드래그하세요</p>
+                                    <p className="text-[10px] text-gray-400">
+                                        {isLocked ? '잠금 상태입니다' : '클릭하여 업로드하거나 이미지를 드래그하세요'}
+                                    </p>
                                 </div>
-                            </div>
-                        )}
-
-                        {/* Image Actions Overlay */}
-                        {!isLocked && (
-                            <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover/image:opacity-100 transition-opacity">
-                                <label className="cursor-pointer bg-white/90 backdrop-blur hover:bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg shadow border border-blue-100 text-xs font-bold flex items-center gap-2 transition-transform hover:scale-105 active:scale-95">
-                                    <Upload size={13} />
-                                    {screen.imageUrl ? '변경' : '업로드'}
-                                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                                </label>
-                                {screen.imageUrl && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (window.confirm('이미지를 삭제하시겠습니까?')) update({ imageUrl: undefined });
-                                        }}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        className="bg-white/90 backdrop-blur hover:bg-red-50 text-red-500 px-3 py-1.5 rounded-lg shadow border border-red-100 text-xs font-bold flex items-center gap-2 transition-transform hover:scale-105 active:scale-95"
-                                    >
-                                        <X size={13} />
-                                        삭제
-                                    </button>
-                                )}
-                            </div>
+                                {!isLocked && <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />}
+                            </label>
                         )}
                     </div>
 
                 </div>
 
                 {/* [RIGHT PANE 30%] - Details & Settings */}
-                <div className="flex-[3] flex flex-col bg-white" style={{ minWidth: 250 }}>
+                <div className="rounded-br-md flex-[3] flex flex-col bg-white" style={{ minWidth: 250 }}>
                     {/* Panel 1: 초기화면설정 */}
                     <div className="flex-1 flex flex-col border-b border-gray-200 min-h-[120px]">
                         <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5">
