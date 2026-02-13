@@ -158,7 +158,7 @@ const LoginPage: React.FC = () => {
                             <div className="p-2.5 bg-white/20 backdrop-blur-md rounded-xl border border-white/30">
                                 <Database size={28} />
                             </div>
-                            <span className="text-2xl font-black tracking-tight uppercase">ERD System</span>
+                            <span className="text-2xl font-black tracking-tight uppercase">Blue Print Lab</span>
                         </div>
 
                         <h1 className="text-4xl font-bold leading-tight mb-6">

@@ -1,4 +1,4 @@
-# ERD SYSTEM 운영 서버 배포 상세 가이드 (Local Docker Build)
+# BLUE PRINT LAB 운영 서버 배포 상세 가이드 (Local Docker Build)
 
 로컬 PC(Mac)에 **Docker**를 설치한 후, 이미지를 직접 빌드하여 운영 서버(`210.92.92.18:2000`)로 전송하는 가장 안정적인 배포 방식입니다. 이 방식은 운영 서버의 인터넷 환경이나 리소스에 구애받지 않고 배포할 수 있다는 장점이 있습니다.
 
@@ -48,12 +48,12 @@ brew install --cask docker
 ssh -p 22222 vims@192.168.0.141
 
 # 프로젝트 관리 폴더 생성
-mkdir -p ~/projects/erd-system/db_data
-mkdir -p ~/projects/erd-system/redis_data
+mkdir -p ~/projects/blueprint-lab/db_data
+mkdir -p ~/projects/blueprint-lab/redis_data
 
 # 권한 설정 (데이터 쓰기 권한 확보)
-chmod 777 ~/projects/erd-system/db_data
-chmod 777 ~/projects/erd-system/redis_data
+chmod 777 ~/projects/blueprint-lab/db_data
+chmod 777 ~/projects/blueprint-lab/redis_data
 
 exit
 ```
@@ -65,12 +65,12 @@ exit
 
 #### 1) 프론트엔드 빌드 및 이미지화
 ```bash
-cd ~/ERD-SYSTEM
+cd ~/BluePrint-Lab
 
 # 이미지 빌드 (.env.production 설정이 자동 포함됨)
 # Mac(M1/M2)에서 빌드 시 서버(Linux/AMD64) 호환성을 위해 --platform 지정이 중요합니다.
-docker build --platform linux/amd64 -t erd-frontend -f Dockerfile.frontend .
-docker build --platform linux/amd64 -t erd-backend -f server/Dockerfile ./server
+docker build --platform linux/amd64 -t blueprint-frontend -f Dockerfile.frontend .
+docker build --platform linux/amd64 -t blueprint-backend -f server/Dockerfile ./server
 
 # 빌드된 이미지를 파일(.tar)로 추출
 docker save erd-frontend > erd-frontend.tar
@@ -78,10 +78,10 @@ docker save erd-frontend > erd-frontend.tar
 
 #### 2) 백엔드 이미지화
 ```bash
-cd ~/ERD-SYSTEM
+cd ~/BLUEPRINT-LAB
 
 # 서버 폴더에서 이미지 빌드
-docker build --platform linux/amd64 -t erd-backend -f server/Dockerfile ./server
+docker build --platform linux/amd64 -t blueprint-backend -f server/Dockerfile ./server
 
 # 빌드된 이미지를 파일(.tar)로 추출
 docker save erd-backend > erd-backend.tar
@@ -97,10 +97,10 @@ DB와 Redis는 운영 서버에서 직접 다운로드(Pull)하므로 로컬에�
 
 ```bash
 # 로컬 터미널에서 실행
-cd ~/ERD-SYSTEM
+cd ~/BLUEPRINT-LAB
 
 # 이미지(.tar)와 실행 파일(yml) 전송
-scp -P 22222 docker-compose.yml erd-frontend.tar erd-backend.tar vims@192.168.0.141:~/projects/erd-system/
+scp -P 22222 blueprint-frontend.tar blueprint-backend.tar vims@192.168.0.141:~/projects/blueprint-lab/
 ```
 
 ---
@@ -111,7 +111,7 @@ scp -P 22222 docker-compose.yml erd-frontend.tar erd-backend.tar vims@192.168.0.
 ```bash
 # 운영 서버 접속 및 폴더 이동
 ssh -p 22222 vims@192.168.0.141
-cd ~/projects/erd-system
+cd ~/projects/blueprint-lab
 
 # 1. 앱 이미지 파일 로드
 podman load < erd-frontend.tar
@@ -122,13 +122,13 @@ podman pull docker.io/library/mongo:4.4
 podman pull docker.io/library/redis:7-alpine
 
 # 3. 전용 네트워크 생성 (컨테이너 간 통신용)
-podman network create erd-network
+podman network create blueprint-network
 
 # 4. 서비스 실행 (한 줄씩 복사해서 실행하세요)
-podman run -d --name erd-mongodb --network erd-network -p 27017:27017 -v ~/projects/erd-system/db_data:/data/db -e MONGO_INITDB_DATABASE=erd-system --restart unless-stopped docker.io/library/mongo:4.4
-podman run -d --name erd-redis --network erd-network -p 6379:6379 -v ~/projects/erd-system/redis_data:/data --restart unless-stopped docker.io/library/redis:7-alpine redis-server --appendonly yes
-podman run -d --name erd-backend --network erd-network -p 3001:3001 -e NODE_ENV=production -e MONGODB_URI=mongodb://erd-mongodb:27017/erd-system -e REDIS_HOST=erd-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped erd-backend
-podman run -d --name erd-frontend --network erd-network -p 8085:80 --restart unless-stopped erd-frontend
+podman run -d --name blueprint-mongodb --network blueprint-network -p 27017:27017 -v ~/projects/blueprint-lab/db_data:/data/db -e MONGO_INITDB_DATABASE=blueprint-lab --restart unless-stopped docker.io/library/mongo:4.4
+podman run -d --name blueprint-redis --network blueprint-network -p 6379:6379 -v ~/projects/blueprint-lab/redis_data:/data --restart unless-stopped docker.io/library/redis:7-alpine redis-server --appendonly yes
+podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped erd-backend
+podman run -d --name blueprint-frontend --network blueprint-network -p 8085:80 --restart unless-stopped blueprint-frontend
 ```
 
 ---
@@ -180,11 +180,11 @@ sudo nginx -s reload
 
 ### 1단계: 로컬(Mac)에서 이미지 재빌드 및 추출
 ```bash
-cd ~/ERD-SYSTEM
+cd ~/BLUEPRINT-LAB
 
 # (선택) 프론트엔드/백엔드 수정 사항에 맞춰 빌드 (플랫폼 주의!)
-docker build --platform linux/amd64 -t erd-frontend -f Dockerfile.frontend .
-docker build --platform linux/amd64 -t erd-backend -f server/Dockerfile ./server
+docker build --platform linux/amd64 -t blueprint-frontend -f Dockerfile.frontend .
+docker build --platform linux/amd64 -t blueprint-backend -f server/Dockerfile ./server
 
 # .tar 파일로 저장
 docker save erd-frontend > erd-frontend.tar
@@ -193,17 +193,17 @@ docker save erd-backend > erd-backend.tar
 
 ### 2단계: 신규 이미지 전송
 ```bash
-scp -P 22222 erd-frontend.tar erd-backend.tar vims@192.168.0.141:~/projects/erd-system/
+scp -P 22222 blueprint-frontend.tar blueprint-backend.tar vims@192.168.0.141:~/projects/blueprint-lab/
 ```
 
 ### 3단계: 운영 서버에서 기존 컨테이너 교체
 ```bash
 # 서버 접속 및 이동
 ssh -p 22222 vims@192.168.0.141
-cd ~/projects/erd-system
+cd ~/projects/blueprint-lab
 
 # 1. 기존 컨테이너 중지 및 삭제 (DB/Redis는 데이터 유지가 필요하면 앱만 교체, 이번처럼 이슈 시 전체 교체)
-podman rm -f erd-frontend erd-backend erd-mongodb
+podman rm -f blueprint-frontend blueprint-backend blueprint-mongodb
 
 # 2. 신규 이미지 로드 및 호환 DB 다운로드
 podman load < erd-frontend.tar
@@ -211,11 +211,11 @@ podman load < erd-backend.tar
 podman pull docker.io/library/mongo:4.4
 
 # 3. 서비스 재시작 (한 줄씩 복사)
-podman run -d --name erd-mongodb --network erd-network -p 27017:27017 -v ~/projects/erd-system/db_data:/data/db -e MONGO_INITDB_DATABASE=erd-system --restart unless-stopped docker.io/library/mongo:4.4
+podman run -d --name blueprint-mongodb --network blueprint-network -p 27017:27017 -v ~/projects/blueprint-lab/db_data:/data/db -e MONGO_INITDB_DATABASE=blueprint-lab --restart unless-stopped docker.io/library/mongo:4.4
 
-podman run -d --name erd-backend --network erd-network -p 3001:3001 -e NODE_ENV=production -e MONGODB_URI=mongodb://erd-mongodb:27017/erd-system -e REDIS_HOST=erd-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped erd-backend
+podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped blueprint-backend
 
-podman run -d --name erd-frontend --network erd-network -p 8085:80 --restart unless-stopped erd-frontend
+podman run -d --name blueprint-frontend --network blueprint-network -p 8085:80 --restart unless-stopped blueprint-frontend
 ```
 
 ---

@@ -1,7 +1,7 @@
 {
-    "name": "erd-system-server",
+    "name": "blueprint-lab-server",
     "version": "1.0.0",
-    "description": "ERD System Realtime Collaboration Server",
+    "description": "Blue Print Lab Realtime Collaboration Server",
     "main": "dist/index.js",
     "scripts": {
         "dev": "nodemon --exec ts-node src/index.ts",

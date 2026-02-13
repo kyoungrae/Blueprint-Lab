@@ -1,7 +1,7 @@
 import type { Entity, Relationship, DBType } from '../types/erd';
 
 export const generateSQLFromERD = (entities: Entity[], relationships: Relationship[], dbType: DBType = 'MySQL'): string => {
-    let sql = `-- ERD System SQL Export\n`;
+    let sql = `-- Blue Print Lab SQL Export\n`;
     sql += `-- Database Type: ${dbType}\n`;
     sql += `-- Generated at: ${new Date().toISOString()}\n\n`;
 

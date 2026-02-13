@@ -196,7 +196,7 @@ const ProjectListPage: React.FC = () => {
                         <div className="p-2 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-200">
                             <Database size={24} />
                         </div>
-                        <h1 className="text-xl font-black text-gray-900 tracking-tight uppercase">ERD System</h1>
+                        <h1 className="text-xl font-black text-gray-900 tracking-tight uppercase">Blue Print Lab</h1>
                     </div>
 
                     <div className="flex items-center gap-4">

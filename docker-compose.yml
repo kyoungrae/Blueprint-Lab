@@ -1,18 +1,18 @@
 services:
   mongodb:
     image: mongo:7.0
-    container_name: erd-mongodb
+    container_name: blueprint-mongodb
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
     environment:
-      - MONGO_INITDB_DATABASE=erd-system
+      - MONGO_INITDB_DATABASE=blueprint-lab
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: erd-redis
+    container_name: blueprint-redis
     ports:
       - "6379:6379"
     volumes:
@@ -25,12 +25,12 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: erd-backend
+    container_name: blueprint-backend
     ports:
       - "3001:3001"
     environment:
       - NODE_ENV=production
-      - MONGODB_URI=mongodb://mongodb:27017/erd-system
+      - MONGODB_URI=mongodb://mongodb:27017/blueprint-lab
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - FRONTEND_URL=http://host.containers.internal:8085 # 호스트 내부 주소 사용
@@ -45,7 +45,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: erd-frontend
+    container_name: blueprint-frontend
     ports:
       - "8085:80"
     restart: unless-stopped
@@ -55,7 +55,7 @@ services:
   # 개발용 MongoDB 관리 UI (선택사항)
   mongo-express:
     image: mongo-express:latest
-    container_name: erd-mongo-express
+    container_name: blueprint-mongo-express
     ports:
       - "8086:8081" # Container port 8081 is internal, host port changed to 8086
     environment:

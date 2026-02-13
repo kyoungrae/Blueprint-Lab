@@ -6,7 +6,7 @@ export const config = {
     port: parseInt(process.env.PORT || '3001', 10),
 
     mongodb: {
-        uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/erd-system',
+        uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/blueprint-lab',
     },
 
     redis: {
@@ -28,6 +28,6 @@ export const config = {
         port: parseInt(process.env.EMAIL_PORT || '587', 10),
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
-        from: process.env.EMAIL_FROM || 'ERD System <noreply@example.com>',
+        from: process.env.EMAIL_FROM || 'Blue Print Lab <noreply@example.com>',
     },
 };

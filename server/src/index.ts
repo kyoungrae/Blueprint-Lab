@@ -55,7 +55,7 @@ app.use('/api/projects', projectRoutes);
 // API routes will be added here
 app.get('/api', (req, res) => {
     res.json({
-        message: 'ERD System API',
+        message: 'Blue Print Lab API',
         version: '1.0.0',
         endpoints: {
             health: '/health',
@@ -80,7 +80,7 @@ async function start() {
         // Start HTTP server
         httpServer.listen(config.port, () => {
             logger.info(`
-🚀 ERD System Server is running!
+🚀 Blue Print Lab Server is running!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📡 HTTP:      http://localhost:${config.port}
 🔌 WebSocket: ws://localhost:${config.port}
