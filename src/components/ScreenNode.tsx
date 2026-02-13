@@ -2,8 +2,9 @@ import React, { memo, useState, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { Screen, ScreenField } from '../types/screenDesign';
 import { SCREEN_FIELD_TYPES, SCREEN_TYPES } from '../types/screenDesign';
-import { Plus, Trash2, Lock, Unlock, Image as ImageIcon, Upload, X, Monitor, ChevronDown, Check, FileText } from 'lucide-react';
+import { Plus, Trash2, Lock, Unlock, Image as ImageIcon, Upload, X, Monitor, ChevronDown, Check, FileText, Database } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useProjectStore } from '../store/projectStore';
 
 // ── Field Row (기능 항목 행) ────────────────────────────────────
 interface FieldRowProps {
@@ -139,6 +140,16 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const { updateScreen, deleteScreen } = useScreenDesignStore();
     const isLocked = screen.isLocked ?? true;
     const [isDragOver, setIsDragOver] = React.useState(false);
+
+    // Linked ERD Project Data
+    const { projects, currentProjectId } = useProjectStore();
+    const currentProject = projects.find(p => p.id === currentProjectId);
+    const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
+    // Extract table names safely
+    const erdTables = React.useMemo(() => {
+        if (!linkedErdProject?.data?.entities) return [];
+        return linkedErdProject.data.entities.map(e => e.name).sort();
+    }, [linkedErdProject]);
 
     const update = (updates: Partial<Screen>) => {
         if (isLocked) return;
@@ -554,8 +565,44 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                     {/* Panel 3: 관련테이블 */}
                     <div className="flex-1 flex flex-col min-h-[120px]">
-                        <div className="bg-[#5e6b7c] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a5463] select-none shadow-sm flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 관련테이블
+                        <div className="bg-[#5e6b7c] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a5463] select-none shadow-sm flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 관련테이블
+                            </div>
+                            {/* ERD Table Selector */}
+                            {!isLocked && linkedErdProject && (
+                                <div className="relative group/erd">
+                                    <button className="nodrag flex items-center gap-1 text-[9px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors">
+                                        <Database size={10} />
+                                        <span>추가</span>
+                                    </button>
+                                    <div className="absolute right-0 top-full mt-1 w-48 max-h-40 overflow-y-auto bg-white border border-gray-200 shadow-xl rounded-lg z-[100] hidden group-hover/erd:block">
+                                        <div className="p-1">
+                                            {erdTables.length > 0 ? erdTables.map(table => (
+                                                <button
+                                                    key={table}
+                                                    className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const current = screen.relatedTables || '';
+                                                        const toAdd = `• ${table}`;
+                                                        if (!current.includes(table)) {
+                                                            update({
+                                                                relatedTables: current ? `${current}\n${toAdd}` : toAdd
+                                                            });
+                                                        }
+                                                    }}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                >
+                                                    {table}
+                                                </button>
+                                            )) : (
+                                                <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="flex-1 p-0 relative group/area">
                             <textarea

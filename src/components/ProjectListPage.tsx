@@ -1,16 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { Plus, FolderOpen, Trash2, Clock, ChevronRight, LogOut, Database, Users, UserPlus, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft } from 'lucide-react';
+import './ProjectListPage.css';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
 import { type DBType, type ProjectType, type ProjectMember } from '../types/erd';
 
 const ProjectListPage: React.FC = () => {
-    const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, updateProjectMembers, inviteMember, joinWithCode } = useProjectStore();
+    const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, updateProjectMembers, updateProjectMetadata, inviteMember, joinWithCode } = useProjectStore();
     const { user, logout } = useAuthStore();
     const [isTypeSelectionOpen, setIsTypeSelectionOpen] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [selectedProjectType, setSelectedProjectType] = useState<ProjectType>('ERD');
     const [editingMembersProject, setEditingMembersProject] = useState<string | null>(null);
+    const [linkingProjectId, setLinkingProjectId] = useState<string | null>(null);
+    const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [cardPositions, setCardPositions] = useState<Record<string, { x: number, y: number, w: number, h: number }>>({});
+    const [windowSize, setWindowSize] = useState({ w: window.innerWidth, h: window.innerHeight });
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectDesc, setNewProjectDesc] = useState('');
     const [newProjectDbType, setNewProjectDbType] = useState<DBType>('MySQL');
@@ -23,7 +29,7 @@ const ProjectListPage: React.FC = () => {
     const [joinMode, setJoinMode] = useState<'CODE' | 'ID'>('CODE');
     const [joinCode, setJoinCode] = useState('');
 
-    React.useEffect(() => {
+    useEffect(() => {
         fetchProjects();
 
         // Check for pending invitation from login redirect OR direct URL params if already logged in
@@ -47,6 +53,54 @@ const ProjectListPage: React.FC = () => {
             }
         }
     }, [fetchProjects]);
+
+    // Graph Line Positioning Logic
+    useEffect(() => {
+        const handleResize = () => setWindowSize({ w: window.innerWidth, h: window.innerHeight });
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    const updatePositions = () => {
+        if (!containerRef.current) return;
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const newPositions: Record<string, { x: number, y: number, w: number, h: number }> = {};
+
+        Object.entries(cardRefs.current).forEach(([id, el]) => {
+            if (el) {
+                const rect = el.getBoundingClientRect();
+                newPositions[id] = {
+                    x: rect.left - containerRect.left,
+                    y: rect.top - containerRect.top,
+                    w: rect.width,
+                    h: rect.height
+                };
+            }
+        });
+        setCardPositions(newPositions);
+    };
+
+    useLayoutEffect(() => {
+        updatePositions();
+        // Fallback for async content load
+        const timer = setTimeout(updatePositions, 500);
+        return () => clearTimeout(timer);
+    }, [projects, windowSize]);
+
+    // Update positions on any scroll
+    useEffect(() => {
+        window.addEventListener('scroll', updatePositions, true);
+        return () => window.removeEventListener('scroll', updatePositions, true);
+    }, []);
+
+    const projectConnections = useMemo(() => {
+        return projects
+            .filter(p => p.projectType === 'SCREEN_DESIGN' && p.linkedErdProjectId)
+            .map(p => ({
+                fromId: p.id,
+                toId: p.linkedErdProjectId!
+            }));
+    }, [projects]);
 
     const targetProject = projects.find(p => p.id === editingMembersProject);
 
@@ -295,12 +349,61 @@ const ProjectListPage: React.FC = () => {
                         </button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div ref={containerRef} className="relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-16">
+                        {/* SVG Layer for Connections */}
+                        <svg className="absolute inset-0 pointer-events-none overflow-visible z-0" style={{ width: '100%', height: '100%' }}>
+                            <defs>
+                                <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                                    <circle cx="3" cy="3" r="2" fill="rgba(59, 130, 246, 0.4)" />
+                                </marker>
+                                <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stopColor="rgba(139, 92, 246, 0.3)" />
+                                    <stop offset="100%" stopColor="rgba(59, 130, 246, 0.3)" />
+                                </linearGradient>
+                            </defs>
+                            {projectConnections.map(({ fromId, toId }, idx) => {
+                                const from = cardPositions[fromId];
+                                const to = cardPositions[toId];
+                                if (!from || !to) return null;
+
+                                // Center of From Card to Center of To Card
+                                const startX = from.x + from.w / 2;
+                                const startY = from.y + from.h / 2;
+                                const endX = to.x + to.w / 2;
+                                const endY = to.y + to.h / 2;
+
+                                // Smoother, more direct curve
+                                const dx = endX - startX;
+                                const dy = endY - startY;
+                                const cp1x = startX + dx * 0.2;
+                                const cp1y = startY + dy * 0.8;
+                                const cp2x = startX + dx * 0.8;
+                                const cp2y = startY + dy * 0.2;
+
+                                return (
+                                    <path
+                                        key={`conn-${fromId}-${toId}-${idx}`}
+                                        d={`M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`}
+                                        stroke="url(#lineGrad)"
+                                        strokeWidth="3.5"
+                                        strokeDasharray="10 6"
+                                        fill="none"
+                                        markerEnd="url(#arrowhead)"
+                                        className="flowing-line"
+                                        style={{
+                                            opacity: 0.8,
+                                        }}
+                                    />
+                                );
+                            })}
+                        </svg>
+
                         {projects.map((project) => (
                             <div
                                 key={project.id}
+                                ref={(el) => { cardRefs.current[project.id] = el; }}
                                 onClick={() => setCurrentProject(project.id)}
-                                className="group bg-white rounded-[28px] p-6 border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-1 transition-all cursor-pointer flex flex-col h-full ring-0 hover:ring-2 ring-blue-500/20"
+                                className="group relative bg-white rounded-[28px] p-6 border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-1 transition-all cursor-pointer flex flex-col h-full ring-0 hover:ring-2 ring-blue-500/20 z-10"
                             >
                                 {(() => {
                                     const isLocal = project.id.startsWith('local_');
@@ -398,16 +501,26 @@ const ProjectListPage: React.FC = () => {
                                             </div>
 
                                             <div className="mt-auto pt-6 border-t border-gray-50 flex items-center justify-between">
-                                                <div className="flex items-center gap-2 text-xs text-gray-400 font-bold uppercase tracking-wider">
-                                                    <Clock size={12} />
-                                                    {new Date(project.updatedAt).toLocaleString('ko-KR', {
-                                                        year: 'numeric',
-                                                        month: '2-digit',
-                                                        day: '2-digit',
-                                                        hour: '2-digit',
-                                                        minute: '2-digit',
-                                                        hour12: false
-                                                    })}
+                                                <div className="flex items-center gap-2">
+                                                    {/* Linked ERD Indicator / Action - Only for Screen Design projects */}
+                                                    {project.projectType === 'SCREEN_DESIGN' && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setLinkingProjectId(project.id);
+                                                            }}
+                                                            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${project.linkedErdProjectId
+                                                                ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                                                : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
+                                                                }`}
+                                                            title="ERD 프로젝트 연결"
+                                                        >
+                                                            <Database size={10} />
+                                                            {project.linkedErdProjectId
+                                                                ? (projects.find(p => p.id === project.linkedErdProjectId)?.name || 'ERD 연결됨')
+                                                                : 'ERD 연결'}
+                                                        </button>
+                                                    )}
                                                 </div>
 
                                                 <div className="flex -space-x-2">
@@ -426,10 +539,6 @@ const ProjectListPage: React.FC = () => {
                                                             )}
                                                         </div>
                                                     ))}
-                                                </div>
-
-                                                <div className="p-2 bg-gray-50 text-gray-400 rounded-lg group-hover:bg-blue-50 group-hover:text-blue-500 transition-all">
-                                                    <ChevronRight size={18} />
                                                 </div>
                                             </div>
                                         </>
@@ -801,6 +910,76 @@ const ProjectListPage: React.FC = () => {
                                     </>
                                 );
                             })()}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Link ERD Project Modal */}
+            {linkingProjectId && (
+                <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
+                        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-xl font-black text-gray-900 mb-1">ERD 프로젝트 연결</h3>
+                                <p className="text-gray-500 font-medium text-xs">연동할 ERD 프로젝트를 선택하세요.</p>
+                            </div>
+                            <button
+                                onClick={() => setLinkingProjectId(null)}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-2 max-h-[400px] overflow-y-auto">
+                            {projects.filter(p => !p.projectType || p.projectType === 'ERD').length > 0 ? (
+                                <div className="space-y-1">
+                                    {projects.filter(p => !p.projectType || p.projectType === 'ERD').map(erdProject => (
+                                        <button
+                                            key={erdProject.id}
+                                            onClick={async () => {
+                                                await updateProjectMetadata(linkingProjectId, { linkedErdProjectId: erdProject.id });
+                                                setLinkingProjectId(null);
+                                            }}
+                                            className={`w-full p-4 rounded-xl flex items-center gap-4 hover:bg-blue-50 transition-colors group text-left ${projects.find(p => p.id === linkingProjectId)?.linkedErdProjectId === erdProject.id
+                                                ? 'bg-blue-50 ring-1 ring-blue-200'
+                                                : 'bg-white'
+                                                }`}
+                                        >
+                                            <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                                                <Database size={18} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-bold text-gray-900 truncate">{erdProject.name}</h4>
+                                                <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                                                    <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] uppercase font-bold tracking-wider">{erdProject.dbType}</span>
+                                                    <span>• {new Date(erdProject.updatedAt).toLocaleDateString()}</span>
+                                                </div>
+                                            </div>
+                                            {projects.find(p => p.id === linkingProjectId)?.linkedErdProjectId === erdProject.id && (
+                                                <div className="text-blue-500 font-bold text-xs">연결됨</div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-8 text-center text-gray-400">
+                                    <Database size={32} className="mx-auto mb-3 opacity-20" />
+                                    <p className="text-sm">연결 가능한 ERD 프로젝트가 없습니다.</p>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+                            <button
+                                onClick={async () => {
+                                    // Disconnect logic
+                                    await updateProjectMetadata(linkingProjectId, { linkedErdProjectId: undefined });
+                                    setLinkingProjectId(null);
+                                }}
+                                className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                                연결 해제
+                            </button>
                         </div>
                     </div>
                 </div>

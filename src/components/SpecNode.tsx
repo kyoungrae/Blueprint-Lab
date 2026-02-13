@@ -4,19 +4,33 @@ import type { Screen, ScreenSpecItem } from '../types/screenDesign';
 import { SCREEN_FIELD_TYPES, SCREEN_TYPES } from '../types/screenDesign';
 import { Plus, Trash2, Lock, Unlock, X, Monitor, ChevronDown, FileText, List } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useProjectStore } from '../store/projectStore';
+
+// DB Types Map
+const DB_TYPES: Record<string, string[]> = {
+    'MySQL': ['INT', 'VARCHAR', 'TEXT', 'DATETIME', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'JSON'],
+    'Oracle': ['NUMBER', 'VARCHAR2', 'CLOB', 'DATE', 'CHAR', 'BLOB', 'TIMESTAMP'],
+    'PostgreSQL': ['INTEGER', 'VARCHAR', 'TEXT', 'TIMESTAMP', 'BOOLEAN', 'JSONB', 'NUMERIC'],
+    'MariaDB': ['INT', 'VARCHAR', 'TEXT', 'DATETIME', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'JSON'],
+    'SQLite': ['INTEGER', 'TEXT', 'REAL', 'BLOB'],
+    'SQL Server': ['INT', 'VARCHAR', 'TEXT', 'DATETIME', 'BIT', 'FLOAT'],
+};
 
 // ── Spec Row (명세 항목 행) ────────────────────────────────────
 interface SpecRowProps {
     item: ScreenSpecItem;
     isLocked: boolean;
+    dataTypes?: string[] | readonly string[];
     onUpdate: (updates: Partial<ScreenSpecItem>) => void;
     onDelete: () => void;
 }
 
-const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, onUpdate, onDelete }) => {
+const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpdate, onDelete }) => {
     // 공통 셀 스타일
     const cellClass = `px-2 py-1.5 border-r border-gray-300 align-middle bg-white relative`;
     const inputClass = `w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-800' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'}`;
+
+    const types = dataTypes || SCREEN_FIELD_TYPES;
 
     return (
         <tr className="group/row border-b border-gray-300 last:border-b-0 hover:bg-blue-50/30 transition-colors">
@@ -51,7 +65,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, onUpdate, onDele
                         disabled={isLocked}
                         className={`w-full bg-transparent border-none outline-none text-[11px] p-1 appearance-none ${isLocked ? 'text-gray-600' : 'nodrag text-gray-900 cursor-pointer hover:bg-blue-50 rounded'}`}
                     >
-                        {SCREEN_FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        {types.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     {!isLocked && <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />}
                 </div>
@@ -187,6 +201,19 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const { screen } = data;
     const { updateScreen, deleteScreen } = useScreenDesignStore();
     const isLocked = screen.isLocked ?? true;
+
+    // Linked ERD Project Data
+    const { projects, currentProjectId } = useProjectStore();
+    const currentProject = projects.find(p => p.id === currentProjectId);
+    const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
+
+    // Determine Data Types based on DB Type
+    const dataTypes = React.useMemo(() => {
+        if (linkedErdProject?.dbType && DB_TYPES[linkedErdProject.dbType]) {
+            return DB_TYPES[linkedErdProject.dbType];
+        }
+        return SCREEN_FIELD_TYPES;
+    }, [linkedErdProject]);
 
     // Default Specs if empty
     const specs = screen.specs || [];
@@ -379,6 +406,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                     key={spec.id}
                                     item={spec}
                                     isLocked={isLocked}
+                                    dataTypes={dataTypes}
                                     onUpdate={(updates) => handleUpdateSpec(spec.id, updates)}
                                     onDelete={() => handleDeleteSpec(spec.id)}
                                 />

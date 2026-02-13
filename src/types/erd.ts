@@ -49,6 +49,7 @@ export interface Project {
     updatedAt: string;
     members: ProjectMember[];
     data: ERDState;
+    linkedErdProjectId?: string;
 }
 
 export type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE' | 'PROJECT_SET' | 'IMPORT';

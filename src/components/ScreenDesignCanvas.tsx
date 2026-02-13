@@ -226,7 +226,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             relatedTables: '',
             position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
             fields: [],
-            isLocked: false,
+            isLocked: true,
         };
         addScreen(newScreen);
     }, [screens, addScreen, currentProject, user]);
@@ -266,7 +266,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             fields: [],
             variant: 'SPEC',
             specs: [],
-            isLocked: false,
+            isLocked: true,
         };
         addScreen(newScreen);
     }, [screens, addScreen, currentProject, user]);

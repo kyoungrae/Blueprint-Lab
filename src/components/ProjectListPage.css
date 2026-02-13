@@ -1,0 +1,19 @@
+@keyframes flow {
+  from {
+    stroke-dashoffset: 200;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.flowing-line {
+  animation: flow 10s linear infinite;
+  stroke-linecap: round;
+  transition: opacity 0.3s ease;
+}
+
+.group:hover ~ svg .flowing-line {
+  opacity: 1;
+  stroke-width: 4;
+}

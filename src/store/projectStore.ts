@@ -13,6 +13,7 @@ interface ProjectStore {
     deleteProject: (id: string) => Promise<void>;
     setCurrentProject: (id: string | null) => void;
     updateProjectData: (id: string, data: any) => void;
+    updateProjectMetadata: (id: string, metadata: Partial<Project>) => Promise<void>;
     updateProjectMembers: (id: string, members: ProjectMember[]) => void;
     inviteMember: (projectId: string, email: string) => Promise<void>;
     joinWithCode: (code: string) => Promise<string>;
@@ -241,6 +242,34 @@ export const useProjectStore = create<ProjectStore>()(
                     }
                 } catch (error) {
                     console.error('Update project data error:', error);
+                }
+            },
+
+            updateProjectMetadata: async (id, metadata) => {
+                set((state) => ({
+                    projects: state.projects.map((p) =>
+                        p.id === id ? { ...p, ...metadata, updatedAt: new Date().toISOString() } : p
+                    ),
+                }));
+
+                const token = localStorage.getItem('auth-token');
+                if (!token || id.startsWith('local_')) return;
+
+                try {
+                    const response = await fetch(`${API_URL}/${id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(metadata),
+                    });
+
+                    if (!response.ok) {
+                        console.error('Failed to sync project metadata to server');
+                    }
+                } catch (error) {
+                    console.error('Update project metadata error:', error);
                 }
             },
 
