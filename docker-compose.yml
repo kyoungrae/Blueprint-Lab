@@ -1,0 +1,70 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: erd-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=erd-system
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: erd-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  # ERD Backend Service
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: erd-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/erd-system
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - FRONTEND_URL=http://host.containers.internal:8085 # 호스트 내부 주소 사용
+      - JWT_SECRET=production-secret-change-me
+    depends_on:
+      - mongodb
+      - redis
+    restart: unless-stopped
+
+  # ERD Frontend Service
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: erd-frontend
+    ports:
+      - "8085:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  # 개발용 MongoDB 관리 UI (선택사항)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: erd-mongo-express
+    ports:
+      - "8086:8081" # Container port 8081 is internal, host port changed to 8086
+    environment:
+      - ME_CONFIG_MONGODB_URL=mongodb://mongodb:27017/
+      - ME_CONFIG_BASICAUTH=false
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  redis_data:
