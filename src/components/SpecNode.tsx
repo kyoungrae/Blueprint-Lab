@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { Screen, ScreenSpecItem } from '../types/screenDesign';
 import { SCREEN_FIELD_TYPES, SCREEN_TYPES } from '../types/screenDesign';
-import { Plus, Trash2, Lock, Unlock, X, ChevronDown, FileText } from 'lucide-react';
+import { Plus, Trash2, Lock, Unlock, X, ChevronDown, GripVertical, FileText } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -22,21 +22,49 @@ const DB_TYPES: Record<string, string[]> = {
 interface SpecRowProps {
     item: ScreenSpecItem;
     isLocked: boolean;
-    dataTypes?: string[] | readonly string[];
+    htmlTypes: readonly string[];
+    dbTypes: string[];
     onUpdate: (updates: Partial<ScreenSpecItem>) => void;
     onBlur?: (updates: Partial<ScreenSpecItem>) => void;
     onDelete: () => void;
+    onDragStart: (e: React.DragEvent) => void;
+    onDragEnter: (e: React.DragEvent) => void;
+    onDragEnd: (e: React.DragEvent) => void;
+    isDragging: boolean;
 }
 
-const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpdate, onBlur, onDelete }) => {
+const SpecRow: React.FC<SpecRowProps> = memo(({
+    item, isLocked, htmlTypes, dbTypes, onUpdate, onBlur, onDelete,
+    onDragStart, onDragEnter, onDragEnd, isDragging
+}) => {
     // 공통 셀 스타일
     const cellClass = `px-2 py-1.5 border-r border-gray-200 align-middle bg-white relative`;
     const inputClass = `w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-800' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'}`;
 
-    const types = dataTypes || SCREEN_FIELD_TYPES;
-
     return (
-        <tr className="group/row border-b border-gray-200 last:border-b-0 hover:bg-blue-50/30 transition-colors">
+        <tr
+            draggable={!isLocked}
+            onDragStart={onDragStart}
+            onDragEnter={onDragEnter}
+            onDragEnd={onDragEnd}
+            onDragOver={(e) => e.preventDefault()}
+            className={`nodrag group/row border-b border-gray-200 last:border-b-0 transition-colors
+                ${isDragging ? 'opacity-40 bg-blue-100 scale-[0.99] border-2 border-blue-400' : 'hover:bg-blue-50/30'}`}
+        >
+            {/* 드래그 핸들 (좌측 고정) */}
+            {!isLocked && (
+                <td className="w-8 bg-gray-50/50 border-r border-gray-200 align-middle">
+                    <div className="flex items-center justify-center">
+                        <div
+                            className="cursor-grab active:cursor-grabbing p-1 text-gray-400 hover:text-blue-500 rounded transition-colors"
+                            title="드래그하여 순서 변경"
+                        >
+                            <GripVertical size={14} />
+                        </div>
+                    </div>
+                </td>
+            )}
+
             {/* 항목명(한글) */}
             <td className={cellClass}>
                 <input
@@ -50,7 +78,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     placeholder="항목명"
                 />
             </td>
-            {/* 컨트롤명(영문) */}
+            {/* 필드명(영문) */}
             <td className={cellClass}>
                 <input
                     type="text"
@@ -63,7 +91,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     placeholder="CONTROL_ID"
                 />
             </td>
-            {/* 항목타입 */}
+            {/* 항목타입 (HTML 속성) */}
             <td className={cellClass}>
                 <div className="relative w-full">
                     <select
@@ -74,25 +102,28 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                         disabled={isLocked}
                         className={`w-full bg-transparent border-none outline-none text-[11px] p-1 appearance-none ${isLocked ? 'text-gray-600' : 'nodrag text-gray-900 cursor-pointer hover:bg-blue-50 rounded'}`}
                     >
-                        {types.map(t => <option key={t} value={t}>{t}</option>)}
+                        {htmlTypes.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     {!isLocked && <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />}
                 </div>
             </td>
 
             {/* ── 항목정의 4개 컬럼 ── */}
-            {/* Format */}
+            {/* Format (DB 타입) */}
             <td className={cellClass}>
-                <input
-                    type="text"
-                    value={item.format}
-                    onChange={(e) => onUpdate({ format: e.target.value })}
-                    onBlur={(e) => onBlur?.({ format: e.target.value })}
-                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                    disabled={isLocked}
-                    className={`${inputClass} text-center`}
-                    placeholder="VARCHAR2"
-                />
+                <div className="relative w-full">
+                    <select
+                        value={item.format}
+                        onChange={(e) => onUpdate({ format: e.target.value })}
+                        onBlur={(e) => onBlur?.({ format: e.target.value })}
+                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                        disabled={isLocked}
+                        className={`w-full bg-transparent border-none outline-none text-[11px] p-1 appearance-none text-center ${isLocked ? 'text-gray-600' : 'nodrag text-gray-900 cursor-pointer hover:bg-blue-50 rounded'}`}
+                    >
+                        {dbTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {!isLocked && <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />}
+                </div>
             </td>
             {/* 자릿수 */}
             <td className={cellClass}>
@@ -148,22 +179,19 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                 />
             </td>
 
-            {/* 삭제 버튼 (테이블 밖 혹은 별도 컬럼) -> 여기서는 별도 컬럼 없이 hover시 오버레이? 
-               아니면 마지막 컬럼에 포함? 스크린샷엔 삭제 버튼이 없지만 기능상 필요함.
-               일단 비고 컬럼 우측에 아주 좁게 추가하거나, 비고 안에 버튼을 둠.
-               스크린샷에는 '비고'가 마지막임.
-               -> 편의상 비고 오른쪽에 아주 좁은 '삭제' 컬럼 추가하겠음.
-            */}
-            <td className="w-8 text-center align-middle bg-white border-l border-gray-200">
-                {!isLocked && (
+            {/* 삭제 버튼 (우측 고정) */}
+            {!isLocked && (
+                <td className="w-10 text-center align-middle bg-white border-l border-gray-200">
                     <button
-                        onClick={onDelete}
-                        className="nodrag p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover/row:opacity-100 transition-all"
+                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-all active:scale-90"
+                        title="삭제"
                     >
-                        <Trash2 size={12} />
+                        <Trash2 size={14} />
                     </button>
-                )}
-            </td>
+                </td>
+            )}
         </tr>
     );
 });
@@ -259,18 +287,19 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const currentProject = projects.find(p => p.id === currentProjectId);
     const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
 
-    // Determine Data Types based on DB Type
-    const dataTypes = React.useMemo(() => {
-        // Priority: 1. Linked ERD DB Type, 2. Current Project DB Type, 3. Default
+    // DB Types for Format column
+    const dbFieldTypes = React.useMemo(() => {
         const dbType = linkedErdProject?.dbType || currentProject?.dbType;
         if (dbType && DB_TYPES[dbType]) {
             return DB_TYPES[dbType];
         }
-        return SCREEN_FIELD_TYPES;
+        return DB_TYPES['MySQL']; // Default back to MySQL for DB types
     }, [linkedErdProject, currentProject]);
 
     // Default Specs if empty
     const specs = screen.specs || [];
+
+    const [draggedIndex, setDraggedIndex] = React.useState<number | null>(null);
 
     const update = (updates: Partial<Screen>) => {
         if (isLocked) return;
@@ -306,7 +335,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
             fieldName: '',
             controlName: '',
             dataType: 'INPUT',
-            format: 'VARCHAR2',
+            format: dbFieldTypes[0] || 'VARCHAR',
             length: '100',
             defaultValue: '',
             validation: '',
@@ -334,6 +363,27 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         const newSpecs = specs.filter(s => s.id !== specId);
         updateScreen(screen.id, { specs: newSpecs });
         syncUpdate({ specs: newSpecs });
+    };
+
+    const handleDragStart = (index: number) => {
+        setDraggedIndex(index);
+    };
+
+    const handleDragEnter = (index: number) => {
+        if (draggedIndex === null || draggedIndex === index) return;
+
+        const newSpecs = [...specs];
+        const dragItem = newSpecs[draggedIndex];
+        newSpecs.splice(draggedIndex, 1);
+        newSpecs.splice(index, 0, dragItem);
+
+        setDraggedIndex(index);
+        updateScreen(screen.id, { specs: newSpecs });
+    };
+
+    const handleDragEnd = () => {
+        setDraggedIndex(null);
+        syncUpdate({ specs });
     };
 
     // Label/Value cell styles (Shared with ScreenNode for consistency)
@@ -407,7 +457,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
                 {/* ── 2. Meta Info Table (Same as ScreenNode) ── */}
                 <div className="border-b border-gray-200">
-                    <table className="w-full border-collapse">
+                    <table className="nodrag w-full border-collapse">
                         <tbody>
                             {/* Row 1 */}
                             <tr className="border-b border-[#e2e8f0]">
@@ -455,17 +505,18 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                 {/* ── 3. Spec Table (Main Body) ── */}
                 <div className="flex-1 bg-white flex flex-col min-h-[400px]">
                     <div className="flex-1 overflow-auto">
-                        <table className="w-full border-collapse border border-gray-200 text-xs table-fixed">
+                        <table className="nodrag w-full border-collapse border border-gray-200 text-xs table-fixed">
                             {/* Table Header with sticky */}
-                            <thead className="sticky top-0 z-10">
+                            <thead className="nodrag sticky top-0 z-10">
                                 {/* Header Row 1 */}
                                 <tr className="bg-blue-50/80 border-b border-gray-200">
+                                    {!isLocked && <th rowSpan={2} className="w-8 bg-gray-50 border-r border-gray-200"></th>}
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 w-32">항목명(한글)</th>
-                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 w-32">컨트롤명(영문)</th>
+                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 w-32">필드명(영문)</th>
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 w-24">항목타입</th>
                                     <th colSpan={4} className="border-r border-gray-200 border-b px-2 py-1 font-bold text-gray-700 bg-blue-100/50">항목정의</th>
                                     <th rowSpan={2} className="px-2 py-1.5 font-bold text-gray-700 border-r border-gray-200 w-24">비고</th>
-                                    <th rowSpan={2} className="w-8 bg-gray-50 border-gray-200"></th>
+                                    {!isLocked && <th rowSpan={2} className="w-10 bg-gray-50 border-l border-gray-200"></th>}
                                 </tr>
                                 {/* Header Row 2 */}
                                 <tr className="bg-blue-50/80 border-b border-gray-200">
@@ -476,20 +527,25 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {specs.map(spec => (
+                                {specs.map((spec, idx) => (
                                     <SpecRow
                                         key={spec.id}
                                         item={spec}
                                         isLocked={isLocked}
-                                        dataTypes={dataTypes}
+                                        htmlTypes={SCREEN_FIELD_TYPES}
+                                        dbTypes={dbFieldTypes}
                                         onUpdate={(updates) => handleUpdateSpec(spec.id, updates)}
                                         onBlur={(updates) => handleSyncSpec(spec.id, updates)}
                                         onDelete={() => handleDeleteSpec(spec.id)}
+                                        onDragStart={() => handleDragStart(idx)}
+                                        onDragEnter={() => handleDragEnter(idx)}
+                                        onDragEnd={handleDragEnd}
+                                        isDragging={draggedIndex === idx}
                                     />
                                 ))}
                                 {specs.length === 0 && (
                                     <tr>
-                                        <td colSpan={9} className="py-12 text-center text-gray-300 italic">
+                                        <td colSpan={isLocked ? 8 : 10} className="py-12 text-center text-gray-300 italic">
                                             기능 명세 항목을 추가하세요.
                                         </td>
                                     </tr>
@@ -517,7 +573,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
             {/* Connection Handles (Outside overflow-hidden wrapper) */}
             <ScreenHandles />
-        </div>
+        </div >
     );
 };
 

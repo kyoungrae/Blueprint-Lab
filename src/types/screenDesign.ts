@@ -4,7 +4,7 @@
 export interface ScreenSpecItem {
     id: string;
     fieldName: string;      // 항목명(한글)
-    controlName: string;    // 컨트롤명(영문)
+    controlName: string;    // 필드명(영문)
     dataType: string;       // 항목타입
 
     // 항목정의
@@ -62,7 +62,34 @@ export interface Screen {
     imageHeight?: number;
     tablePanelHeight?: number;
     functionPanelHeight?: number;
+    contentPanelHeight?: number;
     isLocked?: boolean;
+    contentMode?: 'IMAGE' | 'DRAW'; // UI 콘텐츠 모드 (이미지 업로드 vs 직접 그리기)
+    drawElements?: DrawElement[];   // 직접 그리기 영역의 요소들
+}
+
+/** 직접 그리기 요소 타입 */
+export interface DrawElement {
+    id: string;
+    type: 'rect' | 'circle' | 'text' | 'image';
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fill?: string;
+    stroke?: string;
+    strokeWidth?: number;
+    text?: string;
+    fontSize?: number;
+    fontWeight?: string;
+    color?: string;
+    imageUrl?: string;
+    opacity?: number;
+    fillOpacity?: number;
+    strokeOpacity?: number;
+    textAlign?: 'left' | 'center' | 'right';
+    verticalAlign?: 'top' | 'middle' | 'bottom';
+    zIndex: number;
 }
 
 /** 화면 간의 흐름/연결 (Flow/Connection) */
@@ -89,13 +116,14 @@ export const SCREEN_TYPES = [
 /** 화면 필드 유형 목록 */
 export const SCREEN_FIELD_TYPES = [
     'INPUT',       // 텍스트 입력
-    'PASSWORD',    // 비밀번호 입력
-    'TEXTAREA',    // 텍스트 영역
+    'TEXT',        // 일반 텍스트
     'SELECT',      // 드롭다운 선택
+    'TEXTAREA',    // 텍스트 영역
+    'PASSWORD',    // 비밀번호 입력
     'CHECKBOX',    // 체크박스
     'RADIO',       // 라디오 버튼
     'BUTTON',      // 버튼
-    'LABEL',       // 레이블/텍스트
+    'LABEL',       // 레이블
     'TABLE',       // 테이블/그리드
     'IMAGE',       // 이미지
     'DATE',        // 날짜 선택

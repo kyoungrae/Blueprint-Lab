@@ -299,6 +299,69 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const onConnect = useCallback((params: any) => {
         if (params.source === params.target) return;
 
+        // Check node types to determine default label
+        const sourceScreen = screens.find(s => s.id === params.source);
+        const targetScreen = screens.find(s => s.id === params.target);
+
+        const isSpecConnection = sourceScreen?.variant === 'SPEC' || targetScreen?.variant === 'SPEC';
+        const defaultLabel = isSpecConnection ? '명세서 연결' : '페이징';
+
+        // ── Auto-populate specs from related tables (Screen -> Spec) ──
+        if (isSpecConnection) {
+            const uiScreen = sourceScreen?.variant !== 'SPEC' ? sourceScreen : targetScreen;
+            const specScreen = sourceScreen?.variant === 'SPEC' ? sourceScreen : targetScreen;
+
+            if (uiScreen && specScreen && uiScreen.variant !== 'SPEC' && specScreen.variant === 'SPEC') {
+                const relatedTablesText = uiScreen.relatedTables || '';
+                const tableNames = relatedTablesText.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.startsWith('•'))
+                    .map(line => line.substring(1).trim());
+
+                const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
+
+                if (tableNames.length > 0 && linkedErdProject?.data?.entities) {
+                    const existingSpecs = specScreen.specs || [];
+                    const existingControlNames = new Set(existingSpecs.map(s => s.controlName));
+                    const newSpecs: any[] = [];
+
+                    tableNames.forEach(tableName => {
+                        const entity = linkedErdProject.data.entities.find(e => e.name === tableName);
+                        if (entity) {
+                            entity.attributes.forEach(attr => {
+                                if (!existingControlNames.has(attr.name)) {
+                                    newSpecs.push({
+                                        id: `spec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                        fieldName: attr.comment || attr.name,
+                                        controlName: attr.name,
+                                        dataType: 'INPUT',
+                                        format: attr.type || '',
+                                        length: attr.length || '',
+                                        defaultValue: attr.defaultVal || '',
+                                        validation: '',
+                                        memo: '',
+                                    });
+                                    existingControlNames.add(attr.name);
+                                }
+                            });
+                        }
+                    });
+
+                    if (newSpecs.length > 0) {
+                        const updatedSpecs = [...existingSpecs, ...newSpecs];
+                        updateScreen(specScreen.id, { specs: updatedSpecs });
+                        sendOperation({
+                            type: 'SCREEN_UPDATE',
+                            targetId: specScreen.id,
+                            userId: user?.id || 'anonymous',
+                            userName: user?.name || 'Anonymous',
+                            payload: { specs: updatedSpecs }
+                        });
+                    }
+                }
+            }
+        }
+
         // Check if a flow already exists between these two nodes
         const existingFlow = flows.find(f =>
             f.source === params.source && f.target === params.target
@@ -309,6 +372,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
             updateFlow(existingFlow.id, {
                 sourceHandle: params.sourceHandle || undefined,
                 targetHandle: params.targetHandle || undefined,
+                // Also update label if it was '페이징' and now it's a spec connection
+                ...(isSpecConnection && existingFlow.label === '페이징' ? { label: '명세서 연결' } : {})
             });
 
             sendOperation({
@@ -319,6 +384,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 payload: {
                     sourceHandle: params.sourceHandle || undefined,
                     targetHandle: params.targetHandle || undefined,
+                    ...(isSpecConnection && existingFlow.label === '페이징' ? { label: '명세서 연결' } : {})
                 }
             });
             return;
@@ -331,7 +397,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             target: params.target!,
             sourceHandle: params.sourceHandle || undefined,
             targetHandle: params.targetHandle || undefined,
-            label: '페이징',
+            label: defaultLabel,
         };
         addFlow(newFlow);
 
@@ -342,7 +408,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             userName: user?.name || 'Anonymous',
             payload: newFlow as any
         });
-    }, [addFlow, updateFlow, flows, sendOperation, user]);
+    }, [addFlow, updateFlow, updateScreen, flows, screens, sendOperation, user, projects, currentProject]);
 
     const onEdgeUpdateStart = useCallback((_: any, edge: RFEdge) => {
         setReconnectingEdgeId(edge.id);
