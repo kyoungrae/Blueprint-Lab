@@ -51,6 +51,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
         },
         pingTimeout: 60000,
         pingInterval: 25000,
+        maxHttpBufferSize: 1e7, // 10MB
     });
 
     io.on('connection', (socket: Socket) => {
@@ -129,22 +130,26 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                         state = {
                             entities: project.currentSnapshot.entities || [],
                             relationships: project.currentSnapshot.relationships || [],
+                            screens: project.screenSnapshot?.screens || [],
+                            flows: project.screenSnapshot?.flows || [],
                             version: project.currentSnapshot.version || 0,
                         };
                         await projectStateManager.initializeFromDB(
                             projectId,
                             state.entities,
                             state.relationships,
-                            state.version
+                            state.version,
+                            state.screens,
+                            state.flows
                         );
                     } else {
                         // Project not found in DB
-                        state = { entities: [], relationships: [], version: 0 };
+                        state = { entities: [], relationships: [], screens: [], flows: [], version: 0 };
                     }
                 } else {
                     // Invalid ObjectId (e.g. temporary ID 'proj_...'), treat as new empty project
                     console.log(`ℹ️ Project ID ${projectId} is not a valid ObjectId (likely temporary), initializing empty state.`);
-                    state = { entities: [], relationships: [], version: 0 };
+                    state = { entities: [], relationships: [], screens: [], flows: [], version: 0 };
                 }
             }
 
@@ -214,7 +219,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 // Get current state
                 let state = await projectStateManager.getState(projectId);
                 if (!state) {
-                    state = { entities: [], relationships: [], version: 0 };
+                    state = { entities: [], relationships: [], screens: [], flows: [], version: 0 };
                 }
 
                 // Apply operation
@@ -225,7 +230,9 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     projectId,
                     newState.entities,
                     newState.relationships,
-                    newState.version
+                    newState.version,
+                    newState.screens || [],
+                    newState.flows || []
                 );
 
                 // Broadcast to all other clients in the project
@@ -245,11 +252,13 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                         const payload = operation.payload as any;
                         let details = payload.historyLog?.details || `Operation ${operation.type} performed`;
                         let targetName = payload.historyLog?.targetName || operation.targetId;
-                        let targetType: 'ENTITY' | 'RELATIONSHIP' | 'PROJECT' = 'PROJECT';
+                        let targetType: 'ENTITY' | 'RELATIONSHIP' | 'PROJECT' | 'SCREEN' | 'FLOW' = 'PROJECT';
 
                         if (operation.type.startsWith('ENTITY_')) targetType = 'ENTITY';
                         else if (operation.type.startsWith('RELATIONSHIP_')) targetType = 'RELATIONSHIP';
                         else if (operation.type.startsWith('ATTRIBUTE_')) targetType = 'ENTITY';
+                        else if (operation.type.startsWith('SCREEN_')) targetType = 'SCREEN';
+                        else if (operation.type.startsWith('FLOW_')) targetType = 'FLOW';
 
                         // Specific handling for common operations to make them look nice if historyLog is missing
                         if (!payload.historyLog) {
@@ -405,6 +414,12 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
                 version: stateToSave.version,
                 entities: stateToSave.entities,
                 relationships: stateToSave.relationships,
+                savedAt: new Date(),
+            },
+            screenSnapshot: {
+                version: stateToSave.version,
+                screens: stateToSave.screens || [],
+                flows: stateToSave.flows || [],
                 savedAt: new Date(),
             },
             updatedAt: new Date(),

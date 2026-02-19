@@ -40,6 +40,70 @@ export interface IProjectMember {
     joinedAt: Date;
 }
 
+// Screen Field Interface
+export interface IScreenField {
+    id: string;
+    no: number;
+    name: string;
+    fieldType: string;
+    description?: string;
+}
+
+// Screen Spec Item Interface
+export interface IScreenSpecItem {
+    id: string;
+    fieldName: string;
+    controlName: string;
+    dataType: string;
+    format: string;
+    length: string;
+    defaultValue: string;
+    validation: string;
+    memo: string;
+}
+
+// Screen Interface
+export interface IScreen {
+    id: string;
+    systemName: string;
+    screenId: string;
+    name: string;
+    author: string;
+    createdDate: string;
+    screenType: string;
+    page: string;
+    screenDescription: string;
+    imageUrl?: string;
+    initialSettings: string;
+    functionDetails: string;
+    relatedTables: string;
+    fields: IScreenField[];
+    variant?: 'UI' | 'SPEC';
+    specs?: IScreenSpecItem[];
+    position: { x: number; y: number };
+    imageWidth?: number;
+    imageHeight?: number;
+    isLocked?: boolean;
+}
+
+// Screen Flow Interface
+export interface IScreenFlow {
+    id: string;
+    source: string;
+    target: string;
+    sourceHandle?: string;
+    targetHandle?: string;
+    label?: string;
+}
+
+// Screen Design Snapshot Interface
+export interface IScreenSnapshot {
+    version: number;
+    screens: IScreen[];
+    flows: IScreenFlow[];
+    savedAt: Date;
+}
+
 // ERD Snapshot Interface
 export interface IERDSnapshot {
     version: number;
@@ -58,6 +122,7 @@ export interface IProject extends Document {
     currentSnapshot: IERDSnapshot;
     createdAt: Date;
     updatedAt: Date;
+    screenSnapshot?: IScreenSnapshot;
 }
 
 const AttributeSchema = new Schema<IAttribute>({
@@ -99,6 +164,68 @@ const ProjectMemberSchema = new Schema<IProjectMember>({
     joinedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
+const ScreenFieldSchema = new Schema<IScreenField>({
+    id: { type: String, required: true },
+    no: { type: Number, required: true },
+    name: { type: String, required: true },
+    fieldType: { type: String, required: true },
+    description: { type: String },
+}, { _id: false });
+
+const ScreenSpecItemSchema = new Schema<IScreenSpecItem>({
+    id: { type: String, required: true },
+    fieldName: { type: String, default: '' },
+    controlName: { type: String, default: '' },
+    dataType: { type: String, default: '' },
+    format: { type: String, default: '' },
+    length: { type: String, default: '' },
+    defaultValue: { type: String, default: '' },
+    validation: { type: String, default: '' },
+    memo: { type: String, default: '' },
+}, { _id: false });
+
+const ScreenSchema = new Schema<IScreen>({
+    id: { type: String, required: true },
+    systemName: { type: String, default: '' },
+    screenId: { type: String, default: '' },
+    name: { type: String, default: '' },
+    author: { type: String, default: '' },
+    createdDate: { type: String, default: '' },
+    screenType: { type: String, default: '' },
+    page: { type: String, default: '' },
+    screenDescription: { type: String, default: '' },
+    imageUrl: { type: String },
+    initialSettings: { type: String, default: '' },
+    functionDetails: { type: String, default: '' },
+    relatedTables: { type: String, default: '' },
+    fields: [ScreenFieldSchema],
+    variant: { type: String, enum: ['UI', 'SPEC'], default: 'UI' },
+    specs: [ScreenSpecItemSchema],
+    position: {
+        x: { type: Number, required: true },
+        y: { type: Number, required: true },
+    },
+    imageWidth: { type: Number },
+    imageHeight: { type: Number },
+    isLocked: { type: Boolean, default: false },
+}, { _id: false });
+
+const ScreenFlowSchema = new Schema<IScreenFlow>({
+    id: { type: String, required: true },
+    source: { type: String, required: true },
+    target: { type: String, required: true },
+    sourceHandle: { type: String },
+    targetHandle: { type: String },
+    label: { type: String },
+}, { _id: false });
+
+const ScreenSnapshotSchema = new Schema<IScreenSnapshot>({
+    version: { type: Number, default: 1 },
+    screens: [ScreenSchema],
+    flows: [ScreenFlowSchema],
+    savedAt: { type: Date, default: Date.now },
+}, { _id: false });
+
 const ERDSnapshotSchema = new Schema<IERDSnapshot>({
     version: { type: Number, default: 1 },
     entities: [EntitySchema],
@@ -113,6 +240,7 @@ const ProjectSchema = new Schema<IProject>({
     description: { type: String },
     members: [ProjectMemberSchema],
     currentSnapshot: { type: ERDSnapshotSchema, default: { version: 1, entities: [], relationships: [], savedAt: new Date() } },
+    screenSnapshot: { type: ScreenSnapshotSchema, default: { version: 1, screens: [], flows: [], savedAt: new Date() } },
 }, {
     timestamps: true, // createdAt, updatedAt 자동 생성
 });

@@ -5,6 +5,8 @@ import { SCREEN_FIELD_TYPES, SCREEN_TYPES } from '../types/screenDesign';
 import { Plus, Trash2, Lock, Unlock, Image as ImageIcon, Upload, X, Monitor, ChevronDown, Check, FileText, Database } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
+import { useSyncStore } from '../store/syncStore';
+import { useAuthStore } from '../store/authStore';
 
 // ── Field Row (기능 항목 행) ────────────────────────────────────
 interface FieldRowProps {
@@ -91,6 +93,7 @@ const FieldRow: React.FC<FieldRowProps> = memo(({ field, isLocked, onUpdate, onD
 interface EditableCellProps {
     value: string;
     onChange: (val: string) => void;
+    onBlur?: (val: string) => void;
     isLocked: boolean;
     placeholder?: string;
     className?: string;
@@ -99,13 +102,14 @@ interface EditableCellProps {
     mono?: boolean;
 }
 
-const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, isLocked, placeholder, className = '', isSelect, options, mono }) => {
+const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlur, isLocked, placeholder, className = '', isSelect, options, mono }) => {
     if (isSelect && options) {
         return (
             <div className="relative w-full h-full flex items-center">
                 <select
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
+                    onBlur={(e) => onBlur?.(e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`w-full h-full bg-transparent border-none outline-none text-xs p-1 appearance-none ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 cursor-pointer hover:bg-blue-50 transition-colors'} ${className}`}
@@ -121,6 +125,7 @@ const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, isLoc
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            onBlur={(e) => onBlur?.(e.target.value)}
             onMouseDown={(e) => !isLocked && e.stopPropagation()}
             disabled={isLocked}
             className={`w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'} ${mono ? 'font-mono' : ''} ${className}`}
@@ -138,6 +143,19 @@ interface ScreenNodeData {
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
     const { screen } = data;
     const { updateScreen, deleteScreen } = useScreenDesignStore();
+    const { sendOperation } = useSyncStore();
+    const { user } = useAuthStore();
+
+    const syncUpdate = (updates: Partial<Screen>) => {
+        sendOperation({
+            type: 'SCREEN_UPDATE',
+            targetId: screen.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: updates
+        });
+    };
+
     const isLocked = screen.isLocked ?? true;
     const [isDragOver, setIsDragOver] = React.useState(false);
 
@@ -202,7 +220,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             if (file.size > 5 * 1024 * 1024) return alert('이미지 크기는 5MB 이하여야 합니다.');
             const reader = new FileReader();
             reader.onloadend = () => {
-                update({ imageUrl: reader.result as string });
+                const result = reader.result as string;
+                update({ imageUrl: result });
+                syncUpdate({ imageUrl: result });
             };
             reader.readAsDataURL(file);
         }
@@ -229,7 +249,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             if (file.size > 5 * 1024 * 1024) return alert('이미지 크기는 5MB 이하여야 합니다.');
             const reader = new FileReader();
             reader.onloadend = () => {
-                update({ imageUrl: reader.result as string });
+                const result = reader.result as string;
+                update({ imageUrl: result });
+                syncUpdate({ imageUrl: result });
             };
             reader.readAsDataURL(file);
         }
@@ -323,10 +345,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 if (dir.includes('s')) newH = h + dy;
                 if (dir.includes('n')) newH = h - dy;
 
-                newW = Math.max(50, Math.min(maxW, newW));
                 newH = Math.max(50, Math.min(maxH, newH));
 
                 update({ imageWidth: newW, imageHeight: newH });
+                syncUpdate({ imageWidth: newW, imageHeight: newH });
             }
             resizeStartRef.current = null;
             window.removeEventListener('mousemove', handleWindowMouseMove);
@@ -371,6 +393,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     type="text"
                     value={screen.name}
                     onChange={(e) => update({ name: e.target.value })}
+                    onBlur={(e) => syncUpdate({ name: e.target.value })}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
@@ -409,15 +432,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         <tr className="border-b border-[#e2e8f0]">
                             <td className={labelCell} style={{ width: 100 }}>시스템명</td>
                             <td className={valueCell} style={{ width: 180 }}>
-                                <EditableCell value={screen.systemName} onChange={(v) => update({ systemName: v })} isLocked={isLocked} placeholder="시스템명" className="text-center font-bold" />
+                                <EditableCell value={screen.systemName} onChange={(v) => update({ systemName: v })} onBlur={(v) => syncUpdate({ systemName: v })} isLocked={isLocked} placeholder="시스템명" className="text-center font-bold" />
                             </td>
                             <td className={labelCell} style={{ width: 80 }}>작성자</td>
                             <td className={valueCell} style={{ width: 140 }}>
-                                <EditableCell value={screen.author} onChange={(v) => update({ author: v })} isLocked={isLocked} placeholder="작성자" className="text-center" />
+                                <EditableCell value={screen.author} onChange={(v) => update({ author: v })} onBlur={(v) => syncUpdate({ author: v })} isLocked={isLocked} placeholder="작성자" className="text-center" />
                             </td>
                             <td className={labelCell} style={{ width: 90 }}>작성일자</td>
                             <td className={`${valueCell} border-r-0`}>
-                                <EditableCell value={screen.createdDate} onChange={(v) => update({ createdDate: v })} isLocked={isLocked} placeholder="YYYY-MM-DD" mono className="text-center" />
+                                <EditableCell value={screen.createdDate} onChange={(v) => update({ createdDate: v })} onBlur={(v) => syncUpdate({ createdDate: v })} isLocked={isLocked} placeholder="YYYY-MM-DD" mono className="text-center" />
                             </td>
                         </tr>
 
@@ -425,15 +448,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         <tr className="border-b border-[#e2e8f0]">
                             <td className={labelCell}>화면ID</td>
                             <td className={valueCell}>
-                                <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c]" />
+                                <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} onBlur={(v) => syncUpdate({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c]" />
                             </td>
                             <td className={labelCell}>화면유형</td>
                             <td className={valueCell}>
-                                <EditableCell value={screen.screenType} onChange={(v) => update({ screenType: v })} isLocked={isLocked} isSelect options={SCREEN_TYPES} className="text-center h-full" />
+                                <EditableCell value={screen.screenType} onChange={(v) => update({ screenType: v })} onBlur={(v) => syncUpdate({ screenType: v })} isLocked={isLocked} isSelect options={SCREEN_TYPES} className="text-center h-full" />
                             </td>
                             <td className={labelCell}>페이지</td>
                             <td className={`${valueCell} border-r-0`}>
-                                <EditableCell value={screen.page} onChange={(v) => update({ page: v })} isLocked={isLocked} placeholder="1/1" mono className="text-center" />
+                                <EditableCell value={screen.page} onChange={(v) => update({ page: v })} onBlur={(v) => syncUpdate({ page: v })} isLocked={isLocked} placeholder="1/1" mono className="text-center" />
                             </td>
                         </tr>
 
@@ -441,7 +464,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         <tr>
                             <td className={labelCell}>화면설명</td>
                             <td className={`${valueCell} border-r-0`} colSpan={5}>
-                                <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" />
+                                <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} onBlur={(v) => syncUpdate({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" />
                             </td>
                         </tr>
                     </tbody>
@@ -496,7 +519,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                if (window.confirm('이미지를 삭제하시겠습니까?')) update({ imageUrl: undefined });
+                                                if (window.confirm('이미지를 삭제하시겠습니까?')) {
+                                                    update({ imageUrl: undefined });
+                                                    syncUpdate({ imageUrl: undefined });
+                                                }
                                             }}
                                             onMouseDown={(e) => e.stopPropagation()}
                                             className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 hover:opacity-100 transition-all shadow-sm backdrop-blur-sm z-30"
@@ -536,6 +562,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             <textarea
                                 value={screen.initialSettings}
                                 onChange={(e) => update({ initialSettings: e.target.value })}
+                                onBlur={(e) => syncUpdate({ initialSettings: e.target.value })}
                                 onMouseDown={(e) => !isLocked && e.stopPropagation()}
                                 disabled={isLocked}
                                 className={`w-full h-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}
@@ -554,6 +581,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             <textarea
                                 value={screen.functionDetails}
                                 onChange={(e) => update({ functionDetails: e.target.value })}
+                                onBlur={(e) => syncUpdate({ functionDetails: e.target.value })}
                                 onMouseDown={(e) => !isLocked && e.stopPropagation()}
                                 disabled={isLocked}
                                 className={`w-full h-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}
@@ -587,9 +615,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         const current = screen.relatedTables || '';
                                                         const toAdd = `• ${table}`;
                                                         if (!current.includes(table)) {
-                                                            update({
-                                                                relatedTables: current ? `${current}\n${toAdd}` : toAdd
-                                                            });
+                                                            const newValue = current ? `${current}\n${toAdd}` : toAdd;
+                                                            update({ relatedTables: newValue });
+                                                            syncUpdate({ relatedTables: newValue });
                                                         }
                                                     }}
                                                     onMouseDown={(e) => e.stopPropagation()}
@@ -608,6 +636,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             <textarea
                                 value={screen.relatedTables}
                                 onChange={(e) => update({ relatedTables: e.target.value })}
+                                onBlur={(e) => syncUpdate({ relatedTables: e.target.value })}
                                 onMouseDown={(e) => !isLocked && e.stopPropagation()}
                                 disabled={isLocked}
                                 className={`w-full h-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none font-mono scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}

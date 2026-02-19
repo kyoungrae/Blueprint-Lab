@@ -12,7 +12,15 @@ export type OperationType =
     | 'RELATIONSHIP_CREATE'
     | 'RELATIONSHIP_UPDATE'
     | 'RELATIONSHIP_DELETE'
-    | 'ERD_IMPORT';
+    | 'ERD_IMPORT'
+    | 'SCREEN_CREATE'
+    | 'SCREEN_UPDATE'
+    | 'SCREEN_DELETE'
+    | 'SCREEN_MOVE'
+    | 'FLOW_CREATE'
+    | 'FLOW_UPDATE'
+    | 'FLOW_DELETE'
+    | 'SCREEN_IMPORT';
 
 // History Document Interface
 export interface IHistory extends Document {
@@ -22,7 +30,7 @@ export interface IHistory extends Document {
     userPicture?: string;
 
     operationType: OperationType;
-    targetType: 'ENTITY' | 'RELATIONSHIP' | 'PROJECT';
+    targetType: 'ENTITY' | 'RELATIONSHIP' | 'PROJECT' | 'SCREEN' | 'FLOW';
     targetId: string;
     targetName: string;
 
@@ -49,11 +57,14 @@ const HistorySchema = new Schema<IHistory>({
             'ENTITY_CREATE', 'ENTITY_UPDATE', 'ENTITY_DELETE', 'ENTITY_MOVE',
             'ATTRIBUTE_ADD', 'ATTRIBUTE_UPDATE', 'ATTRIBUTE_DELETE',
             'RELATIONSHIP_CREATE', 'RELATIONSHIP_UPDATE', 'RELATIONSHIP_DELETE',
-            'ERD_IMPORT'
+            'ERD_IMPORT',
+            'SCREEN_CREATE', 'SCREEN_UPDATE', 'SCREEN_DELETE', 'SCREEN_MOVE',
+            'FLOW_CREATE', 'FLOW_UPDATE', 'FLOW_DELETE',
+            'SCREEN_IMPORT'
         ],
         required: true
     },
-    targetType: { type: String, enum: ['ENTITY', 'RELATIONSHIP', 'PROJECT'], required: true },
+    targetType: { type: String, enum: ['ENTITY', 'RELATIONSHIP', 'PROJECT', 'SCREEN', 'FLOW'], required: true },
     targetId: { type: String, required: true },
     targetName: { type: String, required: true },
 

@@ -14,6 +14,7 @@ import ReactFlow, {
     ReactFlowProvider,
     PanOnScrollMode,
     useReactFlow,
+    reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -30,6 +31,7 @@ import {
 } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboard';
 import { toPng } from 'html-to-image';
+import { useSyncStore } from '../store/syncStore';
 
 const nodeTypes: NodeTypes = {
     screen: ScreenNode,
@@ -38,8 +40,9 @@ const nodeTypes: NodeTypes = {
 
 // ── Canvas Content ──────────────────────────────────────────
 const ScreenDesignCanvasContent: React.FC = () => {
-    const { screens, flows, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, importData } = useScreenDesignStore();
+    const { screens, flows, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, deleteFlow, importData } = useScreenDesignStore();
     const { user, logout } = useAuthStore();
+    const { sendOperation, isSynced } = useSyncStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const { projects, currentProjectId, setCurrentProject, updateProjectData } = useProjectStore();
@@ -48,7 +51,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
     const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
-    const [reconnectingSide, setReconnectingSide] = useState<'source' | 'target' | null>(null);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const { getNodes } = useReactFlow();
 
@@ -92,6 +94,40 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [screens, setNodes]);
 
+    // Listen for initial Sync from Server
+    useEffect(() => {
+        const handleSync = (e: CustomEvent) => {
+            const { screens, flows } = e.detail;
+            // Only import if we have data to avoid overwriting local empty state with empty server state if not careful
+            if ((screens && screens.length > 0) || (flows && flows.length > 0)) {
+                // Check if we are already working on something?
+                // For now, server state wins on join
+                importData({ screens: screens || [], flows: flows || [] });
+            }
+        };
+        window.addEventListener('erd:state_sync', handleSync as EventListener);
+
+        // Listen for Remote Operations
+        const handleRemoteOp = (e: CustomEvent) => {
+            const op = e.detail;
+            if (op.type.startsWith('SCREEN_')) {
+                if (op.type === 'SCREEN_CREATE') addScreen(op.payload as any);
+                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateScreen(op.targetId, op.payload as any);
+                else if (op.type === 'SCREEN_DELETE') deleteScreen(op.targetId);
+            } else if (op.type.startsWith('FLOW_')) {
+                if (op.type === 'FLOW_CREATE') addFlow(op.payload as any);
+                else if (op.type === 'FLOW_UPDATE') updateFlow(op.targetId, op.payload as any);
+                else if (op.type === 'FLOW_DELETE') deleteFlow(op.targetId);
+            }
+        };
+        window.addEventListener('erd:remote_operation', handleRemoteOp as EventListener);
+
+        return () => {
+            window.removeEventListener('erd:state_sync', handleSync as EventListener);
+            window.removeEventListener('erd:remote_operation', handleRemoteOp as EventListener);
+        };
+    }, [importData, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, deleteFlow]);
+
     // Sync flows → ReactFlow edges
     useEffect(() => {
         const flowEdges: Edge[] = flows.map((flow) => {
@@ -113,7 +149,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 type: 'smoothstep',
                 label: flow.label || '',
                 animated: true,
+                reconnectable: true,
                 hidden: flow.id === reconnectingEdgeId,
+                interactionWidth: 40,
                 style: {
                     stroke: color,
                     strokeWidth: 3,
@@ -156,6 +194,14 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     if (window.confirm(confirmMsg)) {
                         selectedNodes.forEach(node => {
                             deleteScreen(node.id);
+
+                            sendOperation({
+                                type: 'SCREEN_DELETE',
+                                targetId: node.id,
+                                userId: user?.id || 'anonymous',
+                                userName: user?.name || 'Anonymous',
+                                payload: {}
+                            });
                         });
                     }
                 }
@@ -171,17 +217,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
         const { flows } = useScreenDesignStore.getState();
 
-        // If reconnecting, check against the stable side
-        if (reconnectingEdgeId && reconnectingSide) {
-            const existingFlow = flows.find(f => f.id === reconnectingEdgeId);
-            if (existingFlow) {
-                const stableNodeId = reconnectingSide === 'source' ? existingFlow.target : existingFlow.source;
-                // connection.target is where we are currently hovering
-                if (stableNodeId === connection.target) return false;
-            }
-        }
-
-        // Prevent duplicate connections unless we are reconnecting an existing line
+        // Prevent duplicate connections (allow reconnecting the same edge)
         const isDuplicate = flows.some(f =>
             f.id !== reconnectingEdgeId && (
                 (f.source === connection.source && f.target === connection.target) ||
@@ -190,41 +226,43 @@ const ScreenDesignCanvasContent: React.FC = () => {
         );
 
         return !isDuplicate;
-    }, [reconnectingEdgeId, reconnectingSide]);
+    }, [reconnectingEdgeId]);
 
-    const onConnectStart = useCallback((_event: any, params: any) => {
-        const { flows } = useScreenDesignStore.getState();
-        const existingFlow = flows.find(f =>
-            (f.source === params.nodeId && f.sourceHandle === params.handleId) ||
-            (f.target === params.nodeId && f.targetHandle === params.handleId)
-        );
-        if (existingFlow) {
-            setReconnectingEdgeId(existingFlow.id);
-            setReconnectingSide(existingFlow.source === params.nodeId && existingFlow.sourceHandle === params.handleId ? 'source' : 'target');
-        }
+    // Official React Flow v11 Edge Update (Reconnect) API
+    const onEdgeUpdateStart = useCallback((_: any, edge: Edge) => {
+        setReconnectingEdgeId(edge.id);
+    }, []);
+
+    const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: Connection) => {
+        const { updateFlow } = useScreenDesignStore.getState();
+        const updates = {
+            source: newConnection.source || oldEdge.source,
+            target: newConnection.target || oldEdge.target,
+            sourceHandle: newConnection.sourceHandle || undefined,
+            targetHandle: newConnection.targetHandle || undefined,
+        };
+        updateFlow(oldEdge.id, updates);
+        setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
+
+        sendOperation({
+            type: 'FLOW_UPDATE',
+            targetId: oldEdge.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: updates as unknown as Record<string, unknown>
+        });
+
+        setReconnectingEdgeId(null);
+    }, [setEdges, updateFlow, sendOperation, user]);
+
+    const onEdgeUpdateEnd = useCallback((_: any, _edge: Edge) => {
+        setReconnectingEdgeId(null);
     }, []);
 
     const onConnect = useCallback(
         (connection: Connection) => {
             if (connection.source && connection.target && connection.source !== connection.target) {
-                const { screens, updateScreen, addFlow, updateFlow, flows } = useScreenDesignStore.getState();
-
-                if (reconnectingEdgeId && reconnectingSide) {
-                    const existingFlow = flows.find(f => f.id === reconnectingEdgeId);
-                    if (existingFlow) {
-                        const updates = reconnectingSide === 'source' ? {
-                            source: connection.target,
-                            sourceHandle: connection.targetHandle || undefined,
-                        } : {
-                            target: connection.target,
-                            targetHandle: connection.targetHandle || undefined,
-                        };
-                        updateFlow(reconnectingEdgeId, updates);
-                    }
-                    setReconnectingEdgeId(null);
-                    setReconnectingSide(null);
-                    return;
-                }
+                const { screens, updateScreen, addFlow } = useScreenDesignStore.getState();
 
                 const sourceScreen = screens.find(s => s.id === connection.source);
                 const targetScreen = screens.find(s => s.id === connection.target);
@@ -301,6 +339,14 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     };
                     addFlow(newFlow);
 
+                    sendOperation({
+                        type: 'FLOW_CREATE',
+                        targetId: newFlow.id,
+                        userId: user?.id || 'anonymous',
+                        userName: user?.name || 'Anonymous',
+                        payload: newFlow as unknown as Record<string, unknown>
+                    });
+
                     // 2. Data Sync (Source -> Target Spec)
                     if (isTargetSpec && (isSourceUI || isSourceSpec)) {
                         const sourceDesc = isSourceUI ? '화면' : '기능 명세를';
@@ -367,7 +413,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
             isLocked: true,
         };
         addScreen(newScreen);
-    }, [screens, addScreen, currentProject, user]);
+
+        sendOperation({
+            type: 'SCREEN_CREATE',
+            targetId: newScreen.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: newScreen as unknown as Record<string, unknown>
+        });
+    }, [screens, addScreen, currentProject, user, sendOperation]);
 
     const handleAddSpec = useCallback(() => {
         const baseName = '새 기능명세';
@@ -407,11 +461,27 @@ const ScreenDesignCanvasContent: React.FC = () => {
             isLocked: true,
         };
         addScreen(newScreen);
-    }, [screens, addScreen, currentProject, user]);
+
+        sendOperation({
+            type: 'SCREEN_CREATE',
+            targetId: newScreen.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: newScreen as unknown as Record<string, unknown>
+        });
+    }, [screens, addScreen, currentProject, user, sendOperation]);
 
     const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
         updateScreen(node.id, { position: node.position });
-    }, [updateScreen]);
+
+        sendOperation({
+            type: 'SCREEN_MOVE',
+            targetId: node.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: { position: node.position }
+        });
+    }, [updateScreen, sendOperation, user]);
 
     // Image Export using html-to-image
     const handleExportImage = useCallback((_selectedIds: string[]) => {
@@ -569,16 +639,14 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
-                    onConnectStart={onConnectStart}
-                    onConnectEnd={() => {
-                        setTimeout(() => {
-                            setReconnectingEdgeId(null);
-                            setReconnectingSide(null);
-                        }, 100);
-                    }}
+                    onEdgeUpdate={onEdgeUpdate}
+                    onEdgeUpdateStart={onEdgeUpdateStart}
+                    onEdgeUpdateEnd={onEdgeUpdateEnd}
+                    onNodeDragStop={onNodeDragStop}
+                    edgeUpdaterRadius={20}
                     isValidConnection={isValidConnection}
                     onEdgeDoubleClick={onEdgeDoubleClick}
-                    onNodeDragStop={onNodeDragStop}
+
                     nodeTypes={nodeTypes}
                     connectionMode={ConnectionMode.Loose}
                     panOnScroll={true}

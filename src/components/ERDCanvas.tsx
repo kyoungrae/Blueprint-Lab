@@ -15,6 +15,7 @@ import ReactFlow, {
     PanOnScrollMode,
     useReactFlow,
     useViewport,
+    reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -90,7 +91,6 @@ const ERDCanvasContent: React.FC = () => {
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
-    const [reconnectingSide, setReconnectingSide] = useState<'source' | 'target' | null>(null);
     const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
@@ -314,15 +314,6 @@ const ERDCanvasContent: React.FC = () => {
     const isValidConnection = useCallback((connection: Connection) => {
         if (connection.source === connection.target) return false;
 
-        // If reconnecting, check against the stable side
-        if (reconnectingEdgeId && reconnectingSide) {
-            const existingRel = relationships.find(r => r.id === reconnectingEdgeId);
-            if (existingRel) {
-                const stableNodeId = reconnectingSide === 'source' ? existingRel.target : existingRel.source;
-                if (stableNodeId === connection.target) return false;
-            }
-        }
-
         // Prevent duplicate connections unless we are reconnecting an existing line
         const isDuplicate = relationships.some(rel =>
             rel.id !== reconnectingEdgeId && (
@@ -332,46 +323,22 @@ const ERDCanvasContent: React.FC = () => {
         );
 
         return !isDuplicate;
-    }, [relationships, reconnectingEdgeId, reconnectingSide]);
+    }, [relationships, reconnectingEdgeId]);
 
-    const onConnectStart = useCallback((_event: any, params: any) => {
-        // Find if any relationship is already using this handle
-        const existingRel = relationships.find(rel =>
-            (rel.source === params.nodeId && rel.sourceHandle === params.handleId) ||
-            (rel.target === params.nodeId && rel.targetHandle === params.handleId)
-        );
-        if (existingRel) {
-            setReconnectingEdgeId(existingRel.id);
-            setReconnectingSide(existingRel.source === params.nodeId && existingRel.sourceHandle === params.handleId ? 'source' : 'target');
-        }
-    }, [relationships]);
+    const onConnectStart = useCallback((_event: any, _params: any) => {
+        // Optional: Add logging or other start/drag logic if needed
+    }, []);
 
     const onConnect = useCallback(
         (connection: Connection) => {
             if (connection.source && connection.target && connection.source !== connection.target) {
-                if (reconnectingEdgeId && reconnectingSide) {
-                    const existingRel = relationships.find(r => r.id === reconnectingEdgeId);
-                    if (existingRel) {
-                        const updates = reconnectingSide === 'source' ? {
-                            source: connection.target,
-                            sourceHandle: connection.targetHandle || undefined,
-                        } : {
-                            target: connection.target,
-                            targetHandle: connection.targetHandle || undefined,
-                        };
-                        updateRelationship(reconnectingEdgeId, updates, user);
+                // Check if relationship exists (bi-directional check)
+                const exists = relationships.some(r =>
+                    (r.source === connection.source && r.target === connection.target) ||
+                    (r.source === connection.target && r.target === connection.source)
+                );
 
-                        sendOperation({
-                            type: 'RELATIONSHIP_UPDATE',
-                            targetId: reconnectingEdgeId,
-                            userId: user?.id || 'anonymous',
-                            userName: user?.name || 'Anonymous',
-                            payload: updates as unknown as Record<string, unknown>
-                        });
-                    }
-                    setReconnectingEdgeId(null);
-                    setReconnectingSide(null);
-                } else {
+                if (!exists) {
                     const newRelationship = {
                         id: `rel_${Date.now()}`,
                         source: connection.source,
@@ -393,22 +360,21 @@ const ERDCanvasContent: React.FC = () => {
             }
             setReconnectingEdgeId(null);
         },
-        [reconnectingEdgeId, addRelationship, updateRelationship, user, sendOperation]
+        [reconnectingEdgeId, addRelationship, relationships, user, sendOperation] // removed updateRelationship from deps as it's not used
     );
 
     const onConnectEnd = useCallback(() => {
         // Delay clearing to allow onConnect to catch it
         setTimeout(() => {
             setReconnectingEdgeId(null);
-            setReconnectingSide(null);
         }, 100);
     }, []);
 
-    const onReconnectStart = useCallback((_: any, edge: Edge) => {
+    const onEdgeUpdateStart = useCallback((_: any, edge: Edge) => {
         setReconnectingEdgeId(edge.id);
     }, []);
 
-    const onReconnect = useCallback(
+    const onEdgeUpdate = useCallback(
         (oldEdge: Edge, newConnection: Connection) => {
             const updates = {
                 source: newConnection.source || oldEdge.source,
@@ -417,7 +383,7 @@ const ERDCanvasContent: React.FC = () => {
                 targetHandle: newConnection.targetHandle || undefined,
             };
 
-            updateRelationship(oldEdge.id, updates, user); // 4. user 객체 전달
+            updateRelationship(oldEdge.id, updates, user);
 
             sendOperation({
                 type: 'RELATIONSHIP_UPDATE',
@@ -427,12 +393,14 @@ const ERDCanvasContent: React.FC = () => {
                 payload: updates as unknown as Record<string, unknown>
             });
 
+            setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
             setReconnectingEdgeId(null);
         },
-        [updateRelationship, user, sendOperation]
+        [updateRelationship, user, sendOperation, setEdges]
     );
 
-    const onReconnectEnd = useCallback(() => {
+    const onEdgeUpdateEnd = useCallback((_: any, _edge: Edge) => {
+        // If edge was dragged but not connected to a new node, snap back
         setReconnectingEdgeId(null);
     }, []);
 
@@ -941,9 +909,10 @@ const ERDCanvasContent: React.FC = () => {
                     onConnect={onConnect}
                     onConnectStart={onConnectStart}
                     onConnectEnd={onConnectEnd}
-                    onReconnect={onReconnect}
-                    onReconnectStart={onReconnectStart}
-                    onReconnectEnd={onReconnectEnd}
+                    onEdgeUpdate={onEdgeUpdate}
+                    onEdgeUpdateStart={onEdgeUpdateStart}
+                    onEdgeUpdateEnd={onEdgeUpdateEnd}
+                    edgeUpdaterRadius={20}
                     isValidConnection={isValidConnection}
                     onEdgeDoubleClick={onEdgeDoubleClick}
                     onNodeDragStop={onNodeDragStop}

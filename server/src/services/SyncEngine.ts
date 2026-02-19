@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { OperationType } from '../models';
-import type { IEntity, IRelationship } from '../models';
+import type { IEntity, IRelationship, IScreen, IScreenFlow } from '../models';
 
 // CRDT Operation Interface
 export interface CRDTOperation {
@@ -25,6 +25,8 @@ export interface CRDTOperation {
 export interface ERDState {
     entities: IEntity[];
     relationships: IRelationship[];
+    screens?: IScreen[];
+    flows?: IScreenFlow[];
     version: number;
 }
 
@@ -156,6 +158,54 @@ export class SyncEngine {
                         }
                     });
                     newState.relationships = currentRelationships;
+                }
+                break;
+
+            case 'SCREEN_CREATE':
+                newState.screens = [...(state.screens || []), operation.payload as unknown as IScreen];
+                break;
+
+            case 'SCREEN_UPDATE':
+            case 'SCREEN_MOVE':
+                newState.screens = (state.screens || []).map(s =>
+                    s.id === operation.targetId
+                        ? { ...s, ...operation.payload }
+                        : s
+                );
+                break;
+
+            case 'SCREEN_DELETE':
+                newState.screens = (state.screens || []).filter(s => s.id !== operation.targetId);
+                // Also remove connected flows
+                newState.flows = (state.flows || []).filter(
+                    f => f.source !== operation.targetId && f.target !== operation.targetId
+                );
+                break;
+
+            case 'FLOW_CREATE':
+                newState.flows = [...(state.flows || []), operation.payload as unknown as IScreenFlow];
+                break;
+
+            case 'FLOW_UPDATE':
+                newState.flows = (state.flows || []).map(f =>
+                    f.id === operation.targetId
+                        ? { ...f, ...operation.payload }
+                        : f
+                );
+                break;
+
+            case 'FLOW_DELETE':
+                newState.flows = (state.flows || []).filter(f => f.id !== operation.targetId);
+                break;
+
+            case 'SCREEN_IMPORT':
+                const screenPayload = operation.payload as any;
+                // Simple overwrite for now, or merge logic like ERD
+                if (screenPayload.screens) {
+                    newState.screens = screenPayload.screens;
+                }
+                if (screenPayload.flows) {
+                    newState.flows = screenPayload.flows;
                 }
                 break;
         }

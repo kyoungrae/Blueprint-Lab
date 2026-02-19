@@ -1,5 +1,5 @@
 import { redis } from '../config/redis';
-import type { IEntity, IRelationship } from '../models';
+import type { IEntity, IRelationship, IScreen, IScreenFlow } from '../models';
 
 interface CursorInfo {
     x: number;
@@ -230,13 +230,17 @@ export class ProjectStateManager {
         projectId: string,
         entities: IEntity[],
         relationships: IRelationship[],
-        version: number
+        version: number,
+        screens: IScreen[] = [],
+        flows: IScreenFlow[] = []
     ): Promise<void> {
         const stateKey = `project:${projectId}:state`;
 
         await redis.hmset(stateKey, {
             entities: JSON.stringify(entities),
             relationships: JSON.stringify(relationships),
+            screens: JSON.stringify(screens),
+            flows: JSON.stringify(flows),
             version: version.toString(),
             lastUpdatedAt: Date.now().toString(),
         });
@@ -248,6 +252,8 @@ export class ProjectStateManager {
     async getState(projectId: string): Promise<{
         entities: IEntity[];
         relationships: IRelationship[];
+        screens: IScreen[];
+        flows: IScreenFlow[];
         version: number;
     } | null> {
         const stateKey = `project:${projectId}:state`;
@@ -260,6 +266,8 @@ export class ProjectStateManager {
         return {
             entities: JSON.parse(data.entities),
             relationships: JSON.parse(data.relationships),
+            screens: data.screens ? JSON.parse(data.screens) : [],
+            flows: data.flows ? JSON.parse(data.flows) : [],
             version: parseInt(data.version || '0', 10),
         };
     }
@@ -271,13 +279,15 @@ export class ProjectStateManager {
         projectId: string,
         entities: IEntity[],
         relationships: IRelationship[],
-        version: number
+        version: number,
+        screens: IScreen[] = [],
+        flows: IScreenFlow[] = []
     ): Promise<void> {
         const existing = await this.getState(projectId);
 
         // Only initialize if Redis doesn't have state
         if (!existing) {
-            await this.saveState(projectId, entities, relationships, version);
+            await this.saveState(projectId, entities, relationships, version, screens, flows);
         }
     }
     /**
