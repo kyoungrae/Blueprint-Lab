@@ -117,8 +117,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 label: flow.label,
                 type: 'screenEdge',
                 animated: true,
-                hidden: flow.id === reconnectingEdgeId, // Hide while being "moved"
-                data: { color: '#2c3e7c' },
+                hidden: flow.id === reconnectingEdgeId,
+                data: {
+                    color: flow.label === '팝업' ? '#f59e0b' : // Yellow
+                        (flow.label === '명세서' || flow.label === '명세서 연결') ? '#10b981' : // Green
+                            '#2c3e7c' // Blue (default/paging)
+                },
             }))
         );
     }, [flows, setEdges, reconnectingEdgeId]);
