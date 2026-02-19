@@ -666,23 +666,26 @@ const ProjectListPage: React.FC = () => {
                                     className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white outline-none transition-all font-medium"
                                 />
                             </div>
-                            {selectedProjectType === 'ERD' && (
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">데이터베이스 엔진</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {(['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'] as DBType[]).map((type) => (
-                                            <button
-                                                key={type}
-                                                type="button"
-                                                onClick={() => setNewProjectDbType(type)}
-                                                className={`py-3 px-4 rounded-2xl border-2 transition-all font-bold text-sm ${newProjectDbType === type ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-100 bg-gray-50 text-gray-400'}`}
-                                            >
-                                                {type}
-                                            </button>
-                                        ))}
-                                    </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">
+                                    데이터베이스 엔진
+                                    {selectedProjectType === 'SCREEN_DESIGN' && <span className="text-[10px] text-gray-400 font-normal ml-2">(화면 명세서의 기본 데이터 타입을 결정합니다)</span>}
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {(['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'] as DBType[]).map((type) => (
+                                        <button
+                                            key={type}
+                                            type="button"
+                                            onClick={() => setNewProjectDbType(type)}
+                                            className={`py-3 px-4 rounded-2xl border-2 transition-all font-bold text-sm ${newProjectDbType === type
+                                                ? (selectedProjectType === 'SCREEN_DESIGN' ? 'border-violet-500 bg-violet-50 text-violet-600' : 'border-blue-500 bg-blue-50 text-blue-600')
+                                                : 'border-gray-100 bg-gray-50 text-gray-400'}`}
+                                        >
+                                            {type}
+                                        </button>
+                                    ))}
                                 </div>
-                            )}
+                            </div>
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">설명 (선택사항)</label>
                                 <textarea

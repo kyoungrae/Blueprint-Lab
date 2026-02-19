@@ -60,6 +60,8 @@ export interface Screen {
     position: { x: number; y: number };
     imageWidth?: number;
     imageHeight?: number;
+    tablePanelHeight?: number;
+    functionPanelHeight?: number;
     isLocked?: boolean;
 }
 

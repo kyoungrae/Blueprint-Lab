@@ -15,7 +15,7 @@ const DB_TYPES: Record<string, string[]> = {
     'PostgreSQL': ['INTEGER', 'VARCHAR', 'TEXT', 'TIMESTAMP', 'BOOLEAN', 'JSONB', 'NUMERIC'],
     'MariaDB': ['INT', 'VARCHAR', 'TEXT', 'DATETIME', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'JSON'],
     'SQLite': ['INTEGER', 'TEXT', 'REAL', 'BLOB'],
-    'SQL Server': ['INT', 'VARCHAR', 'TEXT', 'DATETIME', 'BIT', 'FLOAT'],
+    'MSSQL': ['INT', 'VARCHAR', 'TEXT', 'DATETIME', 'BIT', 'FLOAT'],
 };
 
 // ── Spec Row (명세 항목 행) ────────────────────────────────────
@@ -261,11 +261,13 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
     // Determine Data Types based on DB Type
     const dataTypes = React.useMemo(() => {
-        if (linkedErdProject?.dbType && DB_TYPES[linkedErdProject.dbType]) {
-            return DB_TYPES[linkedErdProject.dbType];
+        // Priority: 1. Linked ERD DB Type, 2. Current Project DB Type, 3. Default
+        const dbType = linkedErdProject?.dbType || currentProject?.dbType;
+        if (dbType && DB_TYPES[dbType]) {
+            return DB_TYPES[dbType];
         }
         return SCREEN_FIELD_TYPES;
-    }, [linkedErdProject]);
+    }, [linkedErdProject, currentProject]);
 
     // Default Specs if empty
     const specs = screen.specs || [];
