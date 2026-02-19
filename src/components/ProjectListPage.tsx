@@ -15,8 +15,6 @@ const ProjectListPage: React.FC = () => {
     const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
     const [editingMembersProject, setEditingMembersProject] = useState<string | null>(null);
     const [linkingProjectId, setLinkingProjectId] = useState<string | null>(null);
-    const [selectedConnection, setSelectedConnection] = useState<{ fromId: string, toId: string } | null>(null);
-
 
     // Form States
     const [selectedProjectType, setSelectedProjectType] = useState<ProjectType>('ERD');
@@ -186,36 +184,6 @@ const ProjectListPage: React.FC = () => {
             setNewProjectMembers(newProjectMembers.filter(m => m.id !== id));
         }
     };
-
-    // Handle connection deletion
-    useEffect(() => {
-        const handleKeyDown = async (e: KeyboardEvent) => {
-            if ((e.key === 'Backspace' || e.key === 'Delete') && selectedConnection) {
-                // Ignore if user is typing in an input
-                if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
-
-                const fromProject = projects.find(p => p.id === selectedConnection.fromId);
-                const toProject = projects.find(p => p.id === selectedConnection.toId);
-
-                if (window.confirm(`'${fromProject?.name}'와 '${toProject?.name}' 사이의 연결을 삭제하시겠습니까?`)) {
-                    try {
-                        setIsLoading(true);
-                        await updateProjectMetadata(selectedConnection.fromId, { linkedErdProjectId: undefined });
-                        setSelectedConnection(null);
-                        await fetchProjects();
-                    } catch (err: any) {
-                        alert(err.message || '연결 삭제에 실패했습니다.');
-                    } finally {
-                        setIsLoading(false);
-                    }
-                }
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedConnection, projects, updateProjectMetadata, fetchProjects]);
-
 
     const handleUpdateMembers = async () => {
         if (editingMembersProject) {
@@ -414,8 +382,6 @@ const ProjectListPage: React.FC = () => {
 
                                 if (!from || !to) return null;
 
-                                const isSelected = selectedConnection?.fromId === conn.fromId && selectedConnection?.toId === conn.toId;
-
                                 const startX = from.x + from.w;
                                 const startY = from.y + from.h / 2;
                                 const endX = to.x;
@@ -435,13 +401,9 @@ const ProjectListPage: React.FC = () => {
                                         key={`${conn.fromId}-${conn.toId}-${idx}`}
                                         d={pathData}
                                         fill="none"
-                                        stroke={isSelected ? "#ef4444" : "#3b82f6"}
-                                        strokeWidth={isSelected ? "5" : "2.5"}
-                                        className={`flowing-line cursor-pointer pointer-events-auto transition-all ${isSelected ? 'selected-line' : ''}`}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedConnection(isSelected ? null : conn);
-                                        }}
+                                        stroke="#3b82f6"
+                                        strokeWidth="2.5"
+                                        className="flowing-line"
                                     />
                                 );
                             })}
@@ -456,13 +418,9 @@ const ProjectListPage: React.FC = () => {
                                 <div
                                     key={project.id}
                                     data-project-id={project.id}
-                                    onClick={() => {
-                                        setCurrentProject(project.id);
-                                        setSelectedConnection(null); // Clear selected line on card click
-                                    }}
+                                    onClick={() => setCurrentProject(project.id)}
                                     className="group project-card bg-white rounded-[28px] p-6 border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-1 transition-all cursor-pointer flex flex-col h-full ring-0 hover:ring-2 ring-blue-500/20 z-10"
                                 >
-
 
                                     <div className="flex items-start justify-between mb-6">
                                         <div className="flex items-center gap-2">

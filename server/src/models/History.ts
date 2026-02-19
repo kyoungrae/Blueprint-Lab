@@ -20,6 +20,9 @@ export type OperationType =
     | 'FLOW_CREATE'
     | 'FLOW_UPDATE'
     | 'FLOW_DELETE'
+    | 'SCREEN_FLOW_CREATE'
+    | 'SCREEN_FLOW_UPDATE'
+    | 'SCREEN_FLOW_DELETE'
     | 'SCREEN_IMPORT';
 
 // History Document Interface
@@ -60,6 +63,7 @@ const HistorySchema = new Schema<IHistory>({
             'ERD_IMPORT',
             'SCREEN_CREATE', 'SCREEN_UPDATE', 'SCREEN_DELETE', 'SCREEN_MOVE',
             'FLOW_CREATE', 'FLOW_UPDATE', 'FLOW_DELETE',
+            'SCREEN_FLOW_CREATE', 'SCREEN_FLOW_UPDATE', 'SCREEN_FLOW_DELETE',
             'SCREEN_IMPORT'
         ],
         required: true

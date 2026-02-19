@@ -38,7 +38,6 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
     deleteScreen: (id) => {
         set((state) => ({
             screens: state.screens.filter((s) => s.id !== id),
-            // Also remove any flows connected to this screen
             flows: state.flows.filter((f) => f.source !== id && f.target !== id),
         }));
     },

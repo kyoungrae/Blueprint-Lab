@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import ReactFlow, {
-    type Node,
-    type Edge,
-    type Connection,
+    type Node as RFNode,
+    type Edge as RFEdge,
     useNodesState,
     useEdgesState,
     Controls,
@@ -20,12 +19,13 @@ import 'reactflow/dist/style.css';
 
 import ScreenNode from './ScreenNode';
 import SpecNode from './SpecNode';
+import ScreenEdge from './ScreenEdge';
 import ScreenSidebar from './ScreenSidebar';
 import ScreenExportModal from './ScreenExportModal';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
-import type { Screen, ScreenFlow } from '../types/screenDesign';
+import type { Screen } from '../types/screenDesign';
 import {
     Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft
 } from 'lucide-react';
@@ -38,26 +38,38 @@ const nodeTypes: NodeTypes = {
     spec: SpecNode,
 };
 
+const edgeTypes = {
+    screenEdge: ScreenEdge,
+};
+
 // ── Canvas Content ──────────────────────────────────────────
 const ScreenDesignCanvasContent: React.FC = () => {
-    const { screens, flows, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, deleteFlow, importData } = useScreenDesignStore();
+    const {
+        screens, flows,
+        addScreen, updateScreen, deleteScreen,
+        addFlow, updateFlow, deleteFlow,
+        importData
+    } = useScreenDesignStore();
+
     const { user, logout } = useAuthStore();
-    const { sendOperation, isSynced } = useSyncStore();
+    const { sendOperation } = useSyncStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
+    const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
+
     const { projects, currentProjectId, setCurrentProject, updateProjectData } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-    const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
-    const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const { getNodes } = useReactFlow();
 
     // Initial load for local projects
     useEffect(() => {
         if (currentProjectId?.startsWith('local_') && currentProject) {
-            const data = (currentProject as any).screenData;
+            // Priority: currentProject.data contains screens/flows directly 
+            const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
             if (data) {
                 importData(data);
             }
@@ -69,8 +81,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
         if (currentProjectId?.startsWith('local_')) {
             const timer = setTimeout(() => {
                 updateProjectData(currentProjectId, {
-                    entities: [],
-                    relationships: [],
+                    screens,
+                    flows,
                 });
             }, 1000);
             return () => clearTimeout(timer);
@@ -94,14 +106,29 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [screens, setNodes]);
 
+    useEffect(() => {
+        setEdges(
+            flows.map((flow) => ({
+                id: flow.id,
+                source: flow.source,
+                target: flow.target,
+                sourceHandle: flow.sourceHandle,
+                targetHandle: flow.targetHandle,
+                label: flow.label,
+                type: 'screenEdge',
+                animated: true,
+                hidden: flow.id === reconnectingEdgeId, // Hide while being "moved"
+                data: { color: '#2c3e7c' },
+            }))
+        );
+    }, [flows, setEdges, reconnectingEdgeId]);
+
     // Listen for initial Sync from Server
     useEffect(() => {
         const handleSync = (e: CustomEvent) => {
             const { screens, flows } = e.detail;
-            // Only import if we have data to avoid overwriting local empty state with empty server state if not careful
-            if ((screens && screens.length > 0) || (flows && flows.length > 0)) {
-                // Check if we are already working on something?
-                // For now, server state wins on join
+            // Always import if data is provided, even if empty
+            if (screens || flows) {
                 importData({ screens: screens || [], flows: flows || [] });
             }
         };
@@ -114,10 +141,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 if (op.type === 'SCREEN_CREATE') addScreen(op.payload as any);
                 else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateScreen(op.targetId, op.payload as any);
                 else if (op.type === 'SCREEN_DELETE') deleteScreen(op.targetId);
-            } else if (op.type.startsWith('FLOW_')) {
-                if (op.type === 'FLOW_CREATE') addFlow(op.payload as any);
-                else if (op.type === 'FLOW_UPDATE') updateFlow(op.targetId, op.payload as any);
-                else if (op.type === 'FLOW_DELETE') deleteFlow(op.targetId);
+                else if (op.type === 'SCREEN_FLOW_CREATE') addFlow(op.payload as any);
+                else if (op.type === 'SCREEN_FLOW_UPDATE') updateFlow(op.targetId, op.payload as any);
+                else if (op.type === 'SCREEN_FLOW_DELETE') deleteFlow(op.targetId);
             }
         };
         window.addEventListener('erd:remote_operation', handleRemoteOp as EventListener);
@@ -126,83 +152,53 @@ const ScreenDesignCanvasContent: React.FC = () => {
             window.removeEventListener('erd:state_sync', handleSync as EventListener);
             window.removeEventListener('erd:remote_operation', handleRemoteOp as EventListener);
         };
-    }, [importData, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, deleteFlow]);
+    }, [importData, addScreen, updateScreen, deleteScreen]);
 
-    // Sync flows → ReactFlow edges
-    useEffect(() => {
-        const flowEdges: Edge[] = flows.map((flow) => {
-            let color = '#64748b'; // Default: Slate
-            if (flow.label === '페이징') {
-                color = '#8b5cf6'; // Violet
-            } else if (flow.label === '팝업') {
-                color = '#3b82f6'; // Blue
-            } else if (flow.label && flow.label.length > 0) {
-                color = '#10b981'; // Emerald
-            }
-
-            return {
-                id: flow.id,
-                source: flow.source,
-                target: flow.target,
-                sourceHandle: flow.sourceHandle,
-                targetHandle: flow.targetHandle,
-                type: 'smoothstep',
-                label: flow.label || '',
-                animated: true,
-                reconnectable: true,
-                hidden: flow.id === reconnectingEdgeId,
-                interactionWidth: 40,
-                style: {
-                    stroke: color,
-                    strokeWidth: 3,
-                },
-                labelBgStyle: {
-                    fill: '#fff',
-                    fillOpacity: 1,
-                    stroke: `${color}44`,
-                    strokeWidth: 1.5,
-                    rx: 8,
-                    ry: 8,
-                },
-                labelStyle: {
-                    fill: color,
-                    fontWeight: 900,
-                    fontSize: 11,
-                    fontFamily: 'Inter, sans-serif'
-                },
-                labelBgPadding: [10, 5],
-                labelBgBorderRadius: 8,
-            };
-        });
-        setEdges(flowEdges);
-    }, [flows, setEdges, reconnectingEdgeId]);
-
-    // Keyboard shortcuts: Delete selected screens
+    // Keyboard shortcuts: Delete selected screens or flows
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'Delete') {
+            if (e.key === 'Backspace' || e.key === 'Delete') {
                 const target = e.target as HTMLElement;
                 if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
                 const selectedNodes = getNodes().filter(n => n.selected && (n.type === 'screen' || n.type === 'spec'));
-                if (selectedNodes.length > 0) {
+                const selectedEdges = edges.filter(e => e.selected);
+
+                if (selectedNodes.length > 0 || selectedEdges.length > 0) {
                     e.preventDefault();
-                    const confirmMsg = selectedNodes.length === 1
-                        ? `'${selectedNodes[0].data.screen.name}' 화면을 삭제하시겠습니까?`
-                        : `${selectedNodes.length}개의 화면을 삭제하시겠습니까?`;
+                    if (selectedNodes.length > 0) {
+                        const confirmMsg = selectedNodes.length === 1
+                            ? `'${selectedNodes[0].data.screen.name}' 화면을 삭제하시겠습니까?`
+                            : `${selectedNodes.length}개의 화면을 삭제하시겠습니까?`;
 
-                    if (window.confirm(confirmMsg)) {
-                        selectedNodes.forEach(node => {
-                            deleteScreen(node.id);
+                        if (window.confirm(confirmMsg)) {
+                            selectedNodes.forEach(node => {
+                                deleteScreen(node.id);
 
-                            sendOperation({
-                                type: 'SCREEN_DELETE',
-                                targetId: node.id,
-                                userId: user?.id || 'anonymous',
-                                userName: user?.name || 'Anonymous',
-                                payload: {}
+                                sendOperation({
+                                    type: 'SCREEN_DELETE',
+                                    targetId: node.id,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: {}
+                                });
                             });
-                        });
+                        }
+                    }
+
+                    if (selectedEdges.length > 0) {
+                        if (window.confirm(`${selectedEdges.length}개의 연결을 삭제하시겠습니까?`)) {
+                            selectedEdges.forEach(edge => {
+                                deleteFlow(edge.id);
+                                sendOperation({
+                                    type: 'SCREEN_FLOW_DELETE',
+                                    targetId: edge.id,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: {}
+                                });
+                            });
+                        }
                     }
                 }
             }
@@ -210,169 +206,111 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [deleteScreen, getNodes]);
+    }, [deleteScreen, deleteFlow, getNodes, edges, user, sendOperation]);
 
-    const isValidConnection = useCallback((connection: Connection) => {
-        if (connection.source === connection.target) return false;
+    const onConnect = useCallback((params: any) => {
+        if (params.source === params.target) return;
 
-        const { flows } = useScreenDesignStore.getState();
-
-        // Prevent duplicate connections (allow reconnecting the same edge)
-        const isDuplicate = flows.some(f =>
-            f.id !== reconnectingEdgeId && (
-                (f.source === connection.source && f.target === connection.target) ||
-                (f.source === connection.target && f.target === connection.source)
-            )
+        // Check if a flow already exists between these two nodes
+        const existingFlow = flows.find(f =>
+            f.source === params.source && f.target === params.target
         );
 
-        return !isDuplicate;
-    }, [reconnectingEdgeId]);
+        if (existingFlow) {
+            // MOVE/UPDATE existing connection instead of creating duplicate
+            updateFlow(existingFlow.id, {
+                sourceHandle: params.sourceHandle || undefined,
+                targetHandle: params.targetHandle || undefined,
+            });
 
-    // Official React Flow v11 Edge Update (Reconnect) API
-    const onEdgeUpdateStart = useCallback((_: any, edge: Edge) => {
+            sendOperation({
+                type: 'SCREEN_FLOW_UPDATE',
+                targetId: existingFlow.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: {
+                    sourceHandle: params.sourceHandle || undefined,
+                    targetHandle: params.targetHandle || undefined,
+                }
+            });
+            return;
+        }
+
+        const flowId = `flow_${Date.now()}`;
+        const newFlow = {
+            id: flowId,
+            source: params.source!,
+            target: params.target!,
+            sourceHandle: params.sourceHandle || undefined,
+            targetHandle: params.targetHandle || undefined,
+            label: '페이징',
+        };
+        addFlow(newFlow);
+
+        sendOperation({
+            type: 'SCREEN_FLOW_CREATE',
+            targetId: flowId,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: newFlow as any
+        });
+    }, [addFlow, updateFlow, flows, sendOperation, user]);
+
+    const onEdgeUpdateStart = useCallback((_: any, edge: RFEdge) => {
         setReconnectingEdgeId(edge.id);
     }, []);
 
-    const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: Connection) => {
-        const { updateFlow } = useScreenDesignStore.getState();
-        const updates = {
-            source: newConnection.source || oldEdge.source,
-            target: newConnection.target || oldEdge.target,
+    const onEdgeUpdate = useCallback((oldEdge: RFEdge, newConnection: any) => {
+        if (newConnection.source === newConnection.target) {
+            setReconnectingEdgeId(null);
+            return;
+        }
+
+        // Only block if we are trying to reconnect to a node pair that ALREADY has a DIFFERENT line
+        const anotherExists = flows.some(f =>
+            f.id !== oldEdge.id &&
+            f.source === newConnection.source &&
+            f.target === newConnection.target
+        );
+        if (anotherExists) {
+            setReconnectingEdgeId(null);
+            return;
+        }
+
+        setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+        updateFlow(oldEdge.id, {
+            source: newConnection.source!,
+            target: newConnection.target!,
             sourceHandle: newConnection.sourceHandle || undefined,
             targetHandle: newConnection.targetHandle || undefined,
-        };
-        updateFlow(oldEdge.id, updates);
-        setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
+        });
 
         sendOperation({
-            type: 'FLOW_UPDATE',
+            type: 'SCREEN_FLOW_UPDATE',
             targetId: oldEdge.id,
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
-            payload: updates as unknown as Record<string, unknown>
+            payload: {
+                source: newConnection.source!,
+                target: newConnection.target!,
+                sourceHandle: newConnection.sourceHandle || undefined,
+                targetHandle: newConnection.targetHandle || undefined,
+            }
         });
-
         setReconnectingEdgeId(null);
-    }, [setEdges, updateFlow, sendOperation, user]);
+    }, [updateFlow, setEdges, flows, sendOperation, user]);
 
-    const onEdgeUpdateEnd = useCallback((_: any, _edge: Edge) => {
+    const onEdgeUpdateEnd = useCallback((_: any, _edge: RFEdge) => {
         setReconnectingEdgeId(null);
     }, []);
 
-    const onConnect = useCallback(
-        (connection: Connection) => {
-            if (connection.source && connection.target && connection.source !== connection.target) {
-                const { screens, updateScreen, addFlow } = useScreenDesignStore.getState();
-
-                const sourceScreen = screens.find(s => s.id === connection.source);
-                const targetScreen = screens.find(s => s.id === connection.target);
-
-                if (sourceScreen && targetScreen) {
-                    const isSourceUI = !sourceScreen.variant || sourceScreen.variant === 'UI';
-                    const isTargetUI = !targetScreen.variant || targetScreen.variant === 'UI';
-                    const isSourceSpec = sourceScreen.variant === 'SPEC';
-                    const isTargetSpec = targetScreen.variant === 'SPEC';
-
-                    // Determine default label
-                    let defaultLabel = '';
-                    const isPagingConnection = (isSourceUI && isTargetUI) || (isSourceSpec && isTargetSpec);
-
-                    if (isPagingConnection) {
-                        defaultLabel = '페이징';
-
-                        // ── Advanced Paging Logic ──
-                        // 1. Find the entire chain of screens connected by "페이징" edges
-                        const { flows } = useScreenDesignStore.getState();
-
-                        // Current potential chain including the new connection
-                        const allPagingFlows = [...flows, { source: connection.source, target: connection.target, label: '페이징' }]
-                            .filter(f => f.label === '페이징');
-
-                        // Find all nodes involved in this specific chain
-                        const chainNodeIds = new Set<string>();
-                        const traverse = (nodeId: string) => {
-                            if (chainNodeIds.has(nodeId)) return;
-                            chainNodeIds.add(nodeId);
-                            // Find outgoing and incoming paging connections
-                            allPagingFlows.forEach(f => {
-                                if (f.source === nodeId) traverse(f.target);
-                                if (f.target === nodeId) traverse(f.source);
-                            });
-                        };
-                        traverse(connection.source);
-
-                        // 2. Sort the chain nodes by their existing page numbers or topological order
-                        const chainArray = Array.from(chainNodeIds);
-                        const findHead = (ids: string[]) => {
-                            return ids.find(id => !allPagingFlows.some(f => f.target === id && ids.includes(f.source))) || ids[0];
-                        };
-
-                        const sortedChain: string[] = [];
-                        let current: string | undefined = findHead(chainArray);
-                        const visited = new Set();
-                        while (current && !visited.has(current)) {
-                            visited.add(current);
-                            sortedChain.push(current);
-                            const nextFlow = allPagingFlows.find(f => f.source === current && chainNodeIds.has(f.target));
-                            current = nextFlow ? nextFlow.target : undefined;
-                        }
-
-                        // 3. Update all screens in the chain with new N/M
-                        const totalUnits = sortedChain.length;
-                        sortedChain.forEach((nodeId, index) => {
-                            updateScreen(nodeId, {
-                                page: `${index + 1}/${totalUnits}`
-                            });
-                        });
-                    } else if (isTargetSpec && (isSourceUI || isSourceSpec)) {
-                        defaultLabel = '명세서 연결';
-                    }
-
-                    // 1. Add Edge
-                    const newFlow: ScreenFlow = {
-                        id: `flow_${Date.now()}`,
-                        source: connection.source,
-                        target: connection.target,
-                        sourceHandle: connection.sourceHandle || undefined,
-                        targetHandle: connection.targetHandle || undefined,
-                        label: defaultLabel,
-                    };
-                    addFlow(newFlow);
-
-                    sendOperation({
-                        type: 'FLOW_CREATE',
-                        targetId: newFlow.id,
-                        userId: user?.id || 'anonymous',
-                        userName: user?.name || 'Anonymous',
-                        payload: newFlow as unknown as Record<string, unknown>
-                    });
-
-                    // 2. Data Sync (Source -> Target Spec)
-                    if (isTargetSpec && (isSourceUI || isSourceSpec)) {
-                        const sourceDesc = isSourceUI ? '화면' : '기능 명세를';
-                        if (window.confirm(`'${sourceScreen.name}' ${sourceDesc} 정보를 '${targetScreen.name}' 기능 명세에 적용하시겠습니까?`)) {
-                            updateScreen(targetScreen.id, {
-                                systemName: sourceScreen.systemName,
-                                author: sourceScreen.author,
-                                screenId: sourceScreen.screenId,
-                                screenType: sourceScreen.screenType,
-                                name: sourceScreen.name,
-                            });
-                        }
-                    }
-                }
-            }
-        },
-        [addFlow, updateScreen, updateFlow, reconnectingEdgeId]
-    );
-
-    const onEdgeDoubleClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    const onEdgeDoubleClick = useCallback((_: React.MouseEvent, edge: RFEdge) => {
         setEditingFlowId(edge.id);
     }, []);
 
-    const editingFlow = useMemo(() => flows.find(f => f.id === editingFlowId), [flows, editingFlowId]);
-    const sourceNode = useMemo(() => screens.find(s => s.id === editingFlow?.source), [screens, editingFlow]);
-    const targetNode = useMemo(() => screens.find(s => s.id === editingFlow?.target), [screens, editingFlow]);
+    const isValidConnection = useCallback((connection: any) => {
+        return connection.source !== connection.target;
+    }, []);
 
     const handleAddScreen = useCallback(() => {
         const baseName = '새 화면';
@@ -384,15 +322,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
             newName = `${baseName}(${counter})`;
         }
 
-        // Auto-increment screen ID
         const existingIds = screens.map(s => {
             const match = s.screenId.match(/SCR-(\d+)/);
             return match ? parseInt(match[1]) : 0;
         });
         const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
         const screenId = `SCR-${String(nextNum).padStart(3, '0')}`;
-
-        // Today's date
         const today = new Date().toISOString().split('T')[0];
 
         const newScreen: Screen = {
@@ -471,7 +406,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [screens, addScreen, currentProject, user, sendOperation]);
 
-    const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
+    const onNodeDragStop = useCallback((_: React.MouseEvent, node: RFNode) => {
         updateScreen(node.id, { position: node.position });
 
         sendOperation({
@@ -483,7 +418,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [updateScreen, sendOperation, user]);
 
-    // Image Export using html-to-image
     const handleExportImage = useCallback((_selectedIds: string[]) => {
         setIsExportModalOpen(false);
 
@@ -493,7 +427,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
             return;
         }
 
-        // Temporarily highlight only the selected nodes
         toPng(element, {
             backgroundColor: '#f9fafb',
             quality: 1,
@@ -511,7 +444,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     return (
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
-            {/* Left Sidebar */}
             <div className="relative flex h-full">
                 <div
                     className={`h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl ${isSidebarOpen ? 'w-72 flex-shrink-0' : 'w-0 border-none'}`}
@@ -521,7 +453,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Toggle Button */}
                 <button
                     onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                     className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-violet-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'}`}
@@ -531,9 +462,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 </button>
             </div>
 
-            {/* Main Canvas */}
             <div className="flex-1 h-full relative" ref={flowWrapper}>
-                {/* Toolbar */}
                 <div className={`absolute top-4 ${isSidebarOpen ? 'left-6' : 'left-8'} z-10 bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-1.5 flex gap-1.5 transition-all duration-300`}>
                     <button
                         onClick={() => setCurrentProject(null)}
@@ -584,7 +513,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                     <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
 
-                    {/* Export Button */}
                     <button
                         onClick={() => setIsExportModalOpen(true)}
                         className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
@@ -593,7 +521,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         <span>내보내기</span>
                     </button>
 
-                    {/* Import Button (placeholder) */}
                     <button
                         disabled
                         className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-400 border border-gray-200 rounded-lg text-sm font-bold shadow-sm cursor-not-allowed opacity-60"
@@ -605,7 +532,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                     <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
 
-                    {/* User Profile & Logout */}
                     <div className="flex items-center gap-2 px-1">
                         <div className="flex items-center gap-2 pl-2 pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
                             {user?.picture ? (
@@ -632,22 +558,20 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     </div>
                 </div>
 
-                {/* React Flow Canvas */}
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onEdgeUpdate={onEdgeUpdate}
-                    onEdgeUpdateStart={onEdgeUpdateStart}
-                    onEdgeUpdateEnd={onEdgeUpdateEnd}
                     onNodeDragStop={onNodeDragStop}
-                    edgeUpdaterRadius={20}
-                    isValidConnection={isValidConnection}
+                    onConnect={onConnect}
+                    onEdgeUpdateStart={onEdgeUpdateStart}
+                    onEdgeUpdate={onEdgeUpdate}
+                    onEdgeUpdateEnd={onEdgeUpdateEnd}
                     onEdgeDoubleClick={onEdgeDoubleClick}
-
+                    isValidConnection={isValidConnection}
                     nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
                     connectionMode={ConnectionMode.Loose}
                     panOnScroll={true}
                     panOnScrollMode={PanOnScrollMode.Free}
@@ -674,7 +598,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     />
                 </ReactFlow>
 
-                {/* Export Modal */}
                 {isExportModalOpen && (
                     <ScreenExportModal
                         screens={screens}
@@ -684,122 +607,144 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 )}
 
                 {/* Relationship Edit Modal */}
-                {editingFlowId && editingFlow && (
-                    <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
-                        <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
-                            {/* Header */}
-                            <div className="px-8 py-6 flex items-center justify-between border-b border-gray-100">
-                                <h3 className="text-xl font-black text-gray-900">관계 편집</h3>
-                                <button
-                                    onClick={() => setEditingFlowId(null)}
-                                    className="p-2 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
-                                >
-                                    <X size={20} />
-                                </button>
-                            </div>
+                {editingFlowId && (
+                    (() => {
+                        const editingFlow = flows.find(f => f.id === editingFlowId);
+                        const sourceNode = screens.find(s => s.id === editingFlow?.source);
+                        const targetNode = screens.find(s => s.id === editingFlow?.target);
 
-                            <div className="p-8">
-                                {/* Connection Info */}
-                                <div className="bg-blue-50/50 rounded-2xl p-5 border border-blue-100 mb-8">
-                                    <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">연결 정보</span>
-                                    <div className="flex items-center gap-3 text-sm font-black text-gray-700">
-                                        <span className="truncate max-w-[140px]">{sourceNode?.name || 'Unknown'}</span>
-                                        <ArrowLeft size={14} className="text-gray-400 rotate-180" />
-                                        <span className="truncate max-w-[140px]">{targetNode?.name || 'Unknown'}</span>
-                                    </div>
-                                </div>
+                        if (!editingFlow) return null;
 
-                                {/* Relationship Type Options */}
-                                <div className="space-y-3">
-                                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">관계 유형</span>
-
-                                    {[
-                                        { id: '페이징', label: '페이징', desc: '페이지 이동' },
-                                        { id: '팝업', label: '팝업', desc: '팝업/모달 호출' },
-                                        { id: '명세서 연결', label: '명세서 연결', desc: '화면-명세 연결' }
-                                    ].map((opt) => (
-                                        <label
-                                            key={opt.id}
-                                            className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${editingFlow.label === opt.id
-                                                ? 'border-blue-500 bg-blue-50/30'
-                                                : 'border-gray-100 hover:border-blue-200'
-                                                }`}
+                        return (
+                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
+                                <div className="bg-white rounded-[15px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
+                                    {/* Header */}
+                                    <div className="px-8 py-6 flex items-center justify-between border-b border-gray-100">
+                                        <h3 className="text-xl font-black text-gray-900">관계 편집</h3>
+                                        <button
+                                            onClick={() => setEditingFlowId(null)}
+                                            className="p-2 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${editingFlow.label === opt.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
-                                                    }`}>
-                                                    {editingFlow.label === opt.id && <div className="w-2 h-2 bg-white rounded-full" />}
-                                                </div>
-                                                <span className="text-sm font-black text-gray-800">{opt.label}</span>
-                                            </div>
-                                            <span className="text-[11px] font-bold text-gray-400">{opt.desc}</span>
-                                            <input
-                                                type="radio"
-                                                className="hidden"
-                                                name="relType"
-                                                checked={editingFlow.label === opt.id}
-                                                onChange={() => {
-                                                    const { updateFlow } = useScreenDesignStore.getState();
-                                                    updateFlow(editingFlow.id, { label: opt.id });
-                                                }}
-                                            />
-                                        </label>
-                                    ))}
+                                            <X size={20} />
+                                        </button>
+                                    </div>
 
-                                    {/* Custom Input */}
-                                    <div className="mt-4">
-                                        <input
-                                            type="text"
-                                            value={editingFlow.label || ''}
-                                            onChange={(e) => {
-                                                const { updateFlow } = useScreenDesignStore.getState();
-                                                updateFlow(editingFlow.id, { label: e.target.value });
+                                    <div className="p-8">
+                                        {/* Connection Info */}
+                                        <div className="bg-blue-50/50 rounded-2xl p-5 border border-blue-100 mb-8">
+                                            <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">연결 정보</span>
+                                            <div className="flex items-center gap-3 text-sm font-black text-gray-700">
+                                                <span className="truncate max-w-[140px]">{sourceNode?.name || 'Unknown'}</span>
+                                                <ArrowLeft size={14} className="text-gray-400 rotate-180" />
+                                                <span className="truncate max-w-[140px]">{targetNode?.name || 'Unknown'}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Relationship Type Options */}
+                                        <div className="space-y-3">
+                                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">관계 유형</span>
+
+                                            {[
+                                                { id: '페이징', label: '페이징', desc: '페이지 이동' },
+                                                { id: '팝업', label: '팝업', desc: '팝업/모달 호출' },
+                                                { id: '명세서 연결', label: '명세서 연결', desc: '화면-명세 연결' }
+                                            ].map((opt) => (
+                                                <label
+                                                    key={opt.id}
+                                                    className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${editingFlow.label === opt.id
+                                                        ? 'border-blue-500 bg-blue-50/30'
+                                                        : 'border-gray-100 hover:border-blue-200'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${editingFlow.label === opt.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                                                            }`}>
+                                                            {editingFlow.label === opt.id && <div className="w-2 h-2 bg-white rounded-full" />}
+                                                        </div>
+                                                        <span className="text-sm font-black text-gray-800">{opt.label}</span>
+                                                    </div>
+                                                    <span className="text-[11px] font-bold text-gray-400">{opt.desc}</span>
+                                                    <input
+                                                        type="radio"
+                                                        className="hidden"
+                                                        name="relType"
+                                                        checked={editingFlow.label === opt.id}
+                                                        onChange={() => {
+                                                            updateFlow(editingFlow.id, { label: opt.id });
+                                                            sendOperation({
+                                                                type: 'SCREEN_FLOW_UPDATE',
+                                                                targetId: editingFlow.id,
+                                                                userId: user?.id || 'anonymous',
+                                                                userName: user?.name || 'Anonymous',
+                                                                payload: { label: opt.id }
+                                                            });
+                                                        }}
+                                                    />
+                                                </label>
+                                            ))}
+
+                                            {/* Custom Input */}
+                                            <div className="mt-4">
+                                                <input
+                                                    type="text"
+                                                    value={editingFlow.label || ''}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        updateFlow(editingFlow.id, { label: val });
+                                                        sendOperation({
+                                                            type: 'SCREEN_FLOW_UPDATE',
+                                                            targetId: editingFlow.id,
+                                                            userId: user?.id || 'anonymous',
+                                                            userName: user?.name || 'Anonymous',
+                                                            payload: { label: val }
+                                                        });
+                                                    }}
+                                                    placeholder="직접 입력..."
+                                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-xl outline-none text-sm font-bold text-gray-700 transition-all"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Footer */}
+                                    <div className="px-8 py-6 bg-gray-50 flex items-center justify-between">
+                                        <button
+                                            onClick={() => {
+                                                if (window.confirm('정말로 이 관계를 삭제하시겠습니까?')) {
+                                                    deleteFlow(editingFlow.id);
+                                                    sendOperation({
+                                                        type: 'SCREEN_FLOW_DELETE',
+                                                        targetId: editingFlow.id,
+                                                        userId: user?.id || 'anonymous',
+                                                        userName: user?.name || 'Anonymous',
+                                                        payload: {}
+                                                    });
+                                                    setEditingFlowId(null);
+                                                }
                                             }}
-                                            placeholder="직접 입력..."
-                                            className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-2xl outline-none text-sm font-bold text-gray-700 transition-all"
-                                        />
+                                            className="px-6 py-2.5 text-xs font-black text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                        >
+                                            관계 삭제
+                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => setEditingFlowId(null)}
+                                                className="px-8 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
+                                            >
+                                                닫기
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-
-                            {/* Footer */}
-                            <div className="px-8 py-6 bg-gray-50 flex items-center justify-between">
-                                <button
-                                    onClick={() => {
-                                        if (window.confirm('정말로 이 관계를 삭제하시겠습니까?')) {
-                                            const { deleteFlow } = useScreenDesignStore.getState();
-                                            deleteFlow(editingFlow.id);
-                                            setEditingFlowId(null);
-                                        }
-                                    }}
-                                    className="px-6 py-2.5 text-xs font-black text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                >
-                                    관계 삭제
-                                </button>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setEditingFlowId(null)}
-                                        className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl text-xs font-black hover:bg-gray-50 transition-all shadow-sm"
-                                    >
-                                        취소
-                                    </button>
-                                    <button
-                                        onClick={() => setEditingFlowId(null)}
-                                        className="px-8 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
-                                    >
-                                        저장
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                        );
+                    })()
                 )}
             </div>
         </div>
     );
 };
 
-// ── Wrapper with ReactFlowProvider ──────────────────────────
 const ScreenDesignCanvas: React.FC = () => {
     return (
         <ReactFlowProvider>

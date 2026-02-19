@@ -257,6 +257,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                         if (operation.type.startsWith('ENTITY_')) targetType = 'ENTITY';
                         else if (operation.type.startsWith('RELATIONSHIP_')) targetType = 'RELATIONSHIP';
                         else if (operation.type.startsWith('ATTRIBUTE_')) targetType = 'ENTITY';
+                        else if (operation.type.startsWith('SCREEN_FLOW_')) targetType = 'FLOW';
                         else if (operation.type.startsWith('SCREEN_')) targetType = 'SCREEN';
                         else if (operation.type.startsWith('FLOW_')) targetType = 'FLOW';
 

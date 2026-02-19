@@ -63,14 +63,14 @@ export interface Screen {
     isLocked?: boolean;
 }
 
-/** 화면 간 이동 관계 */
+/** 화면 간의 흐름/연결 (Flow/Connection) */
 export interface ScreenFlow {
     id: string;
-    source: string;
-    target: string;
+    source: string;       // Screen.id (Source)
+    target: string;       // Screen.id (Target)
+    label?: string;       // 연결 라벨 (예: "페이징", "팝업 호출")
     sourceHandle?: string;
     targetHandle?: string;
-    label?: string;
 }
 
 /** 화면 설계서 전체 상태 */

@@ -239,23 +239,42 @@ const ERDCanvasContent: React.FC = () => {
                 if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
                 const selectedNodes = getNodes().filter(n => n.selected && n.type === 'entity');
-                if (selectedNodes.length > 0) {
-                    e.preventDefault(); // Prevent browser back navigation on backspace
-                    const confirmMsg = selectedNodes.length === 1
-                        ? `'${selectedNodes[0].data.entity.name}' 테이블을 삭제하시겠습니까?`
-                        : `${selectedNodes.length}개의 테이블을 삭제하시겠습니까?`;
+                const selectedEdges = edges.filter(e => e.selected);
 
-                    if (window.confirm(confirmMsg)) {
-                        selectedNodes.forEach(node => {
-                            deleteEntity(node.id, user);
-                            sendOperation({
-                                type: 'ENTITY_DELETE',
-                                targetId: node.id,
-                                userId: user?.id || 'anonymous',
-                                userName: user?.name || 'Anonymous',
-                                payload: {}
+                if (selectedNodes.length > 0 || selectedEdges.length > 0) {
+                    e.preventDefault();
+                    if (selectedNodes.length > 0) {
+                        const confirmMsg = selectedNodes.length === 1
+                            ? `'${selectedNodes[0].data.entity.name}' 테이블을 삭제하시겠습니까?`
+                            : `${selectedNodes.length}개의 테이블을 삭제하시겠습니까?`;
+
+                        if (window.confirm(confirmMsg)) {
+                            selectedNodes.forEach(node => {
+                                deleteEntity(node.id, user);
+                                sendOperation({
+                                    type: 'ENTITY_DELETE',
+                                    targetId: node.id,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: {}
+                                });
                             });
-                        });
+                        }
+                    }
+
+                    if (selectedEdges.length > 0) {
+                        if (window.confirm(`${selectedEdges.length}개의 관계를 삭제하시겠습니까?`)) {
+                            selectedEdges.forEach(edge => {
+                                deleteRelationship(edge.id, user);
+                                sendOperation({
+                                    type: 'RELATIONSHIP_DELETE',
+                                    targetId: edge.id,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: {}
+                                });
+                            });
+                        }
                     }
                 }
                 return;
@@ -280,7 +299,7 @@ const ERDCanvasContent: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [undo, redo, deleteEntity, sendOperation, user, getNodes]);
+    }, [undo, redo, deleteEntity, deleteRelationship, edges, sendOperation, user, getNodes]);
 
     // Convert relationships to ReactFlow edges
     useEffect(() => {
@@ -312,18 +331,8 @@ const ERDCanvasContent: React.FC = () => {
     }, [relationships, setEdges, reconnectingEdgeId]);
 
     const isValidConnection = useCallback((connection: Connection) => {
-        if (connection.source === connection.target) return false;
-
-        // Prevent duplicate connections unless we are reconnecting an existing line
-        const isDuplicate = relationships.some(rel =>
-            rel.id !== reconnectingEdgeId && (
-                (rel.source === connection.source && rel.target === connection.target) ||
-                (rel.source === connection.target && rel.target === connection.source)
-            )
-        );
-
-        return !isDuplicate;
-    }, [relationships, reconnectingEdgeId]);
+        return connection.source !== connection.target;
+    }, []);
 
     const onConnectStart = useCallback((_event: any, _params: any) => {
         // Optional: Add logging or other start/drag logic if needed
@@ -332,13 +341,28 @@ const ERDCanvasContent: React.FC = () => {
     const onConnect = useCallback(
         (connection: Connection) => {
             if (connection.source && connection.target && connection.source !== connection.target) {
-                // Check if relationship exists (bi-directional check)
-                const exists = relationships.some(r =>
+                // Check if relationship exists (bi-directional check for ERD)
+                const existingRel = relationships.find(r =>
                     (r.source === connection.source && r.target === connection.target) ||
                     (r.source === connection.target && r.target === connection.source)
                 );
 
-                if (!exists) {
+                if (existingRel) {
+                    // MOVE/UPDATE existing relationship instead of creating duplicate
+                    const updates = {
+                        sourceHandle: connection.sourceHandle || undefined,
+                        targetHandle: connection.targetHandle || undefined,
+                    };
+                    updateRelationship(existingRel.id, updates, user);
+
+                    sendOperation({
+                        type: 'RELATIONSHIP_UPDATE',
+                        targetId: existingRel.id,
+                        userId: user?.id || 'anonymous',
+                        userName: user?.name || 'Anonymous',
+                        payload: updates as unknown as Record<string, unknown>
+                    });
+                } else {
                     const newRelationship = {
                         id: `rel_${Date.now()}`,
                         source: connection.source,
@@ -360,7 +384,7 @@ const ERDCanvasContent: React.FC = () => {
             }
             setReconnectingEdgeId(null);
         },
-        [reconnectingEdgeId, addRelationship, relationships, user, sendOperation] // removed updateRelationship from deps as it's not used
+        [reconnectingEdgeId, addRelationship, updateRelationship, relationships, user, sendOperation]
     );
 
     const onConnectEnd = useCallback(() => {

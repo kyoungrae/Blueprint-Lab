@@ -183,10 +183,12 @@ export class SyncEngine {
                 break;
 
             case 'FLOW_CREATE':
+            case 'SCREEN_FLOW_CREATE':
                 newState.flows = [...(state.flows || []), operation.payload as unknown as IScreenFlow];
                 break;
 
             case 'FLOW_UPDATE':
+            case 'SCREEN_FLOW_UPDATE':
                 newState.flows = (state.flows || []).map(f =>
                     f.id === operation.targetId
                         ? { ...f, ...operation.payload }
@@ -195,6 +197,7 @@ export class SyncEngine {
                 break;
 
             case 'FLOW_DELETE':
+            case 'SCREEN_FLOW_DELETE':
                 newState.flows = (state.flows || []).filter(f => f.id !== operation.targetId);
                 break;
 
