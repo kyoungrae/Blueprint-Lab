@@ -123,6 +123,90 @@ const ScreenDesignCanvasContent: React.FC = () => {
         );
     }, [flows, setEdges, reconnectingEdgeId]);
 
+    // ── Auto-update Paging Labels ──────────────────────────────────
+    useEffect(() => {
+        // Find all flows with '페이징' label
+        const pagingFlows = flows.filter(f => f.label === '페이징');
+        const screenIds = new Set(screens.map(s => s.id));
+        const currentPageValues = new Map(screens.map(s => [s.id, s.page]));
+
+        // Build adjacency maps for paging chains
+        const nextNodes = new Map<string, string>();
+        const prevNodes = new Map<string, string>();
+
+        pagingFlows.forEach(f => {
+            // Only consider connections between existing screens
+            if (screenIds.has(f.source) && screenIds.has(f.target)) {
+                // If a source has multiple outgoing paging flows, we just take the first one
+                if (!nextNodes.has(f.source)) nextNodes.set(f.source, f.target);
+                if (!prevNodes.has(f.target)) prevNodes.set(f.target, f.source);
+            }
+        });
+
+        const updates: Record<string, string> = {};
+        const processed = new Set<string>();
+
+        // We iterate through all screens to identify and process all disjoint paging chains
+        screens.forEach(screen => {
+            if (processed.has(screen.id)) return;
+
+            // Find the start of the chain (root)
+            let startNode = screen.id;
+            const walkVisited = new Set<string>();
+            while (prevNodes.has(startNode) && !walkVisited.has(startNode)) {
+                const prev = prevNodes.get(startNode)!;
+                if (!screenIds.has(prev)) break;
+                walkVisited.add(startNode);
+                startNode = prev;
+            }
+
+            // Trace the chain from startNode to its end
+            const chain: string[] = [];
+            let curr: string | null = startNode;
+            while (curr && !processed.has(curr) && screenIds.has(curr)) {
+                processed.add(curr);
+                chain.push(curr);
+                curr = nextNodes.get(curr) || null;
+            }
+
+            // If it's a chain of 2 or more, calculate and set paging labels
+            if (chain.length > 1) {
+                const total = chain.length;
+                chain.forEach((id, idx) => {
+                    const newPage = `${idx + 1}/${total}`;
+                    if (currentPageValues.get(id) !== newPage) {
+                        updates[id] = newPage;
+                    }
+                });
+            } else if (chain.length === 1) {
+                // Reset standalone screens to '1/1' if they were previously in a composite paging format
+                const currentVal = currentPageValues.get(chain[0]) || "";
+                if (currentVal.match(/^\d+\/\d+$/) && currentVal !== "1/1") {
+                    // Only reset if they truly have no incoming/outgoing paging flows
+                    if (!nextNodes.has(chain[0]) && !prevNodes.has(chain[0])) {
+                        updates[chain[0]] = "1/1";
+                    }
+                }
+            }
+        });
+
+        // Apply page updates locally and sync to other users
+        const updateIds = Object.keys(updates);
+        if (updateIds.length > 0) {
+            updateIds.forEach(id => {
+                const newPage = updates[id];
+                updateScreen(id, { page: newPage });
+                sendOperation({
+                    type: 'SCREEN_UPDATE',
+                    targetId: id,
+                    userId: user?.id || 'anonymous',
+                    userName: user?.name || 'Anonymous',
+                    payload: { page: newPage }
+                });
+            });
+        }
+    }, [flows, screens.length, updateScreen, sendOperation, user]);
+
     // Listen for initial Sync from Server
     useEffect(() => {
         const handleSync = (e: CustomEvent) => {
