@@ -475,9 +475,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             <div className="flex bg-white min-h-[500px]">
 
                 {/* [LEFT PANE 70%] - Image & Function Items */}
-                <div className="rounded-bl-md flex-[7] border-r border-gray-200 flex flex-col bg-gray-50/10">
+                <div className="rounded-bl-md w-[70%] flex-shrink-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden">
 
-                    {/* Image Area */}
                     {/* Image Area */}
                     <div
                         className={`nodrag relative group/image flex-1 flex items-center justify-center overflow-auto transition-colors scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent ${isDragOver && !isLocked
@@ -520,8 +519,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 if (window.confirm('이미지를 삭제하시겠습니까?')) {
-                                                    update({ imageUrl: undefined });
-                                                    syncUpdate({ imageUrl: undefined });
+                                                    update({ imageUrl: '' });
+                                                    syncUpdate({ imageUrl: '' });
                                                 }
                                             }}
                                             onMouseDown={(e) => e.stopPropagation()}
@@ -552,7 +551,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 </div>
 
                 {/* [RIGHT PANE 30%] - Details & Settings */}
-                <div className="rounded-br-md flex-[3] flex flex-col bg-white" style={{ minWidth: 250 }}>
+                <div className="rounded-br-md w-[30%] flex-shrink-0 flex flex-col bg-white" style={{ minWidth: 250 }}>
                     {/* Panel 1: 초기화면설정 */}
                     <div className="flex-1 flex flex-col border-b border-gray-200 min-h-[120px]">
                         <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5">

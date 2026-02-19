@@ -5,6 +5,8 @@ import { SCREEN_FIELD_TYPES, SCREEN_TYPES } from '../types/screenDesign';
 import { Plus, Trash2, Lock, Unlock, X, Monitor, ChevronDown, FileText, List } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
+import { useSyncStore } from '../store/syncStore';
+import { useAuthStore } from '../store/authStore';
 
 // DB Types Map
 const DB_TYPES: Record<string, string[]> = {
@@ -22,10 +24,11 @@ interface SpecRowProps {
     isLocked: boolean;
     dataTypes?: string[] | readonly string[];
     onUpdate: (updates: Partial<ScreenSpecItem>) => void;
+    onBlur?: (updates: Partial<ScreenSpecItem>) => void;
     onDelete: () => void;
 }
 
-const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpdate, onDelete }) => {
+const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpdate, onBlur, onDelete }) => {
     // 공통 셀 스타일
     const cellClass = `px-2 py-1.5 border-r border-gray-300 align-middle bg-white relative`;
     const inputClass = `w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-800' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'}`;
@@ -40,6 +43,8 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     type="text"
                     value={item.fieldName}
                     onChange={(e) => onUpdate({ fieldName: e.target.value })}
+                    onBlur={(e) => onBlur?.({ fieldName: e.target.value })}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} font-bold`}
                     placeholder="항목명"
@@ -51,6 +56,8 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     type="text"
                     value={item.controlName}
                     onChange={(e) => onUpdate({ controlName: e.target.value })}
+                    onBlur={(e) => onBlur?.({ controlName: e.target.value })}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} font-mono text-blue-800`}
                     placeholder="CONTROL_ID"
@@ -62,6 +69,8 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     <select
                         value={item.dataType}
                         onChange={(e) => onUpdate({ dataType: e.target.value })}
+                        onBlur={(e) => onBlur?.({ dataType: e.target.value })}
+                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
                         className={`w-full bg-transparent border-none outline-none text-[11px] p-1 appearance-none ${isLocked ? 'text-gray-600' : 'nodrag text-gray-900 cursor-pointer hover:bg-blue-50 rounded'}`}
                     >
@@ -78,6 +87,8 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     type="text"
                     value={item.format}
                     onChange={(e) => onUpdate({ format: e.target.value })}
+                    onBlur={(e) => onBlur?.({ format: e.target.value })}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} text-center`}
                     placeholder="VARCHAR2"
@@ -89,6 +100,8 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     type="text"
                     value={item.length}
                     onChange={(e) => onUpdate({ length: e.target.value })}
+                    onBlur={(e) => onBlur?.({ length: e.target.value })}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} text-center`}
                     placeholder="100"
@@ -100,6 +113,8 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     type="text"
                     value={item.defaultValue}
                     onChange={(e) => onUpdate({ defaultValue: e.target.value })}
+                    onBlur={(e) => onBlur?.({ defaultValue: e.target.value })}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} text-center`}
                     placeholder="-"
@@ -111,6 +126,8 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     type="text"
                     value={item.validation}
                     onChange={(e) => onUpdate({ validation: e.target.value })}
+                    onBlur={(e) => onBlur?.({ validation: e.target.value })}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass}`}
                     placeholder=""
@@ -123,6 +140,8 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
                     type="text"
                     value={item.memo}
                     onChange={(e) => onUpdate({ memo: e.target.value })}
+                    onBlur={(e) => onBlur?.({ memo: e.target.value })}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass}`}
                     placeholder=""
@@ -153,6 +172,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({ item, isLocked, dataTypes, onUpd
 interface EditableCellProps {
     value: string;
     onChange: (val: string) => void;
+    onBlur?: (val: string) => void;
     isLocked: boolean;
     placeholder?: string;
     className?: string;
@@ -161,13 +181,14 @@ interface EditableCellProps {
     mono?: boolean;
 }
 
-const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, isLocked, placeholder, className = '', isSelect, options, mono }) => {
+const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlur, isLocked, placeholder, className = '', isSelect, options, mono }) => {
     if (isSelect && options) {
         return (
             <div className="relative w-full h-full flex items-center">
                 <select
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
+                    onBlur={(e) => onBlur?.(e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`w-full h-full bg-transparent border-none outline-none text-xs p-1 appearance-none ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 cursor-pointer hover:bg-blue-50 transition-colors'} ${className}`}
@@ -183,6 +204,7 @@ const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, isLoc
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            onBlur={(e) => onBlur?.(e.target.value)}
             onMouseDown={(e) => !isLocked && e.stopPropagation()}
             disabled={isLocked}
             className={`w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'} ${mono ? 'font-mono' : ''} ${className}`}
@@ -200,7 +222,19 @@ interface SpecNodeData {
 const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const { screen } = data;
     const { updateScreen, deleteScreen } = useScreenDesignStore();
+    const { sendOperation } = useSyncStore();
+    const { user } = useAuthStore();
     const isLocked = screen.isLocked ?? true;
+
+    const syncUpdate = (updates: Partial<Screen>) => {
+        sendOperation({
+            type: 'SCREEN_UPDATE',
+            targetId: screen.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: updates
+        });
+    };
 
     // Linked ERD Project Data
     const { projects, currentProjectId } = useProjectStore();
@@ -225,13 +259,22 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
     const handleToggleLock = (e: React.MouseEvent) => {
         e.stopPropagation();
-        updateScreen(screen.id, { isLocked: !isLocked });
+        const nextLocked = !isLocked;
+        updateScreen(screen.id, { isLocked: nextLocked });
+        syncUpdate({ isLocked: nextLocked });
     };
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (window.confirm(`기능명세서 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
             deleteScreen(screen.id);
+            sendOperation({
+                type: 'SCREEN_DELETE',
+                targetId: screen.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: {}
+            });
         }
     };
 
@@ -249,7 +292,9 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
             validation: '',
             memo: '',
         };
-        updateScreen(screen.id, { specs: [...specs, newSpec] });
+        const nextSpecs = [...specs, newSpec];
+        updateScreen(screen.id, { specs: nextSpecs });
+        syncUpdate({ specs: nextSpecs });
     };
 
     const handleUpdateSpec = (specId: string, updates: Partial<ScreenSpecItem>) => {
@@ -258,10 +303,17 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         updateScreen(screen.id, { specs: newSpecs });
     };
 
+    const handleSyncSpec = (specId: string, updates: Partial<ScreenSpecItem>) => {
+        if (isLocked) return;
+        const newSpecs = specs.map(s => s.id === specId ? { ...s, ...updates } : s);
+        syncUpdate({ specs: newSpecs });
+    };
+
     const handleDeleteSpec = (specId: string) => {
         if (isLocked) return;
         const newSpecs = specs.filter(s => s.id !== specId);
         updateScreen(screen.id, { specs: newSpecs });
+        syncUpdate({ specs: newSpecs });
     };
 
     // Label/Value cell styles (Shared with ScreenNode for consistency)
@@ -300,6 +352,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                     type="text"
                     value={screen.name}
                     onChange={(e) => update({ name: e.target.value })}
+                    onBlur={(e) => syncUpdate({ name: e.target.value })}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
@@ -338,15 +391,15 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                         <tr className="border-b border-[#e2e8f0]">
                             <td className={labelCell} style={{ width: 100 }}>시스템명</td>
                             <td className={valueCell} style={{ width: 180 }}>
-                                <EditableCell value={screen.systemName} onChange={(v) => update({ systemName: v })} isLocked={isLocked} placeholder="시스템명" className="text-center font-bold" />
+                                <EditableCell value={screen.systemName} onChange={(v) => update({ systemName: v })} onBlur={(v) => syncUpdate({ systemName: v })} isLocked={isLocked} placeholder="시스템명" className="text-center font-bold" />
                             </td>
                             <td className={labelCell} style={{ width: 80 }}>작성자</td>
                             <td className={valueCell} style={{ width: 140 }}>
-                                <EditableCell value={screen.author} onChange={(v) => update({ author: v })} isLocked={isLocked} placeholder="작성자" className="text-center" />
+                                <EditableCell value={screen.author} onChange={(v) => update({ author: v })} onBlur={(v) => syncUpdate({ author: v })} isLocked={isLocked} placeholder="작성자" className="text-center" />
                             </td>
                             <td className={labelCell} style={{ width: 90 }}>작성일자</td>
                             <td className={`${valueCell} border-r-0`}>
-                                <EditableCell value={screen.createdDate} onChange={(v) => update({ createdDate: v })} isLocked={isLocked} placeholder="YYYY-MM-DD" mono className="text-center" />
+                                <EditableCell value={screen.createdDate} onChange={(v) => update({ createdDate: v })} onBlur={(v) => syncUpdate({ createdDate: v })} isLocked={isLocked} placeholder="YYYY-MM-DD" mono className="text-center" />
                             </td>
                         </tr>
 
@@ -354,15 +407,15 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                         <tr className="border-b border-[#e2e8f0]">
                             <td className={labelCell}>화면ID</td>
                             <td className={valueCell}>
-                                <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c]" />
+                                <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} onBlur={(v) => syncUpdate({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c]" />
                             </td>
                             <td className={labelCell}>화면유형</td>
                             <td className={valueCell}>
-                                <EditableCell value={screen.screenType} onChange={(v) => update({ screenType: v })} isLocked={isLocked} isSelect options={SCREEN_TYPES} className="text-center h-full" />
+                                <EditableCell value={screen.screenType} onChange={(v) => update({ screenType: v })} onBlur={(v) => syncUpdate({ screenType: v })} isLocked={isLocked} isSelect options={SCREEN_TYPES} className="text-center h-full" />
                             </td>
                             <td className={labelCell}>페이지</td>
                             <td className={`${valueCell} border-r-0`}>
-                                <EditableCell value={screen.page} onChange={(v) => update({ page: v })} isLocked={isLocked} placeholder="1/1" mono className="text-center" />
+                                <EditableCell value={screen.page} onChange={(v) => update({ page: v })} onBlur={(v) => syncUpdate({ page: v })} isLocked={isLocked} placeholder="1/1" mono className="text-center" />
                             </td>
                         </tr>
 
@@ -370,7 +423,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                         <tr>
                             <td className={labelCell}>화면설명</td>
                             <td className={`${valueCell} border-r-0`} colSpan={5}>
-                                <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" />
+                                <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} onBlur={(v) => syncUpdate({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" />
                             </td>
                         </tr>
                     </tbody>
@@ -408,6 +461,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                     isLocked={isLocked}
                                     dataTypes={dataTypes}
                                     onUpdate={(updates) => handleUpdateSpec(spec.id, updates)}
+                                    onBlur={(updates) => handleSyncSpec(spec.id, updates)}
                                     onDelete={() => handleDeleteSpec(spec.id)}
                                 />
                             ))}

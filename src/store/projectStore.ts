@@ -44,6 +44,7 @@ export const useProjectStore = create<ProjectStore>()(
                             ...p,
                             id: p._id,
                             projectType: p.projectType || 'ERD',
+                            linkedErdProjectId: p.linkedErdProjectId,
                             members: p.members?.map((m: any) => ({
                                 id: m.userId?._id || m.userId,
                                 name: m.userId?.name || 'Unknown',

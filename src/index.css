@@ -33,3 +33,9 @@ body {
 * {
   box-sizing: border-box;
 }
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}

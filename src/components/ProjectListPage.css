@@ -1,19 +1,65 @@
-@keyframes flow {
+/* Standard Project List Page Styles */
+.scale-in {
+  animation: scale-in 0.2s ease-out;
+}
+
+@keyframes scale-in {
   from {
-    stroke-dashoffset: 200;
+    opacity: 0;
+    transform: scale(0.95);
   }
+
   to {
-    stroke-dashoffset: 0;
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Connection Line Styles */
+@keyframes dash {
+  to {
+    stroke-dashoffset: -18;
+    /* Sum of 6 12 */
   }
 }
 
 .flowing-line {
-  animation: flow 10s linear infinite;
+  animation: dash 0.6s linear infinite;
+  stroke: #3b82f6;
+  opacity: 0.6;
+  stroke-dasharray: 6 12;
+  stroke-dashoffset: 0;
   stroke-linecap: round;
-  transition: opacity 0.3s ease;
+  transition: all 0.3s ease;
+  pointer-events: none;
 }
 
-.group:hover ~ svg .flowing-line {
+
+.flowing-line:hover {
   opacity: 1;
   stroke-width: 4;
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4));
+}
+
+.project-card:hover~.connection-svg .flowing-line {
+  opacity: 0.8;
+  stroke-width: 3.5;
 }

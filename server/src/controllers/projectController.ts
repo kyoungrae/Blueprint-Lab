@@ -101,7 +101,7 @@ export const deleteProject = async (req: AuthRequest, res: Response) => {
 export const updateProject = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { name, description, data } = req.body;
+        const { name, description, data, linkedErdProjectId } = req.body;
         const userId = req.user?.id;
 
         if (!userId) {
@@ -125,6 +125,7 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
 
         if (name) project.name = name;
         if (description !== undefined) project.description = description;
+        if (linkedErdProjectId !== undefined) project.linkedErdProjectId = linkedErdProjectId;
         if (data) {
             project.currentSnapshot = {
                 ...data,

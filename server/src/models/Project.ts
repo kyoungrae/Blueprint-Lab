@@ -123,6 +123,7 @@ export interface IProject extends Document {
     createdAt: Date;
     updatedAt: Date;
     screenSnapshot?: IScreenSnapshot;
+    linkedErdProjectId?: string;
 }
 
 const AttributeSchema = new Schema<IAttribute>({
@@ -241,6 +242,7 @@ const ProjectSchema = new Schema<IProject>({
     members: [ProjectMemberSchema],
     currentSnapshot: { type: ERDSnapshotSchema, default: { version: 1, entities: [], relationships: [], savedAt: new Date() } },
     screenSnapshot: { type: ScreenSnapshotSchema, default: { version: 1, screens: [], flows: [], savedAt: new Date() } },
+    linkedErdProjectId: { type: String },
 }, {
     timestamps: true, // createdAt, updatedAt 자동 생성
 });
