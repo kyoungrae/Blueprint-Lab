@@ -71,7 +71,7 @@ export interface Screen {
 /** 직접 그리기 요소 타입 */
 export interface DrawElement {
     id: string;
-    type: 'rect' | 'circle' | 'text' | 'image';
+    type: 'rect' | 'circle' | 'text' | 'image' | 'table';
     x: number;
     y: number;
     width: number;
@@ -90,6 +90,23 @@ export interface DrawElement {
     textAlign?: 'left' | 'center' | 'right';
     verticalAlign?: 'top' | 'middle' | 'bottom';
     zIndex: number;
+    // Table-specific properties
+    tableRows?: number;
+    tableCols?: number;
+    tableCellData?: string[];  // flat array: cellData[row * cols + col]
+    tableColWidths?: number[]; // percentage widths for each column (should sum to 100)
+    tableRowHeights?: number[]; // percentage heights for each row (should sum to 100)
+    tableCellColors?: (string | undefined)[]; // per-cell background colors (flat array)
+    tableCellStyles?: (Record<string, any> | undefined)[]; // per-cell style overrides (borders, etc.)
+    // Global/Default border settings for table
+    tableBorderTop?: string;
+    tableBorderTopWidth?: number;
+    tableBorderBottom?: string;
+    tableBorderBottomWidth?: number;
+    tableBorderLeft?: string;
+    tableBorderLeftWidth?: number;
+    tableBorderRight?: string;
+    tableBorderRightWidth?: number;
 }
 
 /** 화면 간의 흐름/연결 (Flow/Connection) */
