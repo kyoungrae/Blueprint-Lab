@@ -68,6 +68,16 @@ export interface Screen {
     drawElements?: DrawElement[];   // 직접 그리기 영역의 요소들
 }
 
+/** 테이블 셀 데이터 (엑셀형 고도화) */
+export interface TableCellData {
+    content: string;
+    rowSpan: number;
+    colSpan: number;
+    isMerged: boolean;   // true이면 다른 셀에 병합되어 렌더링에서 제외되는 '슬레이브' 셀
+    width?: number;      // 개별 셀 너비 오버라이드 (px)
+    height?: number;     // 개별 셀 높이 오버라이드 (px)
+}
+
 /** 직접 그리기 요소 타입 */
 export interface DrawElement {
     id: string;
@@ -93,9 +103,10 @@ export interface DrawElement {
     // Table-specific properties
     tableRows?: number;
     tableCols?: number;
-    tableCellData?: string[];  // flat array: cellData[row * cols + col]
+    tableCellData?: string[];  // [LEGACY] flat array: cellData[row * cols + col]
+    tableCellDataV2?: TableCellData[];  // [NEW] 엑셀형 셀 데이터 (flat array, row-major)
     tableColWidths?: number[]; // percentage widths for each column (should sum to 100)
-    tableRowColWidths?: number[][]; // [NEW] independent percentage widths for each row
+    tableRowColWidths?: number[][]; // independent percentage widths for each row
     tableRowHeights?: number[]; // percentage heights for each row (should sum to 100)
     tableCellColors?: (string | undefined)[]; // per-cell background colors (flat array)
     tableCellStyles?: (Record<string, any> | undefined)[]; // per-cell style overrides (borders, etc.)
@@ -108,7 +119,7 @@ export interface DrawElement {
     tableBorderLeftWidth?: number;
     tableBorderRight?: string;
     tableBorderRightWidth?: number;
-    tableCellSpans?: { rowSpan: number, colSpan: number }[]; // per-cell span info (flat array)
+    tableCellSpans?: { rowSpan: number, colSpan: number }[]; // [LEGACY] per-cell span info
 }
 
 /** 화면 간의 흐름/연결 (Flow/Connection) */
