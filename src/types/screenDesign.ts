@@ -95,6 +95,7 @@ export interface DrawElement {
     tableCols?: number;
     tableCellData?: string[];  // flat array: cellData[row * cols + col]
     tableColWidths?: number[]; // percentage widths for each column (should sum to 100)
+    tableRowColWidths?: number[][]; // [NEW] independent percentage widths for each row
     tableRowHeights?: number[]; // percentage heights for each row (should sum to 100)
     tableCellColors?: (string | undefined)[]; // per-cell background colors (flat array)
     tableCellStyles?: (Record<string, any> | undefined)[]; // per-cell style overrides (borders, etc.)

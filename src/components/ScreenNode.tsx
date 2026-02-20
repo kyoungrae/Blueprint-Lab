@@ -340,7 +340,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [editingTextId, setEditingTextId] = useState<string | null>(null);
     const [showTablePicker, setShowTablePicker] = useState(false);
     const [tablePickerHover, setTablePickerHover] = useState<{ r: number, c: number } | null>(null);
-    const tableColResizeRef = useRef<{ elId: string, colIdx: number, startX: number, startWidths: number[] } | null>(null);
+    const tableColResizeRef = useRef<{ elId: string, rowIdx?: number, colIdx: number, startX: number, startWidths: number[] } | null>(null);
     const tableRowResizeRef = useRef<{ elId: string, rowIdx: number, startY: number, startHeights: number[] } | null>(null);
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
@@ -1488,121 +1488,95 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             }
                                                         }}
                                                     >
-                                                        <table
-                                                            className="w-full h-full border-collapse"
-                                                            style={{ tableLayout: 'fixed' }}
+                                                        <div
+                                                            className="w-full h-full border-collapse overflow-hidden"
+                                                            style={{
+                                                                display: 'flex',
+                                                                flexDirection: 'column'
+                                                            }}
                                                         >
-                                                            <colgroup>
-                                                                {Array.from({ length: el.tableCols || 3 }).map((_, colIdx) => {
-                                                                    const colW = el.tableColWidths?.[colIdx] ?? (100 / (el.tableCols || 3));
-                                                                    return <col key={colIdx} style={{ width: `${colW}%` }} />;
-                                                                })}
-                                                            </colgroup>
-                                                            <tbody>
-                                                                {(() => {
-                                                                    const coveredCells = new Set<number>();
-                                                                    const cols = el.tableCols || 3;
-                                                                    if (el.tableCellSpans) {
-                                                                        el.tableCellSpans.forEach((span, idx) => {
-                                                                            if (!span || (span.rowSpan <= 1 && span.colSpan <= 1)) return;
-                                                                            const r0 = Math.floor(idx / cols);
-                                                                            const c0 = idx % cols;
-                                                                            for (let dr = 0; dr < span.rowSpan; dr++) {
-                                                                                for (let dc = 0; dc < span.colSpan; dc++) {
-                                                                                    if (dr === 0 && dc === 0) continue;
-                                                                                    coveredCells.add((r0 + dr) * cols + (c0 + dc));
-                                                                                }
+                                                            {(() => {
+                                                                const coveredCells = new Set<number>();
+                                                                const cols = el.tableCols || 3;
+                                                                const rows = el.tableRows || 3;
+
+                                                                if (el.tableCellSpans) {
+                                                                    el.tableCellSpans.forEach((span, idx) => {
+                                                                        if (!span || (span.rowSpan <= 1 && span.colSpan <= 1)) return;
+                                                                        const r0 = Math.floor(idx / cols);
+                                                                        const c0 = idx % cols;
+                                                                        for (let dr = 0; dr < span.rowSpan; dr++) {
+                                                                            for (let dc = 0; dc < span.colSpan; dc++) {
+                                                                                if (dr === 0 && dc === 0) continue;
+                                                                                coveredCells.add((r0 + dr) * cols + (c0 + dc));
                                                                             }
-                                                                        });
-                                                                    }
-                                                                    return Array.from({ length: el.tableRows || 3 }).map((_, rowIdx) => {
-                                                                        const rowH = el.tableRowHeights?.[rowIdx] ?? (100 / (el.tableRows || 3));
-                                                                        return (
-                                                                            <tr key={rowIdx} style={{ height: `${rowH}%` }}>
-                                                                                {Array.from({ length: cols }).map((_, colIdx) => {
-                                                                                    const cellIndex = rowIdx * cols + colIdx;
-                                                                                    if (coveredCells.has(cellIndex)) return null;
+                                                                        }
+                                                                    });
+                                                                }
 
-                                                                                    const cellData = el.tableCellData?.[cellIndex] || '';
-                                                                                    const isHeaderRow = rowIdx === 0;
-                                                                                    const cellColor = el.tableCellColors?.[cellIndex];
-                                                                                    const cellStyle = el.tableCellStyles?.[cellIndex] || {};
-                                                                                    const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
-                                                                                    const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
-                                                                                    const defaultBg = isHeaderRow ? hexToRgba('#2c3e7c', 0.1) : '#ffffff';
+                                                                return Array.from({ length: rows }).map((_, rowIdx) => {
+                                                                    const rowH = el.tableRowHeights?.[rowIdx] ?? (100 / rows);
+                                                                    const rowWidths = el.tableRowColWidths?.[rowIdx] || el.tableColWidths || Array(cols).fill(100 / cols);
 
-                                                                                    // Selectively apply styles: Cell Override > Table Global > Default
-                                                                                    const borderTop = `${cellStyle.borderTopWidth ?? el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderTop || el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                                    const borderBottom = `${cellStyle.borderBottomWidth ?? el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderBottom || el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                                    const borderLeft = `${cellStyle.borderLeftWidth ?? el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderLeft || el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                                    const borderRight = `${cellStyle.borderRightWidth ?? el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderRight || el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                    return (
+                                                                        <div
+                                                                            key={rowIdx}
+                                                                            className="relative"
+                                                                            style={{
+                                                                                height: `${rowH}%`,
+                                                                                display: 'grid',
+                                                                                gridTemplateColumns: rowWidths.map(w => `${w}%`).join(' ')
+                                                                            }}
+                                                                        >
+                                                                            {Array.from({ length: cols }).map((_, colIdx) => {
+                                                                                const cellIndex = rowIdx * cols + colIdx;
+                                                                                if (coveredCells.has(cellIndex)) return null;
 
-                                                                                    return (
-                                                                                        <td
-                                                                                            key={colIdx}
-                                                                                            rowSpan={el.tableCellSpans?.[cellIndex]?.rowSpan || 1}
-                                                                                            colSpan={el.tableCellSpans?.[cellIndex]?.colSpan || 1}
-                                                                                            className={`px-1 py-0.5 text-[10px] leading-tight ${isHeaderRow && !cellColor
-                                                                                                ? 'font-bold text-[#2c3e7c]'
-                                                                                                : 'text-gray-700'
-                                                                                                }`}
-                                                                                            style={{
-                                                                                                borderTop,
-                                                                                                borderBottom,
-                                                                                                borderLeft,
-                                                                                                borderRight,
-                                                                                                verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
-                                                                                                textAlign: cellStyle.textAlign || el.textAlign || 'center',
-                                                                                                backgroundColor: cellColor || defaultBg,
-                                                                                                outline: isCellSelected ? '2px solid #3b82f6' : 'none',
-                                                                                                outlineOffset: '-1px',
-                                                                                                position: 'relative',
-                                                                                                cursor: editingTableId === el.id ? 'crosshair' : 'default'
-                                                                                            }}
-                                                                                            onMouseDown={(e) => {
-                                                                                                if (isLocked) return;
-                                                                                                // Only handle cell selection when already in cell-edit mode
-                                                                                                if (editingTableId !== el.id) return;
+                                                                                const cellData = el.tableCellData?.[cellIndex] || '';
+                                                                                const isHeaderRow = rowIdx === 0;
+                                                                                const cellColor = el.tableCellColors?.[cellIndex];
+                                                                                const cellStyle = el.tableCellStyles?.[cellIndex] || {};
+                                                                                const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
+                                                                                const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
+                                                                                const defaultBg = isHeaderRow ? hexToRgba('#2c3e7c', 0.1) : '#ffffff';
 
-                                                                                                // If in edit mode, prevent element drag
-                                                                                                e.stopPropagation();
-                                                                                                // Exit any active text editing
-                                                                                                if (editingCellIndex !== null) setEditingCellIndex(null);
-                                                                                                if (e.shiftKey && selectedCellIndices.length > 0) {
-                                                                                                    // Shift+click: extend selection rectangle to this cell
-                                                                                                    const lastIdx = selectedCellIndices[selectedCellIndices.length - 1];
-                                                                                                    const cols = el.tableCols || 3;
-                                                                                                    const r1 = Math.floor(lastIdx / cols), c1 = lastIdx % cols;
-                                                                                                    const r2 = rowIdx, c2 = colIdx;
-                                                                                                    const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
-                                                                                                    const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
-                                                                                                    const range: number[] = [];
-                                                                                                    for (let r = rMin; r <= rMax; r++) {
-                                                                                                        for (let c = cMin; c <= cMax; c++) {
-                                                                                                            range.push(r * cols + c);
-                                                                                                        }
-                                                                                                    }
-                                                                                                    setSelectedCellIndices(range);
-                                                                                                } else {
-                                                                                                    // Start drag-select
-                                                                                                    isDraggingCellSelectionRef.current = true;
-                                                                                                    dragStartCellIndexRef.current = cellIndex;
-                                                                                                    setSelectedCellIndices([cellIndex]);
-                                                                                                    const onMouseUp = () => {
-                                                                                                        isDraggingCellSelectionRef.current = false;
-                                                                                                        window.removeEventListener('mouseup', onMouseUp);
-                                                                                                    };
-                                                                                                    window.addEventListener('mouseup', onMouseUp);
-                                                                                                }
-                                                                                            }}
-                                                                                            onMouseEnter={() => {
-                                                                                                // Extend drag selection while mouse button held
-                                                                                                if (!isDraggingCellSelectionRef.current) return;
-                                                                                                if (editingTableId !== el.id) return;
-                                                                                                const startIdx = dragStartCellIndexRef.current;
-                                                                                                if (startIdx < 0) return;
-                                                                                                const cols = el.tableCols || 3;
-                                                                                                const r1 = Math.floor(startIdx / cols), c1 = startIdx % cols;
+                                                                                const borderTop = `${cellStyle.borderTopWidth ?? el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderTop || el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                                const borderBottom = `${cellStyle.borderBottomWidth ?? el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderBottom || el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                                const borderLeft = `${cellStyle.borderLeftWidth ?? el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderLeft || el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                                const borderRight = `${cellStyle.borderRightWidth ?? el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderRight || el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+
+                                                                                const cellSpan = el.tableCellSpans?.[cellIndex] || { rowSpan: 1, colSpan: 1 };
+
+                                                                                return (
+                                                                                    <div
+                                                                                        key={colIdx}
+                                                                                        className={`px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center overflow-hidden h-full ${isHeaderRow && !cellColor
+                                                                                            ? 'font-bold text-[#2c3e7c]'
+                                                                                            : 'text-gray-700'
+                                                                                            }`}
+                                                                                        style={{
+                                                                                            gridColumn: `span ${cellSpan.colSpan}`,
+                                                                                            gridRow: `span ${cellSpan.rowSpan}`,
+                                                                                            borderTop,
+                                                                                            borderBottom,
+                                                                                            borderLeft,
+                                                                                            borderRight,
+                                                                                            verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
+                                                                                            textAlign: cellStyle.textAlign || el.textAlign || 'center',
+                                                                                            backgroundColor: cellColor || defaultBg,
+                                                                                            outline: isCellSelected ? '2px solid #3b82f6' : 'none',
+                                                                                            outlineOffset: '-1px',
+                                                                                            position: 'relative',
+                                                                                            cursor: editingTableId === el.id ? 'crosshair' : 'default'
+                                                                                        }}
+                                                                                        onMouseDown={(e) => {
+                                                                                            if (isLocked) return;
+                                                                                            if (editingTableId !== el.id) return;
+                                                                                            e.stopPropagation();
+                                                                                            if (editingCellIndex !== null) setEditingCellIndex(null);
+                                                                                            if (e.shiftKey && selectedCellIndices.length > 0) {
+                                                                                                const lastIdx = selectedCellIndices[selectedCellIndices.length - 1];
+                                                                                                const r1 = Math.floor(lastIdx / cols), c1 = lastIdx % cols;
                                                                                                 const r2 = rowIdx, c2 = colIdx;
                                                                                                 const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
                                                                                                 const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
@@ -1613,152 +1587,183 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                     }
                                                                                                 }
                                                                                                 setSelectedCellIndices(range);
-                                                                                            }}
-                                                                                            onDoubleClick={(e) => {
-                                                                                                if (isLocked) return;
-                                                                                                e.stopPropagation();
-                                                                                                // Double-click on a cell always enters cell-edit mode
-                                                                                                // and directly starts text editing for that cell.
-                                                                                                // (No need to check editingTableId – set it here directly)
-                                                                                                setEditingTableId(el.id);
-                                                                                                setEditingCellIndex(cellIndex);
+                                                                                            } else {
+                                                                                                isDraggingCellSelectionRef.current = true;
+                                                                                                dragStartCellIndexRef.current = cellIndex;
                                                                                                 setSelectedCellIndices([cellIndex]);
-                                                                                            }}
-                                                                                        >
-                                                                                            {isCellEditing && !isLocked ? (
-                                                                                                <input
-                                                                                                    key={`cell-input-${el.id}-${cellIndex}`}
-                                                                                                    type="text"
-                                                                                                    defaultValue={cellData}
-                                                                                                    onCompositionStart={() => {
-                                                                                                        isComposingRef.current = true;
-                                                                                                    }}
-                                                                                                    onCompositionEnd={(e) => {
-                                                                                                        isComposingRef.current = false;
-                                                                                                        // Finalize composed character into store
-                                                                                                        const newCellData = [...(el.tableCellData || Array((el.tableRows || 3) * (el.tableCols || 3)).fill(''))];
-                                                                                                        newCellData[cellIndex] = (e.target as HTMLInputElement).value;
-                                                                                                        updateElement(el.id, { tableCellData: newCellData });
-                                                                                                    }}
-                                                                                                    onChange={(e) => {
-                                                                                                        // Skip store update during IME composition (Korean/CJK)
+                                                                                                const onMouseUp = () => {
+                                                                                                    isDraggingCellSelectionRef.current = false;
+                                                                                                    window.removeEventListener('mouseup', onMouseUp);
+                                                                                                };
+                                                                                                window.addEventListener('mouseup', onMouseUp);
+                                                                                            }
+                                                                                        }}
+                                                                                        onMouseEnter={() => {
+                                                                                            if (!isDraggingCellSelectionRef.current) return;
+                                                                                            if (editingTableId !== el.id) return;
+                                                                                            const startIdx = dragStartCellIndexRef.current;
+                                                                                            if (startIdx < 0) return;
+                                                                                            const r1 = Math.floor(startIdx / cols), c1 = startIdx % cols;
+                                                                                            const r2 = rowIdx, c2 = colIdx;
+                                                                                            const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
+                                                                                            const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
+                                                                                            const range: number[] = [];
+                                                                                            for (let r = rMin; r <= rMax; r++) {
+                                                                                                for (let c = cMin; c <= cMax; c++) {
+                                                                                                    range.push(r * cols + c);
+                                                                                                }
+                                                                                            }
+                                                                                            setSelectedCellIndices(range);
+                                                                                        }}
+                                                                                        onDoubleClick={(e) => {
+                                                                                            if (isLocked) return;
+                                                                                            e.stopPropagation();
+                                                                                            setEditingTableId(el.id);
+                                                                                            setEditingCellIndex(cellIndex);
+                                                                                            setSelectedCellIndices([cellIndex]);
+                                                                                        }}
+                                                                                    >
+                                                                                        {isCellEditing && !isLocked ? (
+                                                                                            <input
+                                                                                                key={`cell-input-${el.id}-${cellIndex}`}
+                                                                                                type="text"
+                                                                                                defaultValue={cellData}
+                                                                                                onCompositionStart={() => { isComposingRef.current = true; }}
+                                                                                                onCompositionEnd={(e) => {
+                                                                                                    isComposingRef.current = false;
+                                                                                                    const newCellData = [...(el.tableCellData || Array(rows * cols).fill(''))];
+                                                                                                    newCellData[cellIndex] = (e.target as HTMLInputElement).value;
+                                                                                                    updateElement(el.id, { tableCellData: newCellData });
+                                                                                                }}
+                                                                                                onChange={(e) => {
+                                                                                                    if (isComposingRef.current) return;
+                                                                                                    const newCellData = [...(el.tableCellData || Array(rows * cols).fill(''))];
+                                                                                                    newCellData[cellIndex] = e.target.value;
+                                                                                                    updateElement(el.id, { tableCellData: newCellData });
+                                                                                                }}
+                                                                                                onBlur={(e) => {
+                                                                                                    const newCellData = [...(el.tableCellData || Array(rows * cols).fill(''))];
+                                                                                                    newCellData[cellIndex] = e.target.value;
+                                                                                                    updateElement(el.id, { tableCellData: newCellData });
+                                                                                                }}
+                                                                                                onMouseDown={(e) => e.stopPropagation()}
+                                                                                                onKeyDown={(e) => {
+                                                                                                    if (e.key === 'Tab') {
+                                                                                                        e.preventDefault();
+                                                                                                        const cur = [...(el.tableCellData || Array(rows * cols).fill(''))];
+                                                                                                        cur[cellIndex] = (e.target as HTMLInputElement).value;
+                                                                                                        updateElement(el.id, { tableCellData: cur });
+                                                                                                        const nextIdx = cellIndex + 1;
+                                                                                                        if (nextIdx < rows * cols) {
+                                                                                                            setEditingCellIndex(nextIdx);
+                                                                                                            setSelectedCellIndices([nextIdx]);
+                                                                                                        }
+                                                                                                    } else if (e.key === 'Enter') {
+                                                                                                        e.preventDefault();
                                                                                                         if (isComposingRef.current) return;
-                                                                                                        const newCellData = [...(el.tableCellData || Array((el.tableRows || 3) * (el.tableCols || 3)).fill(''))];
-                                                                                                        newCellData[cellIndex] = e.target.value;
-                                                                                                        updateElement(el.id, { tableCellData: newCellData });
-                                                                                                    }}
-                                                                                                    onBlur={(e) => {
-                                                                                                        // Always persist final value on blur
-                                                                                                        const newCellData = [...(el.tableCellData || Array((el.tableRows || 3) * (el.tableCols || 3)).fill(''))];
-                                                                                                        newCellData[cellIndex] = e.target.value;
-                                                                                                        updateElement(el.id, { tableCellData: newCellData });
-                                                                                                    }}
-                                                                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                                                                    onKeyDown={(e) => {
-                                                                                                        if (e.key === 'Tab') {
-                                                                                                            e.preventDefault();
-                                                                                                            // Save current before switching
-                                                                                                            const cur = [...(el.tableCellData || Array((el.tableRows || 3) * (el.tableCols || 3)).fill(''))];
-                                                                                                            cur[cellIndex] = (e.target as HTMLInputElement).value;
-                                                                                                            updateElement(el.id, { tableCellData: cur });
-                                                                                                            const nextIdx = cellIndex + 1;
-                                                                                                            const total = (el.tableRows || 3) * (el.tableCols || 3);
-                                                                                                            if (nextIdx < total) {
-                                                                                                                setEditingCellIndex(nextIdx);
-                                                                                                                setSelectedCellIndices([nextIdx]);
-                                                                                                            }
-                                                                                                        } else if (e.key === 'Enter') {
-                                                                                                            e.preventDefault();
-                                                                                                            if (isComposingRef.current) return; // Let IME handle Enter
-                                                                                                            // Save current before switching
-                                                                                                            const cur = [...(el.tableCellData || Array((el.tableRows || 3) * (el.tableCols || 3)).fill(''))];
-                                                                                                            cur[cellIndex] = (e.target as HTMLInputElement).value;
-                                                                                                            updateElement(el.id, { tableCellData: cur });
-                                                                                                            const nextIdx = cellIndex + (el.tableCols || 3);
-                                                                                                            const total = (el.tableRows || 3) * (el.tableCols || 3);
-                                                                                                            if (nextIdx < total) {
-                                                                                                                setEditingCellIndex(nextIdx);
-                                                                                                                setSelectedCellIndices([nextIdx]);
-                                                                                                            } else {
-                                                                                                                setEditingCellIndex(null);
-                                                                                                            }
-                                                                                                        } else if (e.key === 'Escape') {
+                                                                                                        const cur = [...(el.tableCellData || Array(rows * cols).fill(''))];
+                                                                                                        cur[cellIndex] = (e.target as HTMLInputElement).value;
+                                                                                                        updateElement(el.id, { tableCellData: cur });
+                                                                                                        const nextIdx = cellIndex + cols;
+                                                                                                        if (nextIdx < rows * cols) {
+                                                                                                            setEditingCellIndex(nextIdx);
+                                                                                                            setSelectedCellIndices([nextIdx]);
+                                                                                                        } else {
                                                                                                             setEditingCellIndex(null);
                                                                                                         }
-                                                                                                    }}
-                                                                                                    autoFocus
-                                                                                                    className="w-full bg-transparent border-none outline-none text-[10px] p-0"
-                                                                                                    style={{ textAlign: cellStyle.textAlign || el.textAlign || 'center' }}
-                                                                                                />
-                                                                                            ) : (
-                                                                                                <span className="block truncate">
-                                                                                                    {cellData || '\u00A0'}
-                                                                                                </span>
-                                                                                            )}
-                                                                                        </td>
+                                                                                                    } else if (e.key === 'Escape') {
+                                                                                                        setEditingCellIndex(null);
+                                                                                                    }
+                                                                                                }}
+                                                                                                autoFocus
+                                                                                                className="w-full bg-transparent border-none outline-none text-[10px] p-0"
+                                                                                                style={{ textAlign: cellStyle.textAlign || el.textAlign || 'center' }}
+                                                                                            />
+                                                                                        ) : (
+                                                                                            <span className="block truncate">
+                                                                                                {cellData || '\u00A0'}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+
+                                                                            {/* Column Resize Handles for this row */}
+                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
+                                                                                const visibleBoundaries = new Set<number>();
+                                                                                Array.from({ length: cols }).forEach((_, cIdx) => {
+                                                                                    const cellIdx = rowIdx * cols + cIdx;
+                                                                                    if (!coveredCells.has(cellIdx)) {
+                                                                                        const span = el.tableCellSpans?.[cellIdx]?.colSpan || 1;
+                                                                                        const endBoundary = cIdx + span - 1;
+                                                                                        if (endBoundary < cols - 1) {
+                                                                                            visibleBoundaries.add(endBoundary);
+                                                                                        }
+                                                                                    }
+                                                                                });
+
+                                                                                let accPercent = 0;
+                                                                                return Array.from({ length: cols - 1 }).map((_, idx) => {
+                                                                                    accPercent += rowWidths[idx];
+                                                                                    if (!visibleBoundaries.has(idx)) return null;
+
+                                                                                    const leftPercent = accPercent;
+                                                                                    return (
+                                                                                        <div
+                                                                                            key={`col-resize-${rowIdx}-${idx}`}
+                                                                                            className="absolute top-0 bottom-0 cursor-col-resize z-[120] group/colresize"
+                                                                                            style={{ left: `${leftPercent}%`, width: 8, marginLeft: -4 }}
+                                                                                            onMouseDown={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                e.preventDefault();
+                                                                                                tableColResizeRef.current = {
+                                                                                                    elId: el.id,
+                                                                                                    rowIdx: rowIdx,
+                                                                                                    colIdx: idx,
+                                                                                                    startX: e.clientX,
+                                                                                                    startWidths: [...rowWidths]
+                                                                                                };
+                                                                                                const handleMove = (moveE: MouseEvent) => {
+                                                                                                    if (!tableColResizeRef.current) return;
+                                                                                                    moveE.preventDefault();
+                                                                                                    moveE.stopImmediatePropagation();
+                                                                                                    const { rowIdx: ri, colIdx: ci, startX, startWidths: sw } = tableColResizeRef.current;
+                                                                                                    const deltaX = moveE.clientX - startX;
+                                                                                                    const elWidth = el.width;
+                                                                                                    const deltaPercent = (deltaX / elWidth) * 100;
+                                                                                                    const newWidths = [...sw];
+                                                                                                    const minW = 2;
+                                                                                                    let w1 = sw[ci] + deltaPercent;
+                                                                                                    let w2 = sw[ci + 1] - deltaPercent;
+                                                                                                    if (w1 < minW) { w2 -= (minW - w1); w1 = minW; }
+                                                                                                    if (w2 < minW) { w1 -= (minW - w2); w2 = minW; }
+                                                                                                    newWidths[ci] = w1;
+                                                                                                    newWidths[ci + 1] = w2;
+
+                                                                                                    const allRowWidths = [...(el.tableRowColWidths || Array(rows).fill(null).map(() => el.tableColWidths || Array(cols).fill(100 / cols)))];
+                                                                                                    allRowWidths[ri!] = newWidths;
+                                                                                                    updateElement(el.id, { tableRowColWidths: allRowWidths });
+                                                                                                };
+                                                                                                const handleUp = () => {
+                                                                                                    tableColResizeRef.current = null;
+                                                                                                    window.removeEventListener('mousemove', handleMove, true);
+                                                                                                    window.removeEventListener('mouseup', handleUp, true);
+                                                                                                    syncUpdate({ drawElements: drawElements.map(item => item.id === el.id ? { ...item } : item) });
+                                                                                                };
+                                                                                                window.addEventListener('mousemove', handleMove, true);
+                                                                                                window.addEventListener('mouseup', handleUp, true);
+                                                                                            }}
+                                                                                        >
+                                                                                            <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[2px] bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
+                                                                                        </div>
                                                                                     );
-                                                                                })}
-                                                                            </tr>
-                                                                        );
-                                                                    });
-                                                                })()}
-                                                            </tbody>
-                                                        </table>
-                                                        {/* Column Resize Handles */}
-                                                        {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
-                                                            const cols = el.tableCols || 3;
-                                                            const widths = el.tableColWidths || Array(cols).fill(100 / cols);
-                                                            let accPercent = 0;
-                                                            return Array.from({ length: cols - 1 }).map((_, idx) => {
-                                                                accPercent += widths[idx];
-                                                                const leftPercent = accPercent;
-                                                                return (
-                                                                    <div
-                                                                        key={`col-resize-${idx}`}
-                                                                        className="absolute top-0 bottom-0 cursor-col-resize z-[120] group/colresize"
-                                                                        style={{ left: `${leftPercent}%`, width: 8, marginLeft: -4 }}
-                                                                        onMouseDown={(e) => {
-                                                                            e.stopPropagation();
-                                                                            e.preventDefault();
-                                                                            tableColResizeRef.current = {
-                                                                                elId: el.id,
-                                                                                colIdx: idx,
-                                                                                startX: e.clientX,
-                                                                                startWidths: [...widths]
-                                                                            };
-                                                                            const handleMove = (moveE: MouseEvent) => {
-                                                                                if (!tableColResizeRef.current) return;
-                                                                                moveE.preventDefault();
-                                                                                moveE.stopImmediatePropagation();
-                                                                                const { colIdx: ci, startX, startWidths: sw } = tableColResizeRef.current;
-                                                                                const deltaX = moveE.clientX - startX;
-                                                                                const elWidth = el.width;
-                                                                                const deltaPercent = (deltaX / elWidth) * 100;
-                                                                                const newWidths = [...sw];
-                                                                                const minW = 5;
-                                                                                let w1 = sw[ci] + deltaPercent;
-                                                                                let w2 = sw[ci + 1] - deltaPercent;
-                                                                                if (w1 < minW) { w2 -= (minW - w1); w1 = minW; }
-                                                                                if (w2 < minW) { w1 -= (minW - w2); w2 = minW; }
-                                                                                newWidths[ci] = w1;
-                                                                                newWidths[ci + 1] = w2;
-                                                                                updateElement(el.id, { tableColWidths: newWidths });
-                                                                            };
-                                                                            const handleUp = () => {
-                                                                                tableColResizeRef.current = null;
-                                                                                window.removeEventListener('mousemove', handleMove, true);
-                                                                                window.removeEventListener('mouseup', handleUp, true);
-                                                                                syncUpdate({ drawElements: drawElements.map(item => item.id === el.id ? { ...item } : item) });
-                                                                            };
-                                                                            window.addEventListener('mousemove', handleMove, true);
-                                                                            window.addEventListener('mouseup', handleUp, true);
-                                                                        }}
-                                                                    >
-                                                                        <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[2px] bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
-                                                                    </div>
-                                                                );
-                                                            });
-                                                        })()}
+                                                                                });
+                                                                            })()}
+                                                                        </div>
+                                                                    );
+                                                                });
+                                                            })()}
+                                                        </div>
                                                         {/* Row Resize Handles */}
                                                         {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
                                                             const rows = el.tableRows || 3;
