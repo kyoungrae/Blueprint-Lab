@@ -305,7 +305,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         }
     };
 
-    const contentMode = screen.contentMode || 'IMAGE';
+    const contentMode = screen.contentMode || 'DRAW';
 
     const handleTabChange = (mode: 'IMAGE' | 'DRAW') => {
         if (isLocked) return;
@@ -1303,7 +1303,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 )}
 
                 {/* ── 3. Body Content (Split Layout) ── */}
-                <div className="flex bg-white min-h-[500px]">
+                <div className="flex bg-white min-h-[500px] rounded-[15px]">
 
                     {/* [LEFT PANE 70%] - Image & Function Items */}
                     <div className="w-[70%] flex-shrink-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px]">
@@ -1833,16 +1833,16 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 {isSelected && !isLocked && selectedElementIds.length === 1 && (
                                                     <>
                                                         {/* Corners */}
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nw-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ne-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-sw-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-se-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[5px] -left-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[5px] -right-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[5px] -left-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[5px] -right-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize z-[105]" />
 
                                                         {/* Middles */}
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-n-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-s-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-w-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-e-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[5px] left-1/2 -translate-x-1/2 w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[5px] left-1/2 -translate-x-1/2 w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize z-[105]" />
                                                     </>
                                                 )}
                                             </div>
