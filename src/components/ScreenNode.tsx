@@ -2,7 +2,7 @@ import React, { memo, useState, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { Screen, DrawElement } from '../types/screenDesign';
 import { SCREEN_TYPES } from '../types/screenDesign';
-import { Plus, Trash2, Lock, Unlock, Image as ImageIcon, X, Monitor, ChevronDown, Database, Pencil, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, ChevronLeft, ChevronRight, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split } from 'lucide-react';
+import { Plus, Minus, Trash2, Lock, Unlock, Image as ImageIcon, X, Monitor, ChevronDown, Database, Pencil, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, ChevronLeft, ChevronRight, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -352,6 +352,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const isComposingRef = useRef(false); // IME composition flag (Korean, CJK, etc.)
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
     const dragStartCellIndexRef = useRef<number>(-1); // cell index where drag started
+
+    // Split Dialog State
+    const [showSplitDialog, setShowSplitDialog] = useState(false);
+    const [splitTarget, setSplitTarget] = useState<{ elId: string, cellIdx: number } | null>(null);
+    const [splitRows, setSplitRows] = useState(2);
+    const [splitCols, setSplitCols] = useState(1);
 
     // Panel Dragging State
     const [toolbarPos, setToolbarPos] = useState<{ x: number | string, y: number }>({ x: '50%', y: 16 });
@@ -1019,6 +1025,108 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         window.addEventListener('mouseup', onMouseUp);
     };
 
+    // 최대공약수 계산 도우미
+    const gcd = (a: number, b: number): number => {
+        return b === 0 ? a : gcd(b, a % b);
+    };
+
+    const handleExecSplit = (el: DrawElement, cellIdx: number, r: number, c: number) => {
+        if (!el.tableCols || !el.tableRows || isLocked) return;
+
+        let targetEl: DrawElement = { ...el };
+        const oldRows = el.tableRows;
+        const oldCols = el.tableCols;
+        const currentSpans = el.tableCellSpans || Array(oldRows * oldCols).fill({ rowSpan: 1, colSpan: 1 });
+        const span = currentSpans[cellIdx] || { rowSpan: 1, colSpan: 1 };
+
+        let R = span.rowSpan;
+        let C = span.colSpan;
+        let currentCellIdx = cellIdx;
+
+        // 1. Grid Upscaling Logic
+        if (R % r !== 0 || C % c !== 0) {
+            const factorR = (R % r === 0) ? 1 : (r / gcd(R, r));
+            const factorC = (C % c === 0) ? 1 : (c / gcd(C, c));
+
+            const newRows = oldRows * factorR;
+            const newCols = oldCols * factorC;
+
+            const newSpans = Array(newRows * newCols).fill(null).map(() => ({ rowSpan: 1, colSpan: 1 }));
+            const newData = Array(newRows * newCols).fill('');
+            const newColors = Array(newRows * newCols).fill(undefined);
+            const newStyles = Array(newRows * newCols).fill(undefined);
+
+            for (let ir = 0; ir < oldRows; ir++) {
+                for (let ic = 0; ic < oldCols; ic++) {
+                    const oIdx = ir * oldCols + ic;
+                    const oSpan = currentSpans[oIdx] || { rowSpan: 1, colSpan: 1 };
+
+                    const nRow = ir * factorR;
+                    const nCol = ic * factorC;
+                    const nIdx = nRow * newCols + nCol;
+
+                    newSpans[nIdx] = {
+                        rowSpan: oSpan.rowSpan * factorR,
+                        colSpan: oSpan.colSpan * factorC
+                    };
+                    newData[nIdx] = el.tableCellData?.[oIdx] || '';
+                    newColors[nIdx] = el.tableCellColors?.[oIdx];
+                    newStyles[nIdx] = el.tableCellStyles?.[oIdx];
+                }
+            }
+
+            const newHeights = el.tableRowHeights ? el.tableRowHeights.flatMap(h => Array(factorR).fill(h / factorR)) : Array(newRows).fill(100 / newRows);
+            const newWidths = el.tableColWidths ? el.tableColWidths.flatMap(w => Array(factorC).fill(w / factorC)) : Array(newCols).fill(100 / newCols);
+            const newRowColWidths = el.tableRowColWidths
+                ? el.tableRowColWidths.flatMap(rw => Array.from({ length: factorR }, () => rw.flatMap(w => Array(factorC).fill(w / factorC))))
+                : undefined;
+
+            targetEl = {
+                ...el,
+                tableRows: newRows,
+                tableCols: newCols,
+                tableCellSpans: newSpans,
+                tableCellData: newData,
+                tableCellColors: newColors,
+                tableCellStyles: newStyles,
+                tableRowHeights: newHeights,
+                tableColWidths: newWidths,
+                tableRowColWidths: newRowColWidths
+            };
+
+            currentCellIdx = (Math.floor(cellIdx / oldCols) * factorR) * newCols + (cellIdx % oldCols) * factorC;
+            const updatedSpan = targetEl.tableCellSpans?.[currentCellIdx] || { rowSpan: 1, colSpan: 1 };
+            R = updatedSpan.rowSpan;
+            C = updatedSpan.colSpan;
+        }
+
+        // 2. Execute Split on the (possibly upscaled) grid
+        const finalCols = targetEl.tableCols || 1;
+        const finalSpans = [...(targetEl.tableCellSpans || [])];
+        const subR = R / r;
+        const subC = C / c;
+        const startRow = Math.floor(currentCellIdx / finalCols);
+        const startCol = currentCellIdx % finalCols;
+
+        for (let ir = 0; ir < R; ir++) {
+            for (let ic = 0; ic < C; ic++) {
+                const idx = (startRow + ir) * finalCols + (startCol + ic);
+                finalSpans[idx] = { rowSpan: 1, colSpan: 1 };
+            }
+        }
+
+        for (let ir = 0; ir < r; ir++) {
+            for (let ic = 0; ic < c; ic++) {
+                const idx = (startRow + ir * subR) * finalCols + (startCol + ic * subC);
+                finalSpans[idx] = { rowSpan: subR, colSpan: subC };
+            }
+        }
+        const nextElements = drawElements.map(it => it.id === el.id ? { ...targetEl, tableCellSpans: finalSpans } : it);
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+        setSelectedCellIndices([]);
+    };
+
     const handleMergeCells = (selectedEl: DrawElement) => {
         if (!selectedEl.tableCols || !selectedEl.tableRows || selectedCellIndices.length < 2) return;
         const cols = selectedEl.tableCols;
@@ -1062,24 +1170,39 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
     const handleSplitCells = (selectedEl: DrawElement) => {
-        if (!selectedEl.tableCols || !selectedCellIndices.length) return;
-        const newSpans = [...(selectedEl.tableCellSpans || [])];
-        let changed = false;
+        if (!selectedEl.tableCols || !selectedCellIndices.length || isLocked) return;
 
-        selectedCellIndices.forEach(idx => {
-            if (newSpans[idx] && (newSpans[idx].rowSpan > 1 || newSpans[idx].colSpan > 1)) {
-                newSpans[idx] = { rowSpan: 1, colSpan: 1 };
-                changed = true;
+        // 만약 여러 셀이 선택되어 있다면 기존처럼 '병합 해제'만 수행합니다.
+        if (selectedCellIndices.length > 1) {
+            const newSpans = [...(selectedEl.tableCellSpans || [])];
+            let changed = false;
+
+            selectedCellIndices.forEach(idx => {
+                if (newSpans[idx] && (newSpans[idx].rowSpan > 1 || newSpans[idx].colSpan > 1)) {
+                    newSpans[idx] = { rowSpan: 1, colSpan: 1 };
+                    changed = true;
+                }
+            });
+
+            if (changed) {
+                const nextElements = drawElements.map(el =>
+                    el.id === selectedEl.id ? { ...el, tableCellSpans: newSpans } : el
+                );
+                update({ drawElements: nextElements });
+                syncUpdate({ drawElements: nextElements });
             }
-        });
-
-        if (changed) {
-            const nextElements = drawElements.map(el =>
-                el.id === selectedEl.id ? { ...el, tableCellSpans: newSpans } : el
-            );
-            update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+            return;
         }
+
+        // 단일 셀 선택 시 -> 분할 팝업 열기
+        const cellIdx = selectedCellIndices[0];
+        const span = selectedEl.tableCellSpans?.[cellIdx] || { rowSpan: 1, colSpan: 1 };
+
+        setSplitTarget({ elId: selectedEl.id, cellIdx });
+        // 이미 병합된 셀이면 현재 span을 기본값으로, 1x1이면 2x1을 기본값으로 제안
+        setSplitRows(span.rowSpan > 1 ? span.rowSpan : 2);
+        setSplitCols(span.colSpan > 1 ? span.colSpan : 1);
+        setShowSplitDialog(true);
     };
 
     const handleResizeStart = (direction: string) => (e: React.MouseEvent) => {
@@ -1474,13 +1597,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         onDoubleClick={(e) => {
                                                             if (isLocked) return;
                                                             e.stopPropagation();
-                                                            // Enter cell-edit mode on double-click
                                                             setEditingTableId(el.id);
                                                             setSelectedCellIndices([]);
                                                             setEditingCellIndex(null);
                                                         }}
                                                         onClick={(e) => {
-                                                            // Clicking the table background (not a cell) exits cell-edit mode
                                                             if (editingTableId === el.id && e.target === e.currentTarget) {
                                                                 setEditingTableId(null);
                                                                 setSelectedCellIndices([]);
@@ -1491,8 +1612,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         <div
                                                             className="w-full h-full border-collapse overflow-hidden"
                                                             style={{
-                                                                display: 'flex',
-                                                                flexDirection: 'column'
+                                                                display: 'grid',
+                                                                gridTemplateRows: (el.tableRowHeights || Array(el.tableRows || 3).fill(100 / (el.tableRows || 3))).map(h => `${h}%`).join(' '),
+                                                                gridTemplateColumns: (el.tableColWidths || Array(el.tableCols || 3).fill(100 / (el.tableCols || 3))).map(w => `${w}%`).join(' ')
                                                             }}
                                                         >
                                                             {(() => {
@@ -1514,256 +1636,196 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     });
                                                                 }
 
-                                                                return Array.from({ length: rows }).map((_, rowIdx) => {
-                                                                    const rowH = el.tableRowHeights?.[rowIdx] ?? (100 / rows);
-                                                                    const rowWidths = el.tableRowColWidths?.[rowIdx] || el.tableColWidths || Array(cols).fill(100 / cols);
+                                                                return Array.from({ length: rows * cols }).map((_, cellIndex) => {
+                                                                    if (coveredCells.has(cellIndex)) return null;
+
+                                                                    const rowIdx = Math.floor(cellIndex / cols);
+                                                                    const colIdx = cellIndex % cols;
+                                                                    const cellData = el.tableCellData?.[cellIndex] || '';
+                                                                    const isHeaderRow = rowIdx === 0;
+                                                                    const cellColor = el.tableCellColors?.[cellIndex];
+                                                                    const cellStyle = el.tableCellStyles?.[cellIndex] || {};
+                                                                    const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
+                                                                    const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
+                                                                    const defaultBg = isHeaderRow ? hexToRgba('#2c3e7c', 0.1) : '#ffffff';
+
+                                                                    const borderTop = `${cellStyle.borderTopWidth ?? el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderTop || el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                    const borderBottom = `${cellStyle.borderBottomWidth ?? el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderBottom || el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                    const borderLeft = `${cellStyle.borderLeftWidth ?? el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderLeft || el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                    const borderRight = `${cellStyle.borderRightWidth ?? el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderRight || el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+
+                                                                    const cellSpan = el.tableCellSpans?.[cellIndex] || { rowSpan: 1, colSpan: 1 };
 
                                                                     return (
                                                                         <div
-                                                                            key={rowIdx}
-                                                                            className="relative"
+                                                                            key={cellIndex}
+                                                                            className={`px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center overflow-hidden h-full ${isHeaderRow && !cellColor
+                                                                                ? 'font-bold text-[#2c3e7c]'
+                                                                                : 'text-gray-700'
+                                                                                }`}
                                                                             style={{
-                                                                                height: `${rowH}%`,
-                                                                                display: 'grid',
-                                                                                gridTemplateColumns: rowWidths.map(w => `${w}%`).join(' ')
+                                                                                gridColumn: `span ${cellSpan.colSpan}`,
+                                                                                gridRow: `span ${cellSpan.rowSpan}`,
+                                                                                borderTop,
+                                                                                borderBottom,
+                                                                                borderLeft,
+                                                                                borderRight,
+                                                                                verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
+                                                                                textAlign: cellStyle.textAlign || el.textAlign || 'center',
+                                                                                backgroundColor: cellColor || defaultBg,
+                                                                                outline: isCellSelected ? '2px solid #3b82f6' : 'none',
+                                                                                outlineOffset: '-1px',
+                                                                                position: 'relative',
+                                                                                cursor: editingTableId === el.id ? 'crosshair' : 'default'
                                                                             }}
-                                                                        >
-                                                                            {Array.from({ length: cols }).map((_, colIdx) => {
-                                                                                const cellIndex = rowIdx * cols + colIdx;
-                                                                                if (coveredCells.has(cellIndex)) return null;
-
-                                                                                const cellData = el.tableCellData?.[cellIndex] || '';
-                                                                                const isHeaderRow = rowIdx === 0;
-                                                                                const cellColor = el.tableCellColors?.[cellIndex];
-                                                                                const cellStyle = el.tableCellStyles?.[cellIndex] || {};
-                                                                                const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
-                                                                                const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
-                                                                                const defaultBg = isHeaderRow ? hexToRgba('#2c3e7c', 0.1) : '#ffffff';
-
-                                                                                const borderTop = `${cellStyle.borderTopWidth ?? el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderTop || el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                                const borderBottom = `${cellStyle.borderBottomWidth ?? el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderBottom || el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                                const borderLeft = `${cellStyle.borderLeftWidth ?? el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderLeft || el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                                const borderRight = `${cellStyle.borderRightWidth ?? el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderRight || el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-
-                                                                                const cellSpan = el.tableCellSpans?.[cellIndex] || { rowSpan: 1, colSpan: 1 };
-
-                                                                                return (
-                                                                                    <div
-                                                                                        key={colIdx}
-                                                                                        className={`px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center overflow-hidden h-full ${isHeaderRow && !cellColor
-                                                                                            ? 'font-bold text-[#2c3e7c]'
-                                                                                            : 'text-gray-700'
-                                                                                            }`}
-                                                                                        style={{
-                                                                                            gridColumn: `span ${cellSpan.colSpan}`,
-                                                                                            gridRow: `span ${cellSpan.rowSpan}`,
-                                                                                            borderTop,
-                                                                                            borderBottom,
-                                                                                            borderLeft,
-                                                                                            borderRight,
-                                                                                            verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
-                                                                                            textAlign: cellStyle.textAlign || el.textAlign || 'center',
-                                                                                            backgroundColor: cellColor || defaultBg,
-                                                                                            outline: isCellSelected ? '2px solid #3b82f6' : 'none',
-                                                                                            outlineOffset: '-1px',
-                                                                                            position: 'relative',
-                                                                                            cursor: editingTableId === el.id ? 'crosshair' : 'default'
-                                                                                        }}
-                                                                                        onMouseDown={(e) => {
-                                                                                            if (isLocked) return;
-                                                                                            if (editingTableId !== el.id) return;
-                                                                                            e.stopPropagation();
-                                                                                            if (editingCellIndex !== null) setEditingCellIndex(null);
-                                                                                            if (e.shiftKey && selectedCellIndices.length > 0) {
-                                                                                                const lastIdx = selectedCellIndices[selectedCellIndices.length - 1];
-                                                                                                const r1 = Math.floor(lastIdx / cols), c1 = lastIdx % cols;
-                                                                                                const r2 = rowIdx, c2 = colIdx;
-                                                                                                const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
-                                                                                                const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
-                                                                                                const range: number[] = [];
-                                                                                                for (let r = rMin; r <= rMax; r++) {
-                                                                                                    for (let c = cMin; c <= cMax; c++) {
-                                                                                                        range.push(r * cols + c);
-                                                                                                    }
-                                                                                                }
-                                                                                                setSelectedCellIndices(range);
-                                                                                            } else {
-                                                                                                isDraggingCellSelectionRef.current = true;
-                                                                                                dragStartCellIndexRef.current = cellIndex;
-                                                                                                setSelectedCellIndices([cellIndex]);
-                                                                                                const onMouseUp = () => {
-                                                                                                    isDraggingCellSelectionRef.current = false;
-                                                                                                    window.removeEventListener('mouseup', onMouseUp);
-                                                                                                };
-                                                                                                window.addEventListener('mouseup', onMouseUp);
-                                                                                            }
-                                                                                        }}
-                                                                                        onMouseEnter={() => {
-                                                                                            if (!isDraggingCellSelectionRef.current) return;
-                                                                                            if (editingTableId !== el.id) return;
-                                                                                            const startIdx = dragStartCellIndexRef.current;
-                                                                                            if (startIdx < 0) return;
-                                                                                            const r1 = Math.floor(startIdx / cols), c1 = startIdx % cols;
-                                                                                            const r2 = rowIdx, c2 = colIdx;
-                                                                                            const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
-                                                                                            const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
-                                                                                            const range: number[] = [];
-                                                                                            for (let r = rMin; r <= rMax; r++) {
-                                                                                                for (let c = cMin; c <= cMax; c++) {
-                                                                                                    range.push(r * cols + c);
-                                                                                                }
-                                                                                            }
-                                                                                            setSelectedCellIndices(range);
-                                                                                        }}
-                                                                                        onDoubleClick={(e) => {
-                                                                                            if (isLocked) return;
-                                                                                            e.stopPropagation();
-                                                                                            setEditingTableId(el.id);
-                                                                                            setEditingCellIndex(cellIndex);
-                                                                                            setSelectedCellIndices([cellIndex]);
-                                                                                        }}
-                                                                                    >
-                                                                                        {isCellEditing && !isLocked ? (
-                                                                                            <input
-                                                                                                key={`cell-input-${el.id}-${cellIndex}`}
-                                                                                                type="text"
-                                                                                                defaultValue={cellData}
-                                                                                                onCompositionStart={() => { isComposingRef.current = true; }}
-                                                                                                onCompositionEnd={(e) => {
-                                                                                                    isComposingRef.current = false;
-                                                                                                    const newCellData = [...(el.tableCellData || Array(rows * cols).fill(''))];
-                                                                                                    newCellData[cellIndex] = (e.target as HTMLInputElement).value;
-                                                                                                    updateElement(el.id, { tableCellData: newCellData });
-                                                                                                }}
-                                                                                                onChange={(e) => {
-                                                                                                    if (isComposingRef.current) return;
-                                                                                                    const newCellData = [...(el.tableCellData || Array(rows * cols).fill(''))];
-                                                                                                    newCellData[cellIndex] = e.target.value;
-                                                                                                    updateElement(el.id, { tableCellData: newCellData });
-                                                                                                }}
-                                                                                                onBlur={(e) => {
-                                                                                                    const newCellData = [...(el.tableCellData || Array(rows * cols).fill(''))];
-                                                                                                    newCellData[cellIndex] = e.target.value;
-                                                                                                    updateElement(el.id, { tableCellData: newCellData });
-                                                                                                }}
-                                                                                                onMouseDown={(e) => e.stopPropagation()}
-                                                                                                onKeyDown={(e) => {
-                                                                                                    if (e.key === 'Tab') {
-                                                                                                        e.preventDefault();
-                                                                                                        const cur = [...(el.tableCellData || Array(rows * cols).fill(''))];
-                                                                                                        cur[cellIndex] = (e.target as HTMLInputElement).value;
-                                                                                                        updateElement(el.id, { tableCellData: cur });
-                                                                                                        const nextIdx = cellIndex + 1;
-                                                                                                        if (nextIdx < rows * cols) {
-                                                                                                            setEditingCellIndex(nextIdx);
-                                                                                                            setSelectedCellIndices([nextIdx]);
-                                                                                                        }
-                                                                                                    } else if (e.key === 'Enter') {
-                                                                                                        e.preventDefault();
-                                                                                                        if (isComposingRef.current) return;
-                                                                                                        const cur = [...(el.tableCellData || Array(rows * cols).fill(''))];
-                                                                                                        cur[cellIndex] = (e.target as HTMLInputElement).value;
-                                                                                                        updateElement(el.id, { tableCellData: cur });
-                                                                                                        const nextIdx = cellIndex + cols;
-                                                                                                        if (nextIdx < rows * cols) {
-                                                                                                            setEditingCellIndex(nextIdx);
-                                                                                                            setSelectedCellIndices([nextIdx]);
-                                                                                                        } else {
-                                                                                                            setEditingCellIndex(null);
-                                                                                                        }
-                                                                                                    } else if (e.key === 'Escape') {
-                                                                                                        setEditingCellIndex(null);
-                                                                                                    }
-                                                                                                }}
-                                                                                                autoFocus
-                                                                                                className="w-full bg-transparent border-none outline-none text-[10px] p-0"
-                                                                                                style={{ textAlign: cellStyle.textAlign || el.textAlign || 'center' }}
-                                                                                            />
-                                                                                        ) : (
-                                                                                            <span className="block truncate">
-                                                                                                {cellData || '\u00A0'}
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                );
-                                                                            })}
-
-                                                                            {/* Column Resize Handles for this row */}
-                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
-                                                                                const visibleBoundaries = new Set<number>();
-                                                                                Array.from({ length: cols }).forEach((_, cIdx) => {
-                                                                                    const cellIdx = rowIdx * cols + cIdx;
-                                                                                    if (!coveredCells.has(cellIdx)) {
-                                                                                        const span = el.tableCellSpans?.[cellIdx]?.colSpan || 1;
-                                                                                        const endBoundary = cIdx + span - 1;
-                                                                                        if (endBoundary < cols - 1) {
-                                                                                            visibleBoundaries.add(endBoundary);
+                                                                            onMouseDown={(e) => {
+                                                                                if (isLocked) return;
+                                                                                if (editingTableId !== el.id) return;
+                                                                                e.stopPropagation();
+                                                                                if (editingCellIndex !== null) setEditingCellIndex(null);
+                                                                                if (e.shiftKey && selectedCellIndices.length > 0) {
+                                                                                    const lastIdx = selectedCellIndices[selectedCellIndices.length - 1];
+                                                                                    const r1 = Math.floor(lastIdx / cols), c1 = lastIdx % cols;
+                                                                                    const r2 = rowIdx, c2 = colIdx;
+                                                                                    const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
+                                                                                    const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
+                                                                                    const range: number[] = [];
+                                                                                    for (let r = rMin; r <= rMax; r++) {
+                                                                                        for (let c = cMin; c <= cMax; c++) {
+                                                                                            range.push(r * cols + c);
                                                                                         }
                                                                                     }
-                                                                                });
-
-                                                                                let accPercent = 0;
-                                                                                return Array.from({ length: cols - 1 }).map((_, idx) => {
-                                                                                    accPercent += rowWidths[idx];
-                                                                                    if (!visibleBoundaries.has(idx)) return null;
-
-                                                                                    const leftPercent = accPercent;
-                                                                                    return (
-                                                                                        <div
-                                                                                            key={`col-resize-${rowIdx}-${idx}`}
-                                                                                            className="absolute top-0 bottom-0 cursor-col-resize z-[120] group/colresize"
-                                                                                            style={{ left: `${leftPercent}%`, width: 8, marginLeft: -4 }}
-                                                                                            onMouseDown={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                e.preventDefault();
-                                                                                                tableColResizeRef.current = {
-                                                                                                    elId: el.id,
-                                                                                                    rowIdx: rowIdx,
-                                                                                                    colIdx: idx,
-                                                                                                    startX: e.clientX,
-                                                                                                    startWidths: [...rowWidths]
-                                                                                                };
-                                                                                                const handleMove = (moveE: MouseEvent) => {
-                                                                                                    if (!tableColResizeRef.current) return;
-                                                                                                    moveE.preventDefault();
-                                                                                                    moveE.stopImmediatePropagation();
-                                                                                                    const { rowIdx: ri, colIdx: ci, startX, startWidths: sw } = tableColResizeRef.current;
-                                                                                                    const deltaX = moveE.clientX - startX;
-                                                                                                    const elWidth = el.width;
-                                                                                                    const deltaPercent = (deltaX / elWidth) * 100;
-                                                                                                    const newWidths = [...sw];
-                                                                                                    const minW = 2;
-                                                                                                    let w1 = sw[ci] + deltaPercent;
-                                                                                                    let w2 = sw[ci + 1] - deltaPercent;
-                                                                                                    if (w1 < minW) { w2 -= (minW - w1); w1 = minW; }
-                                                                                                    if (w2 < minW) { w1 -= (minW - w2); w2 = minW; }
-                                                                                                    newWidths[ci] = w1;
-                                                                                                    newWidths[ci + 1] = w2;
-
-                                                                                                    const allRowWidths = [...(el.tableRowColWidths || Array(rows).fill(null).map(() => el.tableColWidths || Array(cols).fill(100 / cols)))];
-                                                                                                    allRowWidths[ri!] = newWidths;
-                                                                                                    updateElement(el.id, { tableRowColWidths: allRowWidths });
-                                                                                                };
-                                                                                                const handleUp = () => {
-                                                                                                    tableColResizeRef.current = null;
-                                                                                                    window.removeEventListener('mousemove', handleMove, true);
-                                                                                                    window.removeEventListener('mouseup', handleUp, true);
-                                                                                                    syncUpdate({ drawElements: drawElements.map(item => item.id === el.id ? { ...item } : item) });
-                                                                                                };
-                                                                                                window.addEventListener('mousemove', handleMove, true);
-                                                                                                window.addEventListener('mouseup', handleUp, true);
-                                                                                            }}
-                                                                                        >
-                                                                                            <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[2px] bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
-                                                                                        </div>
-                                                                                    );
-                                                                                });
-                                                                            })()}
+                                                                                    setSelectedCellIndices(range);
+                                                                                } else {
+                                                                                    isDraggingCellSelectionRef.current = true;
+                                                                                    dragStartCellIndexRef.current = cellIndex;
+                                                                                    setSelectedCellIndices([cellIndex]);
+                                                                                    const onMouseUp = () => {
+                                                                                        isDraggingCellSelectionRef.current = false;
+                                                                                        window.removeEventListener('mouseup', onMouseUp);
+                                                                                    };
+                                                                                    window.addEventListener('mouseup', onMouseUp);
+                                                                                }
+                                                                            }}
+                                                                            onMouseEnter={() => {
+                                                                                if (!isDraggingCellSelectionRef.current) return;
+                                                                                if (editingTableId !== el.id) return;
+                                                                                const startIdx = dragStartCellIndexRef.current;
+                                                                                if (startIdx < 0) return;
+                                                                                const r1 = Math.floor(startIdx / cols), c1 = startIdx % cols;
+                                                                                const r2 = rowIdx, c2 = colIdx;
+                                                                                const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
+                                                                                const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
+                                                                                const range: number[] = [];
+                                                                                for (let r = rMin; r <= rMax; r++) {
+                                                                                    for (let c = cMin; c <= cMax; c++) {
+                                                                                        range.push(r * cols + c);
+                                                                                    }
+                                                                                }
+                                                                                setSelectedCellIndices(range);
+                                                                            }}
+                                                                            onDoubleClick={(e) => {
+                                                                                if (isLocked) return;
+                                                                                if (editingTableId !== el.id) return;
+                                                                                e.stopPropagation();
+                                                                                setEditingCellIndex(cellIndex);
+                                                                            }}
+                                                                        >
+                                                                            {isCellEditing ? (
+                                                                                <textarea
+                                                                                    autoFocus
+                                                                                    className="w-full h-full bg-white border-none outline-none resize-none p-1 text-[10px]"
+                                                                                    value={cellData}
+                                                                                    onChange={(e) => {
+                                                                                        const newData = [...(el.tableCellData || Array(rows * cols).fill(''))];
+                                                                                        newData[cellIndex] = e.target.value;
+                                                                                        const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData } : it);
+                                                                                        update({ drawElements: nextElements });
+                                                                                    }}
+                                                                                    onBlur={() => {
+                                                                                        setEditingCellIndex(null);
+                                                                                        syncUpdate({ drawElements });
+                                                                                    }}
+                                                                                    onKeyDown={(e) => {
+                                                                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                                                                            e.preventDefault();
+                                                                                            setEditingCellIndex(null);
+                                                                                            syncUpdate({ drawElements });
+                                                                                        }
+                                                                                        if (e.key === 'Tab') {
+                                                                                            e.preventDefault();
+                                                                                            const nextIdx = e.shiftKey ? cellIndex - 1 : cellIndex + 1;
+                                                                                            if (nextIdx >= 0 && nextIdx < rows * cols) {
+                                                                                                setEditingCellIndex(nextIdx);
+                                                                                                setSelectedCellIndices([nextIdx]);
+                                                                                            }
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                            ) : (
+                                                                                <div className="w-full h-full flex items-center justify-center whitespace-pre-wrap">
+                                                                                    {cellData}
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                     );
                                                                 });
                                                             })()}
                                                         </div>
+
+                                                        {/* Column Resize Handles */}
+                                                        {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
+                                                            const cols = el.tableCols || 3;
+                                                            const widths = el.tableColWidths || Array(cols).fill(100 / cols);
+                                                            let accPercent = 0;
+                                                            return Array.from({ length: cols - 1 }).map((_, idx) => {
+                                                                accPercent += widths[idx];
+                                                                return (
+                                                                    <div
+                                                                        key={`col-resize-${idx}`}
+                                                                        className="absolute top-0 bottom-0 cursor-col-resize z-[120] group/colresize"
+                                                                        style={{ left: `${accPercent}%`, width: 8, marginLeft: -4 }}
+                                                                        onMouseDown={(e) => {
+                                                                            e.stopPropagation();
+                                                                            e.preventDefault();
+                                                                            tableColResizeRef.current = {
+                                                                                elId: el.id,
+                                                                                colIdx: idx,
+                                                                                startX: e.clientX,
+                                                                                startWidths: [...widths]
+                                                                            };
+                                                                            const handleMove = (moveE: MouseEvent) => {
+                                                                                if (!tableColResizeRef.current) return;
+                                                                                moveE.preventDefault();
+                                                                                const { colIdx: ci, startX, startWidths: sw } = tableColResizeRef.current;
+                                                                                const deltaX = moveE.clientX - startX;
+                                                                                const deltaPercent = (deltaX / el.width) * 100;
+                                                                                const newWidths = [...sw];
+                                                                                const minW = 2;
+                                                                                let w1 = sw[ci] + deltaPercent;
+                                                                                let w2 = sw[ci + 1] - deltaPercent;
+                                                                                if (w1 < minW) { w2 -= (minW - w1); w1 = minW; }
+                                                                                if (w2 < minW) { w1 -= (minW - w2); w2 = minW; }
+                                                                                newWidths[ci] = w1;
+                                                                                newWidths[ci + 1] = w2;
+                                                                                updateElement(el.id, { tableColWidths: newWidths });
+                                                                            };
+                                                                            const handleUp = () => {
+                                                                                tableColResizeRef.current = null;
+                                                                                window.removeEventListener('mousemove', handleMove, true);
+                                                                                window.removeEventListener('mouseup', handleUp, true);
+                                                                                syncUpdate({ drawElements });
+                                                                            };
+                                                                            window.addEventListener('mousemove', handleMove, true);
+                                                                            window.addEventListener('mouseup', handleUp, true);
+                                                                        }}
+                                                                    >
+                                                                        <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[2px] bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
+                                                                    </div>
+                                                                );
+                                                            });
+                                                        })()}
+
                                                         {/* Row Resize Handles */}
                                                         {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
                                                             const rows = el.tableRows || 3;
@@ -1771,12 +1833,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             let accPercent = 0;
                                                             return Array.from({ length: rows - 1 }).map((_, idx) => {
                                                                 accPercent += heights[idx];
-                                                                const topPercent = accPercent;
                                                                 return (
                                                                     <div
                                                                         key={`row-resize-${idx}`}
                                                                         className="absolute left-0 right-0 cursor-row-resize z-[120] group/rowresize"
-                                                                        style={{ top: `${topPercent}%`, height: 8, marginTop: -4 }}
+                                                                        style={{ top: `${accPercent}%`, height: 8, marginTop: -4 }}
                                                                         onMouseDown={(e) => {
                                                                             e.stopPropagation();
                                                                             e.preventDefault();
@@ -1789,13 +1850,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             const handleMove = (moveE: MouseEvent) => {
                                                                                 if (!tableRowResizeRef.current) return;
                                                                                 moveE.preventDefault();
-                                                                                moveE.stopImmediatePropagation();
                                                                                 const { rowIdx: ri, startY, startHeights: sh } = tableRowResizeRef.current;
                                                                                 const deltaY = moveE.clientY - startY;
-                                                                                const elHeight = el.height;
-                                                                                const deltaPercent = (deltaY / elHeight) * 100;
+                                                                                const deltaPercent = (deltaY / el.height) * 100;
                                                                                 const newHeights = [...sh];
-                                                                                const minH = 5;
+                                                                                const minH = 2;
                                                                                 let h1 = sh[ri] + deltaPercent;
                                                                                 let h2 = sh[ri + 1] - deltaPercent;
                                                                                 if (h1 < minH) { h2 -= (minH - h1); h1 = minH; }
@@ -1808,7 +1867,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 tableRowResizeRef.current = null;
                                                                                 window.removeEventListener('mousemove', handleMove, true);
                                                                                 window.removeEventListener('mouseup', handleUp, true);
-                                                                                syncUpdate({ drawElements: drawElements.map(item => item.id === el.id ? { ...item } : item) });
+                                                                                syncUpdate({ drawElements });
                                                                             };
                                                                             window.addEventListener('mousemove', handleMove, true);
                                                                             window.addEventListener('mouseup', handleUp, true);
@@ -2070,1157 +2129,1206 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 </div> {/* End Body Split Layout */}
 
                 {/* Relocated Floating Components (Toolbar, Panels) to Root Level for Free Movement */}
-                {!isLocked && contentMode === 'DRAW' && (
-                    <>
-                        {/* Floating Toolbar */}
-                        <div
-                            className="nodrag floating-toolbar absolute z-[200] flex items-center gap-1 p-1 bg-white/80 border border-gray-200 rounded-xl shadow-xl transition-shadow hover:shadow-2xl"
-                            style={{
-                                left: toolbarPos.x,
-                                top: toolbarPos.y,
-                                transform: toolbarPos.x === '50%' ? 'translateX(-50%)' : 'none'
-                            }}
-                        >
-                            {/* Drag Handle */}
-                            <PremiumTooltip label="도구 상자 이동">
-                                <div
-                                    onMouseDown={handleToolbarDragStart}
-                                    className="px-1 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 border-r border-gray-200 mr-0.5 flex items-center"
-                                >
-                                    <GripVertical size={16} />
-                                </div>
-                            </PremiumTooltip>
+                {
+                    !isLocked && contentMode === 'DRAW' && (
+                        <>
+                            {/* Floating Toolbar */}
+                            <div
+                                className="nodrag floating-toolbar absolute z-[200] flex items-center gap-1 p-1 bg-white/80 border border-gray-200 rounded-xl shadow-xl transition-shadow hover:shadow-2xl"
+                                style={{
+                                    left: toolbarPos.x,
+                                    top: toolbarPos.y,
+                                    transform: toolbarPos.x === '50%' ? 'translateX(-50%)' : 'none'
+                                }}
+                            >
+                                {/* Drag Handle */}
+                                <PremiumTooltip label="도구 상자 이동">
+                                    <div
+                                        onMouseDown={handleToolbarDragStart}
+                                        className="px-1 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 border-r border-gray-200 mr-0.5 flex items-center"
+                                    >
+                                        <GripVertical size={16} />
+                                    </div>
+                                </PremiumTooltip>
 
-                            {/* Collapse/Expand Toggle */}
-                            <PremiumTooltip label={isToolbarCollapsed ? "펼치기" : "접기"}>
-                                <button
-                                    onClick={() => {
-                                        setIsToolbarCollapsed(!isToolbarCollapsed);
-                                        if (!isToolbarCollapsed) {
-                                            setShowStylePanel(false);
-                                            setShowLayerPanel(false);
-                                        }
-                                    }}
-                                    className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
-                                >
-                                    {isToolbarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-                                </button>
-                            </PremiumTooltip>
+                                {/* Collapse/Expand Toggle */}
+                                <PremiumTooltip label={isToolbarCollapsed ? "펼치기" : "접기"}>
+                                    <button
+                                        onClick={() => {
+                                            setIsToolbarCollapsed(!isToolbarCollapsed);
+                                            if (!isToolbarCollapsed) {
+                                                setShowStylePanel(false);
+                                                setShowLayerPanel(false);
+                                            }
+                                        }}
+                                        className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        {isToolbarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                                    </button>
+                                </PremiumTooltip>
 
-                            {!isToolbarCollapsed && (
-                                <>
-                                    <div className="flex items-center gap-1 animate-in slide-in-from-left-1 duration-200">
-                                        <div className="flex items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
-                                            <PremiumTooltip label="선택" dotColor="#3b82f6">
-                                                <button
-                                                    onClick={() => setActiveTool('select')}
-                                                    className={`p-2 rounded-lg transition-colors ${activeTool === 'select' ? 'bg-blue-100 text-blue-600' : 'hover:bg-blue-50 text-gray-500'}`}
-                                                >
-                                                    <MousePointer2 size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                        </div>
-                                        <div className="flex items-center gap-0.5">
-                                            <div className="relative">
-                                                <PremiumTooltip label="표 삽입">
+                                {!isToolbarCollapsed && (
+                                    <>
+                                        <div className="flex items-center gap-1 animate-in slide-in-from-left-1 duration-200">
+                                            <div className="flex items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
+                                                <PremiumTooltip label="선택" dotColor="#3b82f6">
                                                     <button
-                                                        onClick={() => {
-                                                            setShowTablePicker(!showTablePicker);
-                                                            setTablePickerHover(null);
-                                                        }}
-                                                        className={`p-2 rounded-lg transition-colors ${showTablePicker ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        onClick={() => setActiveTool('select')}
+                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'select' ? 'bg-blue-100 text-blue-600' : 'hover:bg-blue-50 text-gray-500'}`}
                                                     >
-                                                        <Table2 size={18} />
+                                                        <MousePointer2 size={18} />
                                                     </button>
                                                 </PremiumTooltip>
-                                                {showTablePicker && (
-                                                    <div
-                                                        className="nodrag absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in duration-150"
-                                                        onMouseLeave={() => setTablePickerHover(null)}
+                                            </div>
+                                            <div className="flex items-center gap-0.5">
+                                                <div className="relative">
+                                                    <PremiumTooltip label="표 삽입">
+                                                        <button
+                                                            onClick={() => {
+                                                                setShowTablePicker(!showTablePicker);
+                                                                setTablePickerHover(null);
+                                                            }}
+                                                            className={`p-2 rounded-lg transition-colors ${showTablePicker ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        >
+                                                            <Table2 size={18} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                    {showTablePicker && (
+                                                        <div
+                                                            className="nodrag absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in duration-150"
+                                                            onMouseLeave={() => setTablePickerHover(null)}
+                                                        >
+                                                            <div className="text-[11px] font-bold text-gray-600 mb-2 flex items-center gap-1.5">
+                                                                <Table2 size={12} className="text-[#2c3e7c]" />
+                                                                표 삽입
+                                                            </div>
+                                                            <div className="flex flex-col gap-[2px]">
+                                                                {Array.from({ length: 8 }).map((_, rIdx) => (
+                                                                    <div key={rIdx} className="flex gap-[2px]">
+                                                                        {Array.from({ length: 8 }).map((_, cIdx) => {
+                                                                            const isHighlighted = tablePickerHover && rIdx <= tablePickerHover.r && cIdx <= tablePickerHover.c;
+                                                                            return (
+                                                                                <div
+                                                                                    key={cIdx}
+                                                                                    className={`w-[18px] h-[18px] border rounded-[2px] cursor-pointer transition-all duration-75 ${isHighlighted
+                                                                                        ? 'bg-blue-500 border-blue-600 shadow-sm'
+                                                                                        : 'bg-gray-50 border-gray-300 hover:border-gray-400'
+                                                                                        }`}
+                                                                                    onMouseEnter={() => setTablePickerHover({ r: rIdx, c: cIdx })}
+                                                                                    onClick={() => {
+                                                                                        const rows = rIdx + 1;
+                                                                                        const cols = cIdx + 1;
+                                                                                        const canvasRect = canvasRef.current?.getBoundingClientRect();
+                                                                                        const cx = canvasRect ? canvasRect.width / 2 - (cols * 60) / 2 : 50;
+                                                                                        const cy = canvasRect ? canvasRect.height / 2 - (rows * 30) / 2 : 50;
+                                                                                        const newId = `draw_${Date.now()}`;
+                                                                                        const tableEl: DrawElement = {
+                                                                                            id: newId,
+                                                                                            type: 'table',
+                                                                                            x: Math.max(10, cx),
+                                                                                            y: Math.max(10, cy),
+                                                                                            width: Math.max(200, cols * 60),
+                                                                                            height: Math.max(80, rows * 30),
+                                                                                            fill: '#ffffff',
+                                                                                            stroke: '#2c3e7c',
+                                                                                            strokeWidth: 1,
+                                                                                            zIndex: drawElements.length + 1,
+                                                                                            fontSize: 14,
+                                                                                            color: '#333333',
+                                                                                            tableRows: rows,
+                                                                                            tableCols: cols,
+                                                                                            tableCellData: Array(rows * cols).fill(''),
+                                                                                            tableColWidths: Array(cols).fill(100 / cols),
+                                                                                            tableRowHeights: Array(rows).fill(100 / rows)
+                                                                                        };
+                                                                                        const nextElements = [...drawElements, tableEl];
+                                                                                        update({ drawElements: nextElements });
+                                                                                        syncUpdate({ drawElements: nextElements });
+                                                                                        setSelectedElementIds([newId]);
+                                                                                        setShowTablePicker(false);
+                                                                                        setTablePickerHover(null);
+                                                                                    }}
+                                                                                />
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <div className="mt-2 text-center text-[10px] font-medium text-gray-500 h-4">
+                                                                {tablePickerHover
+                                                                    ? <span className="text-blue-600 font-bold">{tablePickerHover.r + 1} × {tablePickerHover.c + 1} 표 삽입</span>
+                                                                    : '행 × 열 선택'
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {/* Table Panel Button — shown only when a table is selected */}
+                                                {(() => {
+                                                    const selEl = drawElements.find(el => selectedElementIds.includes(el.id));
+                                                    if (!selEl || selEl.type !== 'table') return null;
+                                                    return <div className="flex items-center gap-1 border-l border-gray-200 pl-1 ml-1">
+                                                        <PremiumTooltip label="표 설정">
+                                                            <button
+                                                                onClick={() => setShowTablePanel(prev => !prev)}
+                                                                className={`p-2 rounded-lg transition-colors ${showTablePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                            >
+                                                                <Settings2 size={18} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        <PremiumTooltip label="셀 배경색">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setShowTablePanel(true);
+                                                                    // Focus on the cell color section if needed (already visible in panel)
+                                                                }}
+                                                                className={`p-2 rounded-lg transition-colors ${showTablePanel && selectedCellIndices.length > 0 ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                            >
+                                                                <Palette size={18} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                    </div>
+                                                        ;
+                                                })()}
+                                                <PremiumTooltip label="사각형">
+                                                    <button
+                                                        onClick={() => setActiveTool('rect')}
+                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'rect' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
                                                     >
-                                                        <div className="text-[11px] font-bold text-gray-600 mb-2 flex items-center gap-1.5">
-                                                            <Table2 size={12} className="text-[#2c3e7c]" />
-                                                            표 삽입
-                                                        </div>
-                                                        <div className="flex flex-col gap-[2px]">
-                                                            {Array.from({ length: 8 }).map((_, rIdx) => (
-                                                                <div key={rIdx} className="flex gap-[2px]">
-                                                                    {Array.from({ length: 8 }).map((_, cIdx) => {
-                                                                        const isHighlighted = tablePickerHover && rIdx <= tablePickerHover.r && cIdx <= tablePickerHover.c;
-                                                                        return (
-                                                                            <div
-                                                                                key={cIdx}
-                                                                                className={`w-[18px] h-[18px] border rounded-[2px] cursor-pointer transition-all duration-75 ${isHighlighted
-                                                                                    ? 'bg-blue-500 border-blue-600 shadow-sm'
-                                                                                    : 'bg-gray-50 border-gray-300 hover:border-gray-400'
-                                                                                    }`}
-                                                                                onMouseEnter={() => setTablePickerHover({ r: rIdx, c: cIdx })}
-                                                                                onClick={() => {
-                                                                                    const rows = rIdx + 1;
-                                                                                    const cols = cIdx + 1;
-                                                                                    const canvasRect = canvasRef.current?.getBoundingClientRect();
-                                                                                    const cx = canvasRect ? canvasRect.width / 2 - (cols * 60) / 2 : 50;
-                                                                                    const cy = canvasRect ? canvasRect.height / 2 - (rows * 30) / 2 : 50;
-                                                                                    const newId = `draw_${Date.now()}`;
-                                                                                    const tableEl: DrawElement = {
-                                                                                        id: newId,
-                                                                                        type: 'table',
-                                                                                        x: Math.max(10, cx),
-                                                                                        y: Math.max(10, cy),
-                                                                                        width: Math.max(200, cols * 60),
-                                                                                        height: Math.max(80, rows * 30),
-                                                                                        fill: '#ffffff',
-                                                                                        stroke: '#2c3e7c',
-                                                                                        strokeWidth: 1,
-                                                                                        zIndex: drawElements.length + 1,
-                                                                                        fontSize: 14,
-                                                                                        color: '#333333',
-                                                                                        tableRows: rows,
-                                                                                        tableCols: cols,
-                                                                                        tableCellData: Array(rows * cols).fill(''),
-                                                                                        tableColWidths: Array(cols).fill(100 / cols),
-                                                                                        tableRowHeights: Array(rows).fill(100 / rows)
-                                                                                    };
-                                                                                    const nextElements = [...drawElements, tableEl];
-                                                                                    update({ drawElements: nextElements });
-                                                                                    syncUpdate({ drawElements: nextElements });
-                                                                                    setSelectedElementIds([newId]);
-                                                                                    setShowTablePicker(false);
-                                                                                    setTablePickerHover(null);
-                                                                                }}
-                                                                            />
+                                                        <Square size={18} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                                <PremiumTooltip label="원형">
+                                                    <button
+                                                        onClick={() => setActiveTool('circle')}
+                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'circle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                    >
+                                                        <Circle size={18} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                                <PremiumTooltip label="텍스트">
+                                                    <button
+                                                        onClick={() => setActiveTool('text')}
+                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'text' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                    >
+                                                        <Type size={18} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                                <PremiumTooltip label="이미지">
+                                                    <button
+                                                        onClick={() => setActiveTool('image')}
+                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'image' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                    >
+                                                        <ImageIcon size={18} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                            </div>
+                                        </div>
+
+                                        {selectedElementIds.length > 0 && (
+                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
+                                                <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
+                                                    {(['left', 'center', 'right'] as const).map((align) => (
+                                                        <PremiumTooltip key={align} label={textSelectionRect ? `텍스트 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬` : `캔버스 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬`}>
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (textSelectionRect) {
+                                                                        const nextElements = drawElements.map(el =>
+                                                                            selectedElementIds.includes(el.id) ? { ...el, textAlign: align } : el
                                                                         );
-                                                                    })}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                        <div className="mt-2 text-center text-[10px] font-medium text-gray-500 h-4">
-                                                            {tablePickerHover
-                                                                ? <span className="text-blue-600 font-bold">{tablePickerHover.r + 1} × {tablePickerHover.c + 1} 표 삽입</span>
-                                                                : '행 × 열 선택'
-                                                            }
-                                                        </div>
+                                                                        update({ drawElements: nextElements });
+                                                                        syncUpdate({ drawElements: nextElements });
+                                                                    } else if (canvasRef.current) {
+                                                                        const cw = canvasRef.current.clientWidth;
+                                                                        const nextElements = drawElements.map(el => {
+                                                                            if (!selectedElementIds.includes(el.id)) return el;
+                                                                            let nx = el.x;
+                                                                            if (align === 'left') nx = 10;
+                                                                            else if (align === 'center') nx = (cw / 2) - (el.width / 2);
+                                                                            else if (align === 'right') nx = cw - el.width - 10;
+                                                                            return { ...el, x: nx };
+                                                                        });
+                                                                        update({ drawElements: nextElements });
+                                                                        syncUpdate({ drawElements: nextElements });
+                                                                    }
+                                                                }}
+                                                                className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.textAlign === align || (align === 'center' && !drawElements.find(el => el.id === selectedElementIds[0])?.textAlign)))
+                                                                    ? 'bg-white shadow-sm text-blue-600'
+                                                                    : 'text-gray-400 hover:text-gray-600'
+                                                                    }`}
+                                                            >
+                                                                {align === 'left' ? <AlignHorizontalJustifyStart size={16} /> : align === 'right' ? <AlignHorizontalJustifyEnd size={16} /> : <AlignHorizontalJustifyCenter size={16} />}
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                    ))}
+                                                </div>
+                                                <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
+                                                    {(['top', 'middle', 'bottom'] as const).map((vAlign) => (
+                                                        <PremiumTooltip key={vAlign} label={textSelectionRect ? `텍스트 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬` : `캔버스 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬`}>
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (textSelectionRect) {
+                                                                        const nextElements = drawElements.map(el =>
+                                                                            selectedElementIds.includes(el.id) ? { ...el, verticalAlign: vAlign } : el
+                                                                        );
+                                                                        update({ drawElements: nextElements });
+                                                                        syncUpdate({ drawElements: nextElements });
+                                                                    } else if (canvasRef.current) {
+                                                                        const ch = canvasRef.current.clientHeight;
+                                                                        const nextElements = drawElements.map(el => {
+                                                                            if (!selectedElementIds.includes(el.id)) return el;
+                                                                            let ny = el.y;
+                                                                            if (vAlign === 'top') ny = 10;
+                                                                            else if (vAlign === 'middle') ny = (ch / 2) - (el.height / 2);
+                                                                            else if (vAlign === 'bottom') ny = ch - el.height - 10;
+                                                                            return { ...el, y: ny };
+                                                                        });
+                                                                        update({ drawElements: nextElements });
+                                                                        syncUpdate({ drawElements: nextElements });
+                                                                    }
+                                                                }}
+                                                                className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign === vAlign || (vAlign === 'middle' && !drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign)))
+                                                                    ? 'bg-white shadow-sm text-blue-600'
+                                                                    : 'text-gray-400 hover:text-gray-600'
+                                                                    }`}
+                                                            >
+                                                                {vAlign === 'top' ? <AlignVerticalJustifyStart size={16} /> : vAlign === 'bottom' ? <AlignVerticalJustifyEnd size={16} /> : <AlignVerticalJustifyCenter size={16} />}
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Object-to-Object Alignment (2+ selected) */}
+                                        {selectedElementIds.length >= 2 && (
+                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
+                                                <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
+                                                    <button
+                                                        onClick={() => handleObjectAlign('align-left')}
+                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                        title="객체 왼쪽 정렬"
+                                                    >
+                                                        <AlignHorizontalJustifyStart size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleObjectAlign('align-center-h')}
+                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                        title="객체 가로 중앙 정렬"
+                                                    >
+                                                        <AlignHorizontalJustifyCenter size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleObjectAlign('align-right')}
+                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                        title="객체 오른쪽 정렬"
+                                                    >
+                                                        <AlignHorizontalJustifyEnd size={16} />
+                                                    </button>
+                                                </div>
+                                                <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
+                                                    <button
+                                                        onClick={() => handleObjectAlign('align-top')}
+                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                        title="객체 상단 정렬"
+                                                    >
+                                                        <AlignVerticalJustifyStart size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleObjectAlign('align-center-v')}
+                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                        title="객체 세로 중앙 정렬"
+                                                    >
+                                                        <AlignVerticalJustifyCenter size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleObjectAlign('align-bottom')}
+                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                        title="객체 하단 정렬"
+                                                    >
+                                                        <AlignVerticalJustifyEnd size={16} />
+                                                    </button>
+                                                </div>
+                                                {selectedElementIds.length >= 3 && (
+                                                    <div className="flex gap-0.5 bg-gradient-to-r from-purple-50 to-pink-50 p-0.5 rounded-lg border border-purple-100">
+                                                        <button
+                                                            onClick={() => handleObjectAlign('distribute-h')}
+                                                            className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
+                                                            title="가로 균등 분배"
+                                                        >
+                                                            <AlignHorizontalDistributeCenter size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleObjectAlign('distribute-v')}
+                                                            className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
+                                                            title="세로 균등 분배"
+                                                        >
+                                                            <AlignVerticalDistributeCenter size={16} />
+                                                        </button>
                                                     </div>
                                                 )}
                                             </div>
-                                            {/* Table Panel Button — shown only when a table is selected */}
-                                            {(() => {
-                                                const selEl = drawElements.find(el => selectedElementIds.includes(el.id));
-                                                if (!selEl || selEl.type !== 'table') return null;
-                                                return <div className="flex items-center gap-1 border-l border-gray-200 pl-1 ml-1">
-                                                    <PremiumTooltip label="표 설정">
-                                                        <button
-                                                            onClick={() => setShowTablePanel(prev => !prev)}
-                                                            className={`p-2 rounded-lg transition-colors ${showTablePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                        >
-                                                            <Settings2 size={18} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                    <PremiumTooltip label="셀 배경색">
-                                                        <button
-                                                            onClick={() => {
-                                                                setShowTablePanel(true);
-                                                                // Focus on the cell color section if needed (already visible in panel)
-                                                            }}
-                                                            className={`p-2 rounded-lg transition-colors ${showTablePanel && selectedCellIndices.length > 0 ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                        >
-                                                            <Palette size={18} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                </div>
-                                                    ;
-                                            })()}
-                                            <PremiumTooltip label="사각형">
-                                                <button
-                                                    onClick={() => setActiveTool('rect')}
-                                                    className={`p-2 rounded-lg transition-colors ${activeTool === 'rect' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                >
-                                                    <Square size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                            <PremiumTooltip label="원형">
-                                                <button
-                                                    onClick={() => setActiveTool('circle')}
-                                                    className={`p-2 rounded-lg transition-colors ${activeTool === 'circle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                >
-                                                    <Circle size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                            <PremiumTooltip label="텍스트">
-                                                <button
-                                                    onClick={() => setActiveTool('text')}
-                                                    className={`p-2 rounded-lg transition-colors ${activeTool === 'text' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                >
-                                                    <Type size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                            <PremiumTooltip label="이미지">
-                                                <button
-                                                    onClick={() => setActiveTool('image')}
-                                                    className={`p-2 rounded-lg transition-colors ${activeTool === 'image' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                >
-                                                    <ImageIcon size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                        </div>
-                                    </div>
+                                        )}
 
-                                    {selectedElementIds.length > 0 && (
                                         <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
-                                            <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
-                                                {(['left', 'center', 'right'] as const).map((align) => (
-                                                    <PremiumTooltip key={align} label={textSelectionRect ? `텍스트 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬` : `캔버스 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬`}>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (textSelectionRect) {
-                                                                    const nextElements = drawElements.map(el =>
-                                                                        selectedElementIds.includes(el.id) ? { ...el, textAlign: align } : el
-                                                                    );
-                                                                    update({ drawElements: nextElements });
-                                                                    syncUpdate({ drawElements: nextElements });
-                                                                } else if (canvasRef.current) {
-                                                                    const cw = canvasRef.current.clientWidth;
-                                                                    const nextElements = drawElements.map(el => {
-                                                                        if (!selectedElementIds.includes(el.id)) return el;
-                                                                        let nx = el.x;
-                                                                        if (align === 'left') nx = 10;
-                                                                        else if (align === 'center') nx = (cw / 2) - (el.width / 2);
-                                                                        else if (align === 'right') nx = cw - el.width - 10;
-                                                                        return { ...el, x: nx };
-                                                                    });
-                                                                    update({ drawElements: nextElements });
-                                                                    syncUpdate({ drawElements: nextElements });
-                                                                }
-                                                            }}
-                                                            className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.textAlign === align || (align === 'center' && !drawElements.find(el => el.id === selectedElementIds[0])?.textAlign)))
-                                                                ? 'bg-white shadow-sm text-blue-600'
-                                                                : 'text-gray-400 hover:text-gray-600'
-                                                                }`}
-                                                        >
-                                                            {align === 'left' ? <AlignHorizontalJustifyStart size={16} /> : align === 'right' ? <AlignHorizontalJustifyEnd size={16} /> : <AlignHorizontalJustifyCenter size={16} />}
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                ))}
-                                            </div>
-                                            <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
-                                                {(['top', 'middle', 'bottom'] as const).map((vAlign) => (
-                                                    <PremiumTooltip key={vAlign} label={textSelectionRect ? `텍스트 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬` : `캔버스 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬`}>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (textSelectionRect) {
-                                                                    const nextElements = drawElements.map(el =>
-                                                                        selectedElementIds.includes(el.id) ? { ...el, verticalAlign: vAlign } : el
-                                                                    );
-                                                                    update({ drawElements: nextElements });
-                                                                    syncUpdate({ drawElements: nextElements });
-                                                                } else if (canvasRef.current) {
-                                                                    const ch = canvasRef.current.clientHeight;
-                                                                    const nextElements = drawElements.map(el => {
-                                                                        if (!selectedElementIds.includes(el.id)) return el;
-                                                                        let ny = el.y;
-                                                                        if (vAlign === 'top') ny = 10;
-                                                                        else if (vAlign === 'middle') ny = (ch / 2) - (el.height / 2);
-                                                                        else if (vAlign === 'bottom') ny = ch - el.height - 10;
-                                                                        return { ...el, y: ny };
-                                                                    });
-                                                                    update({ drawElements: nextElements });
-                                                                    syncUpdate({ drawElements: nextElements });
-                                                                }
-                                                            }}
-                                                            className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign === vAlign || (vAlign === 'middle' && !drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign)))
-                                                                ? 'bg-white shadow-sm text-blue-600'
-                                                                : 'text-gray-400 hover:text-gray-600'
-                                                                }`}
-                                                        >
-                                                            {vAlign === 'top' ? <AlignVerticalJustifyStart size={16} /> : vAlign === 'bottom' ? <AlignVerticalJustifyEnd size={16} /> : <AlignVerticalJustifyCenter size={16} />}
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                ))}
-                                            </div>
+                                            <PremiumTooltip label="색상 및 스타일">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowStylePanel(!showStylePanel);
+                                                        setShowLayerPanel(false);
+                                                    }}
+                                                    className={`p-2 rounded-lg transition-colors ${showStylePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                >
+                                                    <Palette size={18} />
+                                                </button>
+                                            </PremiumTooltip>
+                                            <PremiumTooltip label="레이어 순서">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowLayerPanel(!showLayerPanel);
+                                                        setShowStylePanel(false);
+                                                    }}
+                                                    className={`p-2 rounded-lg transition-colors ${showLayerPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                >
+                                                    <Layers size={18} />
+                                                </button>
+                                            </PremiumTooltip>
                                         </div>
-                                    )}
+                                    </>
+                                )}
+                            </div>
 
-                                    {/* Object-to-Object Alignment (2+ selected) */}
-                                    {selectedElementIds.length >= 2 && (
-                                        <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
-                                            <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
-                                                <button
-                                                    onClick={() => handleObjectAlign('align-left')}
-                                                    className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                    title="객체 왼쪽 정렬"
-                                                >
-                                                    <AlignHorizontalJustifyStart size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleObjectAlign('align-center-h')}
-                                                    className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                    title="객체 가로 중앙 정렬"
-                                                >
-                                                    <AlignHorizontalJustifyCenter size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleObjectAlign('align-right')}
-                                                    className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                    title="객체 오른쪽 정렬"
-                                                >
-                                                    <AlignHorizontalJustifyEnd size={16} />
-                                                </button>
-                                            </div>
-                                            <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
-                                                <button
-                                                    onClick={() => handleObjectAlign('align-top')}
-                                                    className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                    title="객체 상단 정렬"
-                                                >
-                                                    <AlignVerticalJustifyStart size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleObjectAlign('align-center-v')}
-                                                    className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                    title="객체 세로 중앙 정렬"
-                                                >
-                                                    <AlignVerticalJustifyCenter size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleObjectAlign('align-bottom')}
-                                                    className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                    title="객체 하단 정렬"
-                                                >
-                                                    <AlignVerticalJustifyEnd size={16} />
-                                                </button>
-                                            </div>
-                                            {selectedElementIds.length >= 3 && (
-                                                <div className="flex gap-0.5 bg-gradient-to-r from-purple-50 to-pink-50 p-0.5 rounded-lg border border-purple-100">
-                                                    <button
-                                                        onClick={() => handleObjectAlign('distribute-h')}
-                                                        className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
-                                                        title="가로 균등 분배"
-                                                    >
-                                                        <AlignHorizontalDistributeCenter size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleObjectAlign('distribute-v')}
-                                                        className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
-                                                        title="세로 균등 분배"
-                                                    >
-                                                        <AlignVerticalDistributeCenter size={16} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
-                                        <PremiumTooltip label="색상 및 스타일">
-                                            <button
-                                                onClick={() => {
-                                                    setShowStylePanel(!showStylePanel);
-                                                    setShowLayerPanel(false);
-                                                }}
-                                                className={`p-2 rounded-lg transition-colors ${showStylePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                            >
-                                                <Palette size={18} />
-                                            </button>
-                                        </PremiumTooltip>
-                                        <PremiumTooltip label="레이어 순서">
-                                            <button
-                                                onClick={() => {
-                                                    setShowLayerPanel(!showLayerPanel);
-                                                    setShowStylePanel(false);
-                                                }}
-                                                className={`p-2 rounded-lg transition-colors ${showLayerPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                            >
-                                                <Layers size={18} />
-                                            </button>
-                                        </PremiumTooltip>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        {/* ─── Floating Text Selection Toolbar (Below Toolbox) ─── */}
-                        {textSelectionRect && selectedElementIds.length > 0 && (() => {
-                            const el = drawElements.find(it => it.id === selectedElementIds[0]);
-                            if (!el) return null;
-                            return (
-                                <div
-                                    className="nodrag absolute z-[201] flex items-center gap-2 bg-white/95 backdrop-blur-md border border-gray-200 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in slide-in-from-top-2 duration-200"
-                                    style={{
-                                        left: toolbarPos.x,
-                                        top: (typeof toolbarPos.y === 'number' ? toolbarPos.y : 20) + 55,
-                                        transform: toolbarPos.x === '50%' ? 'translateX(-50%)' : 'none'
-                                    }}
-                                    onMouseDown={e => e.stopPropagation()}
-                                >
-                                    <div className="flex items-center gap-1.5 px-1 border-r border-gray-100 pr-2">
-                                        <Type size={12} className="text-gray-400" />
-                                        <input
-                                            type="number"
-                                            value={el.fontSize || 14}
-                                            onChange={(e) => updateElement(el.id, { fontSize: parseInt(e.target.value) || 12 })}
-                                            className="w-10 bg-transparent text-[11px] font-bold text-gray-700 outline-none"
-                                        />
-                                        <span className="text-[10px] text-gray-400">px</span>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 pl-1">
-                                        <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm">
+                            {/* ─── Floating Text Selection Toolbar (Below Toolbox) ─── */}
+                            {textSelectionRect && selectedElementIds.length > 0 && (() => {
+                                const el = drawElements.find(it => it.id === selectedElementIds[0]);
+                                if (!el) return null;
+                                return (
+                                    <div
+                                        className="nodrag absolute z-[201] flex items-center gap-2 bg-white/95 backdrop-blur-md border border-gray-200 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in slide-in-from-top-2 duration-200"
+                                        style={{
+                                            left: toolbarPos.x,
+                                            top: (typeof toolbarPos.y === 'number' ? toolbarPos.y : 20) + 55,
+                                            transform: toolbarPos.x === '50%' ? 'translateX(-50%)' : 'none'
+                                        }}
+                                        onMouseDown={e => e.stopPropagation()}
+                                    >
+                                        <div className="flex items-center gap-1.5 px-1 border-r border-gray-100 pr-2">
+                                            <Type size={12} className="text-gray-400" />
                                             <input
-                                                type="color"
-                                                value={el.color || '#333333'}
-                                                onChange={(e) => {
-                                                    const color = e.target.value;
-                                                    const selection = window.getSelection();
-                                                    if (selection && !selection.isCollapsed) {
-                                                        document.execCommand('foreColor', false, color);
-                                                        // Force update text to save HTML
-                                                        const activeEl = document.activeElement as HTMLElement;
-                                                        if (activeEl && activeEl.contentEditable === 'true') {
-                                                            const evt = new Event('input', { bubbles: true });
-                                                            activeEl.dispatchEvent(evt);
-                                                        }
-                                                    } else {
-                                                        updateElement(el.id, { color });
-                                                    }
-                                                }}
-                                                className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                type="number"
+                                                value={el.fontSize || 14}
+                                                onChange={(e) => updateElement(el.id, { fontSize: parseInt(e.target.value) || 12 })}
+                                                className="w-10 bg-transparent text-[11px] font-bold text-gray-700 outline-none"
                                             />
-                                            <div className="w-full h-full" style={{ backgroundColor: el.color || '#333333' }} />
+                                            <span className="text-[10px] text-gray-400">px</span>
                                         </div>
-                                        <div className="flex gap-1">
-                                            {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
-                                                <button
-                                                    key={c}
-                                                    onMouseDown={(e) => {
-                                                        // Prevent focus loss to keep selection
-                                                        e.preventDefault();
+
+                                        <div className="flex items-center gap-2 pl-1">
+                                            <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm">
+                                                <input
+                                                    type="color"
+                                                    value={el.color || '#333333'}
+                                                    onChange={(e) => {
+                                                        const color = e.target.value;
                                                         const selection = window.getSelection();
                                                         if (selection && !selection.isCollapsed) {
-                                                            document.execCommand('foreColor', false, c);
+                                                            document.execCommand('foreColor', false, color);
+                                                            // Force update text to save HTML
                                                             const activeEl = document.activeElement as HTMLElement;
                                                             if (activeEl && activeEl.contentEditable === 'true') {
                                                                 const evt = new Event('input', { bubbles: true });
                                                                 activeEl.dispatchEvent(evt);
                                                             }
                                                         } else {
-                                                            updateElement(el.id, { color: c });
+                                                            updateElement(el.id, { color });
                                                         }
                                                     }}
-                                                    className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
-                                                    style={{ backgroundColor: c }}
+                                                    className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
                                                 />
-                                            ))}
+                                                <div className="w-full h-full" style={{ backgroundColor: el.color || '#333333' }} />
+                                            </div>
+                                            <div className="flex gap-1">
+                                                {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
+                                                    <button
+                                                        key={c}
+                                                        onMouseDown={(e) => {
+                                                            // Prevent focus loss to keep selection
+                                                            e.preventDefault();
+                                                            const selection = window.getSelection();
+                                                            if (selection && !selection.isCollapsed) {
+                                                                document.execCommand('foreColor', false, c);
+                                                                const activeEl = document.activeElement as HTMLElement;
+                                                                if (activeEl && activeEl.contentEditable === 'true') {
+                                                                    const evt = new Event('input', { bubbles: true });
+                                                                    activeEl.dispatchEvent(evt);
+                                                                }
+                                                            } else {
+                                                                updateElement(el.id, { color: c });
+                                                            }
+                                                        }}
+                                                        className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
+                                                        style={{ backgroundColor: c }}
+                                                    />
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            );
-                        })()}
+                                );
+                            })()}
 
-                        {/* Style Panel */}
-                        {selectedElementIds.length > 0 && showStylePanel && !isToolbarCollapsed && (
-                            <div
-                                className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in duration-200"
-                                style={{
-                                    left: stylePanelPos.x,
-                                    top: stylePanelPos.y,
-                                    transform: stylePanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
-                                }}
-                            >
+                            {/* Style Panel */}
+                            {selectedElementIds.length > 0 && showStylePanel && !isToolbarCollapsed && (
                                 <div
-                                    className="flex items-center justify-between border-b border-gray-100 pb-2 mb-1 cursor-grab active:cursor-grabbing group/header"
-                                    onMouseDown={(e) => handlePanelDragStart(e, 'style')}
-                                    title="드래그하여 이동"
+                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in duration-200"
+                                    style={{
+                                        left: stylePanelPos.x,
+                                        top: stylePanelPos.y,
+                                        transform: stylePanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
+                                    }}
                                 >
-                                    <div className="flex items-center gap-2">
-                                        <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
-                                        <Palette size={14} className="text-[#2c3e7c]" />
-                                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">스타일 편집 ({selectedElementIds.length})</span>
-                                    </div>
-                                    <button onClick={() => setShowStylePanel(false)} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors">
-                                        <X size={14} />
-                                    </button>
-                                </div>
-
-                                {/* Background Color */}
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[11px] text-gray-600 font-medium">배경색</span>
+                                    <div
+                                        className="flex items-center justify-between border-b border-gray-100 pb-2 mb-1 cursor-grab active:cursor-grabbing group/header"
+                                        onMouseDown={(e) => handlePanelDragStart(e, 'style')}
+                                        title="드래그하여 이동"
+                                    >
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-gray-400 font-mono uppercase">{drawElements.find(el => selectedElementIds.includes(el.id))?.fill || '#ffffff'}</span>
-                                            <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
-                                                <input
-                                                    type="color"
-                                                    value={drawElements.find(el => selectedElementIds.includes(el.id))?.fill || '#ffffff'}
-                                                    onChange={(e) => {
-                                                        const color = e.target.value;
+                                            <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
+                                            <Palette size={14} className="text-[#2c3e7c]" />
+                                            <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">스타일 편집 ({selectedElementIds.length})</span>
+                                        </div>
+                                        <button onClick={() => setShowStylePanel(false)} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors">
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+
+                                    {/* Background Color */}
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] text-gray-600 font-medium">배경색</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-gray-400 font-mono uppercase">{drawElements.find(el => selectedElementIds.includes(el.id))?.fill || '#ffffff'}</span>
+                                                <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
+                                                    <input
+                                                        type="color"
+                                                        value={drawElements.find(el => selectedElementIds.includes(el.id))?.fill || '#ffffff'}
+                                                        onChange={(e) => {
+                                                            const color = e.target.value;
+                                                            const nextElements = drawElements.map(el =>
+                                                                selectedElementIds.includes(el.id) ? { ...el, fill: color } : el
+                                                            );
+                                                            update({ drawElements: nextElements });
+                                                            syncUpdate({ drawElements: nextElements });
+                                                        }}
+                                                        className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-1.5 justify-end">
+                                            {['#ffffff', '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#2c3e7c'].map(color => (
+                                                <button
+                                                    key={color}
+                                                    onClick={() => {
                                                         const nextElements = drawElements.map(el =>
                                                             selectedElementIds.includes(el.id) ? { ...el, fill: color } : el
                                                         );
                                                         update({ drawElements: nextElements });
                                                         syncUpdate({ drawElements: nextElements });
                                                     }}
-                                                    className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
+                                                    className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110`}
+                                                    style={{ backgroundColor: color }}
                                                 />
-                                            </div>
+                                            ))}
                                         </div>
                                     </div>
-                                    <div className="flex gap-1.5 justify-end">
-                                        {['#ffffff', '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#2c3e7c'].map(color => (
-                                            <button
-                                                key={color}
-                                                onClick={() => {
-                                                    const nextElements = drawElements.map(el =>
-                                                        selectedElementIds.includes(el.id) ? { ...el, fill: color } : el
-                                                    );
-                                                    update({ drawElements: nextElements });
-                                                    syncUpdate({ drawElements: nextElements });
-                                                }}
-                                                className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110`}
-                                                style={{ backgroundColor: color }}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
 
-                                {/* Stroke Color */}
-                                <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[11px] text-gray-600 font-medium">테두리색</span>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-gray-400 font-mono uppercase">{drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000'}</span>
-                                            <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
-                                                <input
-                                                    type="color"
-                                                    value={drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000'}
-                                                    onChange={(e) => {
-                                                        const color = e.target.value;
+                                    {/* Stroke Color */}
+                                    <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] text-gray-600 font-medium">테두리색</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-gray-400 font-mono uppercase">{drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000'}</span>
+                                                <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
+                                                    <input
+                                                        type="color"
+                                                        value={drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000'}
+                                                        onChange={(e) => {
+                                                            const color = e.target.value;
+                                                            const nextElements = drawElements.map(el =>
+                                                                selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
+                                                            );
+                                                            update({ drawElements: nextElements });
+                                                            syncUpdate({ drawElements: nextElements });
+                                                        }}
+                                                        className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-1.5 justify-end">
+                                            {['#000000', '#2c3e7c', '#64748b', 'transparent'].map(color => (
+                                                <button
+                                                    key={color}
+                                                    onClick={() => {
                                                         const nextElements = drawElements.map(el =>
                                                             selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
                                                         );
                                                         update({ drawElements: nextElements });
                                                         syncUpdate({ drawElements: nextElements });
                                                     }}
-                                                    className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
-                                                />
-                                            </div>
+                                                    className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden`}
+                                                    style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
+                                                >
+                                                    {color === 'transparent' && <div className="w-full h-[1px] bg-red-400 rotate-45" />}
+                                                </button>
+                                            ))}
                                         </div>
                                     </div>
-                                    <div className="flex gap-1.5 justify-end">
-                                        {['#000000', '#2c3e7c', '#64748b', 'transparent'].map(color => (
-                                            <button
-                                                key={color}
-                                                onClick={() => {
+
+                                    {/* Opacity Sliders */}
+                                    <div className="flex flex-col gap-3 pt-2 border-t border-gray-100">
+                                        {/* Fill Opacity */}
+                                        <div className="flex flex-col gap-1.5">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[11px] text-gray-600 font-medium">배경 투명도</span>
+                                                <span className="text-[10px] text-blue-600 font-bold">
+                                                    {Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.fillOpacity ?? 1) * 100)}%
+                                                </span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="100"
+                                                step="5"
+                                                value={Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.fillOpacity ?? 1) * 100)}
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value) / 100;
                                                     const nextElements = drawElements.map(el =>
-                                                        selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
+                                                        selectedElementIds.includes(el.id) ? { ...el, fillOpacity: val } : el
                                                     );
                                                     update({ drawElements: nextElements });
                                                     syncUpdate({ drawElements: nextElements });
                                                 }}
-                                                className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden`}
-                                                style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
+                                                className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
+                                            />
+                                        </div>
+
+                                        {/* Stroke Opacity */}
+                                        <div className="flex flex-col gap-1.5 pb-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[11px] text-gray-600 font-medium">테두리 투명도</span>
+                                                <span className="text-[10px] text-blue-600 font-bold">
+                                                    {Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.strokeOpacity ?? 1) * 100)}%
+                                                </span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="100"
+                                                step="5"
+                                                value={Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.strokeOpacity ?? 1) * 100)}
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value) / 100;
+                                                    const nextElements = drawElements.map(el =>
+                                                        selectedElementIds.includes(el.id) ? { ...el, strokeOpacity: val } : el
+                                                    );
+                                                    update({ drawElements: nextElements });
+                                                    syncUpdate({ drawElements: nextElements });
+                                                }}
+                                                className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* [Table settings and cell color picker moved to dedicated Table Panel] */}
+
+                                    {/* [Cell color picker moved to dedicated Table Panel] */}
+                                </div>
+                            )}
+
+
+
+                            {/* ─── Table Panel ─── */}
+                            {(showTablePanel && !isToolbarCollapsed) ? (() => {
+                                const selectedEl = drawElements.find(el => el.id === selectedElementIds[0]);
+                                if (!selectedEl || selectedEl.type !== 'table') return null;
+                                const rows = selectedEl.tableRows || 3;
+                                const cols = selectedEl.tableCols || 3;
+                                const totalCells = rows * cols;
+                                const cellColorPresets = [
+                                    'transparent', '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0',
+                                    '#fee2e2', '#fef3c7', '#dcfce7', '#dbeafe', '#ede9fe',
+                                    '#2c3e7c', '#1e40af', '#059669', '#d97706', '#dc2626'
+                                ];
+                                return (
+                                    <div
+                                        className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in"
+                                        style={{
+                                            left: tablePanelPos.x,
+                                            top: tablePanelPos.y,
+                                            transform: tablePanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
+                                        }}
+                                    >
+                                        {/* Header */}
+                                        <div
+                                            className="flex items-center justify-between border-b border-gray-100 pb-2 cursor-grab active:cursor-grabbing group/header"
+                                            onMouseDown={(e) => {
+                                                if (isLocked) return;
+                                                e.stopPropagation();
+                                                e.preventDefault();
+                                                isDraggingTablePanelRef.current = true;
+                                                const panel = (e.target as HTMLElement).closest('.floating-panel') as HTMLElement;
+                                                if (!panel || !nodeRef.current) return;
+                                                const panelRect = panel.getBoundingClientRect();
+                                                const containerRect = nodeRef.current.getBoundingClientRect();
+                                                const scale = containerRect.width / nodeRef.current.clientWidth;
+                                                tablePanelDragOffsetRef.current = {
+                                                    x: (e.clientX - panelRect.left) / scale,
+                                                    y: (e.clientY - panelRect.top) / scale
+                                                };
+                                                const onMove = (me: MouseEvent) => {
+                                                    if (!isDraggingTablePanelRef.current || !nodeRef.current) return;
+                                                    me.stopImmediatePropagation();
+                                                    const cRect = nodeRef.current.getBoundingClientRect();
+                                                    const layoutWidth = nodeRef.current.clientWidth;
+                                                    const currentScale = cRect.width / layoutWidth;
+                                                    const layoutX = (me.clientX - cRect.left) / currentScale;
+                                                    const layoutY = (me.clientY - cRect.top) / currentScale;
+                                                    setTablePanelPos({
+                                                        x: layoutX - tablePanelDragOffsetRef.current.x,
+                                                        y: layoutY - tablePanelDragOffsetRef.current.y
+                                                    });
+                                                };
+                                                const onUp = () => {
+                                                    isDraggingTablePanelRef.current = false;
+                                                    window.removeEventListener('mousemove', onMove, true);
+                                                    window.removeEventListener('mouseup', onUp);
+                                                };
+                                                window.addEventListener('mousemove', onMove, true);
+                                                window.addEventListener('mouseup', onUp);
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
+                                                <Settings2 size={14} className="text-[#2c3e7c]" />
+                                                <span className="text-[12px] font-bold text-gray-700">표 설정</span>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    setShowTablePanel(false);
+                                                    setSelectedCellIndices([]);
+                                                    setEditingCellIndex(null);
+                                                }}
+                                                onMouseDown={e => e.stopPropagation()}
+                                                className="p-1 rounded-md hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
                                             >
-                                                {color === 'transparent' && <div className="w-full h-[1px] bg-red-400 rotate-45" />}
+                                                <X size={13} />
                                             </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Opacity Sliders */}
-                                <div className="flex flex-col gap-3 pt-2 border-t border-gray-100">
-                                    {/* Fill Opacity */}
-                                    <div className="flex flex-col gap-1.5">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[11px] text-gray-600 font-medium">배경 투명도</span>
-                                            <span className="text-[10px] text-blue-600 font-bold">
-                                                {Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.fillOpacity ?? 1) * 100)}%
-                                            </span>
                                         </div>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            step="5"
-                                            value={Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.fillOpacity ?? 1) * 100)}
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value) / 100;
-                                                const nextElements = drawElements.map(el =>
-                                                    selectedElementIds.includes(el.id) ? { ...el, fillOpacity: val } : el
-                                                );
-                                                update({ drawElements: nextElements });
-                                                syncUpdate({ drawElements: nextElements });
-                                            }}
-                                            className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
-                                        />
-                                    </div>
 
-                                    {/* Stroke Opacity */}
-                                    <div className="flex flex-col gap-1.5 pb-2">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[11px] text-gray-600 font-medium">테두리 투명도</span>
-                                            <span className="text-[10px] text-blue-600 font-bold">
-                                                {Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.strokeOpacity ?? 1) * 100)}%
-                                            </span>
+                                        {/* Row / Col controls */}
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[11px] text-gray-600 font-medium">행 수</span>
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        onMouseDown={e => e.stopPropagation()}
+                                                        onClick={() => {
+                                                            if (rows <= 1) return;
+                                                            const newRows = rows - 1;
+                                                            const newCellData = Array(newRows * cols).fill('');
+                                                            const newCellColors: (string | undefined)[] = Array(newRows * cols).fill(undefined);
+                                                            for (let r = 0; r < newRows; r++) {
+                                                                for (let c = 0; c < cols; c++) {
+                                                                    newCellData[r * cols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
+                                                                    newCellColors[r * cols + c] = selectedEl.tableCellColors?.[r * cols + c];
+                                                                }
+                                                            }
+                                                            const newRowHeights = Array(newRows).fill(100 / newRows);
+                                                            const nextElements = drawElements.map(el =>
+                                                                el.id === selectedEl.id ? { ...el, tableRows: newRows, tableCellData: newCellData, tableRowHeights: newRowHeights, tableCellColors: newCellColors } : el
+                                                            );
+                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            setSelectedCellIndices([]);
+                                                            setEditingCellIndex(null);
+                                                        }}
+                                                        className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
+                                                    >−</button>
+                                                    <span className="w-8 text-center text-[13px] font-bold text-[#2c3e7c]">{rows}</span>
+                                                    <button
+                                                        onMouseDown={e => e.stopPropagation()}
+                                                        onClick={() => {
+                                                            const newRows = rows + 1;
+                                                            const newCellData = Array(newRows * cols).fill('');
+                                                            const newCellColors: (string | undefined)[] = Array(newRows * cols).fill(undefined);
+                                                            for (let r = 0; r < rows; r++) {
+                                                                for (let c = 0; c < cols; c++) {
+                                                                    newCellData[r * cols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
+                                                                    newCellColors[r * cols + c] = selectedEl.tableCellColors?.[r * cols + c];
+                                                                }
+                                                            }
+                                                            const newRowHeights = Array(newRows).fill(100 / newRows);
+                                                            const nextElements = drawElements.map(el =>
+                                                                el.id === selectedEl.id ? { ...el, tableRows: newRows, tableCellData: newCellData, tableRowHeights: newRowHeights, tableCellColors: newCellColors } : el
+                                                            );
+                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            setSelectedCellIndices([]);
+                                                            setEditingCellIndex(null);
+                                                        }}
+                                                        className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
+                                                    >+</button>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[11px] text-gray-600 font-medium">열 수</span>
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        onMouseDown={e => e.stopPropagation()}
+                                                        onClick={() => {
+                                                            if (cols <= 1) return;
+                                                            const newCols = cols - 1;
+                                                            const newCellData = Array(rows * newCols).fill('');
+                                                            const newCellColors: (string | undefined)[] = Array(rows * newCols).fill(undefined);
+                                                            for (let r = 0; r < rows; r++) {
+                                                                for (let c = 0; c < newCols; c++) {
+                                                                    newCellData[r * newCols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
+                                                                    newCellColors[r * newCols + c] = selectedEl.tableCellColors?.[r * cols + c];
+                                                                }
+                                                            }
+                                                            const newColWidths = Array(newCols).fill(100 / newCols);
+                                                            const nextElements = drawElements.map(el =>
+                                                                el.id === selectedEl.id ? { ...el, tableCols: newCols, tableCellData: newCellData, tableColWidths: newColWidths, tableCellColors: newCellColors } : el
+                                                            );
+                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            setSelectedCellIndices([]);
+                                                            setEditingCellIndex(null);
+                                                        }}
+                                                        className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
+                                                    >−</button>
+                                                    <span className="w-8 text-center text-[13px] font-bold text-[#2c3e7c]">{cols}</span>
+                                                    <button
+                                                        onMouseDown={e => e.stopPropagation()}
+                                                        onClick={() => {
+                                                            const newCols = cols + 1;
+                                                            const newCellData = Array(rows * newCols).fill('');
+                                                            const newCellColors: (string | undefined)[] = Array(rows * newCols).fill(undefined);
+                                                            for (let r = 0; r < rows; r++) {
+                                                                for (let c = 0; c < newCols; c++) {
+                                                                    newCellData[r * newCols + c] = c < cols ? (selectedEl.tableCellData?.[r * cols + c] || '') : '';
+                                                                    newCellColors[r * newCols + c] = c < cols ? selectedEl.tableCellColors?.[r * cols + c] : undefined;
+                                                                }
+                                                            }
+                                                            const newColWidths = Array(newCols).fill(100 / newCols);
+                                                            const nextElements = drawElements.map(el =>
+                                                                el.id === selectedEl.id ? { ...el, tableCols: newCols, tableCellData: newCellData, tableColWidths: newColWidths, tableCellColors: newCellColors } : el
+                                                            );
+                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            setSelectedCellIndices([]);
+                                                            setEditingCellIndex(null);
+                                                        }}
+                                                        className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
+                                                    >+</button>
+                                                </div>
+                                            </div>
+                                            {/* Merge / Split Buttons */}
+                                            {editingTableId === selectedEl.id && (
+                                                <div className="flex flex-col gap-2 p-1.5 bg-gray-50/50 rounded-xl border border-gray-100">
+                                                    <div className="flex items-center gap-1.5 px-1 mb-1">
+                                                        <Combine size={12} className="text-blue-500" />
+                                                        <span className="text-[11px] font-bold text-gray-600">셀 편집</span>
+                                                    </div>
+                                                    <div className="flex gap-1.5">
+                                                        <button
+                                                            onMouseDown={e => e.stopPropagation()}
+                                                            onClick={() => handleMergeCells(selectedEl)}
+                                                            disabled={selectedCellIndices.length < 2}
+                                                            className={`flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length >= 2 ? 'bg-white shadow-sm text-blue-600 border border-blue-100 hover:bg-blue-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
+                                                        >
+                                                            <Combine size={16} />
+                                                            <span className="text-[10px] font-bold">합치기</span>
+                                                        </button>
+                                                        <div className="flex-1 relative">
+                                                            <button
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                onClick={() => handleSplitCells(selectedEl)}
+                                                                disabled={selectedCellIndices.length === 0}
+                                                                className={`w-full flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length > 0 ? 'bg-white shadow-sm text-gray-600 border border-gray-100 hover:bg-gray-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
+                                                            >
+                                                                <Split size={16} />
+                                                                <span className="text-[10px] font-bold">나누기</span>
+                                                            </button>
+
+                                                            {/* Step Id: 251 - Popover Split Dialog */}
+                                                            {showSplitDialog && splitTarget && splitTarget.elId === selectedEl.id && (
+                                                                <div
+                                                                    className="absolute top-full right-0 mt-2 z-[300] bg-white rounded-xl shadow-2xl border border-gray-200 p-4 min-w-[220px] animate-in slide-in-from-top-2 duration-200"
+                                                                    onMouseDown={e => e.stopPropagation()}
+                                                                >
+                                                                    <div className="flex items-center justify-between mb-4">
+                                                                        <span className="text-[12px] font-bold text-gray-700">셀 분할 설정</span>
+                                                                        <button onClick={() => setShowSplitDialog(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50">
+                                                                            <X size={14} />
+                                                                        </button>
+                                                                    </div>
+
+                                                                    <div className="space-y-3 mb-4">
+                                                                        <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                                                            <span className="text-[11px] text-gray-600 font-bold ml-1">행</span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <button onClick={() => setSplitRows(prev => Math.max(1, prev - 1))} className="w-6 h-6 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-600 hover:bg-red-50 hover:text-red-500 transition-colors"><Minus size={10} /></button>
+                                                                                <span className="w-4 text-center text-[12px] font-bold text-blue-600">{splitRows}</span>
+                                                                                <button onClick={() => setSplitRows(prev => Math.min(10, prev + 1))} className="w-6 h-6 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"><Plus size={10} /></button>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                                                            <span className="text-[11px] text-gray-600 font-bold ml-1">열</span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <button onClick={() => setSplitCols(prev => Math.max(1, prev - 1))} className="w-6 h-6 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-600 hover:bg-red-50 hover:text-red-500 transition-colors"><Minus size={10} /></button>
+                                                                                <span className="w-4 text-center text-[12px] font-bold text-blue-600">{splitCols}</span>
+                                                                                <button onClick={() => setSplitCols(prev => Math.min(10, prev + 1))} className="w-6 h-6 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"><Plus size={10} /></button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            handleExecSplit(selectedEl, splitTarget.cellIdx, splitRows, splitCols);
+                                                                            setShowSplitDialog(false);
+                                                                        }}
+                                                                        className="w-full py-2 bg-[#2c3e7c] text-white rounded-lg text-[11px] font-bold hover:bg-[#1e2d5e] transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                                                                    >
+                                                                        <Split size={12} />
+                                                                        <span>분할 실행</span>
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Table Border Settings */}
+                                            <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
+                                                <div className="flex items-center gap-1.5 text-gray-700">
+                                                    <Square size={12} className="text-gray-400" />
+                                                    <span className="text-[11px] font-bold">테두리 설정</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                                                    {(['Top', 'Bottom', 'Left', 'Right'] as const).map(direction => {
+                                                        const colorKey = `tableBorder${direction}` as keyof DrawElement;
+                                                        const widthKey = `tableBorder${direction}Width` as keyof DrawElement;
+                                                        const styleColorKey = `border${direction}`;
+                                                        const styleWidthKey = `border${direction}Width`;
+                                                        const label = direction === 'Top' ? '위' : direction === 'Bottom' ? '아래' : direction === 'Left' ? '왼쪽' : '오른쪽';
+
+                                                        // If cells are selected, show first selected cell's border or global as fallback
+                                                        const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                        const firstCellOverride = isAnyCellSelected ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]] || {}) : {};
+
+                                                        const currentColor = isAnyCellSelected
+                                                            ? (firstCellOverride[styleColorKey] || selectedEl[colorKey] || selectedEl.stroke || '#cbd5e1')
+                                                            : ((selectedEl[colorKey] as string) || (selectedEl.stroke || '#cbd5e1'));
+
+                                                        const currentWidth = isAnyCellSelected
+                                                            ? (firstCellOverride[styleWidthKey] !== undefined ? firstCellOverride[styleWidthKey] : (selectedEl[widthKey] ?? selectedEl.strokeWidth ?? 1))
+                                                            : (selectedEl[widthKey] !== undefined ? (selectedEl[widthKey] as number) : (selectedEl.strokeWidth ?? 1));
+
+                                                        return (
+                                                            <div key={direction} className="flex flex-col gap-1.5">
+                                                                <span className="text-[10px] text-gray-500 font-medium pl-0.5">{label}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                                                        <input
+                                                                            type="color"
+                                                                            value={currentColor}
+                                                                            onChange={(e) => {
+                                                                                const val = e.target.value;
+                                                                                if (isAnyCellSelected) {
+                                                                                    // Update specific cells
+                                                                                    const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                    selectedCellIndices.forEach(idx => {
+                                                                                        newStyles[idx] = { ...(newStyles[idx] || {}), [styleColorKey]: val };
+                                                                                    });
+                                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                } else {
+                                                                                    // Update global table border
+                                                                                    const next = drawElements.map(item => item.id === selectedEl.id ? { ...item, [colorKey]: val } : item);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                }
+                                                                            }}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                                        />
+                                                                        <div className="w-full h-full" style={{ backgroundColor: currentColor }} />
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            max="10"
+                                                                            value={currentWidth}
+                                                                            onChange={(e) => {
+                                                                                const val = parseInt(e.target.value) || 0;
+                                                                                if (isAnyCellSelected) {
+                                                                                    // Update specific cells
+                                                                                    const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                    selectedCellIndices.forEach(idx => {
+                                                                                        newStyles[idx] = { ...(newStyles[idx] || {}), [styleWidthKey]: val };
+                                                                                    });
+                                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                } else {
+                                                                                    const next = drawElements.map(item => item.id === selectedEl.id ? { ...item, [widthKey]: val } : item);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                }
+                                                                            }}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                                        />
+                                                                        <span className="text-[9px] text-gray-400">px</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* Alignment Settings */}
+                                            <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
+                                                <div className="flex items-center gap-1.5 text-gray-700">
+                                                    <AlignHorizontalJustifyCenter size={12} className="text-gray-400" />
+                                                    <span className="text-[11px] font-bold">텍스트 정렬 설정</span>
+                                                </div>
+                                                <div className="flex flex-col gap-3">
+                                                    {/* Horizontal Alignment */}
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <span className="text-[10px] text-gray-500 font-medium pl-0.5">가로 정렬</span>
+                                                        <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
+                                                            {[
+                                                                { id: 'left', icon: <AlignHorizontalJustifyStart size={14} />, label: '왼쪽' },
+                                                                { id: 'center', icon: <AlignHorizontalJustifyCenter size={14} />, label: '가운데' },
+                                                                { id: 'right', icon: <AlignHorizontalJustifyEnd size={14} />, label: '오른쪽' }
+                                                            ].map((opt) => {
+                                                                const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                                const activeVal = isAnyCellSelected
+                                                                    ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.textAlign || selectedEl.textAlign || 'center')
+                                                                    : (selectedEl.textAlign || 'center');
+                                                                const isActive = activeVal === opt.id;
+
+                                                                return (
+                                                                    <button
+                                                                        key={opt.id}
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        onClick={() => {
+                                                                            if (isAnyCellSelected) {
+                                                                                const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                selectedCellIndices.forEach(idx => {
+                                                                                    newStyles[idx] = { ...(newStyles[idx] || {}), textAlign: opt.id };
+                                                                                });
+                                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                            } else {
+                                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, textAlign: opt.id as any } : it);
+                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                            }
+                                                                        }}
+                                                                        className={`flex-1 flex items-center justify-center py-1.5 rounded-lg transition-all ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                                                        title={opt.label}
+                                                                    >
+                                                                        {opt.icon}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Vertical Alignment */}
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <span className="text-[10px] text-gray-500 font-medium pl-0.5">세로 정렬</span>
+                                                        <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
+                                                            {[
+                                                                { id: 'top', icon: <AlignVerticalJustifyStart size={14} />, label: '상단' },
+                                                                { id: 'middle', icon: <AlignVerticalJustifyCenter size={14} />, label: '중단' },
+                                                                { id: 'bottom', icon: <AlignVerticalJustifyEnd size={14} />, label: '하단' }
+                                                            ].map((opt) => {
+                                                                const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                                const activeVal = isAnyCellSelected
+                                                                    ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.verticalAlign || selectedEl.verticalAlign || 'middle')
+                                                                    : (selectedEl.verticalAlign || 'middle');
+                                                                const isActive = activeVal === opt.id;
+
+                                                                return (
+                                                                    <button
+                                                                        key={opt.id}
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        onClick={() => {
+                                                                            if (isAnyCellSelected) {
+                                                                                const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                selectedCellIndices.forEach(idx => {
+                                                                                    newStyles[idx] = { ...(newStyles[idx] || {}), verticalAlign: opt.id };
+                                                                                });
+                                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                            } else {
+                                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, verticalAlign: opt.id as any } : it);
+                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                            }
+                                                                        }}
+                                                                        className={`flex-1 flex items-center justify-center py-1.5 rounded-lg transition-all ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                                                        title={opt.label}
+                                                                    >
+                                                                        {opt.icon}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Cell color picker */}
+                                            <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[11px] font-bold text-gray-700">배경색</span>
+                                                    {selectedCellIndices.length > 0 && editingTableId === selectedEl.id && (
+                                                        <span className="text-[10px] text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded-full">
+                                                            {selectedCellIndices.length}개 선택
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex gap-1.5 flex-wrap">
+                                                        {cellColorPresets.map(color => (
+                                                            <button
+                                                                key={color}
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                onClick={() => {
+                                                                    if (selectedCellIndices.length > 0) {
+                                                                        // Update selected cells
+                                                                        const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                                                                        selectedCellIndices.forEach(idx => { newCellColors[idx] = color === 'transparent' ? undefined : color; });
+                                                                        const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
+                                                                        update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                                    } else {
+                                                                        // Update the entire table stroke/fill or all cells
+                                                                        const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, fill: color === 'transparent' ? undefined : color } : el);
+                                                                        update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                                    }
+                                                                }}
+                                                                className="w-5 h-5 rounded-full border-2 border-gray-200 hover:border-blue-400 hover:scale-125 transition-all flex items-center justify-center overflow-hidden shadow-sm"
+                                                                style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
+                                                                title={color === 'transparent' ? '색 없음' : color}
+                                                            >
+                                                                {color === 'transparent' && <div className="w-full h-[1.5px] bg-red-400 rotate-45" />}
+                                                            </button>
+                                                        ))}
+                                                        <label className="w-5 h-5 rounded-full border-2 border-dashed border-gray-300 hover:border-blue-400 hover:scale-125 transition-all flex items-center justify-center overflow-hidden cursor-pointer relative shadow-sm" title="직접 선택">
+                                                            <Plus size={9} className="text-gray-400 pointer-events-none" />
+                                                            <input
+                                                                type="color"
+                                                                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                onChange={(e) => {
+                                                                    const color = e.target.value;
+                                                                    const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                                                                    selectedCellIndices.forEach(idx => { newCellColors[idx] = color; });
+                                                                    const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
+                                                                    update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                    <button
+                                                        onMouseDown={e => e.stopPropagation()}
+                                                        onClick={() => {
+                                                            const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                                                            selectedCellIndices.forEach(idx => { newCellColors[idx] = undefined; });
+                                                            const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
+                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                        }}
+                                                        className="text-[10px] text-gray-400 hover:text-red-500 transition-colors text-left"
+                                                    >색상 초기화</button>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            step="5"
-                                            value={Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.strokeOpacity ?? 1) * 100)}
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value) / 100;
-                                                const nextElements = drawElements.map(el =>
-                                                    selectedElementIds.includes(el.id) ? { ...el, strokeOpacity: val } : el
-                                                );
-                                                update({ drawElements: nextElements });
-                                                syncUpdate({ drawElements: nextElements });
-                                            }}
-                                            className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
-                                        />
                                     </div>
-                                </div>
+                                );
+                            })() : null}
 
-                                {/* [Table settings and cell color picker moved to dedicated Table Panel] */}
-
-                                {/* [Cell color picker moved to dedicated Table Panel] */}
-                            </div>
-                        )}
-
-
-
-                        {/* ─── Table Panel ─── */}
-                        {(showTablePanel && !isToolbarCollapsed) ? (() => {
-                            const selectedEl = drawElements.find(el => el.id === selectedElementIds[0]);
-                            if (!selectedEl || selectedEl.type !== 'table') return null;
-                            const rows = selectedEl.tableRows || 3;
-                            const cols = selectedEl.tableCols || 3;
-                            const totalCells = rows * cols;
-                            const cellColorPresets = [
-                                'transparent', '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0',
-                                '#fee2e2', '#fef3c7', '#dcfce7', '#dbeafe', '#ede9fe',
-                                '#2c3e7c', '#1e40af', '#059669', '#d97706', '#dc2626'
-                            ];
-                            return (
+                            {/* Layer Panel */}
+                            {selectedElementIds.length > 0 && showLayerPanel && !isToolbarCollapsed && (
                                 <div
-                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in"
+                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in duration-200"
                                     style={{
-                                        left: tablePanelPos.x,
-                                        top: tablePanelPos.y,
-                                        transform: tablePanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
+                                        left: layerPanelPos.x,
+                                        top: layerPanelPos.y,
+                                        transform: layerPanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
                                     }}
                                 >
-                                    {/* Header */}
                                     <div
-                                        className="flex items-center justify-between border-b border-gray-100 pb-2 cursor-grab active:cursor-grabbing group/header"
-                                        onMouseDown={(e) => {
-                                            if (isLocked) return;
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            isDraggingTablePanelRef.current = true;
-                                            const panel = (e.target as HTMLElement).closest('.floating-panel') as HTMLElement;
-                                            if (!panel || !nodeRef.current) return;
-                                            const panelRect = panel.getBoundingClientRect();
-                                            const containerRect = nodeRef.current.getBoundingClientRect();
-                                            const scale = containerRect.width / nodeRef.current.clientWidth;
-                                            tablePanelDragOffsetRef.current = {
-                                                x: (e.clientX - panelRect.left) / scale,
-                                                y: (e.clientY - panelRect.top) / scale
-                                            };
-                                            const onMove = (me: MouseEvent) => {
-                                                if (!isDraggingTablePanelRef.current || !nodeRef.current) return;
-                                                me.stopImmediatePropagation();
-                                                const cRect = nodeRef.current.getBoundingClientRect();
-                                                const layoutWidth = nodeRef.current.clientWidth;
-                                                const currentScale = cRect.width / layoutWidth;
-                                                const layoutX = (me.clientX - cRect.left) / currentScale;
-                                                const layoutY = (me.clientY - cRect.top) / currentScale;
-                                                setTablePanelPos({
-                                                    x: layoutX - tablePanelDragOffsetRef.current.x,
-                                                    y: layoutY - tablePanelDragOffsetRef.current.y
-                                                });
-                                            };
-                                            const onUp = () => {
-                                                isDraggingTablePanelRef.current = false;
-                                                window.removeEventListener('mousemove', onMove, true);
-                                                window.removeEventListener('mouseup', onUp);
-                                            };
-                                            window.addEventListener('mousemove', onMove, true);
-                                            window.addEventListener('mouseup', onUp);
-                                        }}
+                                        className="flex items-center justify-between border-b border-gray-100 pb-2 mb-1 cursor-grab active:cursor-grabbing group/header"
+                                        onMouseDown={(e) => handlePanelDragStart(e, 'layer')}
+                                        title="드래그하여 이동"
                                     >
                                         <div className="flex items-center gap-2">
                                             <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
-                                            <Settings2 size={14} className="text-[#2c3e7c]" />
-                                            <span className="text-[12px] font-bold text-gray-700">표 설정</span>
+                                            <Layers size={14} className="text-[#2c3e7c]" />
+                                            <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">레이어 순서 변경 ({selectedElementIds.length})</span>
                                         </div>
-                                        <button
-                                            onClick={() => {
-                                                setShowTablePanel(false);
-                                                setSelectedCellIndices([]);
-                                                setEditingCellIndex(null);
-                                            }}
-                                            onMouseDown={e => e.stopPropagation()}
-                                            className="p-1 rounded-md hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
-                                        >
-                                            <X size={13} />
+                                        <button onClick={() => setShowLayerPanel(false)} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors">
+                                            <X size={14} />
                                         </button>
                                     </div>
 
-                                    {/* Row / Col controls */}
-                                    <div className="flex flex-col gap-3">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[11px] text-gray-600 font-medium">행 수</span>
-                                            <div className="flex items-center gap-1.5">
-                                                <button
-                                                    onMouseDown={e => e.stopPropagation()}
-                                                    onClick={() => {
-                                                        if (rows <= 1) return;
-                                                        const newRows = rows - 1;
-                                                        const newCellData = Array(newRows * cols).fill('');
-                                                        const newCellColors: (string | undefined)[] = Array(newRows * cols).fill(undefined);
-                                                        for (let r = 0; r < newRows; r++) {
-                                                            for (let c = 0; c < cols; c++) {
-                                                                newCellData[r * cols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
-                                                                newCellColors[r * cols + c] = selectedEl.tableCellColors?.[r * cols + c];
-                                                            }
-                                                        }
-                                                        const newRowHeights = Array(newRows).fill(100 / newRows);
-                                                        const nextElements = drawElements.map(el =>
-                                                            el.id === selectedEl.id ? { ...el, tableRows: newRows, tableCellData: newCellData, tableRowHeights: newRowHeights, tableCellColors: newCellColors } : el
-                                                        );
-                                                        update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
-                                                        setSelectedCellIndices([]);
-                                                        setEditingCellIndex(null);
-                                                    }}
-                                                    className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
-                                                >−</button>
-                                                <span className="w-8 text-center text-[13px] font-bold text-[#2c3e7c]">{rows}</span>
-                                                <button
-                                                    onMouseDown={e => e.stopPropagation()}
-                                                    onClick={() => {
-                                                        const newRows = rows + 1;
-                                                        const newCellData = Array(newRows * cols).fill('');
-                                                        const newCellColors: (string | undefined)[] = Array(newRows * cols).fill(undefined);
-                                                        for (let r = 0; r < rows; r++) {
-                                                            for (let c = 0; c < cols; c++) {
-                                                                newCellData[r * cols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
-                                                                newCellColors[r * cols + c] = selectedEl.tableCellColors?.[r * cols + c];
-                                                            }
-                                                        }
-                                                        const newRowHeights = Array(newRows).fill(100 / newRows);
-                                                        const nextElements = drawElements.map(el =>
-                                                            el.id === selectedEl.id ? { ...el, tableRows: newRows, tableCellData: newCellData, tableRowHeights: newRowHeights, tableCellColors: newCellColors } : el
-                                                        );
-                                                        update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
-                                                        setSelectedCellIndices([]);
-                                                        setEditingCellIndex(null);
-                                                    }}
-                                                    className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
-                                                >+</button>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={() => handleLayerAction('front')}
+                                            className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
+                                                <ChevronDown size={18} className="rotate-180 scale-y-150" />
                                             </div>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[11px] text-gray-600 font-medium">열 수</span>
-                                            <div className="flex items-center gap-1.5">
-                                                <button
-                                                    onMouseDown={e => e.stopPropagation()}
-                                                    onClick={() => {
-                                                        if (cols <= 1) return;
-                                                        const newCols = cols - 1;
-                                                        const newCellData = Array(rows * newCols).fill('');
-                                                        const newCellColors: (string | undefined)[] = Array(rows * newCols).fill(undefined);
-                                                        for (let r = 0; r < rows; r++) {
-                                                            for (let c = 0; c < newCols; c++) {
-                                                                newCellData[r * newCols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
-                                                                newCellColors[r * newCols + c] = selectedEl.tableCellColors?.[r * cols + c];
-                                                            }
-                                                        }
-                                                        const newColWidths = Array(newCols).fill(100 / newCols);
-                                                        const nextElements = drawElements.map(el =>
-                                                            el.id === selectedEl.id ? { ...el, tableCols: newCols, tableCellData: newCellData, tableColWidths: newColWidths, tableCellColors: newCellColors } : el
-                                                        );
-                                                        update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
-                                                        setSelectedCellIndices([]);
-                                                        setEditingCellIndex(null);
-                                                    }}
-                                                    className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
-                                                >−</button>
-                                                <span className="w-8 text-center text-[13px] font-bold text-[#2c3e7c]">{cols}</span>
-                                                <button
-                                                    onMouseDown={e => e.stopPropagation()}
-                                                    onClick={() => {
-                                                        const newCols = cols + 1;
-                                                        const newCellData = Array(rows * newCols).fill('');
-                                                        const newCellColors: (string | undefined)[] = Array(rows * newCols).fill(undefined);
-                                                        for (let r = 0; r < rows; r++) {
-                                                            for (let c = 0; c < newCols; c++) {
-                                                                newCellData[r * newCols + c] = c < cols ? (selectedEl.tableCellData?.[r * cols + c] || '') : '';
-                                                                newCellColors[r * newCols + c] = c < cols ? selectedEl.tableCellColors?.[r * cols + c] : undefined;
-                                                            }
-                                                        }
-                                                        const newColWidths = Array(newCols).fill(100 / newCols);
-                                                        const nextElements = drawElements.map(el =>
-                                                            el.id === selectedEl.id ? { ...el, tableCols: newCols, tableCellData: newCellData, tableColWidths: newColWidths, tableCellColors: newCellColors } : el
-                                                        );
-                                                        update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
-                                                        setSelectedCellIndices([]);
-                                                        setEditingCellIndex(null);
-                                                    }}
-                                                    className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
-                                                >+</button>
+                                            <span className="text-[10px] font-bold text-gray-600">맨 앞으로</span>
+                                        </button>
+                                        <button
+                                            onClick={() => handleLayerAction('forward')}
+                                            className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
+                                                <ChevronDown size={18} className="rotate-180" />
                                             </div>
-                                        </div>
-                                        {/* Merge / Split Buttons */}
-                                        {editingTableId === selectedEl.id && (
-                                            <div className="flex flex-col gap-2 p-1.5 bg-gray-50/50 rounded-xl border border-gray-100">
-                                                <div className="flex items-center gap-1.5 px-1 mb-1">
-                                                    <Combine size={12} className="text-blue-500" />
-                                                    <span className="text-[11px] font-bold text-gray-600">셀 편집</span>
-                                                </div>
-                                                <div className="flex gap-1.5">
-                                                    <button
-                                                        onMouseDown={e => e.stopPropagation()}
-                                                        onClick={() => handleMergeCells(selectedEl)}
-                                                        disabled={selectedCellIndices.length < 2}
-                                                        className={`flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length >= 2 ? 'bg-white shadow-sm text-blue-600 border border-blue-100 hover:bg-blue-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
-                                                    >
-                                                        <Combine size={16} />
-                                                        <span className="text-[10px] font-bold">합치기</span>
-                                                    </button>
-                                                    <button
-                                                        onMouseDown={e => e.stopPropagation()}
-                                                        onClick={() => handleSplitCells(selectedEl)}
-                                                        disabled={selectedCellIndices.length === 0}
-                                                        className={`flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length > 0 ? 'bg-white shadow-sm text-gray-600 border border-gray-100 hover:bg-gray-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
-                                                    >
-                                                        <Split size={16} />
-                                                        <span className="text-[10px] font-bold">나누기</span>
-                                                    </button>
-                                                </div>
+                                            <span className="text-[10px] font-bold text-gray-600">한 단계 위로</span>
+                                        </button>
+                                        <button
+                                            onClick={() => handleLayerAction('backward')}
+                                            className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
+                                                <ChevronDown size={18} />
                                             </div>
-                                        )}
-
-                                        {/* Table Border Settings */}
-                                        <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
-                                            <div className="flex items-center gap-1.5 text-gray-700">
-                                                <Square size={12} className="text-gray-400" />
-                                                <span className="text-[11px] font-bold">테두리 설정</span>
+                                            <span className="text-[10px] font-bold text-gray-600">한 단계 아래로</span>
+                                        </button>
+                                        <button
+                                            onClick={() => handleLayerAction('back')}
+                                            className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
+                                                <ChevronDown size={18} className="scale-y-150" />
                                             </div>
-                                            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                                                {(['Top', 'Bottom', 'Left', 'Right'] as const).map(direction => {
-                                                    const colorKey = `tableBorder${direction}` as keyof DrawElement;
-                                                    const widthKey = `tableBorder${direction}Width` as keyof DrawElement;
-                                                    const styleColorKey = `border${direction}`;
-                                                    const styleWidthKey = `border${direction}Width`;
-                                                    const label = direction === 'Top' ? '위' : direction === 'Bottom' ? '아래' : direction === 'Left' ? '왼쪽' : '오른쪽';
-
-                                                    // If cells are selected, show first selected cell's border or global as fallback
-                                                    const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
-                                                    const firstCellOverride = isAnyCellSelected ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]] || {}) : {};
-
-                                                    const currentColor = isAnyCellSelected
-                                                        ? (firstCellOverride[styleColorKey] || selectedEl[colorKey] || selectedEl.stroke || '#cbd5e1')
-                                                        : ((selectedEl[colorKey] as string) || (selectedEl.stroke || '#cbd5e1'));
-
-                                                    const currentWidth = isAnyCellSelected
-                                                        ? (firstCellOverride[styleWidthKey] !== undefined ? firstCellOverride[styleWidthKey] : (selectedEl[widthKey] ?? selectedEl.strokeWidth ?? 1))
-                                                        : (selectedEl[widthKey] !== undefined ? (selectedEl[widthKey] as number) : (selectedEl.strokeWidth ?? 1));
-
-                                                    return (
-                                                        <div key={direction} className="flex flex-col gap-1.5">
-                                                            <span className="text-[10px] text-gray-500 font-medium pl-0.5">{label}</span>
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
-                                                                    <input
-                                                                        type="color"
-                                                                        value={currentColor}
-                                                                        onChange={(e) => {
-                                                                            const val = e.target.value;
-                                                                            if (isAnyCellSelected) {
-                                                                                // Update specific cells
-                                                                                const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
-                                                                                selectedCellIndices.forEach(idx => {
-                                                                                    newStyles[idx] = { ...(newStyles[idx] || {}), [styleColorKey]: val };
-                                                                                });
-                                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
-                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                            } else {
-                                                                                // Update global table border
-                                                                                const next = drawElements.map(item => item.id === selectedEl.id ? { ...item, [colorKey]: val } : item);
-                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                            }
-                                                                        }}
-                                                                        onMouseDown={e => e.stopPropagation()}
-                                                                        className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
-                                                                    />
-                                                                    <div className="w-full h-full" style={{ backgroundColor: currentColor }} />
-                                                                </div>
-                                                                <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
-                                                                    <input
-                                                                        type="number"
-                                                                        min="0"
-                                                                        max="10"
-                                                                        value={currentWidth}
-                                                                        onChange={(e) => {
-                                                                            const val = parseInt(e.target.value) || 0;
-                                                                            if (isAnyCellSelected) {
-                                                                                // Update specific cells
-                                                                                const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
-                                                                                selectedCellIndices.forEach(idx => {
-                                                                                    newStyles[idx] = { ...(newStyles[idx] || {}), [styleWidthKey]: val };
-                                                                                });
-                                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
-                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                            } else {
-                                                                                const next = drawElements.map(item => item.id === selectedEl.id ? { ...item, [widthKey]: val } : item);
-                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                            }
-                                                                        }}
-                                                                        onMouseDown={e => e.stopPropagation()}
-                                                                        className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
-                                                                    />
-                                                                    <span className="text-[9px] text-gray-400">px</span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Alignment Settings */}
-                                        <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
-                                            <div className="flex items-center gap-1.5 text-gray-700">
-                                                <AlignHorizontalJustifyCenter size={12} className="text-gray-400" />
-                                                <span className="text-[11px] font-bold">텍스트 정렬 설정</span>
-                                            </div>
-                                            <div className="flex flex-col gap-3">
-                                                {/* Horizontal Alignment */}
-                                                <div className="flex flex-col gap-1.5">
-                                                    <span className="text-[10px] text-gray-500 font-medium pl-0.5">가로 정렬</span>
-                                                    <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
-                                                        {[
-                                                            { id: 'left', icon: <AlignHorizontalJustifyStart size={14} />, label: '왼쪽' },
-                                                            { id: 'center', icon: <AlignHorizontalJustifyCenter size={14} />, label: '가운데' },
-                                                            { id: 'right', icon: <AlignHorizontalJustifyEnd size={14} />, label: '오른쪽' }
-                                                        ].map((opt) => {
-                                                            const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
-                                                            const activeVal = isAnyCellSelected
-                                                                ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.textAlign || selectedEl.textAlign || 'center')
-                                                                : (selectedEl.textAlign || 'center');
-                                                            const isActive = activeVal === opt.id;
-
-                                                            return (
-                                                                <button
-                                                                    key={opt.id}
-                                                                    onMouseDown={e => e.stopPropagation()}
-                                                                    onClick={() => {
-                                                                        if (isAnyCellSelected) {
-                                                                            const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
-                                                                            selectedCellIndices.forEach(idx => {
-                                                                                newStyles[idx] = { ...(newStyles[idx] || {}), textAlign: opt.id };
-                                                                            });
-                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
-                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                        } else {
-                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, textAlign: opt.id as any } : it);
-                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                        }
-                                                                    }}
-                                                                    className={`flex-1 flex items-center justify-center py-1.5 rounded-lg transition-all ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                                                                    title={opt.label}
-                                                                >
-                                                                    {opt.icon}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-
-                                                {/* Vertical Alignment */}
-                                                <div className="flex flex-col gap-1.5">
-                                                    <span className="text-[10px] text-gray-500 font-medium pl-0.5">세로 정렬</span>
-                                                    <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
-                                                        {[
-                                                            { id: 'top', icon: <AlignVerticalJustifyStart size={14} />, label: '상단' },
-                                                            { id: 'middle', icon: <AlignVerticalJustifyCenter size={14} />, label: '중단' },
-                                                            { id: 'bottom', icon: <AlignVerticalJustifyEnd size={14} />, label: '하단' }
-                                                        ].map((opt) => {
-                                                            const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
-                                                            const activeVal = isAnyCellSelected
-                                                                ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.verticalAlign || selectedEl.verticalAlign || 'middle')
-                                                                : (selectedEl.verticalAlign || 'middle');
-                                                            const isActive = activeVal === opt.id;
-
-                                                            return (
-                                                                <button
-                                                                    key={opt.id}
-                                                                    onMouseDown={e => e.stopPropagation()}
-                                                                    onClick={() => {
-                                                                        if (isAnyCellSelected) {
-                                                                            const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
-                                                                            selectedCellIndices.forEach(idx => {
-                                                                                newStyles[idx] = { ...(newStyles[idx] || {}), verticalAlign: opt.id };
-                                                                            });
-                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
-                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                        } else {
-                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, verticalAlign: opt.id as any } : it);
-                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                        }
-                                                                    }}
-                                                                    className={`flex-1 flex items-center justify-center py-1.5 rounded-lg transition-all ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                                                                    title={opt.label}
-                                                                >
-                                                                    {opt.icon}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Cell color picker */}
-                                        <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[11px] font-bold text-gray-700">배경색</span>
-                                                {selectedCellIndices.length > 0 && editingTableId === selectedEl.id && (
-                                                    <span className="text-[10px] text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded-full">
-                                                        {selectedCellIndices.length}개 선택
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="flex flex-col gap-2">
-                                                <div className="flex gap-1.5 flex-wrap">
-                                                    {cellColorPresets.map(color => (
-                                                        <button
-                                                            key={color}
-                                                            onMouseDown={e => e.stopPropagation()}
-                                                            onClick={() => {
-                                                                if (selectedCellIndices.length > 0) {
-                                                                    // Update selected cells
-                                                                    const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
-                                                                    selectedCellIndices.forEach(idx => { newCellColors[idx] = color === 'transparent' ? undefined : color; });
-                                                                    const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
-                                                                    update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
-                                                                } else {
-                                                                    // Update the entire table stroke/fill or all cells
-                                                                    const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, fill: color === 'transparent' ? undefined : color } : el);
-                                                                    update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
-                                                                }
-                                                            }}
-                                                            className="w-5 h-5 rounded-full border-2 border-gray-200 hover:border-blue-400 hover:scale-125 transition-all flex items-center justify-center overflow-hidden shadow-sm"
-                                                            style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
-                                                            title={color === 'transparent' ? '색 없음' : color}
-                                                        >
-                                                            {color === 'transparent' && <div className="w-full h-[1.5px] bg-red-400 rotate-45" />}
-                                                        </button>
-                                                    ))}
-                                                    <label className="w-5 h-5 rounded-full border-2 border-dashed border-gray-300 hover:border-blue-400 hover:scale-125 transition-all flex items-center justify-center overflow-hidden cursor-pointer relative shadow-sm" title="직접 선택">
-                                                        <Plus size={9} className="text-gray-400 pointer-events-none" />
-                                                        <input
-                                                            type="color"
-                                                            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                                                            onMouseDown={e => e.stopPropagation()}
-                                                            onChange={(e) => {
-                                                                const color = e.target.value;
-                                                                const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
-                                                                selectedCellIndices.forEach(idx => { newCellColors[idx] = color; });
-                                                                const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
-                                                                update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
-                                                            }}
-                                                        />
-                                                    </label>
-                                                </div>
-                                                <button
-                                                    onMouseDown={e => e.stopPropagation()}
-                                                    onClick={() => {
-                                                        const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
-                                                        selectedCellIndices.forEach(idx => { newCellColors[idx] = undefined; });
-                                                        const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
-                                                        update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
-                                                    }}
-                                                    className="text-[10px] text-gray-400 hover:text-red-500 transition-colors text-left"
-                                                >색상 초기화</button>
-                                            </div>
-                                        </div>
+                                            <span className="text-[10px] font-bold text-gray-600">맨 뒤로</span>
+                                        </button>
                                     </div>
                                 </div>
-                            );
-                        })() : null}
-
-                        {/* Layer Panel */}
-                        {selectedElementIds.length > 0 && showLayerPanel && !isToolbarCollapsed && (
-                            <div
-                                className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in duration-200"
-                                style={{
-                                    left: layerPanelPos.x,
-                                    top: layerPanelPos.y,
-                                    transform: layerPanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
-                                }}
-                            >
-                                <div
-                                    className="flex items-center justify-between border-b border-gray-100 pb-2 mb-1 cursor-grab active:cursor-grabbing group/header"
-                                    onMouseDown={(e) => handlePanelDragStart(e, 'layer')}
-                                    title="드래그하여 이동"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
-                                        <Layers size={14} className="text-[#2c3e7c]" />
-                                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">레이어 순서 변경 ({selectedElementIds.length})</span>
-                                    </div>
-                                    <button onClick={() => setShowLayerPanel(false)} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors">
-                                        <X size={14} />
-                                    </button>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        onClick={() => handleLayerAction('front')}
-                                        className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                                    >
-                                        <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                                            <ChevronDown size={18} className="rotate-180 scale-y-150" />
-                                        </div>
-                                        <span className="text-[10px] font-bold text-gray-600">맨 앞으로</span>
-                                    </button>
-                                    <button
-                                        onClick={() => handleLayerAction('forward')}
-                                        className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                                    >
-                                        <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                                            <ChevronDown size={18} className="rotate-180" />
-                                        </div>
-                                        <span className="text-[10px] font-bold text-gray-600">한 단계 위로</span>
-                                    </button>
-                                    <button
-                                        onClick={() => handleLayerAction('backward')}
-                                        className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                                    >
-                                        <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                                            <ChevronDown size={18} />
-                                        </div>
-                                        <span className="text-[10px] font-bold text-gray-600">한 단계 아래로</span>
-                                    </button>
-                                    <button
-                                        onClick={() => handleLayerAction('back')}
-                                        className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                                    >
-                                        <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                                            <ChevronDown size={18} className="scale-y-150" />
-                                        </div>
-                                        <span className="text-[10px] font-bold text-gray-600">맨 뒤로</span>
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </>
-                )
+                            )}
+                        </>
+                    )
                 }
-                < ScreenHandles />
-            </div>
-        </div>
+
+                <ScreenHandles />
+            </div >
+        </div >
     );
 };
 
