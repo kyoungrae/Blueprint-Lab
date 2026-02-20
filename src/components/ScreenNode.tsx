@@ -2069,7 +2069,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     <>
                         {/* Floating Toolbar */}
                         <div
-                            className="nodrag floating-toolbar absolute z-[200] flex items-center gap-1 p-1 bg-white/80 backdrop-blur-md border border-gray-200 rounded-xl shadow-xl transition-shadow hover:shadow-2xl"
+                            className="nodrag floating-toolbar absolute z-[200] flex items-center gap-1 p-1 bg-white/80 border border-gray-200 rounded-xl shadow-xl transition-shadow hover:shadow-2xl"
                             style={{
                                 left: toolbarPos.x,
                                 top: toolbarPos.y,
@@ -2697,7 +2697,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             ];
                             return (
                                 <div
-                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[220px] animate-in fade-in zoom-in duration-200"
+                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in"
                                     style={{
                                         left: tablePanelPos.x,
                                         top: tablePanelPos.y,
