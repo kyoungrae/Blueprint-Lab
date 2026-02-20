@@ -37,26 +37,7 @@ const RightPane: React.FC<RightPaneProps> = ({
 }) => {
     return (
         <div ref={rightPaneRef} className="w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px]" style={{ minWidth: 250 }}>
-            {/* Panel 1: 초기화면설정 */}
-            <div className="flex-1 flex flex-col border-b border-gray-200 min-h-[100px]">
-                <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 초기화면설정
-                </div>
-                <div className="flex-1 p-0 relative group/area">
-                    <textarea
-                        value={screen.initialSettings}
-                        onChange={(e) => update({ initialSettings: e.target.value })}
-                        onBlur={(e) => syncUpdate({ initialSettings: e.target.value })}
-                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                        disabled={isLocked}
-                        className={`w-full h-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}
-                        placeholder="• 화면 진입 시 초기 설정..."
-                        spellCheck={false}
-                    />
-                </div>
-            </div>
-
-            {/* Panel 2: 기능상세 */}
+            {/* Panel 1: 기능상세 */}
             <div
                 className="flex-none flex flex-col border-b border-gray-200 relative min-h-[100px]"
                 style={{ height: functionHeight }}
@@ -88,7 +69,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                 </div>
             </div>
 
-            {/* Panel 3: 관련테이블 */}
+            {/* Panel 2: 관련테이블 */}
             <div
                 className="flex-none flex flex-col relative min-h-[100px]"
                 style={{ height: tableHeight }}
@@ -218,6 +199,25 @@ const RightPane: React.FC<RightPaneProps> = ({
                             );
                         })()}
                     </div>
+                </div>
+            </div>
+
+            {/* Panel 3: 초기화면설정 (아래로 이동) */}
+            <div className="flex-1 flex flex-col border-t border-gray-200 min-h-[100px]">
+                <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 초기화면설정
+                </div>
+                <div className="flex-1 p-0 relative group/area">
+                    <textarea
+                        value={screen.initialSettings}
+                        onChange={(e) => update({ initialSettings: e.target.value })}
+                        onBlur={(e) => syncUpdate({ initialSettings: e.target.value })}
+                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                        disabled={isLocked}
+                        className={`w-full h-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}
+                        placeholder="• 화면 진입 시 초기 설정..."
+                        spellCheck={false}
+                    />
                 </div>
             </div>
         </div>

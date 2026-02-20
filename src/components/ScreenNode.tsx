@@ -2,7 +2,7 @@ import React, { memo, useState, useRef, useEffect } from 'react';
 import { type NodeProps } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
 
-import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, Pencil, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, ChevronLeft, ChevronRight, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split } from 'lucide-react';
+import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, ChevronLeft, ChevronRight, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -14,8 +14,6 @@ import ScreenHandles from './screenNode/ScreenHandles';
 import DrawTextComponent from './screenNode/DrawTextComponent';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
-import ContentTabs from './screenNode/ContentTabs';
-import ImageContent from './screenNode/ImageContent';
 import RightPane from './screenNode/RightPane';
 import StylePanel from './screenNode/StylePanel';
 import LayerPanel from './screenNode/LayerPanel';
@@ -47,7 +45,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
     const isLocked = screen.isLocked ?? true;
-    const [isDragOver, setIsDragOver] = React.useState(false);
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
     const tableListRef = useRef<HTMLDivElement>(null);
     const rightPaneRef = useRef<HTMLDivElement>(null);
@@ -94,64 +91,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
 
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            if (file.size > 5 * 1024 * 1024) return alert('이미지 크기는 5MB 이하여야 합니다.');
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const result = reader.result as string;
-                update({ imageUrl: result });
-                syncUpdate({ imageUrl: result });
-            };
-            reader.readAsDataURL(file);
-        }
-    };
-
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        if (isLocked) return;
-        setIsDragOver(true);
-    };
-
-    const handleDragLeave = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragOver(false);
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragOver(false);
-        if (isLocked) return;
-
-        const file = e.dataTransfer.files?.[0];
-        if (file && file.type.startsWith('image/')) {
-            if (file.size > 5 * 1024 * 1024) return alert('이미지 크기는 5MB 이하여야 합니다.');
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const result = reader.result as string;
-                update({ imageUrl: result });
-                syncUpdate({ imageUrl: result });
-            };
-            reader.readAsDataURL(file);
-        }
-    };
-
-    const contentMode = screen.contentMode || 'DRAW';
-
-    const handleTabChange = (mode: 'IMAGE' | 'DRAW') => {
-        if (isLocked) return;
-        update({ contentMode: mode });
-        syncUpdate({ contentMode: mode });
-    };
 
 
 
-    // Image Resizing Logic
-    const [imgSize, setImgSize] = useState<{ w: number | undefined, h: number | undefined }>({ w: screen.imageWidth, h: screen.imageHeight });
-    const [isImageSelected, setIsImageSelected] = useState(false);
-    const resizeStartRef = useRef<{ x: number, y: number, w: number, h: number, dir: string, maxW: number, maxH: number } | null>(null);
-    const imageContainerRef = useRef<HTMLDivElement>(null);
 
     // ── 4. Drawing Mode Logic ──
     const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table'>('select');
@@ -190,10 +132,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [splitRows, setSplitRows] = useState(2);
     const [splitCols, setSplitCols] = useState(1);
 
-    // Panel Dragging State
-    const [toolbarPos, setToolbarPos] = useState<{ x: number | string, y: number }>({ x: '50%', y: 16 });
-    const isDraggingToolbarRef = useRef(false);
-    const toolbarDragOffsetRef = useRef({ x: 0, y: 0 });
+    // Panel Dragging State (toolbarPos removed as toolbar is now inside canvas area)
 
     const [stylePanelPos, setStylePanelPos] = useState<{ x: number | string, y: number }>({ x: '50%', y: 64 });
     const isDraggingStylePanelRef = useRef(false);
@@ -217,7 +156,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     // Reset positions when locked/unlocked
     useEffect(() => {
-        setToolbarPos({ x: '50%', y: 200 });
         setStylePanelPos({ x: '50%', y: 240 });
         setLayerPanelPos({ x: '50%', y: 240 });
         setIsToolbarCollapsed(false);
@@ -424,50 +362,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         // Table double-click is handled at the cell level
     };
 
-    const handleToolbarDragStart = (e: React.MouseEvent) => {
-        if (isLocked) return;
-        e.stopPropagation();
-        e.preventDefault();
-
-        isDraggingToolbarRef.current = true;
-        const toolbar = (e.target as HTMLElement).closest('.floating-toolbar') as HTMLElement;
-        if (!toolbar || !nodeRef.current) return;
-
-        const toolbarRect = toolbar.getBoundingClientRect();
-        const containerRect = nodeRef.current.getBoundingClientRect();
-        const scale = containerRect.width / nodeRef.current.clientWidth;
-
-        toolbarDragOffsetRef.current = {
-            x: (e.clientX - toolbarRect.left) / scale,
-            y: (e.clientY - toolbarRect.top) / scale
-        };
-
-        const handleWindowMouseMove = (moveEvent: MouseEvent) => {
-            if (!isDraggingToolbarRef.current || !nodeRef.current) return;
-            moveEvent.stopImmediatePropagation();
-
-            const cRect = nodeRef.current.getBoundingClientRect();
-            const layoutWidth = nodeRef.current.clientWidth;
-            const currentScale = cRect.width / layoutWidth;
-
-            const layoutX = (moveEvent.clientX - cRect.left) / currentScale;
-            const layoutY = (moveEvent.clientY - cRect.top) / currentScale;
-
-            let newX = layoutX - toolbarDragOffsetRef.current.x;
-            let newY = layoutY - toolbarDragOffsetRef.current.y;
-
-            setToolbarPos({ x: newX, y: newY });
-        };
-
-        const handleWindowMouseUp = () => {
-            isDraggingToolbarRef.current = false;
-            window.removeEventListener('mousemove', handleWindowMouseMove, true);
-            window.removeEventListener('mouseup', handleWindowMouseUp, true);
-        };
-
-        window.addEventListener('mousemove', handleWindowMouseMove, true);
-        window.addEventListener('mouseup', handleWindowMouseUp, true);
-    };
 
     const handlePanelDragStart = (e: React.MouseEvent, type: 'style' | 'layer') => {
         if (isLocked) return;
@@ -773,19 +667,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         return () => window.removeEventListener('keydown', handleKeyDown, true);
     }, [selectedElementIds, drawElements]);
 
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (imageContainerRef.current && !imageContainerRef.current.contains(e.target as Node)) {
-                setIsImageSelected(false);
-            }
-        };
-        window.addEventListener('mousedown', handleClickOutside);
-        return () => window.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    useEffect(() => {
-        setImgSize({ w: screen.imageWidth, h: screen.imageHeight });
-    }, [screen.imageWidth, screen.imageHeight]);
 
     // Resizing Logic for Right Panels
     const [tableHeight, setTableHeight] = useState(screen.tablePanelHeight || 200);
@@ -1390,82 +1271,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
 
-    const handleResizeStart = (direction: string) => (e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isLocked) return;
-
-        const imgWrapper = e.currentTarget.parentElement as HTMLDivElement;
-        const scrollContainer = imgWrapper.parentElement as HTMLDivElement;
-        const currentW = imgWrapper.offsetWidth;
-        const currentH = imgWrapper.offsetHeight;
-
-        // Get parent container dimensions to restrict resizing
-        // We use scrollWidth/Height if we want to allow growth up to content, but here we want to restrict to *visible* area?
-        // User said: "할당된 영역을 넘어가지 못하도록". 
-        // If we use scrollContainer.clientWidth, it's the visible width.
-        const startMaxW = scrollContainer.clientWidth;
-        const startMaxH = scrollContainer.clientHeight;
-
-        resizeStartRef.current = {
-            x: e.clientX,
-            y: e.clientY,
-            w: currentW,
-            h: currentH,
-            dir: direction,
-            maxW: startMaxW,
-            maxH: startMaxH
-        };
-
-        const handleWindowMouseMove = (moveEvent: MouseEvent) => {
-            if (!resizeStartRef.current) return;
-            const { x, y, w, h, dir, maxW, maxH } = resizeStartRef.current;
-            const dx = moveEvent.clientX - x;
-            const dy = moveEvent.clientY - y;
-
-            let newW = w;
-            let newH = h;
-
-            if (dir.includes('e')) newW = w + dx;
-            if (dir.includes('w')) newW = w - dx;
-            if (dir.includes('s')) newH = h + dy;
-            if (dir.includes('n')) newH = h - dy;
-
-            // Constrain to parent container size, keeping min size 50
-            newW = Math.max(50, Math.min(maxW, newW));
-            newH = Math.max(50, Math.min(maxH, newH));
-
-            setImgSize({ w: newW, h: newH });
-        };
-
-        const handleWindowMouseUp = (upEvent: MouseEvent) => {
-            if (resizeStartRef.current) {
-                const { x, y, w, h, dir, maxW, maxH } = resizeStartRef.current;
-                const dx = upEvent.clientX - x;
-                const dy = upEvent.clientY - y;
-
-                let newW = w;
-                let newH = h;
-
-                if (dir.includes('e')) newW = w + dx;
-                if (dir.includes('w')) newW = w - dx;
-                if (dir.includes('s')) newH = h + dy;
-                if (dir.includes('n')) newH = h - dy;
-
-                newW = Math.max(50, Math.min(maxW, newW));
-                newH = Math.max(50, Math.min(maxH, newH));
-
-                update({ imageWidth: newW, imageHeight: newH });
-                syncUpdate({ imageWidth: newW, imageHeight: newH });
-            }
-            resizeStartRef.current = null;
-            window.removeEventListener('mousemove', handleWindowMouseMove);
-            window.removeEventListener('mouseup', handleWindowMouseUp);
-        };
-
-        window.addEventListener('mousemove', handleWindowMouseMove);
-        window.addEventListener('mouseup', handleWindowMouseUp);
-    };
 
 
 
@@ -1538,50 +1343,454 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 {/* ── 2. Meta Info Table (Extracted) ── */}
                 <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
 
-                {/* ── Tabs (IMAGE vs DRAW) ── */}
-                <ContentTabs contentMode={contentMode} isLocked={isLocked} onTabChange={handleTabChange} />
+                {/* ── 3. Body Content: Toolbar full width, then Split Layout ── */}
+                <div className="flex flex-col bg-white min-h-[500px] rounded-[15px]">
 
-                {/* ── 3. Body Content (Split Layout) ── */}
-                <div className="flex bg-white min-h-[500px] rounded-[15px]">
+                    {/* Drawing Toolbar - Full width (100%) */}
+                    {!isLocked && (
+                        <div className="nodrag w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px]">
+                                    <div className="flex items-center gap-1 flex-1">
+                                    {/* Collapse/Expand Toggle */}
+                                    <PremiumTooltip label={isToolbarCollapsed ? "펼치기" : "접기"}>
+                                        <button
+                                            onClick={() => {
+                                                setIsToolbarCollapsed(!isToolbarCollapsed);
+                                                if (!isToolbarCollapsed) {
+                                                    setShowStylePanel(false);
+                                                    setShowLayerPanel(false);
+                                                }
+                                            }}
+                                            className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
+                                        >
+                                            {isToolbarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                                        </button>
+                                    </PremiumTooltip>
 
-                    {/* [LEFT PANE 70%] - Image & Function Items */}
+                                    {!isToolbarCollapsed && (
+                                        <>
+                                            <div className="flex items-center gap-1 animate-in slide-in-from-left-1 duration-200">
+                                                <div className="flex items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
+                                                    <PremiumTooltip label="선택" dotColor="#3b82f6">
+                                                        <button
+                                                            onClick={() => setActiveTool('select')}
+                                                            className={`p-2 rounded-lg transition-colors ${activeTool === 'select' ? 'bg-blue-100 text-blue-600' : 'hover:bg-blue-50 text-gray-500'}`}
+                                                        >
+                                                            <MousePointer2 size={18} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                </div>
+                                                <div className="flex items-center gap-0.5">
+                                                    <div className="relative">
+                                                        <PremiumTooltip label="표 삽입">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setShowTablePicker(!showTablePicker);
+                                                                    setTablePickerHover(null);
+                                                                }}
+                                                                className={`p-2 rounded-lg transition-colors ${showTablePicker ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                            >
+                                                                <Table2 size={18} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        {showTablePicker && (
+                                                            <div
+                                                                className="nodrag absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in duration-150"
+                                                                onMouseLeave={() => setTablePickerHover(null)}
+                                                            >
+                                                                <div className="text-[11px] font-bold text-gray-600 mb-2 flex items-center gap-1.5">
+                                                                    <Table2 size={12} className="text-[#2c3e7c]" />
+                                                                    표 삽입
+                                                                </div>
+                                                                <div className="flex flex-col gap-[2px]">
+                                                                    {Array.from({ length: 8 }).map((_, rIdx) => (
+                                                                        <div key={rIdx} className="flex gap-[2px]">
+                                                                            {Array.from({ length: 8 }).map((_, cIdx) => {
+                                                                                const isHighlighted = tablePickerHover && rIdx <= tablePickerHover.r && cIdx <= tablePickerHover.c;
+                                                                                return (
+                                                                                    <div
+                                                                                        key={cIdx}
+                                                                                        className={`w-[18px] h-[18px] border rounded-[2px] cursor-pointer transition-all duration-75 ${isHighlighted
+                                                                                            ? 'bg-blue-500 border-blue-600 shadow-sm'
+                                                                                            : 'bg-gray-50 border-gray-300 hover:border-gray-400'
+                                                                                            }`}
+                                                                                        onMouseEnter={() => setTablePickerHover({ r: rIdx, c: cIdx })}
+                                                                                        onClick={() => {
+                                                                                            const rows = rIdx + 1;
+                                                                                            const cols = cIdx + 1;
+                                                                                            const canvasRect = canvasRef.current?.getBoundingClientRect();
+                                                                                            const cx = canvasRect ? canvasRect.width / 2 - (cols * 60) / 2 : 50;
+                                                                                            const cy = canvasRect ? canvasRect.height / 2 - (rows * 30) / 2 : 50;
+                                                                                            const newId = `draw_${Date.now()}`;
+                                                                                            const tableEl: DrawElement = {
+                                                                                                id: newId,
+                                                                                                type: 'table',
+                                                                                                x: Math.max(10, cx),
+                                                                                                y: Math.max(10, cy),
+                                                                                                width: Math.max(200, cols * 60),
+                                                                                                height: Math.max(80, rows * 30),
+                                                                                                fill: '#ffffff',
+                                                                                                stroke: '#2c3e7c',
+                                                                                                strokeWidth: 1,
+                                                                                                zIndex: drawElements.length + 1,
+                                                                                                fontSize: 14,
+                                                                                                color: '#333333',
+                                                                                                tableRows: rows,
+                                                                                                tableCols: cols,
+                                                                                                tableCellData: Array(rows * cols).fill(''),
+                                                                                                tableColWidths: Array(cols).fill(100 / cols),
+                                                                                                tableRowHeights: Array(rows).fill(100 / rows)
+                                                                                            };
+                                                                                            const nextElements = [...drawElements, tableEl];
+                                                                                            update({ drawElements: nextElements });
+                                                                                            syncUpdate({ drawElements: nextElements });
+                                                                                            setSelectedElementIds([newId]);
+                                                                                            setShowTablePicker(false);
+                                                                                            setTablePickerHover(null);
+                                                                                        }}
+                                                                                    />
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                                <div className="mt-2 text-center text-[10px] font-medium text-gray-500 h-4">
+                                                                    {tablePickerHover
+                                                                        ? <span className="text-blue-600 font-bold">{tablePickerHover.r + 1} × {tablePickerHover.c + 1} 표 삽입</span>
+                                                                        : '행 × 열 선택'
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {/* Table Panel Button — shown only when a table is selected */}
+                                                    {(() => {
+                                                        const selEl = drawElements.find(el => selectedElementIds.includes(el.id));
+                                                        if (!selEl || selEl.type !== 'table') return null;
+                                                        return <div className="flex items-center gap-1 border-l border-gray-200 pl-1 ml-1">
+                                                            <PremiumTooltip label="표 설정">
+                                                                <button
+                                                                    onClick={() => setShowTablePanel(prev => !prev)}
+                                                                    className={`p-2 rounded-lg transition-colors ${showTablePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                                >
+                                                                    <Settings2 size={18} />
+                                                                </button>
+                                                            </PremiumTooltip>
+                                                            <PremiumTooltip label="셀 배경색">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setShowTablePanel(true);
+                                                                    }}
+                                                                    className={`p-2 rounded-lg transition-colors ${showTablePanel && selectedCellIndices.length > 0 ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                                >
+                                                                    <Palette size={18} />
+                                                                </button>
+                                                            </PremiumTooltip>
+                                                        </div>
+                                                            ;
+                                                    })()}
+                                                    <PremiumTooltip label="사각형">
+                                                        <button
+                                                            onClick={() => setActiveTool('rect')}
+                                                            className={`p-2 rounded-lg transition-colors ${activeTool === 'rect' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        >
+                                                            <Square size={18} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                    <PremiumTooltip label="원형">
+                                                        <button
+                                                            onClick={() => setActiveTool('circle')}
+                                                            className={`p-2 rounded-lg transition-colors ${activeTool === 'circle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        >
+                                                            <Circle size={18} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                    <PremiumTooltip label="텍스트">
+                                                        <button
+                                                            onClick={() => setActiveTool('text')}
+                                                            className={`p-2 rounded-lg transition-colors ${activeTool === 'text' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        >
+                                                            <Type size={18} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                    <PremiumTooltip label="이미지">
+                                                        <button
+                                                            onClick={() => setActiveTool('image')}
+                                                            className={`p-2 rounded-lg transition-colors ${activeTool === 'image' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        >
+                                                            <ImageIcon size={18} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                </div>
+                                            </div>
+
+                                            {selectedElementIds.length > 0 && (
+                                                <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
+                                                    <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
+                                                        {(['left', 'center', 'right'] as const).map((align) => (
+                                                            <PremiumTooltip key={align} label={textSelectionRect ? `텍스트 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬` : `캔버스 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬`}>
+                                                                <button
+                                                                    onMouseDown={(e) => e.preventDefault()}
+                                                                    onClick={() => {
+                                                                        if (textSelectionRect) {
+                                                                            const nextElements = drawElements.map(el =>
+                                                                                selectedElementIds.includes(el.id) ? { ...el, textAlign: align } : el
+                                                                            );
+                                                                            update({ drawElements: nextElements });
+                                                                            syncUpdate({ drawElements: nextElements });
+                                                                        } else if (canvasRef.current) {
+                                                                            const cw = canvasRef.current.clientWidth;
+                                                                            const nextElements = drawElements.map(el => {
+                                                                                if (!selectedElementIds.includes(el.id)) return el;
+                                                                                let nx = el.x;
+                                                                                if (align === 'left') nx = 10;
+                                                                                else if (align === 'center') nx = (cw / 2) - (el.width / 2);
+                                                                                else if (align === 'right') nx = cw - el.width - 10;
+                                                                                return { ...el, x: nx };
+                                                                            });
+                                                                            update({ drawElements: nextElements });
+                                                                            syncUpdate({ drawElements: nextElements });
+                                                                        }
+                                                                    }}
+                                                                    className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.textAlign === align || (align === 'center' && !drawElements.find(el => el.id === selectedElementIds[0])?.textAlign)))
+                                                                        ? 'bg-white shadow-sm text-blue-600'
+                                                                        : 'text-gray-400 hover:text-gray-600'
+                                                                        }`}
+                                                                >
+                                                                    {align === 'left' ? <AlignHorizontalJustifyStart size={16} /> : align === 'right' ? <AlignHorizontalJustifyEnd size={16} /> : <AlignHorizontalJustifyCenter size={16} />}
+                                                                </button>
+                                                            </PremiumTooltip>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
+                                                        {(['top', 'middle', 'bottom'] as const).map((vAlign) => (
+                                                            <PremiumTooltip key={vAlign} label={textSelectionRect ? `텍스트 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬` : `캔버스 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬`}>
+                                                                <button
+                                                                    onMouseDown={(e) => e.preventDefault()}
+                                                                    onClick={() => {
+                                                                        if (textSelectionRect) {
+                                                                            const nextElements = drawElements.map(el =>
+                                                                                selectedElementIds.includes(el.id) ? { ...el, verticalAlign: vAlign } : el
+                                                                            );
+                                                                            update({ drawElements: nextElements });
+                                                                            syncUpdate({ drawElements: nextElements });
+                                                                        } else if (canvasRef.current) {
+                                                                            const ch = canvasRef.current.clientHeight;
+                                                                            const nextElements = drawElements.map(el => {
+                                                                                if (!selectedElementIds.includes(el.id)) return el;
+                                                                                let ny = el.y;
+                                                                                if (vAlign === 'top') ny = 10;
+                                                                                else if (vAlign === 'middle') ny = (ch / 2) - (el.height / 2);
+                                                                                else if (vAlign === 'bottom') ny = ch - el.height - 10;
+                                                                                return { ...el, y: ny };
+                                                                            });
+                                                                            update({ drawElements: nextElements });
+                                                                            syncUpdate({ drawElements: nextElements });
+                                                                        }
+                                                                    }}
+                                                                    className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign === vAlign || (vAlign === 'middle' && !drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign)))
+                                                                        ? 'bg-white shadow-sm text-blue-600'
+                                                                        : 'text-gray-400 hover:text-gray-600'
+                                                                        }`}
+                                                                >
+                                                                    {vAlign === 'top' ? <AlignVerticalJustifyStart size={16} /> : vAlign === 'bottom' ? <AlignVerticalJustifyEnd size={16} /> : <AlignVerticalJustifyCenter size={16} />}
+                                                                </button>
+                                                            </PremiumTooltip>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Object-to-Object Alignment (2+ selected) */}
+                                            {selectedElementIds.length >= 2 && (
+                                                <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
+                                                    <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
+                                                        <button
+                                                            onClick={() => handleObjectAlign('align-left')}
+                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            title="객체 왼쪽 정렬"
+                                                        >
+                                                            <AlignHorizontalJustifyStart size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleObjectAlign('align-center-h')}
+                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            title="객체 가로 중앙 정렬"
+                                                        >
+                                                            <AlignHorizontalJustifyCenter size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleObjectAlign('align-right')}
+                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            title="객체 오른쪽 정렬"
+                                                        >
+                                                            <AlignHorizontalJustifyEnd size={16} />
+                                                        </button>
+                                                    </div>
+                                                    <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
+                                                        <button
+                                                            onClick={() => handleObjectAlign('align-top')}
+                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            title="객체 상단 정렬"
+                                                        >
+                                                            <AlignVerticalJustifyStart size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleObjectAlign('align-center-v')}
+                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            title="객체 세로 중앙 정렬"
+                                                        >
+                                                            <AlignVerticalJustifyCenter size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleObjectAlign('align-bottom')}
+                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            title="객체 하단 정렬"
+                                                        >
+                                                            <AlignVerticalJustifyEnd size={16} />
+                                                        </button>
+                                                    </div>
+                                                    {selectedElementIds.length >= 3 && (
+                                                        <div className="flex gap-0.5 bg-gradient-to-r from-purple-50 to-pink-50 p-0.5 rounded-lg border border-purple-100">
+                                                            <button
+                                                                onClick={() => handleObjectAlign('distribute-h')}
+                                                                className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
+                                                                title="가로 균등 분배"
+                                                            >
+                                                                <AlignHorizontalDistributeCenter size={16} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleObjectAlign('distribute-v')}
+                                                                className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
+                                                                title="세로 균등 분배"
+                                                            >
+                                                                <AlignVerticalDistributeCenter size={16} />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
+                                                <PremiumTooltip label="색상 및 스타일">
+                                                    <button
+                                                        onClick={() => {
+                                                            setShowStylePanel(!showStylePanel);
+                                                            setShowLayerPanel(false);
+                                                        }}
+                                                        className={`p-2 rounded-lg transition-colors ${showStylePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                    >
+                                                        <Palette size={18} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                                <PremiumTooltip label="레이어 순서">
+                                                    <button
+                                                        onClick={() => {
+                                                            setShowLayerPanel(!showLayerPanel);
+                                                            setShowStylePanel(false);
+                                                        }}
+                                                        className={`p-2 rounded-lg transition-colors ${showLayerPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                    >
+                                                        <Layers size={18} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* Text Style Settings - same line as tools when text is selected */}
+                                    {textSelectionRect && selectedElementIds.length > 0 && (() => {
+                                        const el = drawElements.find(it => it.id === selectedElementIds[0]);
+                                        if (!el) return null;
+                                        return (
+                                            <>
+                                                <div className="w-px h-6 bg-gray-200 mx-1" />
+                                                <div className="nodrag flex items-center gap-2 bg-gray-50/80 rounded-lg px-2 py-1 animate-in fade-in duration-200">
+                                                    <div className="flex items-center gap-1.5 px-1 border-r border-gray-200 pr-2">
+                                                        <Type size={12} className="text-gray-400" />
+                                                        <input
+                                                            type="number"
+                                                            value={el.fontSize || 14}
+                                                            onChange={(e) => updateElement(el.id, { fontSize: parseInt(e.target.value) || 12 })}
+                                                            className="w-10 bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                        />
+                                                        <span className="text-[10px] text-gray-400">px</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 pl-1">
+                                                        <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm">
+                                                            <input
+                                                                type="color"
+                                                                value={el.color || '#333333'}
+                                                                onChange={(e) => {
+                                                                    const color = e.target.value;
+                                                                    const selection = window.getSelection();
+                                                                    if (selection && !selection.isCollapsed) {
+                                                                        document.execCommand('foreColor', false, color);
+                                                                        const activeEl = document.activeElement as HTMLElement;
+                                                                        if (activeEl && activeEl.contentEditable === 'true') {
+                                                                            const evt = new Event('input', { bubbles: true });
+                                                                            activeEl.dispatchEvent(evt);
+                                                                        }
+                                                                    } else {
+                                                                        updateElement(el.id, { color });
+                                                                    }
+                                                                }}
+                                                                className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                            />
+                                                            <div className="w-full h-full" style={{ backgroundColor: el.color || '#333333' }} />
+                                                        </div>
+                                                        <div className="flex gap-1">
+                                                            {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
+                                                                <button
+                                                                    key={c}
+                                                                    onMouseDown={(e) => {
+                                                                        e.preventDefault();
+                                                                        const selection = window.getSelection();
+                                                                        if (selection && !selection.isCollapsed) {
+                                                                            document.execCommand('foreColor', false, c);
+                                                                            const activeEl = document.activeElement as HTMLElement;
+                                                                            if (activeEl && activeEl.contentEditable === 'true') {
+                                                                                const evt = new Event('input', { bubbles: true });
+                                                                                activeEl.dispatchEvent(evt);
+                                                                            }
+                                                                        } else {
+                                                                            updateElement(el.id, { color: c });
+                                                                        }
+                                                                    }}
+                                                                    className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
+                                                                    style={{ backgroundColor: c }}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
+                                    </div>
+                        </div>
+                    )}
+
+                    {/* Left + Right pane row */}
+                    <div className="flex flex-1 min-h-0">
+                    {/* [LEFT PANE 70%] - Drawing Canvas */}
                     <div className="w-[70%] flex-shrink-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px]">
 
-                        {/* Content Area Rendering based on contentMode */}
-                        {contentMode === 'IMAGE' ? (
-                            <ImageContent
-                                screen={screen}
-                                isLocked={isLocked}
-                                isDragOver={isDragOver}
-                                imgSize={imgSize}
-                                isImageSelected={isImageSelected}
-                                imageContainerRef={imageContainerRef}
-                                update={update}
-                                syncUpdate={syncUpdate}
-                                setIsDragOver={setIsDragOver}
-                                setIsImageSelected={setIsImageSelected}
-                                handleDragOver={handleDragOver}
-                                handleDragLeave={handleDragLeave}
-                                handleDrop={handleDrop}
-                                handleResizeStart={handleResizeStart}
-                                handleImageUpload={handleImageUpload}
-                            />
-                        ) : (
-                            <div className="flex-1 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
-                                style={{
-                                    backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
-                                    backgroundSize: '20px 20px'
-                                }}
+                        {/* Drawing Canvas Area (canvas only) */}
+                        <div className="flex-1 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
+                            style={{
+                                backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
+                                backgroundSize: '20px 20px'
+                            }}
+                        >
+                            {/* Canvas Viewboard */}
+                            <div
+                                ref={canvasRef}
+                                className="nodrag flex-1 relative overflow-hidden outline-none cursor-crosshair h-full"
+                                onMouseDown={handleCanvasMouseDown}
+                                onMouseMove={handleCanvasMouseMove}
+                                onMouseUp={handleCanvasMouseUp}
+                                onMouseLeave={handleCanvasMouseUp}
                             >
-                                {/* Canvas Viewboard */}
-                                <div
-                                    ref={canvasRef}
-                                    className="nodrag flex-1 relative overflow-hidden outline-none cursor-crosshair h-full"
-                                    onMouseDown={handleCanvasMouseDown}
-                                    onMouseMove={handleCanvasMouseMove}
-                                    onMouseUp={handleCanvasMouseUp}
-                                    onMouseLeave={handleCanvasMouseUp}
-                                >
                                     {/* Render Existing Elements */}
                                     {drawElements.map((el) => {
                                         const isSelected = selectedElementIds.includes(el.id);
@@ -2064,7 +2273,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     )}
                                 </div>
                             </div>
-                        )}
                     </div>
 
                     {/* [RIGHT PANE 30%] - Details & Settings (Extracted) */}
@@ -2084,6 +2292,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         handleTablePanelResize={handleTablePanelResize}
                         handleFunctionPanelResize={handleFunctionPanelResize}
                     />
+                    </div>
                 </div> {/* End Body Split Layout */}
 
 
@@ -2094,456 +2303,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
 
 
-                {/* Relocated Floating Components (Toolbar, Panels) to Root Level for Free Movement */}
+                {/* Floating Panels (Style Panel, Layer Panel) */}
                 {
-                    !isLocked && contentMode === 'DRAW' && (
+                    !isLocked && (
                         <>
-                            {/* Floating Toolbar */}
-                            <div
-                                className="nodrag floating-toolbar absolute z-[200] flex items-center gap-1 p-1 bg-white/80 border border-gray-200 rounded-xl shadow-xl transition-shadow hover:shadow-2xl"
-                                style={{
-                                    left: toolbarPos.x,
-                                    top: toolbarPos.y,
-                                    transform: toolbarPos.x === '50%' ? 'translateX(-50%)' : 'none'
-                                }}
-                            >
-                                {/* Drag Handle */}
-                                <PremiumTooltip label="도구 상자 이동">
-                                    <div
-                                        onMouseDown={handleToolbarDragStart}
-                                        className="px-1 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 border-r border-gray-200 mr-0.5 flex items-center"
-                                    >
-                                        <GripVertical size={16} />
-                                    </div>
-                                </PremiumTooltip>
-
-                                {/* Collapse/Expand Toggle */}
-                                <PremiumTooltip label={isToolbarCollapsed ? "펼치기" : "접기"}>
-                                    <button
-                                        onClick={() => {
-                                            setIsToolbarCollapsed(!isToolbarCollapsed);
-                                            if (!isToolbarCollapsed) {
-                                                setShowStylePanel(false);
-                                                setShowLayerPanel(false);
-                                            }
-                                        }}
-                                        className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
-                                    >
-                                        {isToolbarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-                                    </button>
-                                </PremiumTooltip>
-
-                                {!isToolbarCollapsed && (
-                                    <>
-                                        <div className="flex items-center gap-1 animate-in slide-in-from-left-1 duration-200">
-                                            <div className="flex items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
-                                                <PremiumTooltip label="선택" dotColor="#3b82f6">
-                                                    <button
-                                                        onClick={() => setActiveTool('select')}
-                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'select' ? 'bg-blue-100 text-blue-600' : 'hover:bg-blue-50 text-gray-500'}`}
-                                                    >
-                                                        <MousePointer2 size={18} />
-                                                    </button>
-                                                </PremiumTooltip>
-                                            </div>
-                                            <div className="flex items-center gap-0.5">
-                                                <div className="relative">
-                                                    <PremiumTooltip label="표 삽입">
-                                                        <button
-                                                            onClick={() => {
-                                                                setShowTablePicker(!showTablePicker);
-                                                                setTablePickerHover(null);
-                                                            }}
-                                                            className={`p-2 rounded-lg transition-colors ${showTablePicker ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                        >
-                                                            <Table2 size={18} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                    {showTablePicker && (
-                                                        <div
-                                                            className="nodrag absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in duration-150"
-                                                            onMouseLeave={() => setTablePickerHover(null)}
-                                                        >
-                                                            <div className="text-[11px] font-bold text-gray-600 mb-2 flex items-center gap-1.5">
-                                                                <Table2 size={12} className="text-[#2c3e7c]" />
-                                                                표 삽입
-                                                            </div>
-                                                            <div className="flex flex-col gap-[2px]">
-                                                                {Array.from({ length: 8 }).map((_, rIdx) => (
-                                                                    <div key={rIdx} className="flex gap-[2px]">
-                                                                        {Array.from({ length: 8 }).map((_, cIdx) => {
-                                                                            const isHighlighted = tablePickerHover && rIdx <= tablePickerHover.r && cIdx <= tablePickerHover.c;
-                                                                            return (
-                                                                                <div
-                                                                                    key={cIdx}
-                                                                                    className={`w-[18px] h-[18px] border rounded-[2px] cursor-pointer transition-all duration-75 ${isHighlighted
-                                                                                        ? 'bg-blue-500 border-blue-600 shadow-sm'
-                                                                                        : 'bg-gray-50 border-gray-300 hover:border-gray-400'
-                                                                                        }`}
-                                                                                    onMouseEnter={() => setTablePickerHover({ r: rIdx, c: cIdx })}
-                                                                                    onClick={() => {
-                                                                                        const rows = rIdx + 1;
-                                                                                        const cols = cIdx + 1;
-                                                                                        const canvasRect = canvasRef.current?.getBoundingClientRect();
-                                                                                        const cx = canvasRect ? canvasRect.width / 2 - (cols * 60) / 2 : 50;
-                                                                                        const cy = canvasRect ? canvasRect.height / 2 - (rows * 30) / 2 : 50;
-                                                                                        const newId = `draw_${Date.now()}`;
-                                                                                        const tableEl: DrawElement = {
-                                                                                            id: newId,
-                                                                                            type: 'table',
-                                                                                            x: Math.max(10, cx),
-                                                                                            y: Math.max(10, cy),
-                                                                                            width: Math.max(200, cols * 60),
-                                                                                            height: Math.max(80, rows * 30),
-                                                                                            fill: '#ffffff',
-                                                                                            stroke: '#2c3e7c',
-                                                                                            strokeWidth: 1,
-                                                                                            zIndex: drawElements.length + 1,
-                                                                                            fontSize: 14,
-                                                                                            color: '#333333',
-                                                                                            tableRows: rows,
-                                                                                            tableCols: cols,
-                                                                                            tableCellData: Array(rows * cols).fill(''),
-                                                                                            tableColWidths: Array(cols).fill(100 / cols),
-                                                                                            tableRowHeights: Array(rows).fill(100 / rows)
-                                                                                        };
-                                                                                        const nextElements = [...drawElements, tableEl];
-                                                                                        update({ drawElements: nextElements });
-                                                                                        syncUpdate({ drawElements: nextElements });
-                                                                                        setSelectedElementIds([newId]);
-                                                                                        setShowTablePicker(false);
-                                                                                        setTablePickerHover(null);
-                                                                                    }}
-                                                                                />
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                            <div className="mt-2 text-center text-[10px] font-medium text-gray-500 h-4">
-                                                                {tablePickerHover
-                                                                    ? <span className="text-blue-600 font-bold">{tablePickerHover.r + 1} × {tablePickerHover.c + 1} 표 삽입</span>
-                                                                    : '행 × 열 선택'
-                                                                }
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {/* Table Panel Button — shown only when a table is selected */}
-                                                {(() => {
-                                                    const selEl = drawElements.find(el => selectedElementIds.includes(el.id));
-                                                    if (!selEl || selEl.type !== 'table') return null;
-                                                    return <div className="flex items-center gap-1 border-l border-gray-200 pl-1 ml-1">
-                                                        <PremiumTooltip label="표 설정">
-                                                            <button
-                                                                onClick={() => setShowTablePanel(prev => !prev)}
-                                                                className={`p-2 rounded-lg transition-colors ${showTablePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                            >
-                                                                <Settings2 size={18} />
-                                                            </button>
-                                                        </PremiumTooltip>
-                                                        <PremiumTooltip label="셀 배경색">
-                                                            <button
-                                                                onClick={() => {
-                                                                    setShowTablePanel(true);
-                                                                    // Focus on the cell color section if needed (already visible in panel)
-                                                                }}
-                                                                className={`p-2 rounded-lg transition-colors ${showTablePanel && selectedCellIndices.length > 0 ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                            >
-                                                                <Palette size={18} />
-                                                            </button>
-                                                        </PremiumTooltip>
-                                                    </div>
-                                                        ;
-                                                })()}
-                                                <PremiumTooltip label="사각형">
-                                                    <button
-                                                        onClick={() => setActiveTool('rect')}
-                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'rect' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                    >
-                                                        <Square size={18} />
-                                                    </button>
-                                                </PremiumTooltip>
-                                                <PremiumTooltip label="원형">
-                                                    <button
-                                                        onClick={() => setActiveTool('circle')}
-                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'circle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                    >
-                                                        <Circle size={18} />
-                                                    </button>
-                                                </PremiumTooltip>
-                                                <PremiumTooltip label="텍스트">
-                                                    <button
-                                                        onClick={() => setActiveTool('text')}
-                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'text' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                    >
-                                                        <Type size={18} />
-                                                    </button>
-                                                </PremiumTooltip>
-                                                <PremiumTooltip label="이미지">
-                                                    <button
-                                                        onClick={() => setActiveTool('image')}
-                                                        className={`p-2 rounded-lg transition-colors ${activeTool === 'image' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                    >
-                                                        <ImageIcon size={18} />
-                                                    </button>
-                                                </PremiumTooltip>
-                                            </div>
-                                        </div>
-
-                                        {selectedElementIds.length > 0 && (
-                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
-                                                <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
-                                                    {(['left', 'center', 'right'] as const).map((align) => (
-                                                        <PremiumTooltip key={align} label={textSelectionRect ? `텍스트 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬` : `캔버스 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬`}>
-                                                            <button
-                                                                onMouseDown={(e) => e.preventDefault()}
-                                                                onClick={() => {
-                                                                    if (textSelectionRect) {
-                                                                        const nextElements = drawElements.map(el =>
-                                                                            selectedElementIds.includes(el.id) ? { ...el, textAlign: align } : el
-                                                                        );
-                                                                        update({ drawElements: nextElements });
-                                                                        syncUpdate({ drawElements: nextElements });
-                                                                    } else if (canvasRef.current) {
-                                                                        const cw = canvasRef.current.clientWidth;
-                                                                        const nextElements = drawElements.map(el => {
-                                                                            if (!selectedElementIds.includes(el.id)) return el;
-                                                                            let nx = el.x;
-                                                                            if (align === 'left') nx = 10;
-                                                                            else if (align === 'center') nx = (cw / 2) - (el.width / 2);
-                                                                            else if (align === 'right') nx = cw - el.width - 10;
-                                                                            return { ...el, x: nx };
-                                                                        });
-                                                                        update({ drawElements: nextElements });
-                                                                        syncUpdate({ drawElements: nextElements });
-                                                                    }
-                                                                }}
-                                                                className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.textAlign === align || (align === 'center' && !drawElements.find(el => el.id === selectedElementIds[0])?.textAlign)))
-                                                                    ? 'bg-white shadow-sm text-blue-600'
-                                                                    : 'text-gray-400 hover:text-gray-600'
-                                                                    }`}
-                                                            >
-                                                                {align === 'left' ? <AlignHorizontalJustifyStart size={16} /> : align === 'right' ? <AlignHorizontalJustifyEnd size={16} /> : <AlignHorizontalJustifyCenter size={16} />}
-                                                            </button>
-                                                        </PremiumTooltip>
-                                                    ))}
-                                                </div>
-                                                <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
-                                                    {(['top', 'middle', 'bottom'] as const).map((vAlign) => (
-                                                        <PremiumTooltip key={vAlign} label={textSelectionRect ? `텍스트 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬` : `캔버스 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬`}>
-                                                            <button
-                                                                onMouseDown={(e) => e.preventDefault()}
-                                                                onClick={() => {
-                                                                    if (textSelectionRect) {
-                                                                        const nextElements = drawElements.map(el =>
-                                                                            selectedElementIds.includes(el.id) ? { ...el, verticalAlign: vAlign } : el
-                                                                        );
-                                                                        update({ drawElements: nextElements });
-                                                                        syncUpdate({ drawElements: nextElements });
-                                                                    } else if (canvasRef.current) {
-                                                                        const ch = canvasRef.current.clientHeight;
-                                                                        const nextElements = drawElements.map(el => {
-                                                                            if (!selectedElementIds.includes(el.id)) return el;
-                                                                            let ny = el.y;
-                                                                            if (vAlign === 'top') ny = 10;
-                                                                            else if (vAlign === 'middle') ny = (ch / 2) - (el.height / 2);
-                                                                            else if (vAlign === 'bottom') ny = ch - el.height - 10;
-                                                                            return { ...el, y: ny };
-                                                                        });
-                                                                        update({ drawElements: nextElements });
-                                                                        syncUpdate({ drawElements: nextElements });
-                                                                    }
-                                                                }}
-                                                                className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign === vAlign || (vAlign === 'middle' && !drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign)))
-                                                                    ? 'bg-white shadow-sm text-blue-600'
-                                                                    : 'text-gray-400 hover:text-gray-600'
-                                                                    }`}
-                                                            >
-                                                                {vAlign === 'top' ? <AlignVerticalJustifyStart size={16} /> : vAlign === 'bottom' ? <AlignVerticalJustifyEnd size={16} /> : <AlignVerticalJustifyCenter size={16} />}
-                                                            </button>
-                                                        </PremiumTooltip>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Object-to-Object Alignment (2+ selected) */}
-                                        {selectedElementIds.length >= 2 && (
-                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
-                                                <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
-                                                    <button
-                                                        onClick={() => handleObjectAlign('align-left')}
-                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        title="객체 왼쪽 정렬"
-                                                    >
-                                                        <AlignHorizontalJustifyStart size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleObjectAlign('align-center-h')}
-                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        title="객체 가로 중앙 정렬"
-                                                    >
-                                                        <AlignHorizontalJustifyCenter size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleObjectAlign('align-right')}
-                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        title="객체 오른쪽 정렬"
-                                                    >
-                                                        <AlignHorizontalJustifyEnd size={16} />
-                                                    </button>
-                                                </div>
-                                                <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
-                                                    <button
-                                                        onClick={() => handleObjectAlign('align-top')}
-                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        title="객체 상단 정렬"
-                                                    >
-                                                        <AlignVerticalJustifyStart size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleObjectAlign('align-center-v')}
-                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        title="객체 세로 중앙 정렬"
-                                                    >
-                                                        <AlignVerticalJustifyCenter size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleObjectAlign('align-bottom')}
-                                                        className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        title="객체 하단 정렬"
-                                                    >
-                                                        <AlignVerticalJustifyEnd size={16} />
-                                                    </button>
-                                                </div>
-                                                {selectedElementIds.length >= 3 && (
-                                                    <div className="flex gap-0.5 bg-gradient-to-r from-purple-50 to-pink-50 p-0.5 rounded-lg border border-purple-100">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('distribute-h')}
-                                                            className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
-                                                            title="가로 균등 분배"
-                                                        >
-                                                            <AlignHorizontalDistributeCenter size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleObjectAlign('distribute-v')}
-                                                            className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
-                                                            title="세로 균등 분배"
-                                                        >
-                                                            <AlignVerticalDistributeCenter size={16} />
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
-                                            <PremiumTooltip label="색상 및 스타일">
-                                                <button
-                                                    onClick={() => {
-                                                        setShowStylePanel(!showStylePanel);
-                                                        setShowLayerPanel(false);
-                                                    }}
-                                                    className={`p-2 rounded-lg transition-colors ${showStylePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                >
-                                                    <Palette size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                            <PremiumTooltip label="레이어 순서">
-                                                <button
-                                                    onClick={() => {
-                                                        setShowLayerPanel(!showLayerPanel);
-                                                        setShowStylePanel(false);
-                                                    }}
-                                                    className={`p-2 rounded-lg transition-colors ${showLayerPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                >
-                                                    <Layers size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-
-                            {/* ─── Floating Text Selection Toolbar (Below Toolbox) ─── */}
-                            {textSelectionRect && selectedElementIds.length > 0 && (() => {
-                                const el = drawElements.find(it => it.id === selectedElementIds[0]);
-                                if (!el) return null;
-                                return (
-                                    <div
-                                        className="nodrag absolute z-[201] flex items-center gap-2 bg-white/95 backdrop-blur-md border border-gray-200 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in slide-in-from-top-2 duration-200"
-                                        style={{
-                                            left: toolbarPos.x,
-                                            top: (typeof toolbarPos.y === 'number' ? toolbarPos.y : 20) + 55,
-                                            transform: toolbarPos.x === '50%' ? 'translateX(-50%)' : 'none'
-                                        }}
-                                        onMouseDown={e => e.stopPropagation()}
-                                    >
-                                        <div className="flex items-center gap-1.5 px-1 border-r border-gray-100 pr-2">
-                                            <Type size={12} className="text-gray-400" />
-                                            <input
-                                                type="number"
-                                                value={el.fontSize || 14}
-                                                onChange={(e) => updateElement(el.id, { fontSize: parseInt(e.target.value) || 12 })}
-                                                className="w-10 bg-transparent text-[11px] font-bold text-gray-700 outline-none"
-                                            />
-                                            <span className="text-[10px] text-gray-400">px</span>
-                                        </div>
-
-                                        <div className="flex items-center gap-2 pl-1">
-                                            <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm">
-                                                <input
-                                                    type="color"
-                                                    value={el.color || '#333333'}
-                                                    onChange={(e) => {
-                                                        const color = e.target.value;
-                                                        const selection = window.getSelection();
-                                                        if (selection && !selection.isCollapsed) {
-                                                            document.execCommand('foreColor', false, color);
-                                                            // Force update text to save HTML
-                                                            const activeEl = document.activeElement as HTMLElement;
-                                                            if (activeEl && activeEl.contentEditable === 'true') {
-                                                                const evt = new Event('input', { bubbles: true });
-                                                                activeEl.dispatchEvent(evt);
-                                                            }
-                                                        } else {
-                                                            updateElement(el.id, { color });
-                                                        }
-                                                    }}
-                                                    className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
-                                                />
-                                                <div className="w-full h-full" style={{ backgroundColor: el.color || '#333333' }} />
-                                            </div>
-                                            <div className="flex gap-1">
-                                                {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
-                                                    <button
-                                                        key={c}
-                                                        onMouseDown={(e) => {
-                                                            // Prevent focus loss to keep selection
-                                                            e.preventDefault();
-                                                            const selection = window.getSelection();
-                                                            if (selection && !selection.isCollapsed) {
-                                                                document.execCommand('foreColor', false, c);
-                                                                const activeEl = document.activeElement as HTMLElement;
-                                                                if (activeEl && activeEl.contentEditable === 'true') {
-                                                                    const evt = new Event('input', { bubbles: true });
-                                                                    activeEl.dispatchEvent(evt);
-                                                                }
-                                                            } else {
-                                                                updateElement(el.id, { color: c });
-                                                            }
-                                                        }}
-                                                        className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
-                                                        style={{ backgroundColor: c }}
-                                                    />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-
                             {/* Style Panel */}
                             {/* Style Panel */}
                             <StylePanel
