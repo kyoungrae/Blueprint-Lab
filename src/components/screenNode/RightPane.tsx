@@ -7,8 +7,8 @@ interface RightPaneProps {
     isLocked: boolean;
     update: (updates: Partial<Screen>) => void;
     syncUpdate: (updates: Partial<Screen>) => void;
-    rightPaneRef: React.RefObject<HTMLDivElement>;
-    tableListRef: React.RefObject<HTMLDivElement>;
+    rightPaneRef: React.RefObject<HTMLDivElement | null>;
+    tableListRef: React.RefObject<HTMLDivElement | null>;
     isTableListOpen: boolean;
     setIsTableListOpen: (v: boolean) => void;
     linkedErdProject: any;
