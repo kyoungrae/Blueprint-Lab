@@ -1,182 +1,29 @@
 import React, { memo, useState, useRef, useEffect } from 'react';
-import { Handle, Position, type NodeProps } from 'reactflow';
+import { type NodeProps } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
-import { SCREEN_TYPES } from '../types/screenDesign';
-import { Plus, Minus, Trash2, Lock, Unlock, Image as ImageIcon, X, Monitor, ChevronDown, Database, Pencil, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, ChevronLeft, ChevronRight, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split } from 'lucide-react';
+
+import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, Pencil, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, ChevronLeft, ChevronRight, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
 
+// ── Sub-Components ────────────────────────────────────────────
+
+import ScreenHandles from './screenNode/ScreenHandles';
+import DrawTextComponent from './screenNode/DrawTextComponent';
+import PremiumTooltip from './screenNode/PremiumTooltip';
+import MetaInfoTable from './screenNode/MetaInfoTable';
+import ContentTabs from './screenNode/ContentTabs';
+import ImageContent from './screenNode/ImageContent';
+import RightPane from './screenNode/RightPane';
+import StylePanel from './screenNode/StylePanel';
+import LayerPanel from './screenNode/LayerPanel';
+import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
 
 
-// ── Editable Cell ────────────────────────
-interface EditableCellProps {
-    value: string;
-    onChange: (val: string) => void;
-    onBlur?: (val: string) => void;
-    isLocked: boolean;
-    placeholder?: string;
-    className?: string;
-    isSelect?: boolean;
-    options?: readonly string[];
-    mono?: boolean;
-}
 
-const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlur, isLocked, placeholder, className = '', isSelect, options, mono }) => {
-    if (isSelect && options) {
-        return (
-            <div className="relative w-full h-full flex items-center">
-                <select
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    onBlur={(e) => onBlur?.(e.target.value)}
-                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                    disabled={isLocked}
-                    className={`w-full h-full bg-transparent border-none outline-none text-xs p-1 appearance-none ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 cursor-pointer hover:bg-blue-50 transition-colors'} ${className}`}
-                >
-                    {options.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-                {!isLocked && <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />}
-            </div>
-        );
-    }
-    return (
-        <input
-            type="text"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onBlur={(e) => onBlur?.(e.target.value)}
-            onMouseDown={(e) => !isLocked && e.stopPropagation()}
-            disabled={isLocked}
-            className={`w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'} ${mono ? 'font-mono' : ''} ${className}`}
-            placeholder={placeholder}
-            spellCheck={false}
-        />
-    );
-});
-
-// ── Screen Node Handles ──────────────────────────────────────
-const ScreenHandles = memo(() => (
-    <>
-        <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-4 !h-4 flex items-center justify-center !cursor-pointer group/handle z-[150]" style={{ top: -6 }}>
-            <div className="w-2 h-2 bg-[#2c3e7c] border-white border-[1.5px] rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:w-3 group-hover/handle:h-3" />
-        </Handle>
-        <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-4 !h-4 flex items-center justify-center !cursor-pointer group/handle z-[150]" style={{ bottom: -6 }}>
-            <div className="w-2 h-2 bg-[#2c3e7c] border-white border-[1.5px] rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:w-3 group-hover/handle:h-3" />
-        </Handle>
-        <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-4 !h-4 flex items-center justify-center !cursor-pointer group/handle z-[150]" style={{ left: -6 }}>
-            <div className="w-2 h-2 bg-[#2c3e7c] border-white border-[1.5px] rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:w-3 group-hover/handle:h-3" />
-        </Handle>
-        <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-4 !h-4 flex items-center justify-center !cursor-pointer group/handle z-[150]" style={{ right: -6 }}>
-            <div className="w-2 h-2 bg-[#2c3e7c] border-white border-[1.5px] rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:w-3 group-hover/handle:h-3" />
-        </Handle>
-    </>
-));
-
-// ── Draw Text Element (Handles Selection & Floating Tooltip) ───────────
-const DrawTextComponent = ({
-    element,
-    isLocked,
-    isSelected,
-    onUpdate,
-    onSelectionChange,
-    autoFocus,
-    className
-}: {
-    element: DrawElement,
-    isLocked: boolean,
-    isSelected: boolean,
-    onUpdate: (updates: Partial<DrawElement>) => void,
-    onSelectionChange: (rect: DOMRect | null) => void,
-    autoFocus?: boolean,
-    className?: string
-}) => {
-    const divRef = useRef<HTMLDivElement>(null);
-
-    // Sync content with element.text (using innerHTML for rich text support)
-    useEffect(() => {
-        if (divRef.current && divRef.current.innerHTML !== (element.text || '')) {
-            divRef.current.innerHTML = element.text || '';
-        }
-    }, [element.text]);
-
-    useEffect(() => {
-        if (autoFocus && divRef.current) {
-            divRef.current.focus();
-            // Move cursor to end
-            const range = document.createRange();
-            const sel = window.getSelection();
-            range.selectNodeContents(divRef.current);
-            range.collapse(false);
-            sel?.removeAllRanges();
-            sel?.addRange(range);
-        }
-    }, [autoFocus]);
-
-    const handleInput = () => {
-        if (divRef.current) {
-            onUpdate({ text: divRef.current.innerHTML });
-        }
-    };
-
-    const handleSelect = () => {
-        const selection = window.getSelection();
-        if (selection && selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0);
-            if (!range.collapsed) {
-                const rect = range.getBoundingClientRect();
-                onSelectionChange(rect);
-                return;
-            }
-        }
-        onSelectionChange(null);
-    };
-
-    return (
-        <div
-            ref={divRef}
-            contentEditable={!isLocked && isSelected}
-            onInput={handleInput}
-            onSelect={handleSelect}
-            onMouseUp={handleSelect}
-            onKeyUp={handleSelect}
-            onBlur={() => {
-                handleInput();
-                onSelectionChange(null);
-            }}
-            onMouseDown={(e) => {
-                if (isSelected && !isLocked) {
-                    e.stopPropagation();
-                }
-            }}
-            className={`outline-none p-0 text-gray-800 break-words min-h-[1.4em] w-full ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
-            style={{
-                fontSize: `${element.fontSize || 14}px`,
-                color: element.color || '#333333',
-                fontWeight: element.fontWeight || 'normal',
-                lineHeight: '1.4',
-                whiteSpace: 'pre-wrap',
-                cursor: isSelected ? 'text' : 'default'
-            }}
-        />
-    );
-};
-
-// ── Premium Tooltip Component ─────────────────────────────────────────────
-const PremiumTooltip = ({ label, children, dotColor }: { label: string, children: React.ReactNode, dotColor?: string }) => {
-    return (
-        <div className="relative group/premium-tooltip flex items-center justify-center">
-            {children}
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] font-medium rounded-lg shadow-2xl border border-slate-700/50 whitespace-nowrap opacity-0 group-hover/premium-tooltip:opacity-100 transition-all duration-200 pointer-events-none scale-90 group-hover/premium-tooltip:scale-100 z-[310] flex items-center gap-2">
-                {dotColor && <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dotColor }} />}
-                {label}
-                {/* Pointer Arrow */}
-                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-[5px] border-x-transparent border-b-transparent border-t-slate-900/95" />
-            </div>
-        </div>
-    );
-};
+// (ScreenHandles, DrawTextComponent, PremiumTooltip imported from ./screenNode/)
 
 // ── Screen Node ─────────────────────────────────────────────
 interface ScreenNodeData {
@@ -227,22 +74,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         return linkedErdProject.data.entities.map(e => e.name).sort();
     }, [linkedErdProject]);
 
-    const hexToRgba = (hex: string, opacity: number = 1) => {
-        if (!hex) return 'transparent';
-        if (hex === 'transparent') return 'transparent';
 
-        let r = 0, g = 0, b = 0;
-        if (hex.length === 4) {
-            r = parseInt(hex[1] + hex[1], 16);
-            g = parseInt(hex[2] + hex[2], 16);
-            b = parseInt(hex[3] + hex[3], 16);
-        } else if (hex.length === 7) {
-            r = parseInt(hex.substring(1, 3), 16);
-            g = parseInt(hex.substring(3, 5), 16);
-            b = parseInt(hex.substring(5, 7), 16);
-        }
-        return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-    };
 
     const update = (updates: Partial<Screen>) => {
         if (isLocked) return;
@@ -313,11 +145,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         syncUpdate({ contentMode: mode });
     };
 
-    // Label cell style: Navy(#2c3e7c) background, White text
-    const labelCell = "bg-[#2c3e7c] text-white text-[11px] font-bold px-3 py-2 border-r border-[#1e2d5e] select-none text-center align-middle whitespace-nowrap";
-    // Value cell style
-    // Value cell style
-    const valueCell = "bg-white text-xs text-gray-800 px-2 py-1 border-r border-[#e2e8f0] align-middle";
+
 
     // Image Resizing Logic
     const [imgSize, setImgSize] = useState<{ w: number | undefined, h: number | undefined }>({ w: screen.imageWidth, h: screen.imageHeight });
@@ -335,11 +163,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [draggingElementIds, setDraggingElementIds] = useState<string[]>([]);
     const [dragOffsets, setDragOffsets] = useState<Record<string, { x: number, y: number }>>({});
     const [isMoving, setIsMoving] = useState(false);
+
     const [showStylePanel, setShowStylePanel] = useState(false);
     const [showLayerPanel, setShowLayerPanel] = useState(false);
-    const [editingTextId, setEditingTextId] = useState<string | null>(null);
     const [showTablePicker, setShowTablePicker] = useState(false);
     const [tablePickerHover, setTablePickerHover] = useState<{ r: number, c: number } | null>(null);
+    const [editingTextId, setEditingTextId] = useState<string | null>(null);
+
+
+
 
     const tableRowResizeRef = useRef<{ elId: string, rowIdx: number, startY: number, startHeights: number[] } | null>(null);
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
@@ -349,7 +181,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [tablePanelPos, setTablePanelPos] = useState<{ x: number | string, y: number }>({ x: '50%', y: 64 });
     const isDraggingTablePanelRef = useRef(false);
     const tablePanelDragOffsetRef = useRef({ x: 0, y: 0 });
-    const isComposingRef = useRef(false); // IME composition flag (Korean, CJK, etc.)
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
     const dragStartCellIndexRef = useRef<number>(-1); // cell index where drag started
 
@@ -372,6 +203,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const isDraggingLayerPanelRef = useRef(false);
     const layerPanelDragOffsetRef = useRef({ x: 0, y: 0 });
 
+    const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
+    const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
+
+
+
+
+
     // Reset positions when locked/unlocked
     useEffect(() => {
         setToolbarPos({ x: '50%', y: 200 });
@@ -380,8 +218,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         setIsToolbarCollapsed(false);
     }, [isLocked]);
 
-    const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
-    const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
+
 
     const drawElements = screen.drawElements || [];
 
@@ -1025,52 +862,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         window.addEventListener('mouseup', onMouseUp);
     };
 
-    // ── Table V2 Utilities ──────────────────────────────────
-    // 1차원 인덱스를 (row, col) 좌표로 변환
-    const flatIdxToRowCol = (flatIdx: number, totalCols: number): { r: number, c: number } => {
-        return { r: Math.floor(flatIdx / totalCols), c: flatIdx % totalCols };
-    };
+    // ── Table V2 Utilities (flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells, gcd imported from ./screenNode/types) ──────────────────────────────────
 
-    // (row, col)을 1차원 인덱스로 변환
-    const rowColToFlatIdx = (r: number, c: number, totalCols: number): number => {
-        return r * totalCols + c;
-    };
-
-    // Legacy tableCellData (string[]) + tableCellSpans를 TableCellData[]로 변환
-    const getV2Cells = (el: DrawElement): TableCellData[] => {
-        // V2가 이미 있으면 그대로 반환
-        if (el.tableCellDataV2 && el.tableCellDataV2.length > 0) {
-            return el.tableCellDataV2;
-        }
-
-        const rows = el.tableRows || 3;
-        const cols = el.tableCols || 3;
-        const totalCells = rows * cols;
-        const legacyCells = el.tableCellData || Array(totalCells).fill('');
-        const legacySpans = el.tableCellSpans;
-
-        const v2Cells: TableCellData[] = [];
-        for (let i = 0; i < totalCells; i++) {
-            const span = legacySpans?.[i];
-            const isHidden = span ? (span.rowSpan === 0 && span.colSpan === 0) : false;
-            v2Cells.push({
-                content: legacyCells[i] || '',
-                rowSpan: span ? (span.rowSpan === 0 ? 1 : span.rowSpan) : 1,
-                colSpan: span ? (span.colSpan === 0 ? 1 : span.colSpan) : 1,
-                isMerged: isHidden,
-            });
-        }
-        return v2Cells;
-    };
-
-    // TableCellData[]를 깊은 복사
-    const deepCopyCells = (cells: TableCellData[]): TableCellData[] => {
-        return cells.map(c => ({ ...c }));
-    };
-
-    // V2 셀 데이터를 요소에 저장하고 동기화
+    // V2 셀 데이터를 요소에 저장하고 동기화 (closure over drawElements/update/syncUpdate)
     const saveV2Cells = (elId: string, v2Cells: TableCellData[], extraUpdates?: Partial<DrawElement>) => {
-        // Legacy 호환을 위해 tableCellData도 동시에 업데이트
         const legacyCellData = v2Cells.map(c => c.content);
         const legacySpans = v2Cells.map(c => ({
             rowSpan: c.isMerged ? 0 : c.rowSpan,
@@ -1087,11 +882,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const nextElements = drawElements.map(el => el.id === elId ? { ...el, ...updates } : el);
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
-    };
-
-    // 최대공약수 계산 도우미
-    const gcd = (a: number, b: number): number => {
-        return b === 0 ? a : gcd(b, a % b);
     };
 
     const handleExecSplit = (el: DrawElement, cellIdx: number, splitRowCount: number, splitColCount: number) => {
@@ -1705,80 +1495,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     </div>
                 </div>
 
-                {/* ── 2. Meta Info Table (Refined) ── */}
-                <div className="border-b border-gray-200">
-                    <table className="nodrag w-full border-collapse">
-                        <tbody>
-                            {/* Row 1 */}
-                            <tr className="border-b border-[#e2e8f0]">
-                                <td className={labelCell} style={{ width: 100 }}>시스템명</td>
-                                <td className={valueCell} style={{ width: 180 }}>
-                                    <EditableCell value={screen.systemName} onChange={(v) => update({ systemName: v })} onBlur={(v) => syncUpdate({ systemName: v })} isLocked={isLocked} placeholder="시스템명" className="text-center font-bold" />
-                                </td>
-                                <td className={labelCell} style={{ width: 80 }}>작성자</td>
-                                <td className={valueCell} style={{ width: 140 }}>
-                                    <EditableCell value={screen.author} onChange={(v) => update({ author: v })} onBlur={(v) => syncUpdate({ author: v })} isLocked={isLocked} placeholder="작성자" className="text-center" />
-                                </td>
-                                <td className={labelCell} style={{ width: 90 }}>작성일자</td>
-                                <td className={`${valueCell} border-r-0`}>
-                                    <EditableCell value={screen.createdDate} onChange={(v) => update({ createdDate: v })} onBlur={(v) => syncUpdate({ createdDate: v })} isLocked={isLocked} placeholder="YYYY-MM-DD" mono className="text-center" />
-                                </td>
-                            </tr>
-
-                            {/* Row 2 */}
-                            <tr className="border-b border-[#e2e8f0]">
-                                <td className={labelCell}>화면ID</td>
-                                <td className={valueCell}>
-                                    <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} onBlur={(v) => syncUpdate({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c]" />
-                                </td>
-                                <td className={labelCell}>화면유형</td>
-                                <td className={valueCell}>
-                                    <EditableCell value={screen.screenType} onChange={(v) => update({ screenType: v })} onBlur={(v) => syncUpdate({ screenType: v })} isLocked={isLocked} isSelect options={SCREEN_TYPES} className="text-center h-full" />
-                                </td>
-                                <td className={labelCell}>페이지</td>
-                                <td className={`${valueCell} border-r-0`}>
-                                    <EditableCell value={screen.page} onChange={(v) => update({ page: v })} onBlur={(v) => syncUpdate({ page: v })} isLocked={isLocked} placeholder="1/1" mono className="text-center" />
-                                </td>
-                            </tr>
-
-                            {/* Row 3 - Description */}
-                            <tr>
-                                <td className={labelCell}>화면설명</td>
-                                <td className={`${valueCell} border-r-0`} colSpan={5}>
-                                    <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} onBlur={(v) => syncUpdate({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" />
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                {/* ── 2. Meta Info Table (Extracted) ── */}
+                <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
 
                 {/* ── Tabs (IMAGE vs DRAW) ── */}
-                {!isLocked && (
-                    <div className="flex bg-gray-50/50 border-b border-gray-200">
-                        <button
-                            onClick={() => handleTabChange('DRAW')}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            className={`flex-1 py-2 text-[11px] font-bold flex items-center justify-center gap-2 transition-all ${contentMode === 'DRAW'
-                                ? 'bg-white text-[#2c3e7c] border-b-2 border-[#2c3e7c] shadow-sm'
-                                : 'text-gray-400 hover:text-gray-600'
-                                }`}
-                        >
-                            <Pencil size={14} />
-                            직접 그리기
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('IMAGE')}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            className={`flex-1 py-2 text-[11px] font-bold flex items-center justify-center gap-2 transition-all ${contentMode === 'IMAGE'
-                                ? 'bg-white text-[#2c3e7c] border-b-2 border-[#2c3e7c] shadow-sm'
-                                : 'text-gray-400 hover:text-gray-600'
-                                }`}
-                        >
-                            <ImageIcon size={14} />
-                            이미지 업로드
-                        </button>
-                    </div>
-                )}
+                <ContentTabs contentMode={contentMode} isLocked={isLocked} onTabChange={handleTabChange} />
 
                 {/* ── 3. Body Content (Split Layout) ── */}
                 <div className="flex bg-white min-h-[500px] rounded-[15px]">
@@ -1788,73 +1509,23 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                         {/* Content Area Rendering based on contentMode */}
                         {contentMode === 'IMAGE' ? (
-                            <div
-                                className={`nodrag relative group/image flex-1 flex items-center justify-center overflow-auto transition-colors scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent ${isDragOver && !isLocked
-                                    ? 'bg-blue-50 border-2 border-dashed border-blue-400'
-                                    : 'bg-white border-b border-gray-200 hover:bg-gray-50'
-                                    }`}
-                                onDragOver={handleDragOver}
-                                onDragLeave={handleDragLeave}
-                                onDrop={handleDrop}
-                            >
-                                {screen.imageUrl ? (
-                                    <div
-                                        ref={imageContainerRef}
-                                        className={`relative inline-block m-auto transition-all ${!isLocked && isImageSelected ? 'border-[3px] border-[#3b82f6]' : 'border-[3px] border-transparent'}`}
-                                        style={{ width: imgSize.w, height: imgSize.h, minWidth: 50, minHeight: 50 }}
-                                        onMouseDown={() => {
-                                            if (!isLocked) {
-                                                setIsImageSelected(true);
-                                            }
-                                        }}
-                                    >
-                                        <img
-                                            src={screen.imageUrl}
-                                            alt="UI Mockup"
-                                            className="w-full h-full object-contain pointer-events-none select-none block"
-                                            draggable={false}
-                                        />
-                                        {!isLocked && isImageSelected && (
-                                            <>
-                                                {/* Resize Handles - All Corners */}
-                                                <div className="nodrag absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nwse-resize z-20" onMouseDown={handleResizeStart('nw')} />
-                                                <div className="nodrag absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nesw-resize z-20" onMouseDown={handleResizeStart('ne')} />
-                                                <div className="nodrag absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nesw-resize z-20" onMouseDown={handleResizeStart('sw')} />
-                                                <div className="nodrag absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nwse-resize z-20" onMouseDown={handleResizeStart('se')} />
-
-                                                {/* Delete Button */}
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (window.confirm('이미지를 삭제하시겠습니까?')) {
-                                                            update({ imageUrl: '' });
-                                                            syncUpdate({ imageUrl: '' });
-                                                        }
-                                                    }}
-                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                    className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 hover:opacity-100 transition-all shadow-sm backdrop-blur-sm z-30"
-                                                    title="이미지 삭제"
-                                                >
-                                                    <X size={14} />
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <label className={`flex flex-col items-center justify-center gap-2 p-8 text-gray-300 select-none w-full h-full ${!isLocked ? 'cursor-pointer' : ''}`}>
-                                        <div className="w-16 h-16 rounded-2xl bg-gray-50/50 flex items-center justify-center mb-2 border border-dashed border-gray-200">
-                                            <ImageIcon size={32} className="opacity-40" />
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-sm font-bold text-gray-400">UI 목업 이미지</p>
-                                            <p className="text-[10px] text-gray-400">
-                                                {isLocked ? '잠금 상태입니다' : '클릭하여 업로드하거나 이미지를 드래그하세요'}
-                                            </p>
-                                        </div>
-                                        {!isLocked && <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />}
-                                    </label>
-                                )}
-                            </div>
+                            <ImageContent
+                                screen={screen}
+                                isLocked={isLocked}
+                                isDragOver={isDragOver}
+                                imgSize={imgSize}
+                                isImageSelected={isImageSelected}
+                                imageContainerRef={imageContainerRef}
+                                update={update}
+                                syncUpdate={syncUpdate}
+                                setIsDragOver={setIsDragOver}
+                                setIsImageSelected={setIsImageSelected}
+                                handleDragOver={handleDragOver}
+                                handleDragLeave={handleDragLeave}
+                                handleDrop={handleDrop}
+                                handleResizeStart={handleResizeStart}
+                                handleImageUpload={handleImageUpload}
+                            />
                         ) : (
                             <div className="flex-1 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
                                 style={{
@@ -2007,7 +1678,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
                                                                     const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
                                                                     const isHeaderRow = r === 0;
-                                                                    const defaultBg = isHeaderRow ? hexToRgba('#2c3e7c', 0.1) : '#ffffff';
+
 
                                                                     const cellRowSpan = v2 ? v2.rowSpan : 1;
                                                                     const cellColSpan = v2 ? v2.colSpan : 1;
@@ -2338,193 +2009,32 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         )}
                     </div>
 
-                    {/* [RIGHT PANE 30%] - Details & Settings */}
-                    <div ref={rightPaneRef} className="w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px]" style={{ minWidth: 250 }}>
-                        {/* Panel 1: 초기화면설정 */}
-                        <div className="flex-1 flex flex-col border-b border-gray-200 min-h-[100px]">
-                            <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 초기화면설정
-                            </div>
-                            <div className="flex-1 p-0 relative group/area">
-                                <textarea
-                                    value={screen.initialSettings}
-                                    onChange={(e) => update({ initialSettings: e.target.value })}
-                                    onBlur={(e) => syncUpdate({ initialSettings: e.target.value })}
-                                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                                    disabled={isLocked}
-                                    className={`w-full h-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}
-                                    placeholder="• 화면 진입 시 초기 설정..."
-                                    spellCheck={false}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Panel 2: 기능상세 */}
-                        <div
-                            className="flex-none flex flex-col border-b border-gray-200 relative min-h-[100px]"
-                            style={{ height: functionHeight }}
-                        >
-                            {/* Resize Handle at the Top Border */}
-                            {!isLocked && (
-                                <div
-                                    className="nodrag absolute -top-1 left-0 right-0 h-2 cursor-ns-resize z-[60] group/hr"
-                                    onMouseDown={handleFunctionPanelResize}
-                                >
-                                    <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-transparent group-hover/hr:bg-blue-400 transition-colors" />
-                                </div>
-                            )}
-
-                            <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 기능상세
-                            </div>
-                            <div className="flex-1 p-0 relative group/area">
-                                <textarea
-                                    value={screen.functionDetails}
-                                    onChange={(e) => update({ functionDetails: e.target.value })}
-                                    onBlur={(e) => syncUpdate({ functionDetails: e.target.value })}
-                                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                                    disabled={isLocked}
-                                    className={`w-full h-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}
-                                    placeholder="1. 상세 기능 설명 입력...&#13;&#10;2. 주요 로직 기술..."
-                                    spellCheck={false}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Panel 3: 관련테이블 */}
-                        <div
-                            className="flex-none flex flex-col relative min-h-[100px]"
-                            style={{ height: tableHeight }}
-                        >
-                            {/* Resize Handle at the Top Border */}
-                            {!isLocked && (
-                                <div
-                                    className="nodrag absolute -top-1 left-0 right-0 h-2 cursor-ns-resize z-[60] group/hr"
-                                    onMouseDown={handleTablePanelResize}
-                                >
-                                    <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-transparent group-hover/hr:bg-blue-400 transition-colors" />
-                                </div>
-                            )}
-
-                            {/* Header (Contains the dropdown trigger - Overflow must be visible here) */}
-                            <div className="bg-[#5e6b7c] text-white text-[11px] font-bold px-3 py-1.5 border-t border-b border-[#4a5463] select-none shadow-sm flex items-center justify-between">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 관련테이블
-                                </div>
-                                {/* ERD Table Selector */}
-                                {!isLocked && linkedErdProject && (
-                                    <div className="relative" ref={tableListRef}>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setIsTableListOpen(!isTableListOpen);
-                                            }}
-                                            onMouseDown={(e) => e.stopPropagation()}
-                                            className="nodrag flex items-center gap-1 text-[9px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors"
-                                        >
-                                            <Database size={10} />
-                                            <span>추가</span>
-                                        </button>
-                                        {isTableListOpen && (
-                                            <div
-                                                ref={(el) => {
-                                                    if (el) {
-                                                        el.addEventListener('wheel', (e) => e.stopPropagation(), { passive: false });
-                                                    }
-                                                }}
-                                                className="nodrag nopan absolute right-0 top-full mt-1 w-48 max-h-56 overflow-y-auto bg-white border border-gray-200 shadow-xl rounded-lg z-[1001] animate-in fade-in zoom-in duration-150 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
-                                                onWheel={(e) => e.stopPropagation()}
-                                                onWheelCapture={(e) => e.stopPropagation()}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                onMouseDown={(e) => e.stopPropagation()}
-                                            >
-                                                <div className="p-1">
-                                                    {erdTables.length > 0 ? erdTables.map(table => (
-                                                        <button
-                                                            key={table}
-                                                            className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                const current = screen.relatedTables || '';
-                                                                const toAdd = `• ${table}`;
-                                                                if (!current.includes(table)) {
-                                                                    const newValue = current ? `${current}\n${toAdd}` : toAdd;
-                                                                    update({ relatedTables: newValue });
-                                                                    syncUpdate({ relatedTables: newValue });
-                                                                }
-                                                                setIsTableListOpen(false);
-                                                            }}
-                                                            onMouseDown={(e) => e.stopPropagation()}
-                                                        >
-                                                            {table}
-                                                        </button>
-                                                    )) : (
-                                                        <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Content Area - Scrollable list and Manual Input, clipped to node rounding */}
-                            <div className="flex-1 flex flex-col bg-white overflow-hidden rounded-br-[13px]">
-                                <div
-                                    className="flex-1 overflow-y-auto custom-scrollbar nodrag nopan max-h-[160px] bg-white"
-                                    onWheel={(e) => e.stopPropagation()}
-                                >
-                                    {(() => {
-                                        const tableLines = (screen.relatedTables || '').split('\n').filter(line => line.trim() !== '');
-
-                                        if (tableLines.length > 0) {
-                                            return (
-                                                <div className="p-2">
-                                                    <div className="grid grid-cols-2 gap-1 px-1">
-                                                        {tableLines.map((line, idx) => {
-                                                            const displayLine = line.trim().startsWith('•') ? line.trim().substring(1).trim() : line.trim();
-                                                            return (
-                                                                <div key={idx} className="flex items-center justify-between group/table p-1.5 hover:bg-blue-50/50 rounded transition-colors text-[10px] font-mono min-w-0">
-                                                                    <div className="flex items-center gap-1.5 truncate flex-1">
-                                                                        <span className="text-blue-500 font-bold shrink-0 text-[8px]">•</span>
-                                                                        <span className="text-gray-700 truncate font-bold" title={displayLine}>{displayLine}</span>
-                                                                    </div>
-                                                                    {!isLocked && (
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                const newLines = tableLines.filter((_, i) => i !== idx);
-                                                                                const newValue = newLines.join('\n');
-                                                                                update({ relatedTables: newValue });
-                                                                                syncUpdate({ relatedTables: newValue });
-                                                                            }}
-                                                                            onMouseDown={(e) => e.stopPropagation()}
-                                                                            className="p-1 text-gray-400 hover:text-red-500 transition-all active:scale-90 shrink-0"
-                                                                            title="삭제"
-                                                                        >
-                                                                            <Trash2 size={11} />
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            );
-                                        }
-
-                                        return (
-                                            <div className="flex-1 flex flex-col items-center justify-center p-4 text-gray-300 text-center min-h-[100px]">
-                                                <Database size={20} className="opacity-20 mb-2" />
-                                                <p className="text-[10px] font-bold">관련 테이블 없음</p>
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-                        </div>
-                    </div> {/* End Right Pane */}
+                    {/* [RIGHT PANE 30%] - Details & Settings (Extracted) */}
+                    <RightPane
+                        screen={screen}
+                        isLocked={isLocked}
+                        update={update}
+                        syncUpdate={syncUpdate}
+                        rightPaneRef={rightPaneRef}
+                        tableListRef={tableListRef}
+                        isTableListOpen={isTableListOpen}
+                        setIsTableListOpen={setIsTableListOpen}
+                        linkedErdProject={linkedErdProject}
+                        erdTables={erdTables}
+                        tableHeight={tableHeight}
+                        functionHeight={functionHeight}
+                        handleTablePanelResize={handleTablePanelResize}
+                        handleFunctionPanelResize={handleFunctionPanelResize}
+                    />
                 </div> {/* End Body Split Layout */}
+
+
+
+
+
+
+
+
 
                 {/* Relocated Floating Components (Toolbar, Panels) to Root Level for Free Movement */}
                 {
@@ -2977,174 +2487,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             })()}
 
                             {/* Style Panel */}
-                            {selectedElementIds.length > 0 && showStylePanel && !isToolbarCollapsed && (
-                                <div
-                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in"
-                                    style={{
-                                        left: stylePanelPos.x,
-                                        top: stylePanelPos.y,
-                                        transform: stylePanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
-                                    }}
-                                >
-                                    <div
-                                        className="flex items-center justify-between border-b border-gray-100 pb-2 mb-1 cursor-grab active:cursor-grabbing group/header"
-                                        onMouseDown={(e) => handlePanelDragStart(e, 'style')}
-                                        title="드래그하여 이동"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
-                                            <Palette size={14} className="text-[#2c3e7c]" />
-                                            <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">스타일 편집 ({selectedElementIds.length})</span>
-                                        </div>
-                                        <button onClick={() => setShowStylePanel(false)} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors">
-                                            <X size={14} />
-                                        </button>
-                                    </div>
-
-                                    {/* Background Color */}
-                                    <div className="flex flex-col gap-2">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[11px] text-gray-600 font-medium">배경색</span>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[10px] text-gray-400 font-mono uppercase">{drawElements.find(el => selectedElementIds.includes(el.id))?.fill || '#ffffff'}</span>
-                                                <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
-                                                    <input
-                                                        type="color"
-                                                        value={drawElements.find(el => selectedElementIds.includes(el.id))?.fill || '#ffffff'}
-                                                        onChange={(e) => {
-                                                            const color = e.target.value;
-                                                            const nextElements = drawElements.map(el =>
-                                                                selectedElementIds.includes(el.id) ? { ...el, fill: color } : el
-                                                            );
-                                                            update({ drawElements: nextElements });
-                                                            syncUpdate({ drawElements: nextElements });
-                                                        }}
-                                                        className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-1.5 justify-end">
-                                            {['#ffffff', '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#2c3e7c'].map(color => (
-                                                <button
-                                                    key={color}
-                                                    onClick={() => {
-                                                        const nextElements = drawElements.map(el =>
-                                                            selectedElementIds.includes(el.id) ? { ...el, fill: color } : el
-                                                        );
-                                                        update({ drawElements: nextElements });
-                                                        syncUpdate({ drawElements: nextElements });
-                                                    }}
-                                                    className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110`}
-                                                    style={{ backgroundColor: color }}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Stroke Color */}
-                                    <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[11px] text-gray-600 font-medium">테두리색</span>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[10px] text-gray-400 font-mono uppercase">{drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000'}</span>
-                                                <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
-                                                    <input
-                                                        type="color"
-                                                        value={drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000'}
-                                                        onChange={(e) => {
-                                                            const color = e.target.value;
-                                                            const nextElements = drawElements.map(el =>
-                                                                selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
-                                                            );
-                                                            update({ drawElements: nextElements });
-                                                            syncUpdate({ drawElements: nextElements });
-                                                        }}
-                                                        className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-1.5 justify-end">
-                                            {['#000000', '#2c3e7c', '#64748b', 'transparent'].map(color => (
-                                                <button
-                                                    key={color}
-                                                    onClick={() => {
-                                                        const nextElements = drawElements.map(el =>
-                                                            selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
-                                                        );
-                                                        update({ drawElements: nextElements });
-                                                        syncUpdate({ drawElements: nextElements });
-                                                    }}
-                                                    className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden`}
-                                                    style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
-                                                >
-                                                    {color === 'transparent' && <div className="w-full h-[1px] bg-red-400 rotate-45" />}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Opacity Sliders */}
-                                    <div className="flex flex-col gap-3 pt-2 border-t border-gray-100">
-                                        {/* Fill Opacity */}
-                                        <div className="flex flex-col gap-1.5">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[11px] text-gray-600 font-medium">배경 투명도</span>
-                                                <span className="text-[10px] text-blue-600 font-bold">
-                                                    {Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.fillOpacity ?? 1) * 100)}%
-                                                </span>
-                                            </div>
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="100"
-                                                step="5"
-                                                value={Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.fillOpacity ?? 1) * 100)}
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value) / 100;
-                                                    const nextElements = drawElements.map(el =>
-                                                        selectedElementIds.includes(el.id) ? { ...el, fillOpacity: val } : el
-                                                    );
-                                                    update({ drawElements: nextElements });
-                                                    syncUpdate({ drawElements: nextElements });
-                                                }}
-                                                className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
-                                            />
-                                        </div>
-
-                                        {/* Stroke Opacity */}
-                                        <div className="flex flex-col gap-1.5 pb-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[11px] text-gray-600 font-medium">테두리 투명도</span>
-                                                <span className="text-[10px] text-blue-600 font-bold">
-                                                    {Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.strokeOpacity ?? 1) * 100)}%
-                                                </span>
-                                            </div>
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="100"
-                                                step="5"
-                                                value={Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.strokeOpacity ?? 1) * 100)}
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value) / 100;
-                                                    const nextElements = drawElements.map(el =>
-                                                        selectedElementIds.includes(el.id) ? { ...el, strokeOpacity: val } : el
-                                                    );
-                                                    update({ drawElements: nextElements });
-                                                    syncUpdate({ drawElements: nextElements });
-                                                }}
-                                                className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* [Table settings and cell color picker moved to dedicated Table Panel] */}
-
-                                    {/* [Cell color picker moved to dedicated Table Panel] */}
-                                </div>
-                            )}
+                            {/* Style Panel */}
+                            <StylePanel
+                                show={showStylePanel}
+                                isToolbarCollapsed={isToolbarCollapsed}
+                                selectedElementIds={selectedElementIds}
+                                drawElements={drawElements}
+                                stylePanelPos={stylePanelPos}
+                                update={update}
+                                syncUpdate={syncUpdate}
+                                onClose={() => setShowStylePanel(false)}
+                                onDragStart={handlePanelDragStart}
+                            />
 
 
 
@@ -3635,7 +2989,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             type="number"
                                                                             min="0"
                                                                             max="100"
-                                                                            value={selectedEl[key as keyof DrawElement] ?? selectedEl.tableBorderRadius ?? 0}
+                                                                            value={(selectedEl[key as keyof DrawElement] as number) ?? selectedEl.tableBorderRadius ?? 0}
                                                                             onChange={(e) => {
                                                                                 const val = parseInt(e.target.value) || 0;
                                                                                 const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, [key]: val } : it);
@@ -3815,70 +3169,16 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             })() : null}
 
                             {/* Layer Panel */}
-                            {selectedElementIds.length > 0 && showLayerPanel && !isToolbarCollapsed && (
-                                <div
-                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in"
-                                    style={{
-                                        left: layerPanelPos.x,
-                                        top: layerPanelPos.y,
-                                        transform: layerPanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
-                                    }}
-                                >
-                                    <div
-                                        className="flex items-center justify-between border-b border-gray-100 pb-2 mb-1 cursor-grab active:cursor-grabbing group/header"
-                                        onMouseDown={(e) => handlePanelDragStart(e, 'layer')}
-                                        title="드래그하여 이동"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
-                                            <Layers size={14} className="text-[#2c3e7c]" />
-                                            <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">레이어 순서 변경 ({selectedElementIds.length})</span>
-                                        </div>
-                                        <button onClick={() => setShowLayerPanel(false)} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors">
-                                            <X size={14} />
-                                        </button>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button
-                                            onClick={() => handleLayerAction('front')}
-                                            className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                                                <ChevronDown size={18} className="rotate-180 scale-y-150" />
-                                            </div>
-                                            <span className="text-[10px] font-bold text-gray-600">맨 앞으로</span>
-                                        </button>
-                                        <button
-                                            onClick={() => handleLayerAction('forward')}
-                                            className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                                                <ChevronDown size={18} className="rotate-180" />
-                                            </div>
-                                            <span className="text-[10px] font-bold text-gray-600">한 단계 위로</span>
-                                        </button>
-                                        <button
-                                            onClick={() => handleLayerAction('backward')}
-                                            className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                                                <ChevronDown size={18} />
-                                            </div>
-                                            <span className="text-[10px] font-bold text-gray-600">한 단계 아래로</span>
-                                        </button>
-                                        <button
-                                            onClick={() => handleLayerAction('back')}
-                                            className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                                                <ChevronDown size={18} className="scale-y-150" />
-                                            </div>
-                                            <span className="text-[10px] font-bold text-gray-600">맨 뒤로</span>
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                            {/* Layer Panel */}
+                            <LayerPanel
+                                show={showLayerPanel}
+                                isToolbarCollapsed={isToolbarCollapsed}
+                                selectedElementIds={selectedElementIds}
+                                layerPanelPos={layerPanelPos}
+                                onClose={() => setShowLayerPanel(false)}
+                                onDragStart={handlePanelDragStart}
+                                onLayerAction={handleLayerAction}
+                            />
                         </>
                     )
                 }
