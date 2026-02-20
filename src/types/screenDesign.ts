@@ -120,6 +120,10 @@ export interface DrawElement {
     tableBorderRight?: string;
     tableBorderRightWidth?: number;
     tableBorderRadius?: number;
+    tableBorderRadiusTopLeft?: number;
+    tableBorderRadiusTopRight?: number;
+    tableBorderRadiusBottomLeft?: number;
+    tableBorderRadiusBottomRight?: number;
     tableCellSpans?: { rowSpan: number, colSpan: number }[]; // [LEGACY] per-cell span info
 }
 

@@ -1942,12 +1942,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     <div
                                                         className="w-full h-full overflow-hidden relative"
                                                         style={{
-                                                            borderColor: hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1),
-                                                            border: `${el.strokeWidth || 1}px solid ${hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1)}`,
                                                             cursor: editingTableId === el.id ? 'default' : 'move',
                                                             outline: editingTableId === el.id ? '2px solid #3b82f6' : 'none',
                                                             outlineOffset: '1px',
-                                                            userSelect: editingTableId === el.id ? 'none' : 'auto'
+                                                            userSelect: editingTableId === el.id ? 'none' : 'auto',
+                                                            borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
                                                         }}
                                                         onDoubleClick={(e) => {
                                                             if (isLocked) return;
@@ -1979,7 +1978,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     const heights = el.tableRowHeights || Array(rows).fill(100 / rows);
                                                                     return heights.map(h => `${h}%`).join(' ');
                                                                 })(),
-                                                                borderRadius: el.tableBorderRadius ? `${el.tableBorderRadius}px` : undefined,
+                                                                borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
                                                                 borderTop: `${el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
                                                                 borderBottom: `${el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
                                                                 borderLeft: `${el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
@@ -3414,6 +3413,77 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     <Square size={12} className="text-gray-400" />
                                                     <span className="text-[11px] font-bold">테두리 설정</span>
                                                 </div>
+
+                                                {/* All Borders Control */}
+                                                <div className="flex flex-col gap-1.5 pb-3 border-b border-dashed border-gray-100">
+                                                    <span className="text-[10px] text-gray-500 font-medium pl-0.5">전체</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                                            <input
+                                                                type="color"
+                                                                value={(selectedCellIndices.length > 0 && editingTableId === selectedEl.id)
+                                                                    ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderTop || selectedEl.stroke || '#cbd5e1')
+                                                                    : (selectedEl.tableBorderTop || selectedEl.stroke || '#cbd5e1')}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    if (selectedCellIndices.length > 0 && editingTableId === selectedEl.id) {
+                                                                        const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                        selectedCellIndices.forEach(idx => {
+                                                                            newStyles[idx] = { ...(newStyles[idx] || {}), borderTop: val, borderBottom: val, borderLeft: val, borderRight: val };
+                                                                        });
+                                                                        const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                    } else {
+                                                                        const next = drawElements.map(it => it.id === selectedEl.id ? {
+                                                                            ...it,
+                                                                            tableBorderTop: val, tableBorderBottom: val, tableBorderLeft: val, tableBorderRight: val
+                                                                        } : it);
+                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                    }
+                                                                }}
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                            />
+                                                            <div className="w-full h-full" style={{
+                                                                backgroundColor: (selectedCellIndices.length > 0 && editingTableId === selectedEl.id)
+                                                                    ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderTop || selectedEl.stroke || '#cbd5e1')
+                                                                    : (selectedEl.tableBorderTop || selectedEl.stroke || '#cbd5e1')
+                                                            }} />
+                                                        </div>
+                                                        <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
+                                                                value={(selectedCellIndices.length > 0 && editingTableId === selectedEl.id)
+                                                                    ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderTopWidth ?? 1)
+                                                                    : (selectedEl.tableBorderTopWidth ?? selectedEl.strokeWidth ?? 1)}
+                                                                onChange={(e) => {
+                                                                    const val = parseInt(e.target.value) || 0;
+                                                                    if (selectedCellIndices.length > 0 && editingTableId === selectedEl.id) {
+                                                                        const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                        selectedCellIndices.forEach(idx => {
+                                                                            newStyles[idx] = { ...(newStyles[idx] || {}), borderTopWidth: val, borderBottomWidth: val, borderLeftWidth: val, borderRightWidth: val };
+                                                                        });
+                                                                        const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                    } else {
+                                                                        const next = drawElements.map(it => it.id === selectedEl.id ? {
+                                                                            ...it,
+                                                                            tableBorderTopWidth: val, tableBorderBottomWidth: val, tableBorderLeftWidth: val, tableBorderRightWidth: val,
+                                                                            strokeWidth: val
+                                                                        } : it);
+                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                    }
+                                                                }}
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                            />
+                                                            <span className="text-[9px] text-gray-400">px</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
                                                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                                                     {(['Top', 'Bottom', 'Left', 'Right'] as const).map(direction => {
                                                         const colorKey = `tableBorder${direction}` as keyof DrawElement;
@@ -3422,7 +3492,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         const styleWidthKey = `border${direction}Width`;
                                                         const label = direction === 'Top' ? '위' : direction === 'Bottom' ? '아래' : direction === 'Left' ? '왼쪽' : '오른쪽';
 
-                                                        // If cells are selected, show first selected cell's border or global as fallback
                                                         const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
                                                         const firstCellOverride = isAnyCellSelected ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]] || {}) : {};
 
@@ -3445,7 +3514,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             onChange={(e) => {
                                                                                 const val = e.target.value;
                                                                                 if (isAnyCellSelected) {
-                                                                                    // Update specific cells
                                                                                     const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
                                                                                     selectedCellIndices.forEach(idx => {
                                                                                         newStyles[idx] = { ...(newStyles[idx] || {}), [styleColorKey]: val };
@@ -3453,7 +3521,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                     const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
                                                                                     update({ drawElements: next }); syncUpdate({ drawElements: next });
                                                                                 } else {
-                                                                                    // Update global table border
                                                                                     const next = drawElements.map(item => item.id === selectedEl.id ? { ...item, [colorKey]: val } : item);
                                                                                     update({ drawElements: next }); syncUpdate({ drawElements: next });
                                                                                 }
@@ -3472,7 +3539,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             onChange={(e) => {
                                                                                 const val = parseInt(e.target.value) || 0;
                                                                                 if (isAnyCellSelected) {
-                                                                                    // Update specific cells
                                                                                     const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
                                                                                     selectedCellIndices.forEach(idx => {
                                                                                         newStyles[idx] = { ...(newStyles[idx] || {}), [styleWidthKey]: val };
@@ -3497,51 +3563,92 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                                                 {/* Border Radius Settings */}
                                                 <div className="flex flex-col gap-2 pt-3 border-t border-gray-100">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-1.5 text-gray-700">
-                                                            <Circle size={10} className="text-gray-400" />
-                                                            <span className="text-[10px] font-medium pl-0.5">테두리 곡률</span>
-                                                        </div>
-                                                        <span className="text-[10px] text-gray-400 font-mono">
-                                                            {(() => {
-                                                                const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
-                                                                const currentRadius = isAnyCellSelected
-                                                                    ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderRadius ?? selectedEl.tableBorderRadius ?? 0)
-                                                                    : (selectedEl.tableBorderRadius ?? 0);
-                                                                return `${currentRadius}px`;
-                                                            })()}
-                                                        </span>
+                                                    <div className="flex items-center gap-1.5 text-gray-700">
+                                                        <Circle size={10} className="text-gray-400" />
+                                                        <span className="text-[10px] font-medium pl-0.5">테두리 곡률</span>
                                                     </div>
-                                                    <input
-                                                        type="range"
-                                                        min="0"
-                                                        max="20"
-                                                        step="1"
-                                                        value={(() => {
-                                                            const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
-                                                            return isAnyCellSelected
-                                                                ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderRadius ?? selectedEl.tableBorderRadius ?? 0)
-                                                                : (selectedEl.tableBorderRadius ?? 0);
-                                                        })()}
-                                                        onChange={(e) => {
-                                                            const val = parseInt(e.target.value);
-                                                            const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
 
-                                                            if (isAnyCellSelected) {
-                                                                const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
-                                                                selectedCellIndices.forEach(idx => {
-                                                                    newStyles[idx] = { ...(newStyles[idx] || {}), borderRadius: val };
-                                                                });
-                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
-                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                            } else {
-                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderRadius: val } : it);
-                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                            }
-                                                        }}
-                                                        onMouseDown={e => e.stopPropagation()}
-                                                        className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                                                    />
+                                                    {selectedCellIndices.length > 0 && editingTableId === selectedEl.id ? (
+                                                        <div className="flex flex-col gap-1">
+                                                            <div className="flex justify-between text-[10px] text-gray-400 font-mono">
+                                                                <span>All Corners</span>
+                                                                <span>{selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderRadius ?? 0}px</span>
+                                                            </div>
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max="20"
+                                                                step="1"
+                                                                value={selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderRadius ?? selectedEl.tableBorderRadius ?? 0}
+                                                                onChange={(e) => {
+                                                                    const val = parseInt(e.target.value);
+                                                                    const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                    selectedCellIndices.forEach(idx => {
+                                                                        newStyles[idx] = { ...(newStyles[idx] || {}), borderRadius: val };
+                                                                    });
+                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                }}
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-col gap-2">
+                                                            <div className="flex items-center gap-2 bg-gray-50 rounded px-2 py-1.5 border border-gray-100">
+                                                                <div className="w-2.5 h-2.5 border-2 border-gray-400 rounded-md" />
+                                                                <div className="flex-1 flex gap-2 items-center">
+                                                                    <input
+                                                                        type="range"
+                                                                        min="0"
+                                                                        max="20"
+                                                                        step="1"
+                                                                        value={selectedEl.tableBorderRadius ?? 0}
+                                                                        onChange={(e) => {
+                                                                            const val = parseInt(e.target.value) || 0;
+                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? {
+                                                                                ...it,
+                                                                                tableBorderRadius: val,
+                                                                                tableBorderRadiusTopLeft: val,
+                                                                                tableBorderRadiusTopRight: val,
+                                                                                tableBorderRadiusBottomLeft: val,
+                                                                                tableBorderRadiusBottomRight: val
+                                                                            } : it);
+                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                        }}
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        className="flex-1 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                                                    />
+                                                                    <span className="text-[10px] text-gray-700 font-mono w-4 text-right">{selectedEl.tableBorderRadius ?? 0}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                {[
+                                                                    { key: 'tableBorderRadiusTopLeft', iconClass: 'border-t-2 border-l-2 rounded-tl-md' },
+                                                                    { key: 'tableBorderRadiusTopRight', iconClass: 'border-t-2 border-r-2 rounded-tr-md' },
+                                                                    { key: 'tableBorderRadiusBottomLeft', iconClass: 'border-b-2 border-l-2 rounded-bl-md' },
+                                                                    { key: 'tableBorderRadiusBottomRight', iconClass: 'border-b-2 border-r-2 rounded-br-md' },
+                                                                ].map(({ key, iconClass }) => (
+                                                                    <div key={key} className="flex items-center gap-2 bg-gray-50 rounded px-2 py-1.5 border border-gray-100">
+                                                                        <div className={`w-2.5 h-2.5 border-gray-400 ${iconClass}`} />
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            max="100"
+                                                                            value={selectedEl[key as keyof DrawElement] ?? selectedEl.tableBorderRadius ?? 0}
+                                                                            onChange={(e) => {
+                                                                                const val = parseInt(e.target.value) || 0;
+                                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, [key]: val } : it);
+                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                            }}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            className="w-full bg-transparent text-[11px] text-gray-700 outline-none text-right font-mono"
+                                                                        />
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
 
