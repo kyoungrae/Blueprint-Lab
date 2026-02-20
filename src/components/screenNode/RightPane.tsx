@@ -214,7 +214,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                         onBlur={(e) => syncUpdate({ initialSettings: e.target.value })}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
-                        className={`w-full h-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}
+                        className={`w-full h-full text-[11px] border-r-15 leading-relaxed bg-transparent border-none outline-none p-3 resize-none scrollbar-thin ${isLocked ? 'text-gray-600' : 'nodrag text-gray-800 bg-white hover:bg-blue-50/10 focus:bg-blue-50/10 transition-colors'}`}
                         placeholder="• 화면 진입 시 초기 설정..."
                         spellCheck={false}
                     />
