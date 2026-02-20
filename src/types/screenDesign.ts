@@ -97,6 +97,7 @@ export interface DrawElement {
     opacity?: number;
     fillOpacity?: number;
     strokeOpacity?: number;
+    borderRadius?: number;
     textAlign?: 'left' | 'center' | 'right';
     verticalAlign?: 'top' | 'middle' | 'bottom';
     zIndex: number;

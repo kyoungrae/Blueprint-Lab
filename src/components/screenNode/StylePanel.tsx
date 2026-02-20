@@ -9,6 +9,8 @@ interface StylePanelProps {
     selectedElementIds: string[];
     drawElements: DrawElement[];
     stylePanelPos: PanelPosition;
+    editingTableId: string | null;
+    selectedCellIndices: number[];
     update: (updates: any) => void;
     syncUpdate: (updates: any) => void;
     onClose: () => void;
@@ -21,12 +23,67 @@ const StylePanel: React.FC<StylePanelProps> = ({
     selectedElementIds,
     drawElements,
     stylePanelPos,
+    editingTableId,
+    selectedCellIndices,
     update,
     syncUpdate,
     onClose,
     onDragStart,
 }) => {
     if (selectedElementIds.length === 0 || !show || isToolbarCollapsed) return null;
+
+    const selectedEl = drawElements.find(el => selectedElementIds.includes(el.id));
+    const isTable = selectedEl?.type === 'table';
+    const isTableCellMode = isTable && editingTableId === selectedEl?.id && selectedCellIndices.length > 0;
+
+    // Helper: apply background color with table-aware logic
+    const applyBgColor = (color: string) => {
+        const nextElements = drawElements.map(el => {
+            if (!selectedElementIds.includes(el.id)) return el;
+
+            const isThisTable = el.type === 'table';
+            if (isThisTable) {
+                const rows = el.tableRows || 3;
+                const cols = el.tableCols || 3;
+                const totalCells = rows * cols;
+
+                // If in cell-edit mode for THIS specific table, and cells are selected
+                if (editingTableId === el.id && selectedCellIndices.length > 0) {
+                    const newCellColors = [...(el.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                    selectedCellIndices.forEach(idx => {
+                        newCellColors[idx] = color;
+                    });
+                    return { ...el, tableCellColors: newCellColors };
+                } else {
+                    // Global table selection: Update fill AND clear/update all cell colors to match
+                    // We fill tableCellColors to ensure it takes priority as intended, or we can just set fill.
+                    // Let's set both for maximum compatibility with current rendering logic.
+                    const newCellColors = Array(totalCells).fill(color) as (string | undefined)[];
+                    return { ...el, fill: color, tableCellColors: newCellColors };
+                }
+            } else {
+                // Non-table element
+                return { ...el, fill: color };
+            }
+        });
+
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+    };
+
+    // Get current background color display value
+    const getCurrentBgColor = (): string => {
+        if (isTable && selectedEl) {
+            if (isTableCellMode) {
+                return selectedEl.tableCellColors?.[selectedCellIndices[0]] || '#ffffff';
+            }
+            // Show fill or first cell color
+            return selectedEl.fill || '#ffffff';
+        }
+        return selectedEl?.fill || '#ffffff';
+    };
+
+    const currentBgColor = getCurrentBgColor();
 
     return (
         <div
@@ -55,37 +112,36 @@ const StylePanel: React.FC<StylePanelProps> = ({
             {/* Background Color */}
             <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-center">
-                    <span className="text-[11px] text-gray-600 font-medium">배경색</span>
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-gray-600 font-medium">배경색</span>
+                        {isTableCellMode && (
+                            <span className="text-[9px] text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded-full">
+                                {selectedCellIndices.length}개 셀
+                            </span>
+                        )}
+                        {isTable && !isTableCellMode && (
+                            <span className="text-[9px] text-purple-600 font-medium bg-purple-50 px-1.5 py-0.5 rounded-full">
+                                전체
+                            </span>
+                        )}
+                    </div>
                     <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-gray-400 font-mono uppercase">{drawElements.find(el => selectedElementIds.includes(el.id))?.fill || '#ffffff'}</span>
+                        <span className="text-[10px] text-gray-400 font-mono uppercase">{currentBgColor}</span>
                         <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
                             <input
                                 type="color"
-                                value={drawElements.find(el => selectedElementIds.includes(el.id))?.fill || '#ffffff'}
-                                onChange={(e) => {
-                                    const color = e.target.value;
-                                    const nextElements = drawElements.map(el =>
-                                        selectedElementIds.includes(el.id) ? { ...el, fill: color } : el
-                                    );
-                                    update({ drawElements: nextElements });
-                                    syncUpdate({ drawElements: nextElements });
-                                }}
+                                value={currentBgColor}
+                                onChange={(e) => applyBgColor(e.target.value)}
                                 className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
                             />
                         </div>
                     </div>
                 </div>
                 <div className="flex gap-1.5 justify-end">
-                    {['#ffffff', '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#2c3e7c'].map(color => (
+                    {['#ffffff', '#f1f5f9', '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#2c3e7c'].map(color => (
                         <button
                             key={color}
-                            onClick={() => {
-                                const nextElements = drawElements.map(el =>
-                                    selectedElementIds.includes(el.id) ? { ...el, fill: color } : el
-                                );
-                                update({ drawElements: nextElements });
-                                syncUpdate({ drawElements: nextElements });
-                            }}
+                            onClick={() => applyBgColor(color)}
                             className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110`}
                             style={{ backgroundColor: color }}
                         />
@@ -136,6 +192,57 @@ const StylePanel: React.FC<StylePanelProps> = ({
                 </div>
             </div>
 
+            {/* Stroke Width */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-gray-600 font-medium">테두리 굵기</span>
+                    <span className="text-[10px] text-blue-600 font-bold">
+                        {drawElements.find(el => el.id === selectedElementIds[0])?.strokeWidth ?? 2}px
+                    </span>
+                </div>
+                <input
+                    type="range"
+                    min="0"
+                    max="20"
+                    step="1"
+                    value={drawElements.find(el => el.id === selectedElementIds[0])?.strokeWidth ?? 2}
+                    onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        const nextElements = drawElements.map(el =>
+                            selectedElementIds.includes(el.id) ? { ...el, strokeWidth: val } : el
+                        );
+                        update({ drawElements: nextElements });
+                        syncUpdate({ drawElements: nextElements });
+                    }}
+                    className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
+                />
+            </div>
+
+            {/* Border Radius */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-gray-600 font-medium">테두리 곡률</span>
+                    <span className="text-[10px] text-blue-600 font-bold">
+                        {drawElements.find(el => el.id === selectedElementIds[0])?.borderRadius ?? 0}px
+                    </span>
+                </div>
+                <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={drawElements.find(el => el.id === selectedElementIds[0])?.borderRadius ?? 0}
+                    onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        const nextElements = drawElements.map(el =>
+                            selectedElementIds.includes(el.id) ? { ...el, borderRadius: val } : el
+                        );
+                        update({ drawElements: nextElements });
+                        syncUpdate({ drawElements: nextElements });
+                    }}
+                    className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
+                />
+            </div>
             {/* Opacity Sliders */}
             <div className="flex flex-col gap-3 pt-2 border-t border-gray-100">
                 {/* Fill Opacity */}

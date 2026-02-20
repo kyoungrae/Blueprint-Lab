@@ -206,6 +206,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
     const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
 
+    // Marquee drag-selection state
+    const [isDragSelecting, setIsDragSelecting] = useState(false);
+    const [dragSelectStart, setDragSelectStart] = useState({ x: 0, y: 0 });
+    const [dragSelectRect, setDragSelectRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+
 
 
 
@@ -310,13 +315,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const y = Math.round(e.clientY - rect.top);
 
         if (activeTool === 'select') {
-            // Deselect if clicking on background
+            // Start marquee drag-selection on background click
             if (e.target === canvasRef.current) {
-                setSelectedElementIds([]);
-                setEditingTableId(null);
-                setEditingTextId(null);
-                setSelectedCellIndices([]);
-                setEditingCellIndex(null);
+                if (!e.shiftKey) {
+                    setSelectedElementIds([]);
+                    setEditingTableId(null);
+                    setEditingTextId(null);
+                    setSelectedCellIndices([]);
+                    setEditingCellIndex(null);
+                }
+                setIsDragSelecting(true);
+                setDragSelectStart({ x, y });
+                setDragSelectRect({ x, y, w: 0, h: 0 });
             }
             return;
         }
@@ -519,6 +529,29 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const x = Math.round(e.clientX - rect.left);
         const y = Math.round(e.clientY - rect.top);
 
+        // Marquee drag-selection logic
+        if (isDragSelecting) {
+            const selX = Math.min(x, dragSelectStart.x);
+            const selY = Math.min(y, dragSelectStart.y);
+            const selW = Math.abs(x - dragSelectStart.x);
+            const selH = Math.abs(y - dragSelectStart.y);
+            setDragSelectRect({ x: selX, y: selY, w: selW, h: selH });
+
+            // Select elements that intersect with the drag selection rectangle
+            const intersecting = drawElements.filter(el => {
+                const elRight = el.x + el.width;
+                const elBottom = el.y + el.height;
+                return (
+                    el.x < selX + selW &&
+                    elRight > selX &&
+                    el.y < selY + selH &&
+                    elBottom > selY
+                );
+            }).map(el => el.id);
+            setSelectedElementIds(intersecting);
+            return;
+        }
+
         // Drawing Logic
         if (isDrawing && tempElement) {
             if (tempElement.type === 'table') {
@@ -563,6 +596,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
     const handleCanvasMouseUp = () => {
+        // End marquee drag-selection
+        if (isDragSelecting) {
+            setIsDragSelecting(false);
+            setDragSelectRect(null);
+            return;
+        }
+
         if (isDrawing && tempElement) {
             // Skip if too small (but always allow tables and text)
             if (tempElement.width > 5 || tempElement.height > 5 || tempElement.type === 'text' || tempElement.type === 'table') {
@@ -1567,9 +1607,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 className={`group-canvas-element ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2' : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
                                             >
                                                 {el.type === 'rect' && (
-                                                    <div className={`w-full h-full border-2 rounded-sm shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
+                                                    <div className={`w-full h-full shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
                                                         } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
-                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1) }}>
+                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: 'solid', borderRadius: el.borderRadius ?? 0 }}>
                                                         {(el.text || editingTextId === el.id) && (
                                                             <DrawTextComponent
                                                                 element={el}
@@ -1584,9 +1624,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     </div>
                                                 )}
                                                 {el.type === 'circle' && (
-                                                    <div className={`w-full h-full border-2 rounded-full shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
+                                                    <div className={`w-full h-full shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
                                                         } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
-                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1) }}>
+                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: 'solid', borderRadius: el.borderRadius !== undefined ? el.borderRadius : '50%' }}>
                                                         {(el.text || editingTextId === el.id) && (
                                                             <DrawTextComponent
                                                                 element={el}
@@ -1721,7 +1761,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             style={{
                                                                                 gridColumn: cellColSpan > 1 ? `span ${cellColSpan}` : undefined,
                                                                                 gridRow: cellRowSpan > 1 ? `span ${cellRowSpan}` : undefined,
-                                                                                // backgroundColor: cellColor || defaultBg,
+                                                                                backgroundColor: hexToRgba(cellColor || el.fill || (isHeaderRow ? '#f1f5f9' : '#ffffff'), el.fillOpacity ?? 1),
                                                                                 borderTop,
                                                                                 borderBottom,
                                                                                 borderLeft,
@@ -2003,6 +2043,24 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 </div>
                                             )}
                                         </div>
+                                    )}
+
+                                    {/* Marquee Drag-Selection Rectangle */}
+                                    {isDragSelecting && dragSelectRect && dragSelectRect.w > 2 && dragSelectRect.h > 2 && (
+                                        <div
+                                            style={{
+                                                position: 'absolute',
+                                                left: dragSelectRect.x,
+                                                top: dragSelectRect.y,
+                                                width: dragSelectRect.w,
+                                                height: dragSelectRect.h,
+                                                zIndex: 9998,
+                                                pointerEvents: 'none',
+                                                border: '1.5px dashed #3b82f6',
+                                                backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                                                borderRadius: 3
+                                            }}
+                                        />
                                     )}
                                 </div>
                             </div>
@@ -2494,6 +2552,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                 selectedElementIds={selectedElementIds}
                                 drawElements={drawElements}
                                 stylePanelPos={stylePanelPos}
+                                editingTableId={editingTableId}
+                                selectedCellIndices={selectedCellIndices}
                                 update={update}
                                 syncUpdate={syncUpdate}
                                 onClose={() => setShowStylePanel(false)}

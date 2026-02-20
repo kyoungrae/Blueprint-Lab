@@ -48,7 +48,7 @@ const ImageContent: React.FC<ImageContentProps> = ({
         >
             {screen.imageUrl ? (
                 <div
-                    ref={imageContainerRef as React.RefObject<HTMLDivElement>}
+                    ref={imageContainerRef}
                     className={`relative inline-block m-auto transition-all ${!isLocked && isImageSelected ? 'border-[3px] border-[#3b82f6]' : 'border-[3px] border-transparent'}`}
                     style={{ width: imgSize.w, height: imgSize.h, minWidth: 50, minHeight: 50 }}
                     onMouseDown={() => {

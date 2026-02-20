@@ -36,7 +36,7 @@ const RightPane: React.FC<RightPaneProps> = ({
     handleFunctionPanelResize,
 }) => {
     return (
-        <div ref={rightPaneRef as React.RefObject<HTMLDivElement>} className="w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px]" style={{ minWidth: 250 }}>
+        <div ref={rightPaneRef} className="w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px]" style={{ minWidth: 250 }}>
             {/* Panel 1: 초기화면설정 */}
             <div className="flex-1 flex flex-col border-b border-gray-200 min-h-[100px]">
                 <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5">
@@ -110,7 +110,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                     </div>
                     {/* ERD Table Selector */}
                     {!isLocked && linkedErdProject && (
-                        <div className="relative" ref={tableListRef as React.RefObject<HTMLDivElement>}>
+                        <div className="relative" ref={tableListRef}>
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
