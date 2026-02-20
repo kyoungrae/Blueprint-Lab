@@ -2013,10 +2013,36 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     const cellRowSpan = v2 ? v2.rowSpan : 1;
                                                                     const cellColSpan = v2 ? v2.colSpan : 1;
 
-                                                                    const borderTop = `${cellStyle.borderTopWidth ?? el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderTop || el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                    const borderBottom = `${cellStyle.borderBottomWidth ?? el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderBottom || el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                    const borderLeft = `${cellStyle.borderLeftWidth ?? el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderLeft || el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                    const borderRight = `${cellStyle.borderRightWidth ?? el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderRight || el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                    // Determine if edge cell
+                                                                    const isLastCol = (c + cellColSpan) === cols;
+                                                                    const isLastRow = (r + cellRowSpan) === rows;
+
+                                                                    const globalBorderColor = hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6);
+                                                                    const globalBorderWidth = el.strokeWidth ?? 1;
+
+                                                                    // Determine borders based on position and overrides
+                                                                    const getBorder = (side: 'Top' | 'Bottom' | 'Left' | 'Right', isEdge: boolean) => {
+                                                                        const styleKey = `border${side}` as keyof typeof cellStyle;
+                                                                        const widthKey = `border${side}Width` as keyof typeof cellStyle;
+
+                                                                        // 1. Cell-specific override?
+                                                                        if (cellStyle[styleKey] !== undefined || cellStyle[widthKey] !== undefined) {
+                                                                            return `${cellStyle[widthKey] ?? el[`tableBorder${side}Width`] ?? globalBorderWidth}px solid ${cellStyle[styleKey] || el[`tableBorder${side}`] || globalBorderColor}`;
+                                                                        }
+
+                                                                        // 2. Default Selective Logic
+                                                                        if (side === 'Top' || side === 'Left') return 'none'; // Handled by container or prev cell
+                                                                        if (side === 'Right' && isEdge) return 'none'; // Handled by container
+                                                                        if (side === 'Bottom' && isEdge) return 'none'; // Handled by container
+
+                                                                        // 3. Inner border
+                                                                        return `${globalBorderWidth}px solid ${globalBorderColor}`;
+                                                                    };
+
+                                                                    const borderTop = getBorder('Top', r === 0);
+                                                                    const borderBottom = getBorder('Bottom', isLastRow);
+                                                                    const borderLeft = getBorder('Left', c === 0);
+                                                                    const borderRight = getBorder('Right', isLastCol);
 
                                                                     cellElements.push(
                                                                         <div
