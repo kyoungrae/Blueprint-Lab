@@ -340,7 +340,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [editingTextId, setEditingTextId] = useState<string | null>(null);
     const [showTablePicker, setShowTablePicker] = useState(false);
     const [tablePickerHover, setTablePickerHover] = useState<{ r: number, c: number } | null>(null);
-    const tableColResizeRef = useRef<{ elId: string, rowIdx?: number, colIdx: number, startX: number, startWidths: number[] } | null>(null);
+
     const tableRowResizeRef = useRef<{ elId: string, rowIdx: number, startY: number, startHeights: number[] } | null>(null);
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
@@ -1031,97 +1031,112 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
     const handleExecSplit = (el: DrawElement, cellIdx: number, r: number, c: number) => {
-        if (!el.tableCols || !el.tableRows || isLocked) return;
+        if (!el.tableRows || isLocked) return;
+
+        const rows = el.tableRows;
+
+        // Ensure tableRowColWidths populated
+        let rowColWidths = el.tableRowColWidths ? JSON.parse(JSON.stringify(el.tableRowColWidths)) : undefined;
+        let cellData = el.tableCellData ? [...el.tableCellData] : Array(rows * (el.tableCols || 1)).fill('');
+        let cellColors = el.tableCellColors ? [...el.tableCellColors] : [];
+        let cellStyles = el.tableCellStyles ? [...el.tableCellStyles] : [];
+
+        // Fallback initialization
+        if (!rowColWidths) {
+            const cols = el.tableCols || 1;
+            const singleRowWidths = el.tableColWidths || Array(cols).fill(100 / cols);
+            rowColWidths = Array(rows).fill(null).map(() => [...singleRowWidths]);
+        }
+
+        // Find target row and col index within that row
+        let currentIdx = 0;
+        let targetRow = -1;
+        let targetColInRow = -1;
+
+        for (let i = 0; i < rows; i++) {
+            const colsInRow = rowColWidths[i].length;
+            if (cellIdx >= currentIdx && cellIdx < currentIdx + colsInRow) {
+                targetRow = i;
+                targetColInRow = cellIdx - currentIdx;
+                break;
+            }
+            currentIdx += colsInRow;
+        }
+
+        if (targetRow === -1) return;
 
         let targetEl: DrawElement = { ...el };
-        const oldRows = el.tableRows;
-        const oldCols = el.tableCols;
-        const currentSpans = el.tableCellSpans || Array(oldRows * oldCols).fill({ rowSpan: 1, colSpan: 1 });
-        const span = currentSpans[cellIdx] || { rowSpan: 1, colSpan: 1 };
 
-        let R = span.rowSpan;
-        let C = span.colSpan;
-        let currentCellIdx = cellIdx;
+        // Apply Column Split (c > 1) - Row Level Isolation
+        if (c > 1) {
+            const oldWidth = rowColWidths[targetRow][targetColInRow];
+            const newWidth = oldWidth / c;
+            const newWidths = Array(c).fill(newWidth);
 
-        // 1. Grid Upscaling Logic
-        if (R % r !== 0 || C % c !== 0) {
-            const factorR = (R % r === 0) ? 1 : (r / gcd(R, r));
-            const factorC = (C % c === 0) ? 1 : (c / gcd(C, c));
+            // Update widths
+            rowColWidths[targetRow].splice(targetColInRow, 1, ...newWidths);
 
-            const newRows = oldRows * factorR;
-            const newCols = oldCols * factorC;
+            // Update data arrays
+            const insertIdx = cellIdx + 1;
+            const newItems = Array(c - 1).fill('');
+            const newUndefined = Array(c - 1).fill(undefined);
 
-            const newSpans = Array(newRows * newCols).fill(null).map(() => ({ rowSpan: 1, colSpan: 1 }));
-            const newData = Array(newRows * newCols).fill('');
-            const newColors = Array(newRows * newCols).fill(undefined);
-            const newStyles = Array(newRows * newCols).fill(undefined);
-
-            for (let ir = 0; ir < oldRows; ir++) {
-                for (let ic = 0; ic < oldCols; ic++) {
-                    const oIdx = ir * oldCols + ic;
-                    const oSpan = currentSpans[oIdx] || { rowSpan: 1, colSpan: 1 };
-
-                    const nRow = ir * factorR;
-                    const nCol = ic * factorC;
-                    const nIdx = nRow * newCols + nCol;
-
-                    newSpans[nIdx] = {
-                        rowSpan: oSpan.rowSpan * factorR,
-                        colSpan: oSpan.colSpan * factorC
-                    };
-                    newData[nIdx] = el.tableCellData?.[oIdx] || '';
-                    newColors[nIdx] = el.tableCellColors?.[oIdx];
-                    newStyles[nIdx] = el.tableCellStyles?.[oIdx];
-                }
-            }
-
-            const newHeights = el.tableRowHeights ? el.tableRowHeights.flatMap(h => Array(factorR).fill(h / factorR)) : Array(newRows).fill(100 / newRows);
-            const newWidths = el.tableColWidths ? el.tableColWidths.flatMap(w => Array(factorC).fill(w / factorC)) : Array(newCols).fill(100 / newCols);
-            const newRowColWidths = el.tableRowColWidths
-                ? el.tableRowColWidths.flatMap(rw => Array.from({ length: factorR }, () => rw.flatMap(w => Array(factorC).fill(w / factorC))))
-                : undefined;
-
-            targetEl = {
-                ...el,
-                tableRows: newRows,
-                tableCols: newCols,
-                tableCellSpans: newSpans,
-                tableCellData: newData,
-                tableCellColors: newColors,
-                tableCellStyles: newStyles,
-                tableRowHeights: newHeights,
-                tableColWidths: newWidths,
-                tableRowColWidths: newRowColWidths
-            };
-
-            currentCellIdx = (Math.floor(cellIdx / oldCols) * factorR) * newCols + (cellIdx % oldCols) * factorC;
-            const updatedSpan = targetEl.tableCellSpans?.[currentCellIdx] || { rowSpan: 1, colSpan: 1 };
-            R = updatedSpan.rowSpan;
-            C = updatedSpan.colSpan;
+            cellData.splice(insertIdx, 0, ...newItems);
+            cellColors.splice(insertIdx, 0, ...newUndefined);
+            cellStyles.splice(insertIdx, 0, ...newUndefined);
         }
 
-        // 2. Execute Split on the (possibly upscaled) grid
-        const finalCols = targetEl.tableCols || 1;
-        const finalSpans = [...(targetEl.tableCellSpans || [])];
-        const subR = R / r;
-        const subC = C / c;
-        const startRow = Math.floor(currentCellIdx / finalCols);
-        const startCol = currentCellIdx % finalCols;
+        // Apply Row Split (r > 1) - Insert Rows logic
+        if (r > 1) {
+            // Insert r-1 rows after targetRow with same structure
+            const templateWidths = [...rowColWidths[targetRow]];
+            const newRowsData = Array(r - 1).fill(null).map(() => [...templateWidths]);
+            rowColWidths.splice(targetRow + 1, 0, ...newRowsData);
 
-        for (let ir = 0; ir < R; ir++) {
-            for (let ic = 0; ic < C; ic++) {
-                const idx = (startRow + ir) * finalCols + (startCol + ic);
-                finalSpans[idx] = { rowSpan: 1, colSpan: 1 };
+            // Update Row Heights
+            const defaultHeights = el.tableRowHeights ? [...el.tableRowHeights] : Array(rows).fill(100 / rows);
+            // If heights array is shorter than rows (due to old data), fill it
+            while (defaultHeights.length < rows) defaultHeights.push(100 / rows);
+
+            const oldHeight = defaultHeights[targetRow];
+            const newHeight = oldHeight / r;
+            const newHeights = Array(r).fill(newHeight);
+
+            defaultHeights.splice(targetRow, 1, ...newHeights);
+
+            // Update Data
+            // We need to insert empty data for the new rows.
+            // Calculate where the new rows start in the flat array.
+            // After the split above, targetRow has new length.
+            let endOfTargetRowIdx = 0;
+            for (let i = 0; i <= targetRow; i++) {
+                endOfTargetRowIdx += rowColWidths[i].length;
             }
+
+            const colsInRow = rowColWidths[targetRow].length;
+            const totalNewCells = (r - 1) * colsInRow;
+
+            const dataToInsert = Array(totalNewCells).fill('');
+            const dataUndefined = Array(totalNewCells).fill(undefined);
+
+            cellData.splice(endOfTargetRowIdx, 0, ...dataToInsert);
+            cellColors.splice(endOfTargetRowIdx, 0, ...dataUndefined);
+            cellStyles.splice(endOfTargetRowIdx, 0, ...dataUndefined);
+
+            // Normalize heights to sum to 100? Or just let them be?
+            // Usually we might want to re-normalize if they Drift, but let's trust the split.
+
+            targetEl.tableRowHeights = defaultHeights;
+            targetEl.tableRows = rows + (r - 1);
         }
 
-        for (let ir = 0; ir < r; ir++) {
-            for (let ic = 0; ic < c; ic++) {
-                const idx = (startRow + ir * subR) * finalCols + (startCol + ic * subC);
-                finalSpans[idx] = { rowSpan: subR, colSpan: subC };
-            }
-        }
-        const nextElements = drawElements.map(it => it.id === el.id ? { ...targetEl, tableCellSpans: finalSpans } : it);
+        targetEl.tableRowColWidths = rowColWidths;
+        targetEl.tableCellData = cellData;
+        targetEl.tableCellColors = cellColors;
+        targetEl.tableCellStyles = cellStyles;
+        targetEl.tableCellSpans = undefined; // Clear spans
+
+        const nextElements = drawElements.map(it => it.id === el.id ? targetEl : it);
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         setSelectedCellIndices([]);
@@ -1129,81 +1144,144 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     const handleMergeCells = (selectedEl: DrawElement) => {
         if (!selectedEl.tableCols || !selectedEl.tableRows || selectedCellIndices.length < 2) return;
-        const cols = selectedEl.tableCols;
-        let minR = Infinity, maxR = -Infinity;
-        let minC = Infinity, maxC = -Infinity;
 
-        selectedCellIndices.forEach(idx => {
-            const r = Math.floor(idx / cols);
-            const c = idx % cols;
-            if (r < minR) minR = r;
-            if (r > maxR) maxR = r;
-            if (c < minC) minC = c;
-            if (c > maxC) maxC = c;
-        });
+        const rows = selectedEl.tableRows;
+        // Construct or get structure
+        let rowColWidths = selectedEl.tableRowColWidths
+            ? JSON.parse(JSON.stringify(selectedEl.tableRowColWidths))
+            : Array(rows).fill(null).map(() => {
+                const c = selectedEl.tableCols || 1;
+                return selectedEl.tableColWidths || Array(c).fill(100 / c);
+            });
 
-        const newSpans = [...(selectedEl.tableCellSpans || [])];
-        while (newSpans.length < selectedEl.tableRows * selectedEl.tableCols) {
-            newSpans.push({ rowSpan: 1, colSpan: 1 });
-        }
+        let cellData = selectedEl.tableCellData ? [...selectedEl.tableCellData] : Array(rows * (selectedEl.tableCols || 1)).fill('');
+        let cellColors = selectedEl.tableCellColors ? [...selectedEl.tableCellColors] : [];
+        let cellStyles = selectedEl.tableCellStyles ? [...selectedEl.tableCellStyles] : [];
 
-        const topLeftIdx = minR * cols + minC;
-        newSpans[topLeftIdx] = {
-            rowSpan: maxR - minR + 1,
-            colSpan: maxC - minC + 1
+        // Helper to get coordinates
+        const getCoords = (idx: number) => {
+            let counter = 0;
+            for (let r = 0; r < rows; r++) {
+                const w = rowColWidths[r];
+                if (idx < counter + w.length) {
+                    return { r, c: idx - counter };
+                }
+                counter += w.length;
+            }
+            return null;
         };
 
-        for (let r = minR; r <= maxR; r++) {
-            for (let c = minC; c <= maxC; c++) {
-                const idx = r * cols + c;
-                if (idx !== topLeftIdx) {
-                    newSpans[idx] = { rowSpan: 1, colSpan: 1 };
-                }
-            }
+        const coords = selectedCellIndices.map(getCoords).filter(x => x !== null) as { r: number, c: number }[];
+        if (!coords.length) return;
+
+        // Group by row
+        const rowsMap = new Map<number, number[]>();
+        coords.forEach(({ r, c }) => {
+            if (!rowsMap.has(r)) rowsMap.set(r, []);
+            rowsMap.get(r)!.push(c);
+        });
+
+        // Apply merge PER ROW
+
+        // Actually, we must process from Bottom to Top or be careful with indices.
+        // Or simpler: Reconstruct the new data arrays completely.
+
+        // It's safer to process modifications on the structured data then flatten.
+        // Let's build a structured representation of data first.
+        let dataStructure: any[][] = [];
+        let colorStructure: any[][] = [];
+        let styleStructure: any[][] = [];
+
+        let counter = 0;
+        for (let r = 0; r < rows; r++) {
+            const cols = rowColWidths[r].length;
+            const sliceEnd = counter + cols;
+            dataStructure.push(cellData.slice(counter, sliceEnd));
+            if (cellColors.length) colorStructure.push(cellColors.slice(counter, sliceEnd));
+            if (cellStyles.length) styleStructure.push(cellStyles.slice(counter, sliceEnd));
+            counter += cols;
         }
 
-        const nextElements = drawElements.map(el =>
-            el.id === selectedEl.id ? { ...el, tableCellSpans: newSpans } : el
-        );
-        update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
+        let changed = false;
+
+        // Iterate rows in the map
+        rowsMap.forEach((colIndices, r) => {
+            if (colIndices.length < 2) return; // Need at least 2 cells to merge
+            colIndices.sort((a, b) => a - b);
+
+            // Check adjacency
+            for (let i = 0; i < colIndices.length - 1; i++) {
+                if (colIndices[i + 1] !== colIndices[i] + 1) return; // Non-adjacent selection in row, skip
+            }
+
+            const startC = colIndices[0];
+            const count = colIndices.length;
+
+            // Calculate new width
+            const widths = rowColWidths[r];
+            let newWidth = 0;
+            for (let i = startC; i < startC + count; i++) {
+                newWidth += widths[i];
+            }
+
+            // Update widths: splice out merged, insert one big
+            widths.splice(startC, count, newWidth);
+
+            // Update Data: keep first, remove others
+            if (dataStructure[r]) {
+                dataStructure[r].splice(startC, count, dataStructure[r][startC]); // Keep one
+            }
+            if (colorStructure[r] && colorStructure[r].length) {
+                colorStructure[r].splice(startC, count, colorStructure[r][startC]);
+            }
+            if (styleStructure[r] && styleStructure[r].length) {
+                styleStructure[r].splice(startC, count, styleStructure[r][startC]);
+            }
+
+            changed = true;
+        });
+
+        if (changed) {
+            // Flatten back
+            const newCellData = dataStructure.flat();
+            const newCellColors = colorStructure.length ? colorStructure.flat() : undefined;
+            const newCellStyles = styleStructure.length ? styleStructure.flat() : undefined;
+
+            const targetEl = {
+                ...selectedEl,
+                tableRowColWidths: rowColWidths,
+                tableCellData: newCellData,
+                tableCellColors: newCellColors, // Might need to ensure undefineds are handled
+                tableCellStyles: newCellStyles,
+                tableCellSpans: undefined // Clear legacy spans
+            };
+
+            // Flatten colors/styles properly if they were partial? 
+            // The slice approach is safe if arrays were full length. ScreenNode logic usually fills them.
+
+            const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements });
+            setSelectedCellIndices([]);
+        }
     };
 
     const handleSplitCells = (selectedEl: DrawElement) => {
         if (!selectedEl.tableCols || !selectedCellIndices.length || isLocked) return;
 
-        // 만약 여러 셀이 선택되어 있다면 기존처럼 '병합 해제'만 수행합니다.
-        if (selectedCellIndices.length > 1) {
-            const newSpans = [...(selectedEl.tableCellSpans || [])];
-            let changed = false;
+        // Removing legacy "Unmerge" logic since we now use structural merging.
+        // If multiple cells selected, we ignore or could iterate. Currently just take first.
 
-            selectedCellIndices.forEach(idx => {
-                if (newSpans[idx] && (newSpans[idx].rowSpan > 1 || newSpans[idx].colSpan > 1)) {
-                    newSpans[idx] = { rowSpan: 1, colSpan: 1 };
-                    changed = true;
-                }
-            });
-
-            if (changed) {
-                const nextElements = drawElements.map(el =>
-                    el.id === selectedEl.id ? { ...el, tableCellSpans: newSpans } : el
-                );
-                update({ drawElements: nextElements });
-                syncUpdate({ drawElements: nextElements });
-            }
-            return;
-        }
-
-        // 단일 셀 선택 시 -> 분할 팝업 열기
         const cellIdx = selectedCellIndices[0];
-        const span = selectedEl.tableCellSpans?.[cellIdx] || { rowSpan: 1, colSpan: 1 };
 
+        // We don't have spans anymore, so just suggest 2x1 split default
         setSplitTarget({ elId: selectedEl.id, cellIdx });
-        // 이미 병합된 셀이면 현재 span을 기본값으로, 1x1이면 2x1을 기본값으로 제안
-        setSplitRows(span.rowSpan > 1 ? span.rowSpan : 2);
-        setSplitCols(span.colSpan > 1 ? span.colSpan : 1);
+        setSplitRows(2); // Default to horizontal split
+        setSplitCols(1);
         setShowSplitDialog(true);
     };
+
+
 
     const handleResizeStart = (direction: string) => (e: React.MouseEvent) => {
         e.preventDefault();
@@ -1610,221 +1688,200 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         }}
                                                     >
                                                         <div
-                                                            className="w-full h-full border-collapse overflow-hidden"
+                                                            className="w-full h-full border-collapse overflow-hidden flex flex-col"
                                                             style={{
-                                                                display: 'grid',
-                                                                gridTemplateRows: (el.tableRowHeights || Array(el.tableRows || 3).fill(100 / (el.tableRows || 3))).map(h => `${h}%`).join(' '),
-                                                                gridTemplateColumns: (el.tableColWidths || Array(el.tableCols || 3).fill(100 / (el.tableCols || 3))).map(w => `${w}%`).join(' ')
+                                                                // Removed gridTemplateRows/Columns
                                                             }}
                                                         >
                                                             {(() => {
-                                                                const coveredCells = new Set<number>();
-                                                                const cols = el.tableCols || 3;
                                                                 const rows = el.tableRows || 3;
+                                                                const rowColWidths = el.tableRowColWidths;
+                                                                const cols = el.tableCols || 3;
+                                                                const globalWidths = el.tableColWidths || Array(cols).fill(100 / cols);
+                                                                const rowHeights = el.tableRowHeights || Array(rows).fill(100 / rows);
 
-                                                                if (el.tableCellSpans) {
-                                                                    el.tableCellSpans.forEach((span, idx) => {
-                                                                        if (!span || (span.rowSpan <= 1 && span.colSpan <= 1)) return;
-                                                                        const r0 = Math.floor(idx / cols);
-                                                                        const c0 = idx % cols;
-                                                                        for (let dr = 0; dr < span.rowSpan; dr++) {
-                                                                            for (let dc = 0; dc < span.colSpan; dc++) {
-                                                                                if (dr === 0 && dc === 0) continue;
-                                                                                coveredCells.add((r0 + dr) * cols + (c0 + dc));
-                                                                            }
-                                                                        }
-                                                                    });
-                                                                }
+                                                                let cellIdxCounter = 0;
 
-                                                                return Array.from({ length: rows * cols }).map((_, cellIndex) => {
-                                                                    if (coveredCells.has(cellIndex)) return null;
-
-                                                                    const rowIdx = Math.floor(cellIndex / cols);
-                                                                    const colIdx = cellIndex % cols;
-                                                                    const cellData = el.tableCellData?.[cellIndex] || '';
-                                                                    const isHeaderRow = rowIdx === 0;
-                                                                    const cellColor = el.tableCellColors?.[cellIndex];
-                                                                    const cellStyle = el.tableCellStyles?.[cellIndex] || {};
-                                                                    const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
-                                                                    const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
-                                                                    const defaultBg = isHeaderRow ? hexToRgba('#2c3e7c', 0.1) : '#ffffff';
-
-                                                                    const borderTop = `${cellStyle.borderTopWidth ?? el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderTop || el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                    const borderBottom = `${cellStyle.borderBottomWidth ?? el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderBottom || el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                    const borderLeft = `${cellStyle.borderLeftWidth ?? el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderLeft || el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-                                                                    const borderRight = `${cellStyle.borderRightWidth ?? el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderRight || el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
-
-                                                                    const cellSpan = el.tableCellSpans?.[cellIndex] || { rowSpan: 1, colSpan: 1 };
+                                                                return Array.from({ length: rows }).map((_, r) => {
+                                                                    const currentWidths = rowColWidths ? rowColWidths[r] : globalWidths;
+                                                                    const rowHeight = rowHeights[r];
 
                                                                     return (
                                                                         <div
-                                                                            key={cellIndex}
-                                                                            className={`px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center overflow-hidden h-full ${isHeaderRow && !cellColor
-                                                                                ? 'font-bold text-[#2c3e7c]'
-                                                                                : 'text-gray-700'
-                                                                                }`}
-                                                                            style={{
-                                                                                gridColumn: `span ${cellSpan.colSpan}`,
-                                                                                gridRow: `span ${cellSpan.rowSpan}`,
-                                                                                borderTop,
-                                                                                borderBottom,
-                                                                                borderLeft,
-                                                                                borderRight,
-                                                                                verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
-                                                                                textAlign: cellStyle.textAlign || el.textAlign || 'center',
-                                                                                backgroundColor: cellColor || defaultBg,
-                                                                                outline: isCellSelected ? '2px solid #3b82f6' : 'none',
-                                                                                outlineOffset: '-1px',
-                                                                                position: 'relative',
-                                                                                cursor: editingTableId === el.id ? 'crosshair' : 'default'
-                                                                            }}
-                                                                            onMouseDown={(e) => {
-                                                                                if (isLocked) return;
-                                                                                if (editingTableId !== el.id) return;
-                                                                                e.stopPropagation();
-                                                                                if (editingCellIndex !== null) setEditingCellIndex(null);
-                                                                                if (e.shiftKey && selectedCellIndices.length > 0) {
-                                                                                    const lastIdx = selectedCellIndices[selectedCellIndices.length - 1];
-                                                                                    const r1 = Math.floor(lastIdx / cols), c1 = lastIdx % cols;
-                                                                                    const r2 = rowIdx, c2 = colIdx;
-                                                                                    const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
-                                                                                    const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
-                                                                                    const range: number[] = [];
-                                                                                    for (let r = rMin; r <= rMax; r++) {
-                                                                                        for (let c = cMin; c <= cMax; c++) {
-                                                                                            range.push(r * cols + c);
-                                                                                        }
-                                                                                    }
-                                                                                    setSelectedCellIndices(range);
-                                                                                } else {
-                                                                                    isDraggingCellSelectionRef.current = true;
-                                                                                    dragStartCellIndexRef.current = cellIndex;
-                                                                                    setSelectedCellIndices([cellIndex]);
-                                                                                    const onMouseUp = () => {
-                                                                                        isDraggingCellSelectionRef.current = false;
-                                                                                        window.removeEventListener('mouseup', onMouseUp);
-                                                                                    };
-                                                                                    window.addEventListener('mouseup', onMouseUp);
-                                                                                }
-                                                                            }}
-                                                                            onMouseEnter={() => {
-                                                                                if (!isDraggingCellSelectionRef.current) return;
-                                                                                if (editingTableId !== el.id) return;
-                                                                                const startIdx = dragStartCellIndexRef.current;
-                                                                                if (startIdx < 0) return;
-                                                                                const r1 = Math.floor(startIdx / cols), c1 = startIdx % cols;
-                                                                                const r2 = rowIdx, c2 = colIdx;
-                                                                                const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
-                                                                                const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
-                                                                                const range: number[] = [];
-                                                                                for (let r = rMin; r <= rMax; r++) {
-                                                                                    for (let c = cMin; c <= cMax; c++) {
-                                                                                        range.push(r * cols + c);
-                                                                                    }
-                                                                                }
-                                                                                setSelectedCellIndices(range);
-                                                                            }}
-                                                                            onDoubleClick={(e) => {
-                                                                                if (isLocked) return;
-                                                                                if (editingTableId !== el.id) return;
-                                                                                e.stopPropagation();
-                                                                                setEditingCellIndex(cellIndex);
-                                                                            }}
+                                                                            key={r}
+                                                                            className="flex w-full relative"
+                                                                            style={{ height: `${rowHeight}%` }}
                                                                         >
-                                                                            {isCellEditing ? (
-                                                                                <textarea
-                                                                                    autoFocus
-                                                                                    className="w-full h-full bg-white border-none outline-none resize-none p-1 text-[10px]"
-                                                                                    value={cellData}
-                                                                                    onChange={(e) => {
-                                                                                        const newData = [...(el.tableCellData || Array(rows * cols).fill(''))];
-                                                                                        newData[cellIndex] = e.target.value;
-                                                                                        const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData } : it);
-                                                                                        update({ drawElements: nextElements });
-                                                                                    }}
-                                                                                    onBlur={() => {
-                                                                                        setEditingCellIndex(null);
-                                                                                        syncUpdate({ drawElements });
-                                                                                    }}
-                                                                                    onKeyDown={(e) => {
-                                                                                        if (e.key === 'Enter' && !e.shiftKey) {
-                                                                                            e.preventDefault();
-                                                                                            setEditingCellIndex(null);
-                                                                                            syncUpdate({ drawElements });
-                                                                                        }
-                                                                                        if (e.key === 'Tab') {
-                                                                                            e.preventDefault();
-                                                                                            const nextIdx = e.shiftKey ? cellIndex - 1 : cellIndex + 1;
-                                                                                            if (nextIdx >= 0 && nextIdx < rows * cols) {
-                                                                                                setEditingCellIndex(nextIdx);
-                                                                                                setSelectedCellIndices([nextIdx]);
+                                                                            {currentWidths.map((width, c) => {
+                                                                                const cellIndex = cellIdxCounter++;
+                                                                                const cellData = el.tableCellData?.[cellIndex] || '';
+                                                                                const cellColor = el.tableCellColors?.[cellIndex];
+                                                                                const cellStyle = el.tableCellStyles?.[cellIndex] || {};
+                                                                                const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
+                                                                                const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
+                                                                                const isHeaderRow = r === 0;
+                                                                                const defaultBg = isHeaderRow ? hexToRgba('#2c3e7c', 0.1) : '#ffffff';
+
+                                                                                const borderTop = `${cellStyle.borderTopWidth ?? el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderTop || el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                                const borderBottom = `${cellStyle.borderBottomWidth ?? el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderBottom || el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                                const borderLeft = `${cellStyle.borderLeftWidth ?? el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderLeft || el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+                                                                                const borderRight = `${cellStyle.borderRightWidth ?? el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderRight || el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
+
+                                                                                return (
+                                                                                    <div
+                                                                                        key={cellIndex}
+                                                                                        className={`relative px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center overflow-hidden h-full ${isHeaderRow && !cellColor ? 'font-bold text-[#2c3e7c]' : 'text-gray-700'}`}
+                                                                                        style={{
+                                                                                            width: `${width}%`,
+                                                                                            backgroundColor: cellColor || defaultBg,
+                                                                                            borderTop, borderBottom, borderLeft, borderRight,
+                                                                                            outline: isCellSelected ? '2px solid #3b82f6' : 'none',
+                                                                                            outlineOffset: '-1px',
+                                                                                            cursor: editingTableId === el.id ? 'crosshair' : 'default',
+                                                                                            textAlign: cellStyle.textAlign || el.textAlign || 'center',
+                                                                                            verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
+                                                                                        }}
+                                                                                        onMouseDown={(e) => {
+                                                                                            if (isLocked) return;
+                                                                                            if (editingTableId !== el.id) return;
+                                                                                            e.stopPropagation();
+                                                                                            if (editingCellIndex !== null) setEditingCellIndex(null);
+
+                                                                                            // Start selection
+                                                                                            isDraggingCellSelectionRef.current = true;
+                                                                                            dragStartCellIndexRef.current = cellIndex;
+                                                                                            setSelectedCellIndices([cellIndex]);
+
+                                                                                            const onMouseUp = () => {
+                                                                                                isDraggingCellSelectionRef.current = false;
+                                                                                                window.removeEventListener('mouseup', onMouseUp);
+                                                                                            };
+                                                                                            window.addEventListener('mouseup', onMouseUp);
+                                                                                        }}
+                                                                                        onMouseEnter={() => {
+                                                                                            if (!isDraggingCellSelectionRef.current) return;
+                                                                                            if (editingTableId !== el.id) return;
+                                                                                            const startIdx = dragStartCellIndexRef.current;
+                                                                                            if (startIdx < 0) return;
+
+                                                                                            // Get Coords
+                                                                                            const getCoordsInternal = (flatIdx: number) => {
+                                                                                                const rList = el.tableRowColWidths || Array(rows).fill(null).map(() => Array(cols).fill(100 / cols));
+                                                                                                let ctr = 0;
+                                                                                                for (let i = 0; i < rList.length; i++) {
+                                                                                                    const len = rList[i].length;
+                                                                                                    if (flatIdx < ctr + len) return { r: i, c: flatIdx - ctr };
+                                                                                                    ctr += len;
+                                                                                                }
+                                                                                                return { r: 0, c: 0 };
+                                                                                            };
+
+                                                                                            const start = getCoordsInternal(startIdx);
+                                                                                            const rMin = Math.min(start.r, r);
+                                                                                            const rMax = Math.max(start.r, r);
+                                                                                            const cMin = Math.min(start.c, c);
+                                                                                            const cMax = Math.max(start.c, c);
+
+                                                                                            const newSelection: number[] = [];
+                                                                                            const rList = el.tableRowColWidths || Array(rows).fill(null).map(() => Array(cols).fill(100 / cols));
+                                                                                            let ctr = 0;
+                                                                                            for (let i = 0; i < rList.length; i++) {
+                                                                                                const rowLen = rList[i].length;
+                                                                                                if (i >= rMin && i <= rMax) {
+                                                                                                    const effectiveCMax = Math.min(cMax, rowLen - 1);
+                                                                                                    for (let j = cMin; j <= effectiveCMax; j++) {
+                                                                                                        newSelection.push(ctr + j);
+                                                                                                    }
+                                                                                                }
+                                                                                                ctr += rowLen;
                                                                                             }
-                                                                                        }
-                                                                                    }}
-                                                                                />
-                                                                            ) : (
-                                                                                <div className="w-full h-full flex items-center justify-center whitespace-pre-wrap">
-                                                                                    {cellData}
-                                                                                </div>
-                                                                            )}
+                                                                                            setSelectedCellIndices(newSelection);
+                                                                                        }}
+                                                                                        onDoubleClick={(e) => {
+                                                                                            if (isLocked) return;
+                                                                                            if (editingTableId !== el.id) return;
+                                                                                            e.stopPropagation();
+                                                                                            setEditingCellIndex(cellIndex);
+                                                                                        }}
+                                                                                    >
+                                                                                        {isCellEditing ? (
+                                                                                            <textarea
+                                                                                                autoFocus
+                                                                                                className="w-full h-full bg-white border-none outline-none resize-none p-1 text-[10px]"
+                                                                                                value={cellData}
+                                                                                                onChange={(e) => {
+                                                                                                    const newData = [...(el.tableCellData || [])];
+                                                                                                    newData[cellIndex] = e.target.value;
+                                                                                                    const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData } : it);
+                                                                                                    update({ drawElements: nextElements });
+                                                                                                }}
+                                                                                                onBlur={() => { setEditingCellIndex(null); syncUpdate({ drawElements }); }}
+                                                                                                onKeyDown={(e) => {
+                                                                                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingCellIndex(null); syncUpdate({ drawElements }); }
+                                                                                                }}
+                                                                                            />
+                                                                                        ) : (
+                                                                                            <div className="w-full h-full flex items-center justify-center whitespace-pre-wrap">{cellData}</div>
+                                                                                        )}
+
+                                                                                        {/* Column Resize Handle for this cell */}
+                                                                                        {isSelected && !isLocked && selectedElementIds.length === 1 && c < currentWidths.length - 1 && (
+                                                                                            <div
+                                                                                                className="absolute top-0 bottom-0 right-0 w-[4px] cursor-col-resize z-[10] hover:bg-blue-400 opacity-0 hover:opacity-100 transition-opacity"
+                                                                                                style={{ marginRight: -2 }}
+                                                                                                onMouseDown={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    e.preventDefault();
+                                                                                                    // Need to track row-specific widths
+                                                                                                    // But tableColResizeRef structure might need update or we handle it here locally
+                                                                                                    // Let's use a temp ref or closure? No, need persistent ref for window events.
+                                                                                                    // We can reuse tableColResizeRef but we need to know WHICH row we are editing if we support per-row resize.
+                                                                                                    // For now, let's implement per-row resize.
+                                                                                                    const startX = e.clientX;
+                                                                                                    const startWidths = [...currentWidths];
+
+                                                                                                    const handleMove = (moveE: MouseEvent) => {
+                                                                                                        moveE.preventDefault();
+                                                                                                        const deltaX = moveE.clientX - startX;
+                                                                                                        const deltaPercent = (deltaX / el.width) * 100;
+                                                                                                        const newWidths = [...startWidths];
+                                                                                                        const minW = 2;
+                                                                                                        let w1 = startWidths[c] + deltaPercent;
+                                                                                                        let w2 = startWidths[c + 1] - deltaPercent;
+
+                                                                                                        if (w1 < minW) { w2 -= (minW - w1); w1 = minW; }
+                                                                                                        if (w2 < minW) { w1 -= (minW - w2); w2 = minW; }
+
+                                                                                                        newWidths[c] = w1;
+                                                                                                        newWidths[c + 1] = w2;
+
+                                                                                                        // Update ONLY this row's widths in tableRowColWidths
+                                                                                                        const newRowColWidths = el.tableRowColWidths ? JSON.parse(JSON.stringify(el.tableRowColWidths)) : Array(rows).fill(null).map(() => [...globalWidths]);
+                                                                                                        newRowColWidths[r] = newWidths;
+
+                                                                                                        updateElement(el.id, { tableRowColWidths: newRowColWidths });
+                                                                                                    };
+
+                                                                                                    const handleUp = () => {
+                                                                                                        window.removeEventListener('mousemove', handleMove, true);
+                                                                                                        window.removeEventListener('mouseup', handleUp, true);
+                                                                                                        syncUpdate({ drawElements });
+                                                                                                    };
+
+                                                                                                    window.addEventListener('mousemove', handleMove, true);
+                                                                                                    window.addEventListener('mouseup', handleUp, true);
+                                                                                                }}
+                                                                                            />
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            })}
                                                                         </div>
                                                                     );
                                                                 });
                                                             })()}
                                                         </div>
 
-                                                        {/* Column Resize Handles */}
-                                                        {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
-                                                            const cols = el.tableCols || 3;
-                                                            const widths = el.tableColWidths || Array(cols).fill(100 / cols);
-                                                            let accPercent = 0;
-                                                            return Array.from({ length: cols - 1 }).map((_, idx) => {
-                                                                accPercent += widths[idx];
-                                                                return (
-                                                                    <div
-                                                                        key={`col-resize-${idx}`}
-                                                                        className="absolute top-0 bottom-0 cursor-col-resize z-[120] group/colresize"
-                                                                        style={{ left: `${accPercent}%`, width: 8, marginLeft: -4 }}
-                                                                        onMouseDown={(e) => {
-                                                                            e.stopPropagation();
-                                                                            e.preventDefault();
-                                                                            tableColResizeRef.current = {
-                                                                                elId: el.id,
-                                                                                colIdx: idx,
-                                                                                startX: e.clientX,
-                                                                                startWidths: [...widths]
-                                                                            };
-                                                                            const handleMove = (moveE: MouseEvent) => {
-                                                                                if (!tableColResizeRef.current) return;
-                                                                                moveE.preventDefault();
-                                                                                const { colIdx: ci, startX, startWidths: sw } = tableColResizeRef.current;
-                                                                                const deltaX = moveE.clientX - startX;
-                                                                                const deltaPercent = (deltaX / el.width) * 100;
-                                                                                const newWidths = [...sw];
-                                                                                const minW = 2;
-                                                                                let w1 = sw[ci] + deltaPercent;
-                                                                                let w2 = sw[ci + 1] - deltaPercent;
-                                                                                if (w1 < minW) { w2 -= (minW - w1); w1 = minW; }
-                                                                                if (w2 < minW) { w1 -= (minW - w2); w2 = minW; }
-                                                                                newWidths[ci] = w1;
-                                                                                newWidths[ci + 1] = w2;
-                                                                                updateElement(el.id, { tableColWidths: newWidths });
-                                                                            };
-                                                                            const handleUp = () => {
-                                                                                tableColResizeRef.current = null;
-                                                                                window.removeEventListener('mousemove', handleMove, true);
-                                                                                window.removeEventListener('mouseup', handleUp, true);
-                                                                                syncUpdate({ drawElements });
-                                                                            };
-                                                                            window.addEventListener('mousemove', handleMove, true);
-                                                                            window.addEventListener('mouseup', handleUp, true);
-                                                                        }}
-                                                                    >
-                                                                        <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[2px] bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
-                                                                    </div>
-                                                                );
-                                                            });
-                                                        })()}
 
                                                         {/* Row Resize Handles */}
                                                         {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
