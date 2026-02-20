@@ -1040,12 +1040,19 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         let cellData = el.tableCellData ? [...el.tableCellData] : Array(rows * (el.tableCols || 1)).fill('');
         let cellColors = el.tableCellColors ? [...el.tableCellColors] : [];
         let cellStyles = el.tableCellStyles ? [...el.tableCellStyles] : [];
+        let cellSpans = el.tableCellSpans ? [...el.tableCellSpans] : [];
 
         // Fallback initialization
         if (!rowColWidths) {
             const cols = el.tableCols || 1;
             const singleRowWidths = el.tableColWidths || Array(cols).fill(100 / cols);
             rowColWidths = Array(rows).fill(null).map(() => [...singleRowWidths]);
+        }
+
+        // Ensure spans initialized if missing
+        if (cellSpans.length < cellData.length) {
+            const needed = cellData.length - cellSpans.length;
+            for (let i = 0; i < needed; i++) cellSpans.push({ rowSpan: 1, colSpan: 1 });
         }
 
         // Find target row and col index within that row
@@ -1080,61 +1087,118 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const insertIdx = cellIdx + 1;
             const newItems = Array(c - 1).fill('');
             const newUndefined = Array(c - 1).fill(undefined);
+            const newSpans = Array(c - 1).fill({ rowSpan: 1, colSpan: 1 }); // Default span
 
             cellData.splice(insertIdx, 0, ...newItems);
             cellColors.splice(insertIdx, 0, ...newUndefined);
             cellStyles.splice(insertIdx, 0, ...newUndefined);
+            cellSpans.splice(insertIdx, 0, ...newSpans);
         }
 
         // Apply Row Split (r > 1) - Insert Rows logic
         if (r > 1) {
-            // Insert r-1 rows after targetRow with same structure
+            const rowsToAdd = r - 1;
+
+            // 1. Insert r-1 rows after targetRow with same structure
             const templateWidths = [...rowColWidths[targetRow]];
-            const newRowsData = Array(r - 1).fill(null).map(() => [...templateWidths]);
+            const newRowsData = Array(rowsToAdd).fill(null).map(() => [...templateWidths]);
             rowColWidths.splice(targetRow + 1, 0, ...newRowsData);
 
-            // Update Row Heights
+            // 2. Update Row Heights
             const defaultHeights = el.tableRowHeights ? [...el.tableRowHeights] : Array(rows).fill(100 / rows);
-            // If heights array is shorter than rows (due to old data), fill it
             while (defaultHeights.length < rows) defaultHeights.push(100 / rows);
 
             const oldHeight = defaultHeights[targetRow];
             const newHeight = oldHeight / r;
             const newHeights = Array(r).fill(newHeight);
-
             defaultHeights.splice(targetRow, 1, ...newHeights);
 
-            // Update Data
-            // We need to insert empty data for the new rows.
-            // Calculate where the new rows start in the flat array.
-            // After the split above, targetRow has new length.
+            // 3. Update Existing Spans & Neighbours
+            // We need to iterate over ALL cells to update spans.
+            // Since structure is jagged, we traverse using rowColWidths up to targetRow.
+
+            let traverseIdx = 0;
+            for (let i = 0; i <= targetRow; i++) {
+                const colsInThisRow = (i === targetRow) ? rowColWidths[i].length : rowColWidths[i].length;
+                // Note: rowColWidths[i] is already updated if i > targetRow, but here we loop <= targetRow.
+                // Wait, we updated rowColWidths above, so rowColWidths[targetRow] is the target row.
+                // We should use the OLD structure count? No, we haven't changed targetRow's length yet (column split was earlier).
+
+                for (let j = 0; j < colsInThisRow; j++) {
+                    const flatIdx = traverseIdx + j;
+                    const span = cellSpans[flatIdx] || { rowSpan: 1, colSpan: 1 };
+
+                    // Case A: Cell spans ACROSS the insertion line
+                    // (StartRow < TargetRow) AND (StartRow + RowSpan > TargetRow)
+                    // Logic: i < targetRow AND i + span.rowSpan > targetRow
+                    if (i < targetRow && i + span.rowSpan > targetRow) {
+                        cellSpans[flatIdx] = { ...span, rowSpan: span.rowSpan + rowsToAdd };
+                    }
+
+                    // Case B: Cell is in TargetRow (i === targetRow)
+                    if (i === targetRow) {
+                        if (j === targetColInRow) {
+                            // This is the target. It splits. rowSpan stays 1 (or becomes 1 if it was merged? But usually split resets).
+                            // We don't change it here, the new cells below will start at 1.
+                            cellSpans[flatIdx] = { ...span, rowSpan: 1 }; // Force reset
+                        } else {
+                            // This is a neighbor. It should STRETCH.
+                            // Its new span should cover the inserted rows.
+                            cellSpans[flatIdx] = { ...span, rowSpan: span.rowSpan + rowsToAdd };
+                        }
+                    }
+                }
+                traverseIdx += colsInThisRow;
+            }
+
+            // 4. Insert New Data for the new rows
+            // We need to insert `rowsToAdd * colsInRow` cells at the correct position.
+            // The position is AFTER targetRow.
+
+            // Recalculate end index of target row
             let endOfTargetRowIdx = 0;
             for (let i = 0; i <= targetRow; i++) {
                 endOfTargetRowIdx += rowColWidths[i].length;
             }
 
             const colsInRow = rowColWidths[targetRow].length;
-            const totalNewCells = (r - 1) * colsInRow;
 
-            const dataToInsert = Array(totalNewCells).fill('');
-            const dataUndefined = Array(totalNewCells).fill(undefined);
+            // Build the data to insert
+            const dataToInsert: string[] = [];
+            const colorToInsert: any[] = [];
+            const styleToInsert: any[] = [];
+            const spanToInsert: any[] = [];
+
+            for (let k = 0; k < rowsToAdd; k++) {
+                for (let col = 0; col < colsInRow; col++) {
+                    dataToInsert.push('');
+                    colorToInsert.push(undefined);
+                    styleToInsert.push(undefined);
+
+                    if (col === targetColInRow) {
+                        // This is the split column -> New Independent Cell
+                        spanToInsert.push({ rowSpan: 1, colSpan: 1 });
+                    } else {
+                        // This is a neighbor column -> Slave Cell (hidden)
+                        spanToInsert.push({ rowSpan: 0, colSpan: 0 });
+                    }
+                }
+            }
 
             cellData.splice(endOfTargetRowIdx, 0, ...dataToInsert);
-            cellColors.splice(endOfTargetRowIdx, 0, ...dataUndefined);
-            cellStyles.splice(endOfTargetRowIdx, 0, ...dataUndefined);
-
-            // Normalize heights to sum to 100? Or just let them be?
-            // Usually we might want to re-normalize if they Drift, but let's trust the split.
+            cellColors.splice(endOfTargetRowIdx, 0, ...colorToInsert);
+            cellStyles.splice(endOfTargetRowIdx, 0, ...styleToInsert);
+            cellSpans.splice(endOfTargetRowIdx, 0, ...spanToInsert);
 
             targetEl.tableRowHeights = defaultHeights;
-            targetEl.tableRows = rows + (r - 1);
+            targetEl.tableRows = rows + rowsToAdd;
         }
 
         targetEl.tableRowColWidths = rowColWidths;
         targetEl.tableCellData = cellData;
         targetEl.tableCellColors = cellColors;
         targetEl.tableCellStyles = cellStyles;
-        targetEl.tableCellSpans = undefined; // Clear spans
+        targetEl.tableCellSpans = cellSpans;
 
         const nextElements = drawElements.map(it => it.id === el.id ? targetEl : it);
         update({ drawElements: nextElements });
@@ -1164,14 +1228,14 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             for (let r = 0; r < rows; r++) {
                 const w = rowColWidths[r];
                 if (idx < counter + w.length) {
-                    return { r, c: idx - counter };
+                    return { r, c: idx - counter, flatIdx: idx };
                 }
                 counter += w.length;
             }
             return null;
         };
 
-        const coords = selectedCellIndices.map(getCoords).filter(x => x !== null) as { r: number, c: number }[];
+        const coords = selectedCellIndices.map(getCoords).filter(x => x !== null) as { r: number, c: number, flatIdx: number }[];
         if (!coords.length) return;
 
         // Group by row
@@ -1181,13 +1245,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             rowsMap.get(r)!.push(c);
         });
 
-        // Apply merge PER ROW
+        // 1. Attempt Horizontal Structural Merge
+        let horizontalChange = false;
 
-        // Actually, we must process from Bottom to Top or be careful with indices.
-        // Or simpler: Reconstruct the new data arrays completely.
-
-        // It's safer to process modifications on the structured data then flatten.
-        // Let's build a structured representation of data first.
+        // Build Structure for splice ops
         let dataStructure: any[][] = [];
         let colorStructure: any[][] = [];
         let styleStructure: any[][] = [];
@@ -1202,47 +1263,35 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             counter += cols;
         }
 
-        let changed = false;
-
-        // Iterate rows in the map
         rowsMap.forEach((colIndices, r) => {
-            if (colIndices.length < 2) return; // Need at least 2 cells to merge
-            colIndices.sort((a, b) => a - b);
+            if (colIndices.length < 2) return;
 
+            colIndices.sort((a, b) => a - b);
             // Check adjacency
             for (let i = 0; i < colIndices.length - 1; i++) {
-                if (colIndices[i + 1] !== colIndices[i] + 1) return; // Non-adjacent selection in row, skip
+                if (colIndices[i + 1] !== colIndices[i] + 1) return;
             }
 
             const startC = colIndices[0];
             const count = colIndices.length;
 
-            // Calculate new width
+            // Update width
             const widths = rowColWidths[r];
             let newWidth = 0;
             for (let i = startC; i < startC + count; i++) {
                 newWidth += widths[i];
             }
-
-            // Update widths: splice out merged, insert one big
             widths.splice(startC, count, newWidth);
 
-            // Update Data: keep first, remove others
-            if (dataStructure[r]) {
-                dataStructure[r].splice(startC, count, dataStructure[r][startC]); // Keep one
-            }
-            if (colorStructure[r] && colorStructure[r].length) {
-                colorStructure[r].splice(startC, count, colorStructure[r][startC]);
-            }
-            if (styleStructure[r] && styleStructure[r].length) {
-                styleStructure[r].splice(startC, count, styleStructure[r][startC]);
-            }
+            // Update Data
+            if (dataStructure[r]) dataStructure[r].splice(startC, count, dataStructure[r][startC]);
+            if (colorStructure[r] && colorStructure[r].length) colorStructure[r].splice(startC, count, colorStructure[r][startC]);
+            if (styleStructure[r] && styleStructure[r].length) styleStructure[r].splice(startC, count, styleStructure[r][startC]);
 
-            changed = true;
+            horizontalChange = true;
         });
 
-        if (changed) {
-            // Flatten back
+        if (horizontalChange) {
             const newCellData = dataStructure.flat();
             const newCellColors = colorStructure.length ? colorStructure.flat() : undefined;
             const newCellStyles = styleStructure.length ? styleStructure.flat() : undefined;
@@ -1251,18 +1300,77 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 ...selectedEl,
                 tableRowColWidths: rowColWidths,
                 tableCellData: newCellData,
-                tableCellColors: newCellColors, // Might need to ensure undefineds are handled
+                tableCellColors: newCellColors,
                 tableCellStyles: newCellStyles,
-                tableCellSpans: undefined // Clear legacy spans
+                tableCellSpans: undefined
             };
-
-            // Flatten colors/styles properly if they were partial? 
-            // The slice approach is safe if arrays were full length. ScreenNode logic usually fills them.
 
             const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
             update({ drawElements: nextElements });
             syncUpdate({ drawElements: nextElements });
             setSelectedCellIndices([]);
+            return;
+        }
+
+        // 2. Attempt Vertical Merge (using rowSpan metadata)
+        // Check if selection forms a vertical column(s)
+        const distinctRows = Array.from(new Set(coords.map(c => c.r))).sort((a, b) => a - b);
+
+        if (distinctRows.length > 1) {
+            let spanChange = false;
+            // Ensure spans array exists
+            const nextSpans = selectedEl.tableCellSpans
+                ? [...selectedEl.tableCellSpans]
+                : Array(rows * (selectedEl.tableCols || 1)).fill({ rowSpan: 1, colSpan: 1 });
+
+            // Detect groups strictly (consecutive rows in same col)
+            // Group coords by col first
+            const colGroups = new Map<number, { r: number, flatIdx: number }[]>();
+            coords.forEach(c => {
+                if (!colGroups.has(c.c)) colGroups.set(c.c, []);
+                colGroups.get(c.c)!.push(c);
+            });
+
+            colGroups.forEach((cells) => {
+                cells.sort((a, b) => a.r - b.r);
+                // Find consecutive blocks
+                if (cells.length < 2) return;
+
+                // Simple greedy merge of selected cells in this column
+                // Check if they are contiguous
+                let isContiguous = true;
+                for (let i = 0; i < cells.length - 1; i++) {
+                    if (cells[i + 1].r !== cells[i].r + 1) isContiguous = false;
+                }
+
+                if (isContiguous) {
+                    const master = cells[0];
+                    const totalRowSpan = cells.length;
+
+                    // Set master span
+                    nextSpans[master.flatIdx] = { rowSpan: totalRowSpan, colSpan: 1 };
+
+                    // Set slaves span to 0 (marker for hidden)
+                    for (let i = 1; i < cells.length; i++) {
+                        nextSpans[cells[i].flatIdx] = { rowSpan: 0, colSpan: 0 };
+                    }
+                    spanChange = true;
+                }
+            });
+
+            if (spanChange) {
+                const targetEl = {
+                    ...selectedEl,
+                    tableCellSpans: nextSpans,
+                    // Clear legacy/conflict styles if needed? 
+                    // No, styles might be needed for the master cell.
+                };
+                const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
+                update({ drawElements: nextElements });
+                syncUpdate({ drawElements: nextElements });
+                setSelectedCellIndices([]);
+                return;
+            }
         }
     };
 
@@ -1710,7 +1818,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         <div
                                                                             key={r}
                                                                             className="flex w-full relative"
-                                                                            style={{ height: `${rowHeight}%` }}
+                                                                            style={{
+                                                                                height: `${rowHeight}%`,
+                                                                                // Higher rows must be on top of lower rows so that merged cells (which overflow downwards) 
+                                                                                // are not covered by the background of the rows below them.
+                                                                                zIndex: rows - r
+                                                                            }}
                                                                         >
                                                                             {currentWidths.map((width, c) => {
                                                                                 const cellIndex = cellIdxCounter++;
@@ -1727,25 +1840,42 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 const borderLeft = `${cellStyle.borderLeftWidth ?? el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderLeft || el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
                                                                                 const borderRight = `${cellStyle.borderRightWidth ?? el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${cellStyle.borderRight || el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`;
 
+                                                                                const span = el.tableCellSpans?.[cellIndex];
+                                                                                const rowSpan = span ? span.rowSpan : 1;
+                                                                                // If rowSpan is 0, this is a merged slave cell. We must render it empty to maintain flex layout structure.
+                                                                                const isHiddenCell = rowSpan === 0;
+
+                                                                                const borderTopStyle = (rowSpan > 1) ? '0px solid transparent' : borderTop;
+                                                                                const borderBottomStyle = (rowSpan > 1) ? '0px solid transparent' : borderBottom;
+                                                                                const borderLeftStyle = (rowSpan > 1) ? '0px solid transparent' : borderLeft;
+                                                                                const borderRightStyle = (rowSpan > 1) ? '0px solid transparent' : borderRight;
+
                                                                                 return (
                                                                                     <div
                                                                                         key={cellIndex}
-                                                                                        className={`relative px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center overflow-hidden h-full ${isHeaderRow && !cellColor ? 'font-bold text-[#2c3e7c]' : 'text-gray-700'}`}
+                                                                                        className={`relative px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center h-full ${isHeaderRow && !cellColor ? 'font-bold text-[#2c3e7c]' : 'text-gray-700'}`}
                                                                                         style={{
                                                                                             width: `${width}%`,
-                                                                                            backgroundColor: cellColor || defaultBg,
-                                                                                            borderTop, borderBottom, borderLeft, borderRight,
+                                                                                            backgroundColor: isHiddenCell ? 'transparent' : (cellColor || defaultBg),
+                                                                                            borderTop: borderTopStyle,
+                                                                                            borderBottom: borderBottomStyle,
+                                                                                            borderLeft: borderLeftStyle,
+                                                                                            borderRight: borderRightStyle,
                                                                                             outline: isCellSelected ? '2px solid #3b82f6' : 'none',
                                                                                             outlineOffset: '-1px',
                                                                                             cursor: editingTableId === el.id ? 'crosshair' : 'default',
                                                                                             textAlign: cellStyle.textAlign || el.textAlign || 'center',
                                                                                             verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
+                                                                                            // For hidden cells, we hide borders too usually, but we need structure. 
+                                                                                            // The master cell will overlay on top.
+                                                                                            visibility: isHiddenCell ? 'hidden' : 'visible',
                                                                                         }}
                                                                                         onMouseDown={(e) => {
                                                                                             if (isLocked) return;
                                                                                             if (editingTableId !== el.id) return;
                                                                                             e.stopPropagation();
                                                                                             if (editingCellIndex !== null) setEditingCellIndex(null);
+
 
                                                                                             // Start selection
                                                                                             isDraggingCellSelectionRef.current = true;
@@ -1807,7 +1937,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                         {isCellEditing ? (
                                                                                             <textarea
                                                                                                 autoFocus
-                                                                                                className="w-full h-full bg-white border-none outline-none resize-none p-1 text-[10px]"
+                                                                                                className="w-full h-full bg-white border-none outline-none resize-none p-1 text-[10px] absolute inset-0 z-[20]"
                                                                                                 value={cellData}
                                                                                                 onChange={(e) => {
                                                                                                     const newData = [...(el.tableCellData || [])];
@@ -1821,7 +1951,37 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                 }}
                                                                                             />
                                                                                         ) : (
-                                                                                            <div className="w-full h-full flex items-center justify-center whitespace-pre-wrap">{cellData}</div>
+                                                                                            // Content Container
+                                                                                            // If rowSpan > 1, this needs to be absolute and spanning height.
+                                                                                            // Normal: relative/static, w-full h-full
+                                                                                            (() => {
+                                                                                                let style: React.CSSProperties = { width: '100%', height: '100%', display: 'flex', alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center', justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center' };
+
+                                                                                                if (rowSpan > 1) {
+                                                                                                    // Calculate total height percentage relative to THIS row height
+                                                                                                    // height = (sum of next N rows) / (this row height) * 100
+                                                                                                    let totalH = 0;
+                                                                                                    for (let i = 0; i < rowSpan; i++) {
+                                                                                                        if (r + i < rows) totalH += (rowHeights[r + i] || 0);
+                                                                                                    }
+                                                                                                    const myRowH = rowHeights[r] || 1;
+                                                                                                    const heightPct = (totalH / myRowH) * 100;
+
+                                                                                                    style = {
+                                                                                                        ...style,
+                                                                                                        position: 'absolute',
+                                                                                                        top: 0,
+                                                                                                        left: 0,
+                                                                                                        height: `${heightPct}%`,
+                                                                                                        zIndex: 10,
+                                                                                                        backgroundColor: cellColor || defaultBg,
+                                                                                                        // Re-apply borders to outer overlay
+                                                                                                        borderTop, borderBottom, borderLeft, borderRight,
+                                                                                                    };
+                                                                                                }
+
+                                                                                                return <div className="whitespace-pre-wrap" style={style}>{cellData}</div>
+                                                                                            })()
                                                                                         )}
 
                                                                                         {/* Column Resize Handle for this cell */}
@@ -1884,17 +2044,52 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
 
                                                         {/* Row Resize Handles */}
+                                                        {/* Row Resize Handles */}
                                                         {isSelected && !isLocked && selectedElementIds.length === 1 && (() => {
                                                             const rows = el.tableRows || 3;
                                                             const heights = el.tableRowHeights || Array(rows).fill(100 / rows);
+                                                            const rowColWidths = el.tableRowColWidths;
+
                                                             let accPercent = 0;
+
                                                             return Array.from({ length: rows - 1 }).map((_, idx) => {
-                                                                accPercent += heights[idx];
-                                                                return (
+                                                                const currentRowHeight = heights[idx];
+                                                                accPercent += currentRowHeight;
+
+                                                                const segments: { left: number, width: number }[] = [];
+                                                                const cols = el.tableCols || 1;
+                                                                const currentWidths = rowColWidths ? rowColWidths[idx] : (el.tableColWidths || Array(cols).fill(100 / cols));
+
+                                                                let rowStartIdx = 0;
+                                                                if (rowColWidths) {
+                                                                    for (let r = 0; r < idx; r++) rowStartIdx += rowColWidths[r].length;
+                                                                } else {
+                                                                    rowStartIdx = idx * (el.tableCols || 3);
+                                                                }
+
+                                                                let currentLeft = 0;
+                                                                currentWidths.forEach((w, cIdx) => {
+                                                                    const cellIdx = rowStartIdx + cIdx;
+                                                                    const span = el.tableCellSpans?.[cellIdx];
+
+                                                                    // Only show handle if the cell ends at this row (rowSpan is 1 or undefined)
+                                                                    if ((span === undefined) || (span.rowSpan === 1)) {
+                                                                        segments.push({ left: currentLeft, width: w });
+                                                                    }
+                                                                    currentLeft += w;
+                                                                });
+
+                                                                return segments.map((seg, segIdx) => (
                                                                     <div
-                                                                        key={`row-resize-${idx}`}
-                                                                        className="absolute left-0 right-0 cursor-row-resize z-[120] group/rowresize"
-                                                                        style={{ top: `${accPercent}%`, height: 8, marginTop: -4 }}
+                                                                        key={`row-resize-${idx}-${segIdx}`}
+                                                                        className="absolute cursor-row-resize z-[120] group/rowresize"
+                                                                        style={{
+                                                                            top: `${accPercent}%`,
+                                                                            height: 8,
+                                                                            marginTop: -4,
+                                                                            left: `${seg.left}%`,
+                                                                            width: `${seg.width}%`
+                                                                        }}
                                                                         onMouseDown={(e) => {
                                                                             e.stopPropagation();
                                                                             e.preventDefault();
@@ -1921,10 +2116,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 updateElement(el.id, { tableRowHeights: newHeights });
                                                                             };
                                                                             const handleUp = () => {
-                                                                                tableRowResizeRef.current = null;
                                                                                 window.removeEventListener('mousemove', handleMove, true);
                                                                                 window.removeEventListener('mouseup', handleUp, true);
                                                                                 syncUpdate({ drawElements });
+                                                                                tableRowResizeRef.current = null;
                                                                             };
                                                                             window.addEventListener('mousemove', handleMove, true);
                                                                             window.addEventListener('mouseup', handleUp, true);
@@ -1932,11 +2127,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     >
                                                                         <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-[2px] bg-blue-400 opacity-0 group-hover/rowresize:opacity-100 transition-opacity" />
                                                                     </div>
-                                                                );
+                                                                ));
                                                             });
                                                         })()}
                                                     </div>
-                                                )}
+                                                )
+                                                }
                                                 {isSelected && !isLocked && selectedElementIds.length === 1 && (
                                                     <button
                                                         onClick={(e) => {
