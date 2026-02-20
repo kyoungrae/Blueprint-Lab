@@ -107,6 +107,7 @@ export interface DrawElement {
     tableBorderLeftWidth?: number;
     tableBorderRight?: string;
     tableBorderRightWidth?: number;
+    tableCellSpans?: { rowSpan: number, colSpan: number }[]; // per-cell span info (flat array)
 }
 
 /** 화면 간의 흐름/연결 (Flow/Connection) */
