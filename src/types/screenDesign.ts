@@ -119,6 +119,7 @@ export interface DrawElement {
     tableBorderLeftWidth?: number;
     tableBorderRight?: string;
     tableBorderRightWidth?: number;
+    tableBorderRadius?: number;
     tableCellSpans?: { rowSpan: number, colSpan: number }[]; // [LEGACY] per-cell span info
 }
 

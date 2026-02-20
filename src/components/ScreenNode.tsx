@@ -1979,6 +1979,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     const heights = el.tableRowHeights || Array(rows).fill(100 / rows);
                                                                     return heights.map(h => `${h}%`).join(' ');
                                                                 })(),
+                                                                borderRadius: el.tableBorderRadius ? `${el.tableBorderRadius}px` : undefined,
+                                                                borderTop: `${el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                                                                borderBottom: `${el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                                                                borderLeft: `${el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                                                                borderRight: `${el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
                                                             }}
                                                         >
                                                             {(() => {
@@ -2033,6 +2038,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 overflow: 'hidden',
                                                                                 minWidth: 0,
                                                                                 minHeight: 0,
+                                                                                borderRadius: cellStyle.borderRadius !== undefined ? `${cellStyle.borderRadius}px` : undefined,
                                                                             }}
                                                                             onMouseDown={(e) => {
                                                                                 if (isLocked) return;
@@ -2948,7 +2954,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             {/* Style Panel */}
                             {selectedElementIds.length > 0 && showStylePanel && !isToolbarCollapsed && (
                                 <div
-                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in duration-200"
+                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in"
                                     style={{
                                         left: stylePanelPos.x,
                                         top: stylePanelPos.y,
@@ -3462,6 +3468,55 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         );
                                                     })}
                                                 </div>
+
+                                                {/* Border Radius Settings */}
+                                                <div className="flex flex-col gap-2 pt-3 border-t border-gray-100">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-1.5 text-gray-700">
+                                                            <Circle size={10} className="text-gray-400" />
+                                                            <span className="text-[10px] font-medium pl-0.5">테두리 곡률</span>
+                                                        </div>
+                                                        <span className="text-[10px] text-gray-400 font-mono">
+                                                            {(() => {
+                                                                const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                                const currentRadius = isAnyCellSelected
+                                                                    ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderRadius ?? selectedEl.tableBorderRadius ?? 0)
+                                                                    : (selectedEl.tableBorderRadius ?? 0);
+                                                                return `${currentRadius}px`;
+                                                            })()}
+                                                        </span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max="20"
+                                                        step="1"
+                                                        value={(() => {
+                                                            const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                            return isAnyCellSelected
+                                                                ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderRadius ?? selectedEl.tableBorderRadius ?? 0)
+                                                                : (selectedEl.tableBorderRadius ?? 0);
+                                                        })()}
+                                                        onChange={(e) => {
+                                                            const val = parseInt(e.target.value);
+                                                            const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+
+                                                            if (isAnyCellSelected) {
+                                                                const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                selectedCellIndices.forEach(idx => {
+                                                                    newStyles[idx] = { ...(newStyles[idx] || {}), borderRadius: val };
+                                                                });
+                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                            } else {
+                                                                const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderRadius: val } : it);
+                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                            }
+                                                        }}
+                                                        onMouseDown={e => e.stopPropagation()}
+                                                        className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                                    />
+                                                </div>
                                             </div>
 
                                             {/* Alignment Settings */}
@@ -3629,7 +3684,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             {/* Layer Panel */}
                             {selectedElementIds.length > 0 && showLayerPanel && !isToolbarCollapsed && (
                                 <div
-                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in duration-200"
+                                    className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in"
                                     style={{
                                         left: layerPanelPos.x,
                                         top: layerPanelPos.y,
