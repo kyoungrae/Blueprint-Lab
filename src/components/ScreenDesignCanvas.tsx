@@ -247,7 +247,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Backspace' || e.key === 'Delete') {
                 const target = e.target as HTMLElement;
+                // 텍스트 입력 중에는 화면/연결 삭제 묻지 않음
                 if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+                if (target.isContentEditable || target.closest?.('[contenteditable="true"]')) return;
 
                 const selectedNodes = getNodes().filter(n => n.selected && (n.type === 'screen' || n.type === 'spec'));
                 const selectedEdges = edges.filter(e => e.selected);

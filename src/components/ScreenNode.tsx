@@ -120,7 +120,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
     const [showTablePanel, setShowTablePanel] = useState(false);
-    const [tablePanelPos, setTablePanelPos] = useState<{ x: number | string, y: number }>({ x: '50%', y: 64 });
+    const [tablePanelPos, setTablePanelPos] = useState<{ x: number | string, y: number }>({ x: 1020, y: 40 });
     const isDraggingTablePanelRef = useRef(false);
     const tablePanelDragOffsetRef = useRef({ x: 0, y: 0 });
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
@@ -193,10 +193,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         };
 
         const handleWindowMouseMove = (moveEvent: MouseEvent) => {
-            if (!elementResizeStartRef.current) return;
+            if (!elementResizeStartRef.current || !canvasRef.current) return;
             const { x, y, elX, elY, w, h, dir, id: targetId } = elementResizeStartRef.current;
-            const dx = moveEvent.clientX - x;
-            const dy = moveEvent.clientY - y;
+            const cRect = canvasRef.current.getBoundingClientRect();
+            const sX = canvasRef.current.clientWidth / cRect.width;
+            const sY = canvasRef.current.clientHeight / cRect.height;
+            const dx = (moveEvent.clientX - x) * sX;
+            const dy = (moveEvent.clientY - y) * sY;
 
             let nextX = elX;
             let nextY = elY;
@@ -249,8 +252,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const handleCanvasMouseDown = (e: React.MouseEvent) => {
         if (isLocked || !canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect();
-        const x = Math.round(e.clientX - rect.left);
-        const y = Math.round(e.clientY - rect.top);
+        const scaleX = canvasRef.current.clientWidth / rect.width;
+        const scaleY = canvasRef.current.clientHeight / rect.height;
+        const x = Math.round((e.clientX - rect.left) * scaleX);
+        const y = Math.round((e.clientY - rect.top) * scaleY);
 
         if (activeTool === 'select') {
             // Start marquee drag-selection on background click
@@ -302,7 +307,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         e.stopPropagation();
 
         const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) return;
+        if (!rect || !canvasRef.current) return;
+        const scaleX = canvasRef.current.clientWidth / rect.width;
+        const scaleY = canvasRef.current.clientHeight / rect.height;
 
         let nextSelected = [...selectedElementIds];
         if (e.shiftKey) {
@@ -339,8 +346,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const el = drawElements.find(item => item.id === sid);
             if (el) {
                 offsets[sid] = {
-                    x: (e.clientX - rect.left) - el.x,
-                    y: (e.clientY - rect.top) - el.y
+                    x: (e.clientX - rect.left) * scaleX - el.x,
+                    y: (e.clientY - rect.top) * scaleY - el.y
                 };
             }
         });
@@ -420,8 +427,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const handleCanvasMouseMove = (e: React.MouseEvent) => {
         if (!canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect();
-        const x = Math.round(e.clientX - rect.left);
-        const y = Math.round(e.clientY - rect.top);
+        const scaleX = canvasRef.current.clientWidth / rect.width;
+        const scaleY = canvasRef.current.clientHeight / rect.height;
+        const x = Math.round((e.clientX - rect.left) * scaleX);
+        const y = Math.round((e.clientY - rect.top) * scaleY);
 
         // Marquee drag-selection logic
         if (isDragSelecting) {
@@ -647,25 +656,34 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         syncUpdate({ drawElements: nextElements });
     };
 
+    // 삭제 계층: 1) 화면 엔티티(캔버스에서 처리) 2) 그리기 객체 3) 텍스트 입력 영역(문자만 삭제)
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (selectedElementIds.length > 0 && (e.key === 'Backspace' || e.key === 'Delete')) {
-                // Prevent deletion if focus is on input/textarea
-                if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+            if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+            if (selectedElementIds.length === 0) return;
 
-                // Prevent event from bubbling up to React Flow (which would delete the whole node)
-                e.preventDefault();
-                e.stopPropagation();
+            const active = document.activeElement as HTMLElement | null;
 
-                if (window.confirm(`선택한 ${selectedElementIds.length}개의 그리기 개체를 삭제하시겠습니까?`)) {
-                    deleteElements(selectedElementIds);
-                }
+            // ── 3단계: 텍스트 입력 영역 ──
+            // 포커스가 텍스트 입력 중이면 가로채지 않음 → Backspace는 글자만 삭제
+            if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA') return;
+            if (active?.isContentEditable) return;
+            if (editingTextId != null) return;
+            // 테이블 셀 편집 중일 때도 텍스트 삭제로만 동작
+            if (editingTableId != null && editingCellIndex != null) return;
+
+            // ── 2단계: 그리기 객체 ──
+            // 객체만 선택된 상태(텍스트 편집 아님)에서만 객체 삭제 확인 후 삭제
+            e.preventDefault();
+            e.stopPropagation();
+            if (window.confirm(`선택한 ${selectedElementIds.length}개의 그리기 개체를 삭제하시겠습니까?`)) {
+                deleteElements(selectedElementIds);
             }
+            // 1단계(화면 엔티티 삭제)는 ScreenDesignCanvas에서 화면 노드 선택 시 처리
         };
-        // Use capturing phase to catch the event before React Flow
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [selectedElementIds, drawElements]);
+    }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex]);
 
 
     // Resizing Logic for Right Panels
@@ -1818,7 +1836,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 {el.type === 'rect' && (
                                                     <div className={`w-full h-full shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
                                                         } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
-                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: 'solid', borderRadius: el.borderRadius ?? 0 }}>
+                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius ?? 0 }}>
                                                         {(el.text || editingTextId === el.id) && (
                                                             <DrawTextComponent
                                                                 element={el}
@@ -1835,7 +1853,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 {el.type === 'circle' && (
                                                     <div className={`w-full h-full shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
                                                         } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
-                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: 'solid', borderRadius: el.borderRadius !== undefined ? el.borderRadius : '50%' }}>
+                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius !== undefined ? el.borderRadius : '50%' }}>
                                                         {(el.text || editingTextId === el.id) && (
                                                             <DrawTextComponent
                                                                 element={el}
@@ -1899,10 +1917,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     return heights.map(h => `${h}%`).join(' ');
                                                                 })(),
                                                                 borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
-                                                                borderTop: `${el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
-                                                                borderBottom: `${el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
-                                                                borderLeft: `${el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
-                                                                borderRight: `${el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px solid ${el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                                                                borderTop: `${el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderTopStyle ?? 'solid'} ${el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                                                                borderBottom: `${el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderBottomStyle ?? 'solid'} ${el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                                                                borderLeft: `${el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderLeftStyle ?? 'solid'} ${el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                                                                borderRight: `${el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderRightStyle ?? 'solid'} ${el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
                                                             }}
                                                         >
                                                             {(() => {
@@ -1938,30 +1956,39 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                                                                     const globalBorderColor = hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6);
                                                                     const globalBorderWidth = el.strokeWidth ?? 1;
+                                                                    const innerHColor = el.tableBorderInsideH || globalBorderColor;
+                                                                    const innerVColor = el.tableBorderInsideV || globalBorderColor;
+                                                                    const innerHWidth = el.tableBorderInsideHWidth ?? globalBorderWidth;
+                                                                    const innerVWidth = el.tableBorderInsideVWidth ?? globalBorderWidth;
+                                                                    const innerHStyle = el.tableBorderInsideHStyle ?? 'solid';
+                                                                    const innerVStyle = el.tableBorderInsideVStyle ?? 'solid';
 
-                                                                    // Determine borders based on position and overrides
+                                                                    // 셀 테두리: 바깥쪽은 컨테이너가 그림. 셀은 Right/Bottom만 그려서 안쪽 가로·세로선 형성
                                                                     const getBorder = (side: 'Top' | 'Bottom' | 'Left' | 'Right', isEdge: boolean) => {
-                                                                        const styleKey = `border${side}` as keyof typeof cellStyle;
+                                                                        const colorKey = `border${side}` as keyof typeof cellStyle;
                                                                         const widthKey = `border${side}Width` as keyof typeof cellStyle;
+                                                                        const styleKey = `border${side}Style` as keyof typeof cellStyle;
 
-                                                                        // 1. Cell-specific override?
-                                                                        if (cellStyle[styleKey] !== undefined || cellStyle[widthKey] !== undefined) {
-                                                                            return `${cellStyle[widthKey] ?? el[`tableBorder${side}Width`] ?? globalBorderWidth}px solid ${cellStyle[styleKey] || el[`tableBorder${side}`] || globalBorderColor}`;
+                                                                        if (cellStyle[colorKey] !== undefined || cellStyle[widthKey] !== undefined || cellStyle[styleKey] !== undefined) {
+                                                                            const w = cellStyle[widthKey] ?? el[`tableBorder${side}Width`] ?? globalBorderWidth;
+                                                                            const s = cellStyle[styleKey] ?? el[`tableBorder${side}Style`] ?? 'solid';
+                                                                            const c = cellStyle[colorKey] || el[`tableBorder${side}`] || globalBorderColor;
+                                                                            return `${w}px ${s} ${c}`;
                                                                         }
-
-                                                                        // 2. Default Selective Logic
-                                                                        if (side === 'Top' || side === 'Left') return 'none'; // Handled by container or prev cell
-                                                                        if (side === 'Right' && isEdge) return 'none'; // Handled by container
-                                                                        if (side === 'Bottom' && isEdge) return 'none'; // Handled by container
-
-                                                                        // 3. Inner border
-                                                                        return `${globalBorderWidth}px solid ${globalBorderColor}`;
+                                                                        if (side === 'Top' || side === 'Left') return 'none';
+                                                                        if (side === 'Right' && isEdge) return 'none';
+                                                                        if (side === 'Bottom' && isEdge) return 'none';
+                                                                        if (side === 'Bottom') return `${innerHWidth}px ${innerHStyle} ${innerHColor}`;
+                                                                        if (side === 'Right') return `${innerVWidth}px ${innerVStyle} ${innerVColor}`;
+                                                                        return 'none';
                                                                     };
 
                                                                     const borderTop = getBorder('Top', r === 0);
                                                                     const borderBottom = getBorder('Bottom', isLastRow);
                                                                     const borderLeft = getBorder('Left', c === 0);
                                                                     const borderRight = getBorder('Right', isLastCol);
+
+                                                                    const cellBg = hexToRgba(cellColor || el.fill || (isHeaderRow ? '#f1f5f9' : '#ffffff'), el.fillOpacity ?? 1);
 
                                                                     cellElements.push(
                                                                         <div
@@ -1970,7 +1997,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             style={{
                                                                                 gridColumn: cellColSpan > 1 ? `span ${cellColSpan}` : undefined,
                                                                                 gridRow: cellRowSpan > 1 ? `span ${cellRowSpan}` : undefined,
-                                                                                backgroundColor: hexToRgba(cellColor || el.fill || (isHeaderRow ? '#f1f5f9' : '#ffffff'), el.fillOpacity ?? 1),
+                                                                                backgroundColor: cellBg,
                                                                                 borderTop,
                                                                                 borderBottom,
                                                                                 borderLeft,
@@ -1983,7 +2010,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 overflow: 'hidden',
                                                                                 minWidth: 0,
                                                                                 minHeight: 0,
-                                                                                borderRadius: cellStyle.borderRadius !== undefined ? `${cellStyle.borderRadius}px` : undefined,
                                                                             }}
                                                                             onMouseDown={(e) => {
                                                                                 if (isLocked) return;
@@ -2665,6 +2691,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     {(['Top', 'Bottom', 'Left', 'Right'] as const).map(direction => {
                                                         const colorKey = `tableBorder${direction}` as keyof DrawElement;
                                                         const widthKey = `tableBorder${direction}Width` as keyof DrawElement;
+                                                        const styleKey = `tableBorder${direction}Style` as keyof DrawElement;
                                                         const styleColorKey = `border${direction}`;
                                                         const styleWidthKey = `border${direction}Width`;
                                                         const label = direction === 'Top' ? '위' : direction === 'Bottom' ? '아래' : direction === 'Left' ? '왼쪽' : '오른쪽';
@@ -2679,6 +2706,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         const currentWidth = isAnyCellSelected
                                                             ? (firstCellOverride[styleWidthKey] !== undefined ? firstCellOverride[styleWidthKey] : (selectedEl[widthKey] ?? selectedEl.strokeWidth ?? 1))
                                                             : (selectedEl[widthKey] !== undefined ? (selectedEl[widthKey] as number) : (selectedEl.strokeWidth ?? 1));
+
+                                                        const borderStyles = ['solid', 'dashed', 'dotted', 'double', 'none'] as const;
+                                                        const currentStyle = (selectedEl[styleKey] as typeof borderStyles[number]) ?? 'solid';
 
                                                         return (
                                                             <div key={direction} className="flex flex-col gap-1.5">
@@ -2733,44 +2763,146 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         <span className="text-[9px] text-gray-400">px</span>
                                                                     </div>
                                                                 </div>
+                                                                {!isAnyCellSelected && (
+                                                                    <div className="flex items-center gap-1 flex-wrap">
+                                                                        {borderStyles.map((value) => {
+                                                                            const isSelected = currentStyle === value;
+                                                                            return (
+                                                                                <button
+                                                                                    key={value}
+                                                                                    type="button"
+                                                                                    title={value === 'solid' ? '실선' : value === 'dashed' ? '대시' : value === 'dotted' ? '점선' : value === 'double' ? '이중선' : '없음'}
+                                                                                    onMouseDown={e => e.stopPropagation()}
+                                                                                    onClick={() => {
+                                                                                        const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, [styleKey]: value } : it);
+                                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                    }}
+                                                                                    className={`flex items-center justify-center w-7 h-7 rounded border transition-all shrink-0 ${isSelected ? 'border-[#2c3e7c] bg-blue-50 ring-1 ring-[#2c3e7c]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                                                                >
+                                                                                    {value === 'none' ? (
+                                                                                        <div className="w-3.5 h-3.5 rounded bg-gray-200" />
+                                                                                    ) : (
+                                                                                        <div
+                                                                                            className="w-3.5 h-3.5 rounded bg-white"
+                                                                                            style={{ borderWidth: 1.5, borderStyle: value, borderColor: isSelected ? '#2c3e7c' : '#94a3b8' }}
+                                                                                        />
+                                                                                    )}
+                                                                                </button>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         );
                                                     })}
+                                                    {!(selectedCellIndices.length > 0 && editingTableId === selectedEl.id) && (<>
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <span className="text-[10px] text-gray-500 font-medium pl-0.5">안쪽 가로선</span>
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                                                    <input
+                                                                        type="color"
+                                                                        value={selectedEl.tableBorderInsideH || selectedEl.stroke || '#cbd5e1'}
+                                                                        onChange={(e) => { const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideH: e.target.value } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                                    />
+                                                                    <div className="w-full h-full" style={{ backgroundColor: selectedEl.tableBorderInsideH || selectedEl.stroke || '#cbd5e1' }} />
+                                                                </div>
+                                                                <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max="10"
+                                                                        value={selectedEl.tableBorderInsideHWidth ?? selectedEl.strokeWidth ?? 1}
+                                                                        onChange={(e) => { const val = parseInt(e.target.value) || 0; const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideHWidth: val } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                                    />
+                                                                    <span className="text-[9px] text-gray-400">px</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 flex-wrap">
+                                                                {(['solid', 'dashed', 'dotted', 'double', 'none'] as const).map((value) => {
+                                                                    const isSelected = (selectedEl.tableBorderInsideHStyle ?? 'solid') === value;
+                                                                    return (
+                                                                        <button
+                                                                            key={value}
+                                                                            type="button"
+                                                                            title={value === 'solid' ? '실선' : value === 'dashed' ? '대시' : value === 'dotted' ? '점선' : value === 'double' ? '이중선' : '없음'}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            onClick={() => { const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideHStyle: value } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                            className={`flex items-center justify-center w-7 h-7 rounded border transition-all shrink-0 ${isSelected ? 'border-[#2c3e7c] bg-blue-50 ring-1 ring-[#2c3e7c]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                                                        >
+                                                                            {value === 'none' ? (
+                                                                                <div className="w-3.5 h-3.5 rounded bg-gray-200" />
+                                                                            ) : (
+                                                                                <div className="w-3.5 h-3.5 rounded bg-white" style={{ borderWidth: 1.5, borderStyle: value, borderColor: isSelected ? '#2c3e7c' : '#94a3b8' }} />
+                                                                            )}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <span className="text-[10px] text-gray-500 font-medium pl-0.5">안쪽 세로선</span>
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                                                    <input
+                                                                        type="color"
+                                                                        value={selectedEl.tableBorderInsideV || selectedEl.stroke || '#cbd5e1'}
+                                                                        onChange={(e) => { const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideV: e.target.value } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                                    />
+                                                                    <div className="w-full h-full" style={{ backgroundColor: selectedEl.tableBorderInsideV || selectedEl.stroke || '#cbd5e1' }} />
+                                                                </div>
+                                                                <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max="10"
+                                                                        value={selectedEl.tableBorderInsideVWidth ?? selectedEl.strokeWidth ?? 1}
+                                                                        onChange={(e) => { const val = parseInt(e.target.value) || 0; const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideVWidth: val } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                                    />
+                                                                    <span className="text-[9px] text-gray-400">px</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 flex-wrap">
+                                                                {(['solid', 'dashed', 'dotted', 'double', 'none'] as const).map((value) => {
+                                                                    const isSelected = (selectedEl.tableBorderInsideVStyle ?? 'solid') === value;
+                                                                    return (
+                                                                        <button
+                                                                            key={value}
+                                                                            type="button"
+                                                                            title={value === 'solid' ? '실선' : value === 'dashed' ? '대시' : value === 'dotted' ? '점선' : value === 'double' ? '이중선' : '없음'}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            onClick={() => { const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideVStyle: value } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                            className={`flex items-center justify-center w-7 h-7 rounded border transition-all shrink-0 ${isSelected ? 'border-[#2c3e7c] bg-blue-50 ring-1 ring-[#2c3e7c]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                                                        >
+                                                                            {value === 'none' ? (
+                                                                                <div className="w-3.5 h-3.5 rounded bg-gray-200" />
+                                                                            ) : (
+                                                                                <div className="w-3.5 h-3.5 rounded bg-white" style={{ borderWidth: 1.5, borderStyle: value, borderColor: isSelected ? '#2c3e7c' : '#94a3b8' }} />
+                                                                            )}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    </>)}
                                                 </div>
 
                                                 {/* Border Radius Settings */}
-                                                <div className="flex flex-col gap-2 pt-3 border-t border-gray-100">
-                                                    <div className="flex items-center gap-1.5 text-gray-700">
-                                                        <Circle size={10} className="text-gray-400" />
-                                                        <span className="text-[10px] font-medium pl-0.5">테두리 곡률</span>
-                                                    </div>
-
-                                                    {selectedCellIndices.length > 0 && editingTableId === selectedEl.id ? (
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between text-[10px] text-gray-400 font-mono">
-                                                                <span>All Corners</span>
-                                                                <span>{selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderRadius ?? 0}px</span>
-                                                            </div>
-                                                            <input
-                                                                type="range"
-                                                                min="0"
-                                                                max="20"
-                                                                step="1"
-                                                                value={selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderRadius ?? selectedEl.tableBorderRadius ?? 0}
-                                                                onChange={(e) => {
-                                                                    const val = parseInt(e.target.value);
-                                                                    const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
-                                                                    selectedCellIndices.forEach(idx => {
-                                                                        newStyles[idx] = { ...(newStyles[idx] || {}), borderRadius: val };
-                                                                    });
-                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
-                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
-                                                                }}
-                                                                onMouseDown={e => e.stopPropagation()}
-                                                                className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                                                            />
+                                                {!(selectedCellIndices.length > 0 && editingTableId === selectedEl.id) && (
+                                                    <div className="flex flex-col gap-2 pt-3 border-t border-gray-100">
+                                                        <div className="flex items-center gap-1.5 text-gray-700">
+                                                            <Circle size={10} className="text-gray-400" />
+                                                            <span className="text-[10px] font-medium pl-0.5">테두리 곡률</span>
                                                         </div>
-                                                    ) : (
+
                                                         <div className="flex flex-col gap-2">
                                                             <div className="flex items-center gap-2 bg-gray-50 rounded px-2 py-1.5 border border-gray-100">
                                                                 <div className="w-2.5 h-2.5 border-2 border-gray-400 rounded-md" />
@@ -2825,8 +2957,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 ))}
                                                             </div>
                                                         </div>
-                                                    )}
-                                                </div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Alignment Settings */}

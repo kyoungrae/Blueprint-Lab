@@ -192,6 +192,55 @@ const StylePanel: React.FC<StylePanelProps> = ({
                 </div>
             </div>
 
+            {/* Stroke Style (Border style) - 그림으로 표시 */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                <span className="text-[11px] text-gray-600 font-medium">테두리 스타일</span>
+                <div className="flex flex-wrap gap-2">
+                    {([
+                        { value: 'solid' as const },
+                        { value: 'dashed' as const },
+                        { value: 'dotted' as const },
+                        { value: 'double' as const },
+                        { value: 'none' as const },
+                    ]).map(({ value }) => {
+                        const current = drawElements.find(el => selectedElementIds.includes(el.id))?.strokeStyle ?? 'solid';
+                        const isSelected = current === value;
+                        return (
+                            <button
+                                key={value}
+                                type="button"
+                                title={value === 'solid' ? '실선' : value === 'dashed' ? '대시' : value === 'dotted' ? '점선' : value === 'double' ? '이중선' : '없음'}
+                                onClick={() => {
+                                    const nextElements = drawElements.map(el =>
+                                        selectedElementIds.includes(el.id) ? { ...el, strokeStyle: value } : el
+                                    );
+                                    update({ drawElements: nextElements });
+                                    syncUpdate({ drawElements: nextElements });
+                                }}
+                                className={`flex items-center justify-center w-9 h-9 rounded-lg border-2 transition-all shrink-0 ${
+                                    isSelected
+                                        ? 'border-[#2c3e7c] bg-blue-50 ring-2 ring-[#2c3e7c] ring-offset-1'
+                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                                }`}
+                            >
+                                {value === 'none' ? (
+                                    <div className="w-5 h-5 rounded bg-gray-100" title="테두리 없음" />
+                                ) : (
+                                    <div
+                                        className="w-5 h-5 rounded bg-white"
+                                        style={{
+                                            borderWidth: 2,
+                                            borderStyle: value,
+                                            borderColor: isSelected ? '#2c3e7c' : '#64748b',
+                                        }}
+                                    />
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
             {/* Stroke Width */}
             <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
                 <div className="flex justify-between items-center">

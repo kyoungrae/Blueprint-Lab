@@ -89,6 +89,7 @@ export interface DrawElement {
     fill?: string;
     stroke?: string;
     strokeWidth?: number;
+    strokeStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
     text?: string;
     fontSize?: number;
     fontWeight?: string;
@@ -114,12 +115,24 @@ export interface DrawElement {
     // Global/Default border settings for table
     tableBorderTop?: string;
     tableBorderTopWidth?: number;
+    tableBorderTopStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
     tableBorderBottom?: string;
     tableBorderBottomWidth?: number;
+    tableBorderBottomStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
     tableBorderLeft?: string;
     tableBorderLeftWidth?: number;
+    tableBorderLeftStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
     tableBorderRight?: string;
     tableBorderRightWidth?: number;
+    tableBorderRightStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
+    /** 안쪽 가로선(행 사이) - 전체 표 선택 시 일괄 설정 */
+    tableBorderInsideH?: string;
+    tableBorderInsideHWidth?: number;
+    tableBorderInsideHStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
+    /** 안쪽 세로선(열 사이) - 전체 표 선택 시 일괄 설정 */
+    tableBorderInsideV?: string;
+    tableBorderInsideVWidth?: number;
+    tableBorderInsideVStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
     tableBorderRadius?: number;
     tableBorderRadiusTopLeft?: number;
     tableBorderRadiusTopRight?: number;
