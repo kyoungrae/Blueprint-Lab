@@ -99,6 +99,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table'>('select');
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
     const canvasRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawStartPos, setDrawStartPos] = useState({ x: 0, y: 0 });
     const [tempElement, setTempElement] = useState<DrawElement | null>(null);
@@ -125,6 +126,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const tablePanelDragOffsetRef = useRef({ x: 0, y: 0 });
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
     const dragStartCellIndexRef = useRef<number>(-1); // cell index where drag started
+    const clipboardRef = useRef<DrawElement[]>([]); // clipboard for copy-paste
+    const mouseDownInsideRef = useRef(false); // track if mousedown happened inside this node
 
     // Split Dialog State
     const [showSplitDialog, setShowSplitDialog] = useState(false);
@@ -160,6 +163,35 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         setLayerPanelPos({ x: '50%', y: 240 });
         setIsToolbarCollapsed(false);
     }, [isLocked]);
+
+    // Clear selection when clicking outside the node (on the outer ReactFlow canvas)
+    useEffect(() => {
+        const clearSelection = () => {
+            setSelectedElementIds([]);
+            setEditingTableId(null);
+            setEditingTextId(null);
+            setSelectedCellIndices([]);
+            setEditingCellIndex(null);
+        };
+
+        // When mousedown fires on document and mouseDownInsideRef is false,
+        // it means the click originated outside this node → clear selection.
+        const handleClickOutside = () => {
+            if (mouseDownInsideRef.current) {
+                mouseDownInsideRef.current = false;
+                return;
+            }
+            clearSelection();
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        window.addEventListener('clear-screen-selection', clearSelection);
+        
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            window.removeEventListener('clear-screen-selection', clearSelection);
+        };
+    }, []);
 
 
 
@@ -659,18 +691,48 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // 삭제 계층: 1) 화면 엔티티(캔버스에서 처리) 2) 그리기 객체 3) 텍스트 입력 영역(문자만 삭제)
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            const active = document.activeElement as HTMLElement | null;
+            const isInput = active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || active?.isContentEditable || editingTextId != null || (editingTableId != null && editingCellIndex != null);
+
+            // Ctrl+C (Copy)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                if (isInput || selectedElementIds.length === 0) return;
+                e.preventDefault();
+                const toCopy = drawElements.filter(el => selectedElementIds.includes(el.id));
+                clipboardRef.current = JSON.parse(JSON.stringify(toCopy)); // Deep clone
+                return;
+            }
+
+            // Ctrl+V (Paste)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+                if (isInput || clipboardRef.current.length === 0) return;
+                e.preventDefault();
+                
+                const newElements = clipboardRef.current.map((el, idx) => ({
+                    ...el,
+                    id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+                    x: el.x + 20, // Offset pasted elements
+                    y: el.y + 20
+                }));
+
+                const nextElements = [...drawElements, ...newElements];
+                update({ drawElements: nextElements });
+                syncUpdate({ drawElements: nextElements });
+                
+                // Select the newly pasted elements
+                setSelectedElementIds(newElements.map(el => el.id));
+                
+                // Update clipboard for next paste (so they keep offsetting)
+                clipboardRef.current = newElements;
+                return;
+            }
+
             if (e.key !== 'Backspace' && e.key !== 'Delete') return;
             if (selectedElementIds.length === 0) return;
 
-            const active = document.activeElement as HTMLElement | null;
-
             // ── 3단계: 텍스트 입력 영역 ──
             // 포커스가 텍스트 입력 중이면 가로채지 않음 → Backspace는 글자만 삭제
-            if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA') return;
-            if (active?.isContentEditable) return;
-            if (editingTextId != null) return;
-            // 테이블 셀 편집 중일 때도 텍스트 삭제로만 동작
-            if (editingTableId != null && editingCellIndex != null) return;
+            if (isInput) return;
 
             // ── 2단계: 그리기 객체 ──
             // 객체만 선택된 상태(텍스트 편집 아님)에서만 객체 삭제 확인 후 삭제
@@ -1294,8 +1356,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     return (
         <div
+            ref={containerRef}
             className={`transition-all group relative`}
             style={{ width: 1000, height: 'auto' }}
+            onMouseDown={() => { mouseDownInsideRef.current = true; }}
         >
             <div
                 ref={nodeRef}
@@ -1969,7 +2033,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         const widthKey = `border${side}Width` as keyof typeof cellStyle;
                                                                         const styleKey = `border${side}Style` as keyof typeof cellStyle;
 
-                                                                        if (cellStyle[colorKey] !== undefined || cellStyle[widthKey] !== undefined || cellStyle[styleKey] !== undefined) {
+                                                                        // 한 경계선은 한 셀만 그리도록 소유권 고정:
+                                                                        // 내부 경계는 Bottom/Right만 렌더링하고 Top/Left는 가장자리에서만 허용.
+                                                                        const canUseCellOverride = side === 'Bottom' || side === 'Right' || isEdge;
+                                                                        if (canUseCellOverride && (cellStyle[colorKey] !== undefined || cellStyle[widthKey] !== undefined || cellStyle[styleKey] !== undefined)) {
                                                                             const w = cellStyle[widthKey] ?? el[`tableBorder${side}Width`] ?? globalBorderWidth;
                                                                             const s = cellStyle[styleKey] ?? el[`tableBorder${side}Style`] ?? 'solid';
                                                                             const c = cellStyle[colorKey] || el[`tableBorder${side}`] || globalBorderColor;
@@ -2631,8 +2698,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     const val = e.target.value;
                                                                     if (selectedCellIndices.length > 0 && editingTableId === selectedEl.id) {
                                                                         const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                        const tableCols = selectedEl.tableCols || 3;
                                                                         selectedCellIndices.forEach(idx => {
-                                                                            newStyles[idx] = { ...(newStyles[idx] || {}), borderTop: val, borderBottom: val, borderLeft: val, borderRight: val };
+                                                                            const { r, c } = flatIdxToRowCol(idx, tableCols);
+                                                                            const nextStyle = { ...(newStyles[idx] || {}), borderBottom: val, borderRight: val };
+                                                                            if (r === 0) nextStyle.borderTop = val;
+                                                                            if (c === 0) nextStyle.borderLeft = val;
+                                                                            newStyles[idx] = nextStyle;
                                                                         });
                                                                         const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
                                                                         update({ drawElements: next }); syncUpdate({ drawElements: next });
@@ -2665,8 +2737,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     const val = parseInt(e.target.value) || 0;
                                                                     if (selectedCellIndices.length > 0 && editingTableId === selectedEl.id) {
                                                                         const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                        const tableCols = selectedEl.tableCols || 3;
                                                                         selectedCellIndices.forEach(idx => {
-                                                                            newStyles[idx] = { ...(newStyles[idx] || {}), borderTopWidth: val, borderBottomWidth: val, borderLeftWidth: val, borderRightWidth: val };
+                                                                            const { r, c } = flatIdxToRowCol(idx, tableCols);
+                                                                            const nextStyle = { ...(newStyles[idx] || {}), borderBottomWidth: val, borderRightWidth: val };
+                                                                            if (r === 0) nextStyle.borderTopWidth = val;
+                                                                            if (c === 0) nextStyle.borderLeftWidth = val;
+                                                                            newStyles[idx] = nextStyle;
                                                                         });
                                                                         const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
                                                                         update({ drawElements: next }); syncUpdate({ drawElements: next });
@@ -2722,8 +2799,19 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 const val = e.target.value;
                                                                                 if (isAnyCellSelected) {
                                                                                     const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                    const tableCols = selectedEl.tableCols || 3;
                                                                                     selectedCellIndices.forEach(idx => {
-                                                                                        newStyles[idx] = { ...(newStyles[idx] || {}), [styleColorKey]: val };
+                                                                                        const { r, c } = flatIdxToRowCol(idx, tableCols);
+                                                                                        let targetIdx = idx;
+                                                                                        let targetKey = styleColorKey;
+                                                                                        if (direction === 'Top' && r > 0) {
+                                                                                            targetIdx = rowColToFlatIdx(r - 1, c, tableCols);
+                                                                                            targetKey = 'borderBottom';
+                                                                                        } else if (direction === 'Left' && c > 0) {
+                                                                                            targetIdx = rowColToFlatIdx(r, c - 1, tableCols);
+                                                                                            targetKey = 'borderRight';
+                                                                                        }
+                                                                                        newStyles[targetIdx] = { ...(newStyles[targetIdx] || {}), [targetKey]: val };
                                                                                     });
                                                                                     const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
                                                                                     update({ drawElements: next }); syncUpdate({ drawElements: next });
@@ -2747,8 +2835,19 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 const val = parseInt(e.target.value) || 0;
                                                                                 if (isAnyCellSelected) {
                                                                                     const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                    const tableCols = selectedEl.tableCols || 3;
                                                                                     selectedCellIndices.forEach(idx => {
-                                                                                        newStyles[idx] = { ...(newStyles[idx] || {}), [styleWidthKey]: val };
+                                                                                        const { r, c } = flatIdxToRowCol(idx, tableCols);
+                                                                                        let targetIdx = idx;
+                                                                                        let targetKey = styleWidthKey;
+                                                                                        if (direction === 'Top' && r > 0) {
+                                                                                            targetIdx = rowColToFlatIdx(r - 1, c, tableCols);
+                                                                                            targetKey = 'borderBottomWidth';
+                                                                                        } else if (direction === 'Left' && c > 0) {
+                                                                                            targetIdx = rowColToFlatIdx(r, c - 1, tableCols);
+                                                                                            targetKey = 'borderRightWidth';
+                                                                                        }
+                                                                                        newStyles[targetIdx] = { ...(newStyles[targetIdx] || {}), [targetKey]: val };
                                                                                     });
                                                                                     const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
                                                                                     update({ drawElements: next }); syncUpdate({ drawElements: next });

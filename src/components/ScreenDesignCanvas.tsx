@@ -740,6 +740,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     multiSelectionKeyCode="Shift"
                     selectionKeyCode="Shift"
                     deleteKeyCode={null}
+                    onPaneClick={() => {
+                        // Notify all ScreenNodes to clear selection
+                        window.dispatchEvent(new CustomEvent('clear-screen-selection'));
+                    }}
                 >
                     <Controls />
                     <MiniMap
