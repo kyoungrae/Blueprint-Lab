@@ -21,6 +21,7 @@ import MetaInfoTable from './screenNode/MetaInfoTable';
 import RightPane from './screenNode/RightPane';
 import StylePanel from './screenNode/StylePanel';
 import LayerPanel from './screenNode/LayerPanel';
+import ImageElement from './screenNode/ImageElement';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
 
 
@@ -46,6 +47,26 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     } = useScreenDesignStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
+
+    const uploadImage = async (dataUrl: string): Promise<string> => {
+        if (!currentProjectId || currentProjectId.startsWith('local_')) {
+            // 로컬 프로젝트는 data URL 그대로 사용
+            return dataUrl;
+        }
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_URL}/${currentProjectId}/images`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ data: dataUrl }),
+        });
+        if (!res.ok) throw new Error('Image upload failed');
+        const json = await res.json() as { imageId: string; url: string };
+        return json.url;
+    };
 
     const syncUpdate = (updates: Partial<Screen>) => {
         sendOperation({
@@ -117,6 +138,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [tablePickerHover, setTablePickerHover] = useState<{ r: number, c: number } | null>(null);
     const [tablePickerPos, setTablePickerPos] = useState({ top: 0, left: 0 });
     const tablePickerRef = useRef<HTMLDivElement>(null);
+    const imageInputRef = useRef<HTMLInputElement>(null);
     const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
     // Close table list, screen options, table picker on click outside
@@ -1798,14 +1820,59 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             <Type size={18} />
                                                         </button>
                                                     </PremiumTooltip>
-                                                    <PremiumTooltip label="이미지">
+                                                    <PremiumTooltip label="이미지 삽입">
                                                         <button
-                                                            onClick={() => setActiveTool('image')}
-                                                            className={`p-2 rounded-lg transition-colors ${activeTool === 'image' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                            onClick={() => imageInputRef.current?.click()}
+                                                            className="p-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-500"
                                                         >
                                                             <ImageIcon size={18} />
                                                         </button>
                                                     </PremiumTooltip>
+                                                    <input
+                                                        ref={imageInputRef}
+                                                        type="file"
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (!file) return;
+                                                            const reader = new FileReader();
+                                                            reader.onload = async (ev) => {
+                                                                const dataUrl = ev.target?.result as string;
+                                                                const cw = canvasRef.current?.clientWidth ?? 400;
+                                                                const ch = canvasRef.current?.clientHeight ?? 300;
+                                                                const w = 200;
+                                                                const h = 150;
+                                                                const newId = `draw_${Date.now()}`;
+
+                                                                // 서버 Redis에 업로드 → URL 반환
+                                                                let imageUrl = dataUrl;
+                                                                try {
+                                                                    imageUrl = await uploadImage(dataUrl);
+                                                                } catch {
+                                                                    // 업로드 실패 시 data URL 그대로 사용
+                                                                }
+
+                                                                const imgEl: DrawElement = {
+                                                                    id: newId,
+                                                                    type: 'image',
+                                                                    x: Math.max(10, cw / 2 - w / 2),
+                                                                    y: Math.max(10, ch / 2 - h / 2),
+                                                                    width: w,
+                                                                    height: h,
+                                                                    zIndex: drawElements.length + 1,
+                                                                    imageUrl,
+                                                                };
+                                                                const nextElements = [...drawElements, imgEl];
+                                                                update({ drawElements: nextElements });
+                                                                syncUpdate({ drawElements: nextElements });
+                                                                saveHistory(nextElements);
+                                                                setSelectedElementIds([newId]);
+                                                            };
+                                                            reader.readAsDataURL(file);
+                                                            e.target.value = '';
+                                                        }}
+                                                    />
                                                     <div className="w-px h-6 bg-gray-200 mx-1" />
                                                     <PremiumTooltip label="기능 번호">
                                                         <button
@@ -2242,6 +2309,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         isSelected={isSelected}
                                                         onUpdate={(updates) => updateElement(el.id, updates)}
                                                         onSelectionChange={setTextSelectionRect}
+                                                    />
+                                                )}
+                                                {el.type === 'image' && (
+                                                    <ImageElement
+                                                        element={el}
+                                                        isSelected={isSelected}
+                                                        isLocked={isLocked}
+                                                        onUpdate={(updates) => updateElement(el.id, updates)}
+                                                        projectId={currentProjectId ?? undefined}
                                                     />
                                                 )}
                                                 {el.type === 'table' && (

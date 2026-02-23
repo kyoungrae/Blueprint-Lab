@@ -8,6 +8,7 @@ import { redis } from './config/redis';
 import { initializeSocketServer } from './websocket/SocketServer';
 import authRoutes from './routes/authRoutes';
 import projectRoutes from './routes/projectRoutes';
+import imageRoutes from './routes/imageRoutes';
 import logger from './utils/logger';
 
 const app = express();
@@ -35,7 +36,8 @@ app.use(cors({
     },
     credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
 // Request Logging Middleware
 app.use((req, res, next) => {
@@ -51,6 +53,7 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/projects', imageRoutes);
 
 // API routes will be added here
 app.get('/api', (req, res) => {
