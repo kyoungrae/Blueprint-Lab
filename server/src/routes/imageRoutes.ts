@@ -1,67 +1,130 @@
 import { Router, Request, Response } from 'express';
+import path from 'path';
+import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { redis } from '../config/redis';
+import multer from 'multer';
+import { config } from '../config';
 import { authMiddleware } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// 30일 TTL (초 단위)
-const IMAGE_TTL = 60 * 60 * 24 * 30;
+const UPLOAD_BASE = path.join(config.upload.dir, 'images');
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const imageKey = (projectId: string, imageId: string) =>
-    `project:${projectId}:image:${imageId}`;
+// 허용 MIME 타입
+const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const projectId = req.params.id;
+        if (!projectId || !/^[a-f0-9]{24}$/i.test(projectId)) {
+            cb(new Error('Invalid project ID'), '');
+            return;
+        }
+        const dir = path.join(UPLOAD_BASE, projectId);
+        fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname) || getExtFromMime(file.mimetype) || '.png';
+        const safeExt = /^\.(jpe?g|png|gif|webp|svg)$/i.test(ext) ? ext : '.png';
+        cb(null, `${uuidv4()}${safeExt}`);
+    },
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: MAX_FILE_SIZE },
+    fileFilter: (req, file, cb) => {
+        if (ALLOWED_MIMES.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error(`Invalid file type: ${file.mimetype}`));
+        }
+    },
+});
+
+function getExtFromMime(mime: string): string {
+    const map: Record<string, string> = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/gif': '.gif',
+        'image/webp': '.webp',
+        'image/svg+xml': '.svg',
+    };
+    return map[mime] || '.png';
+}
+
+// Path traversal 방지: imageId는 UUID 형식만 허용
+function isValidImageId(id: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpe?g|png|gif|webp|svg)$/i.test(id);
+}
 
 // POST /api/projects/:id/images
-// Body: { data: "data:image/png;base64,...", mimeType: "image/png" }
-router.post('/:id/images', authMiddleware, async (req: Request, res: Response) => {
+// Body: multipart/form-data, field name: image
+router.post('/:id/images', authMiddleware, (req: Request, res: Response, next: () => void) => {
+    upload.single('image')(req, res, (err: unknown) => {
+        if (err) {
+            if (err instanceof multer.MulterError) {
+                if (err.code === 'LIMIT_FILE_SIZE') {
+                    res.status(400).json({ error: 'File too large (max 10MB)' });
+                    return;
+                }
+            }
+            res.status(400).json({ error: err instanceof Error ? err.message : 'Unknown upload error' });
+            return;
+        }
+        next();
+    });
+}, async (req: Request, res: Response) => {
     const { id: projectId } = req.params;
-    const { data } = req.body as { data: string };
+    const file = req.file;
 
-    if (!data || !data.startsWith('data:')) {
-        res.status(400).json({ error: 'Invalid image data' });
+    if (!file) {
+        res.status(400).json({ error: 'No image file provided' });
         return;
     }
 
-    // data URL에서 mimeType 파싱
-    const mimeMatch = data.match(/^data:([^;]+);base64,/);
-    if (!mimeMatch) {
-        res.status(400).json({ error: 'Invalid data URL format' });
-        return;
-    }
+    const imageId = file.filename;
+    const url = `/api/projects/${projectId}/images/${imageId}`;
 
-    const imageId = uuidv4();
-    const key = imageKey(projectId, imageId);
-
-    // Redis에 data URL 전체 저장 (base64 포함), TTL 30일
-    await redis.set(key, data, 'EX', IMAGE_TTL);
-
-    res.json({ imageId, url: `/api/projects/${projectId}/images/${imageId}` });
+    res.json({ imageId, url });
 });
 
 // GET /api/projects/:id/images/:imageId
 router.get('/:id/images/:imageId', async (req: Request, res: Response) => {
     const { id: projectId, imageId } = req.params;
-    const key = imageKey(projectId, imageId);
 
-    const data = await redis.get(key);
-    if (!data) {
+    if (!projectId || !/^[a-f0-9]{24}$/i.test(projectId)) {
+        res.status(400).json({ error: 'Invalid project ID' });
+        return;
+    }
+    if (!isValidImageId(imageId)) {
+        res.status(400).json({ error: 'Invalid image ID' });
+        return;
+    }
+
+    const filePath = path.join(UPLOAD_BASE, projectId, imageId);
+
+    if (!fs.existsSync(filePath)) {
         res.status(404).json({ error: 'Image not found' });
         return;
     }
 
-    // data URL에서 mimeType과 base64 추출
-    const match = data.match(/^data:([^;]+);base64,(.+)$/s);
-    if (!match) {
-        res.status(500).json({ error: 'Corrupted image data' });
-        return;
-    }
-
-    const [, mimeType, base64] = match;
-    const buffer = Buffer.from(base64, 'base64');
+    const ext = path.extname(imageId).toLowerCase();
+    const mimeMap: Record<string, string> = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+    };
+    const mimeType = mimeMap[ext] || 'application/octet-stream';
 
     res.set('Content-Type', mimeType);
     res.set('Cache-Control', 'public, max-age=2592000'); // 30일 캐시
-    res.send(buffer);
+    res.sendFile(path.resolve(filePath));
 });
 
 export default router;

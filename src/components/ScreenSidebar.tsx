@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { Monitor, Search, ChevronRight, Focus } from 'lucide-react';
+import { getImageDisplayUrl } from '../utils/imageUrl';
 import { useReactFlow } from 'reactflow';
 
 const ScreenSidebar: React.FC = () => {
@@ -32,7 +33,7 @@ const ScreenSidebar: React.FC = () => {
     };
 
     return (
-        <div className="w-72 h-full bg-white flex flex-col z-20 overflow-hidden">
+        <div className="w-full min-w-0 h-full bg-white flex flex-col z-20 overflow-hidden">
             {/* Sidebar Header */}
             <div className="p-6 border-b border-gray-100 bg-gray-50/50">
                 <div className="flex items-center gap-2 mb-4">
@@ -81,7 +82,7 @@ const ScreenSidebar: React.FC = () => {
                                         {/* Thumbnail (Optional) */}
                                         {screen.imageUrl ? (
                                             <div className="w-8 h-8 rounded border border-gray-200 overflow-hidden flex-shrink-0 bg-white">
-                                                <img src={screen.imageUrl} className="w-full h-full object-cover" alt="thumb" />
+                                                <img src={getImageDisplayUrl(screen.imageUrl)} className="w-full h-full object-cover" alt="thumb" />
                                             </div>
                                         ) : (
                                             <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-300">

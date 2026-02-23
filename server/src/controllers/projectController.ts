@@ -168,13 +168,39 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
     }
 };
 
+/** 디버그: MongoDB에 저장된 화면 목록 (drawElements 포함) - 이미지 경로 저장 여부 확인용 */
+export const getProjectScreensDebug = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const project = await Project.findById(id).select('screenSnapshot.screens').lean();
+        if (!project) return res.status(404).json({ message: 'Project not found' });
+        const screens = (project as any).screenSnapshot?.screens || [];
+        const summary = screens.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            drawElementsCount: s.drawElements?.length ?? 0,
+            imageElements: s.drawElements?.filter((e: any) => e.type === 'image').map((e: any) => ({
+                id: e.id,
+                hasImageUrl: !!e.imageUrl,
+                imageUrl: e.imageUrl ? (typeof e.imageUrl === 'string' ? (e.imageUrl.length > 60 ? e.imageUrl.substring(0, 60) + '...' : e.imageUrl) : '[non-string]') : null,
+            })) ?? [],
+        }));
+        res.json({ screens: summary });
+    } catch (error) {
+        console.error('getProjectScreensDebug error:', error);
+        res.status(500).json({ message: 'Error fetching screens' });
+    }
+};
+
 export const getProject = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
 
         // Find project by ID and populate members to show creator/team info
+        // .lean() ensures plain objects so nested drawElements/imageUrl are preserved in JSON
         const project = await Project.findById(id)
-            .populate('members.userId', 'name email picture');
+            .populate('members.userId', 'name email picture')
+            .lean();
 
         if (!project) {
             return res.status(404).json({ message: '프로젝트를 찾을 수 없습니다.' });

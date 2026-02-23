@@ -35,6 +35,7 @@ brew install --cask docker
 - **Frontend 경로**: `/erd/` (Nginx Gateway 포워딩)
 - **Backend API 경로**: `/erd-api/` (Prefix 제거 후 Backend 전송)
 - **DB/Cache**: MongoDB, Redis (내부 컨테이너 네트워크 사용)
+- **이미지 업로드**: `/home/vims/projects/blueprint-lab/upload/images/` (운영 서버 디스크에 저장, MongoDB에는 경로만 저장)
 
 ---
 
@@ -50,10 +51,12 @@ ssh -p 22222 vims@192.168.0.141
 # 프로젝트 관리 폴더 생성
 mkdir -p ~/projects/blueprint-lab/db_data
 mkdir -p ~/projects/blueprint-lab/redis_data
+mkdir -p ~/projects/blueprint-lab/upload/images
 
 # 권한 설정 (데이터 쓰기 권한 확보)
 chmod 777 ~/projects/blueprint-lab/db_data
 chmod 777 ~/projects/blueprint-lab/redis_data
+chmod 755 ~/projects/blueprint-lab/upload
 
 exit
 ```
@@ -127,7 +130,7 @@ podman network create blueprint-network
 # 4. 서비스 실행 (한 줄씩 복사해서 실행하세요)
 podman run -d --name blueprint-mongodb --network blueprint-network -p 27017:27017 -v ~/projects/blueprint-lab/db_data:/data/db -e MONGO_INITDB_DATABASE=blueprint-lab --restart unless-stopped docker.io/library/mongo:4.4
 podman run -d --name blueprint-redis --network blueprint-network -p 6379:6379 -v ~/projects/blueprint-lab/redis_data:/data --restart unless-stopped docker.io/library/redis:7-alpine redis-server --appendonly yes
-podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped erd-backend
+podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -v ~/projects/blueprint-lab/upload:/app/upload -e UPLOAD_DIR=/app/upload -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped erd-backend
 podman run -d --name blueprint-frontend --network blueprint-network -p 8085:80 --restart unless-stopped blueprint-frontend
 ```
 
@@ -204,17 +207,17 @@ ssh -p 22222 vims@192.168.0.141
 cd ~/projects/blueprint-lab
 
 # 1. 기존 컨테이너 중지 및 삭제 (DB/Redis는 데이터 유지가 필요하면 앱만 교체, 이번처럼 이슈 시 전체 교체)
-podman rm -f blueprint-frontend blueprint-backend blueprint-mongodb
+podman rm -f blueprint-frontend blueprint-backend  # blueprint-mongodb blueprint-redis
 
 # 2. 신규 이미지 로드 및 호환 DB 다운로드
+# podman pull docker.io/library/mongo:4.4
 podman load < blueprint-frontend.tar
 podman load < blueprint-backend.tar
-podman pull docker.io/library/mongo:4.4
 
 # 3. 서비스 재시작 (한 줄씩 복사)
 podman run -d --name blueprint-mongodb --network blueprint-network -p 27017:27017 -v ~/projects/blueprint-lab/db_data:/data/db -e MONGO_INITDB_DATABASE=blueprint-lab --restart unless-stopped docker.io/library/mongo:4.4
 
-podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped blueprint-backend
+podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -v ~/projects/blueprint-lab/upload:/app/upload -e UPLOAD_DIR=/app/upload -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped blueprint-backend
 
 podman run -d --name blueprint-frontend --network blueprint-network -p 8085:80 --restart unless-stopped blueprint-frontend
 
@@ -247,3 +250,9 @@ podman logs -f blueprint-redis
 1.  브라우저에서 `http://210.92.92.18:2000/erd/` 접속
 2.  로그인 및 ERD 데이터 추가/수정 테스트
 3.  다중 접속을 통한 실시간 커서 동기화 확인
+
+
+
+lsof -i :3001
+
+sleep 1 && lsof -i :3001 2>/dev/null | grep LISTEN || echo "Port 3001 is now free"

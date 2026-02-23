@@ -125,14 +125,15 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
             if (!state) {
                 // Check if projectId is a valid MongoDB ObjectId
                 if (Types.ObjectId.isValid(projectId)) {
-                    const project = await Project.findById(projectId);
+                    const project = await Project.findById(projectId).lean();
                     if (project) {
+                        const snap = project as any;
                         state = {
-                            entities: project.currentSnapshot.entities || [],
-                            relationships: project.currentSnapshot.relationships || [],
-                            screens: project.screenSnapshot?.screens || [],
-                            flows: project.screenSnapshot?.flows || [],
-                            version: project.currentSnapshot.version || 0,
+                            entities: snap.currentSnapshot?.entities || [],
+                            relationships: snap.currentSnapshot?.relationships || [],
+                            screens: snap.screenSnapshot?.screens || [],
+                            flows: snap.screenSnapshot?.flows || [],
+                            version: snap.currentSnapshot?.version || 0,
                         };
                         await projectStateManager.initializeFromDB(
                             projectId,
@@ -242,16 +243,21 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 });
 
                 // Save to MongoDB
-                // Force immediate save for critical operations (DELETE, IMPORT) to prevent data loss on refresh
-                const isCriticalOperation = operation.type.includes('DELETE') || operation.type === 'ERD_IMPORT';
+                // Force immediate save for critical operations to prevent data loss on refresh
+                const payload = operation.payload as Record<string, unknown>;
+                const hasDrawElements = payload && 'drawElements' in payload;
+                const isCriticalOperation =
+                    operation.type.includes('DELETE') ||
+                    operation.type === 'ERD_IMPORT' ||
+                    (operation.type === 'SCREEN_UPDATE' && hasDrawElements);
                 debouncedSaveToMongo(projectId, newState, isCriticalOperation);
 
                 // Record history in MongoDB
                 if (Types.ObjectId.isValid(projectId)) {
                     try {
-                        const payload = operation.payload as any;
-                        let details = payload.historyLog?.details || `Operation ${operation.type} performed`;
-                        let targetName = payload.historyLog?.targetName || operation.targetId;
+                        const histPayload = operation.payload as any;
+                        let details = histPayload.historyLog?.details || `Operation ${operation.type} performed`;
+                        let targetName = histPayload.historyLog?.targetName || operation.targetId;
                         let targetType: 'ENTITY' | 'RELATIONSHIP' | 'PROJECT' | 'SCREEN' | 'FLOW' = 'PROJECT';
 
                         if (operation.type.startsWith('ENTITY_')) targetType = 'ENTITY';
@@ -262,10 +268,10 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                         else if (operation.type.startsWith('FLOW_')) targetType = 'FLOW';
 
                         // Specific handling for common operations to make them look nice if historyLog is missing
-                        if (!payload.historyLog) {
+                        if (!histPayload.historyLog) {
                             if (operation.type === 'ENTITY_CREATE') {
-                                details = `새 테이블 '${payload.name || '알 수 없음'}'을 생성했습니다.`;
-                                targetName = payload.name || 'New Entity';
+                                details = `새 테이블 '${histPayload.name || '알 수 없음'}'을 생성했습니다.`;
+                                targetName = histPayload.name || 'New Entity';
                             } else if (operation.type === 'ENTITY_DELETE') {
                                 details = `테이블(ID: ${operation.targetId})을 삭제했습니다.`;
                             }
@@ -275,14 +281,14 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                             projectId: new Types.ObjectId(projectId),
                             userId: new Types.ObjectId(operation.userId),
                             userName: operation.userName,
-                            userPicture: payload.historyLog?.userPicture,
+                            userPicture: histPayload.historyLog?.userPicture,
                             operationType: operation.type,
-                            targetType: payload.historyLog?.targetType || targetType,
+                            targetType: histPayload.historyLog?.targetType || targetType,
                             targetId: operation.targetId,
                             targetName: targetName,
                             operation: {
                                 lamportClock: operation.lamportClock,
-                                payload: payload,
+                                payload: histPayload,
                                 previousState: operation.previousState,
                             },
                             details: details,
@@ -373,9 +379,10 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 // Release all locks held by this user
                 await lockManager.releaseAllUserLocks(socketData.projectId, socketData.user.id);
 
-                // Notify others
+                // Notify others (clientId로 커서 제거 - 같은 사람 여러 커서 방지)
                 socket.to(`project:${socketData.projectId}`).emit('user_left', {
                     userId: socketData.user.id,
+                    clientId: socket.id,
                     onlineUsers,
                 });
             }
@@ -410,6 +417,8 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
     if (!Types.ObjectId.isValid(projectId)) return;
 
     try {
+        // Deep clone screens to ensure drawElements (incl. imageUrl) are stored as-is
+        const screensToSave = JSON.parse(JSON.stringify(stateToSave.screens || []));
         await Project.findByIdAndUpdate(projectId, {
             currentSnapshot: {
                 version: stateToSave.version,
@@ -419,7 +428,7 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
             },
             screenSnapshot: {
                 version: stateToSave.version,
-                screens: stateToSave.screens || [],
+                screens: screensToSave,
                 flows: stateToSave.flows || [],
                 savedAt: new Date(),
             },

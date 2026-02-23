@@ -1,5 +1,6 @@
 import React from 'react';
 import { Image as ImageIcon, X } from 'lucide-react';
+import { getImageDisplayUrl } from '../../utils/imageUrl';
 import type { Screen } from '../../types/screenDesign';
 
 interface ImageContentProps {
@@ -58,7 +59,7 @@ const ImageContent: React.FC<ImageContentProps> = ({
                     }}
                 >
                     <img
-                        src={screen.imageUrl}
+                        src={getImageDisplayUrl(screen.imageUrl)}
                         alt="UI Mockup"
                         className="w-full h-full object-contain pointer-events-none select-none block"
                         draggable={false}

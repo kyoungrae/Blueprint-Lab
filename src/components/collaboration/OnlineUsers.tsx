@@ -20,11 +20,11 @@ export function OnlineUsers() {
     }
 
     return (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Connection status */}
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-green-500/20 rounded-full">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-xs text-green-400">Connected</span>
+            <div className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 bg-green-500/20 rounded-full">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0" />
+                <span className="text-xs text-green-400 whitespace-nowrap">Connected</span>
             </div>
 
             {/* Online users avatars */}
@@ -34,7 +34,7 @@ export function OnlineUsers() {
                 ))}
                 {uniqueUsers.length > 5 && (
                     <div
-                        className="w-8 h-8 rounded-full bg-zinc-700 border-2 border-zinc-800 flex items-center justify-center"
+                        className="w-8 h-8 rounded-full bg-zinc-700 border-2 border-zinc-800 flex items-center justify-center shrink-0"
                         title={`+${uniqueUsers.length - 5} more`}
                     >
                         <span className="text-xs text-zinc-300">+{uniqueUsers.length - 5}</span>
@@ -44,7 +44,7 @@ export function OnlineUsers() {
 
             {/* User count */}
             {uniqueUsers.length > 0 && (
-                <span className="text-xs text-zinc-400">
+                <span className="text-xs text-zinc-400 whitespace-nowrap hidden sm:inline">
                     {uniqueUsers.length} person{uniqueUsers.length > 1 ? 's' : ''}
                     {onlineUsers.length > uniqueUsers.length &&
                         ` (${onlineUsers.length} tabs)`}

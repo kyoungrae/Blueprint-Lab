@@ -22,6 +22,7 @@ import RightPane from './screenNode/RightPane';
 import StylePanel from './screenNode/StylePanel';
 import LayerPanel from './screenNode/LayerPanel';
 import ImageElement from './screenNode/ImageElement';
+import { EntityLockBadge, useEntityLock } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
 
 
@@ -49,19 +50,22 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const { user } = useAuthStore();
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
-    const uploadImage = async (dataUrl: string): Promise<string> => {
+    const uploadImage = async (file: File): Promise<string> => {
         if (!currentProjectId || currentProjectId.startsWith('local_')) {
-            // 로컬 프로젝트는 data URL 그대로 사용
-            return dataUrl;
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
         }
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('auth-token');
+        const formData = new FormData();
+        formData.append('image', file);
         const res = await fetch(`${API_URL}/${currentProjectId}/images`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({ data: dataUrl }),
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: formData,
         });
         if (!res.ok) throw new Error('Image upload failed');
         const json = await res.json() as { imageId: string; url: string };
@@ -78,7 +82,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         });
     };
 
-    const isLocked = screen.isLocked ?? true;
+    const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
+    const isLocalLocked = screen.isLocked ?? true;
+    const isLocked = isLocalLocked || isLockedByOther;
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
     const tableListRef = useRef<HTMLDivElement>(null);
@@ -105,7 +111,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     const handleToggleLock = (e: React.MouseEvent) => {
         e.stopPropagation();
-        updateScreen(screen.id, { isLocked: !isLocked });
+        if (isLockedByOther) {
+            alert(`${lockedBy}님이 수정 중입니다.`);
+            return;
+        }
+        const newLockedState = !isLocalLocked;
+        updateScreen(screen.id, { isLocked: newLockedState });
+        syncUpdate({ isLocked: newLockedState });
+        if (!newLockedState) {
+            requestLock();
+        } else {
+            releaseLock();
+        }
     };
 
     const handleDelete = (e: React.MouseEvent) => {
@@ -751,9 +768,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 setSelectedElementIds([tempElement.id]);
             }
         } else if (draggingElementIds.length > 0) {
-            // Finalize move sync
-            syncUpdate({ drawElements });
-            saveHistory(drawElements);
+            // Finalize move sync - 스토어의 최신 drawElements 사용 (클로저 stale 방지)
+            const currentElements = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.drawElements || [];
+            syncUpdate({ drawElements: currentElements });
+            saveHistory(currentElements);
             setDraggingElementIds([]);
             setIsMoving(false);
         }
@@ -1510,12 +1528,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     return (
         <div
             ref={containerRef}
-            className={`transition-all group relative`}
+            className={`transition-all group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''}`}
             style={{ width: entityWidth, height: entityHeight }}
         >
+            <EntityLockBadge entityId={screen.id} />
             <div
                 ref={nodeRef}
-                className={`h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected && !isExporting
+                className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected && !isExporting
                     ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                     : isLocked
                         ? 'border-gray-200 shadow-md'
@@ -1524,13 +1543,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 {/* Lock Overlay */}
                 {isLocked && (
                     <div
-                        onDoubleClick={handleToggleLock}
+                        onDoubleClick={!isLockedByOther ? handleToggleLock : undefined}
                         className="absolute inset-0 z-[100] cursor-pointer group/mask hover:bg-white/10 transition-all duration-300 rounded-[inherit]"
                     >
                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-sm px-4 py-3 rounded-2xl shadow-2xl border border-gray-200 opacity-0 group-hover/mask:opacity-100 transition-all transform scale-90 group-hover/mask:scale-100 flex flex-col items-center gap-1.5 pointer-events-none">
-                            <Lock size={20} className="text-gray-400" />
+                            <Lock size={20} className={isLockedByOther ? 'text-amber-500' : 'text-gray-400'} />
                             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                                Double Click to Edit
+                                {isLockedByOther ? `${lockedBy}님이 수정 중` : 'Double Click to Edit'}
                             </span>
                         </div>
                     </div>
@@ -1615,8 +1634,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         <button
                             onClick={handleToggleLock}
                             onMouseDown={(e) => e.stopPropagation()}
-                            className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
-                            title={isLocked ? "잠금 해제" : "잠금"}
+                            disabled={isLockedByOther}
+                            className={`nodrag p-1.5 rounded-md transition-colors pointer-events-auto ${isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'}`}
+                            title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? "잠금 해제" : "잠금"}
                         >
                             {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
                         </button>
@@ -1833,43 +1853,42 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         type="file"
                                                         accept="image/*"
                                                         className="hidden"
-                                                        onChange={(e) => {
+                                                        onChange={async (e) => {
                                                             const file = e.target.files?.[0];
-                                                            if (!file) return;
-                                                            const reader = new FileReader();
-                                                            reader.onload = async (ev) => {
-                                                                const dataUrl = ev.target?.result as string;
-                                                                const cw = canvasRef.current?.clientWidth ?? 400;
-                                                                const ch = canvasRef.current?.clientHeight ?? 300;
-                                                                const w = 200;
-                                                                const h = 150;
-                                                                const newId = `draw_${Date.now()}`;
+                                                            if (!file || !file.type.startsWith('image/')) return;
+                                                            const cw = canvasRef.current?.clientWidth ?? 400;
+                                                            const ch = canvasRef.current?.clientHeight ?? 300;
+                                                            const w = 200;
+                                                            const h = 150;
+                                                            const newId = `draw_${Date.now()}`;
 
-                                                                // 서버 Redis에 업로드 → URL 반환
-                                                                let imageUrl = dataUrl;
-                                                                try {
-                                                                    imageUrl = await uploadImage(dataUrl);
-                                                                } catch {
-                                                                    // 업로드 실패 시 data URL 그대로 사용
-                                                                }
+                                                            let imageUrl: string;
+                                                            try {
+                                                                imageUrl = await uploadImage(file);
+                                                            } catch {
+                                                                imageUrl = await new Promise<string>((resolve, reject) => {
+                                                                    const reader = new FileReader();
+                                                                    reader.onload = () => resolve(reader.result as string);
+                                                                    reader.onerror = reject;
+                                                                    reader.readAsDataURL(file);
+                                                                });
+                                                            }
 
-                                                                const imgEl: DrawElement = {
-                                                                    id: newId,
-                                                                    type: 'image',
-                                                                    x: Math.max(10, cw / 2 - w / 2),
-                                                                    y: Math.max(10, ch / 2 - h / 2),
-                                                                    width: w,
-                                                                    height: h,
-                                                                    zIndex: drawElements.length + 1,
-                                                                    imageUrl,
-                                                                };
-                                                                const nextElements = [...drawElements, imgEl];
-                                                                update({ drawElements: nextElements });
-                                                                syncUpdate({ drawElements: nextElements });
-                                                                saveHistory(nextElements);
-                                                                setSelectedElementIds([newId]);
+                                                            const imgEl: DrawElement = {
+                                                                id: newId,
+                                                                type: 'image',
+                                                                x: Math.max(10, cw / 2 - w / 2),
+                                                                y: Math.max(10, ch / 2 - h / 2),
+                                                                width: w,
+                                                                height: h,
+                                                                zIndex: drawElements.length + 1,
+                                                                imageUrl,
                                                             };
-                                                            reader.readAsDataURL(file);
+                                                            const nextElements = [...drawElements, imgEl];
+                                                            update({ drawElements: nextElements });
+                                                            syncUpdate({ drawElements: nextElements });
+                                                            saveHistory(nextElements);
+                                                            setSelectedElementIds([newId]);
                                                             e.target.value = '';
                                                         }}
                                                     />

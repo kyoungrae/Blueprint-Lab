@@ -1,5 +1,5 @@
-import React, { useRef, useState, useCallback } from 'react';
-import { Image as ImageIcon, Upload } from 'lucide-react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { Image as ImageIcon } from 'lucide-react';
 import type { DrawElement } from '../../types/screenDesign';
 
 interface ResizeHandle {
@@ -27,11 +27,14 @@ interface ImageElementProps {
     projectId?: string;
 }
 
+import { getImageDisplayUrl } from '../../utils/imageUrl';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
 const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLocked, onUpdate, projectId }) => {
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDragOver, setIsDragOver] = useState(false);
+    const [loadFailed, setLoadFailed] = useState(false);
+    useEffect(() => setLoadFailed(false), [element.imageUrl]);
     const resizeStateRef = useRef<{
         position: string;
         startX: number;
@@ -42,42 +45,51 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
         startH: number;
     } | null>(null);
 
-    const uploadToServer = async (dataUrl: string): Promise<string> => {
-        if (!projectId || projectId.startsWith('local_')) return dataUrl;
-        const token = localStorage.getItem('token');
+    const uploadToServer = async (file: File): Promise<string> => {
+        if (!projectId || projectId.startsWith('local_')) {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+            return dataUrl;
+        }
+        const token = localStorage.getItem('auth-token');
+        const formData = new FormData();
+        formData.append('image', file);
         const res = await fetch(`${API_URL}/${projectId}/images`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({ data: dataUrl }),
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: formData,
         });
-        if (!res.ok) return dataUrl;
+        if (!res.ok) {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+            return dataUrl;
+        }
         const json = await res.json() as { imageId: string; url: string };
         return json.url;
     };
 
-    const loadFile = (file: File) => {
+    const loadFile = async (file: File) => {
         if (!file.type.startsWith('image/')) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const dataUrl = e.target?.result as string;
-            let imageUrl = dataUrl;
-            try {
-                imageUrl = await uploadToServer(dataUrl);
-            } catch {
-                // 업로드 실패 시 data URL 그대로 사용
-            }
+        try {
+            const imageUrl = await uploadToServer(file);
             onUpdate({ imageUrl });
-        };
-        reader.readAsDataURL(file);
-    };
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) loadFile(file);
-        e.target.value = '';
+        } catch {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+            onUpdate({ imageUrl: dataUrl });
+        }
     };
 
     const handleDrop = (e: React.DragEvent) => {
@@ -144,63 +156,51 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
         window.addEventListener('mouseup', onMouseUp);
     }, [element, isLocked, onUpdate]);
 
+    const displayUrl = getImageDisplayUrl(element.imageUrl);
+
     return (
         <div className="w-full h-full relative select-none">
-            {element.imageUrl ? (
+            {element.imageUrl && !loadFailed ? (
                 /* 이미지가 있을 때 */
                 <div
                     className="w-full h-full relative overflow-hidden"
                     style={{ borderRadius: element.borderRadius ?? 0 }}
                 >
                     <img
-                        src={element.imageUrl}
+                        src={displayUrl}
                         alt=""
                         className="w-full h-full"
                         style={{ objectFit: 'contain', display: 'block', pointerEvents: 'none' }}
                         draggable={false}
+                        referrerPolicy="no-referrer"
+                        onLoad={() => setLoadFailed(false)}
+                        onError={() => {
+                            setLoadFailed(true);
+                            console.warn('[ImageElement] 이미지 로드 실패:', displayUrl);
+                        }}
                     />
-                    {/* 선택 시 이미지 교체 오버레이 */}
-                    {isSelected && !isLocked && (
-                        <div
-                            className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/30 cursor-pointer"
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            <div className="flex flex-col items-center gap-1 text-white">
-                                <Upload size={16} />
-                                <span className="text-[10px] font-bold">이미지 교체</span>
-                            </div>
-                        </div>
-                    )}
                 </div>
             ) : (
-                /* 이미지가 없을 때 드롭/클릭 영역 */
+                /* 이미지가 없을 때 또는 로드 실패 시 드롭 전용 영역 (클릭 업로드 없음) */
                 <div
-                    className={`w-full h-full flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded cursor-pointer transition-colors ${
+                    className={`w-full h-full flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded transition-colors ${
                         isDragOver
-                            ? 'border-blue-400 bg-blue-50'
-                            : 'border-gray-300 bg-gray-50 hover:border-blue-300 hover:bg-blue-50/30'
+                            ? 'border-blue-400 bg-blue-50 cursor-pointer'
+                            : loadFailed
+                                ? 'border-amber-400 bg-amber-50/50'
+                                : 'border-gray-300 bg-gray-50'
                     }`}
                     style={{ borderRadius: element.borderRadius ?? 4 }}
-                    onClick={() => !isLocked && fileInputRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                     onDragLeave={() => setIsDragOver(false)}
                     onDrop={handleDrop}
                 >
-                    <ImageIcon size={24} className="text-gray-400" />
-                    <span className="text-[10px] text-gray-400 font-medium text-center leading-tight px-2">
-                        클릭 또는<br />드래그하여 이미지 삽입
+                    <ImageIcon size={24} className={loadFailed ? 'text-amber-500' : 'text-gray-400'} />
+                    <span className={`text-[10px] font-medium text-center leading-tight px-2 ${loadFailed ? 'text-amber-600' : 'text-gray-400'}`}>
+                        {loadFailed ? '이미지 로드 실패\n드래그하여 다시 시도' : '클릭 또는\n드래그하여 이미지 삽입'}
                     </span>
                 </div>
             )}
-
-            {/* 파일 입력 (숨김) */}
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileChange}
-            />
 
             {/* 리사이즈 핸들 (선택 시 표시) */}
             {isSelected && !isLocked && (

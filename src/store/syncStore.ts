@@ -82,6 +82,7 @@ interface SyncStore {
     _setOnlineUsers: (users: OnlineUser[]) => void;
     _setCursor: (clientId: string, cursor: any) => void;
     _removeCursor: (clientId: string) => void;
+    _removeCursorsByUserId: (userId: string) => void;
     _setLock: (entityId: string, lock: LockInfo) => void;
     _removeLock: (entityId: string) => void;
     _incrementClock: () => number;
@@ -179,10 +180,14 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             set({ onlineUsers: data.onlineUsers });
         });
 
-        socket.on('user_left', (data: { userId: string; onlineUsers: OnlineUser[] }) => {
+        socket.on('user_left', (data: { userId: string; clientId?: string; onlineUsers: OnlineUser[] }) => {
             console.log(`👤 User left`);
             set({ onlineUsers: data.onlineUsers });
-            get()._removeCursor(data.userId);
+            if (data.clientId) {
+                get()._removeCursor(data.clientId);
+            } else {
+                get()._removeCursorsByUserId(data.userId);
+            }
         });
 
         // Operation from other users
@@ -247,8 +252,8 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
         const { socket } = get();
         if (socket) {
+            set({ cursors: new Map(), currentProjectId: projectId });
             socket.emit('join_project', { projectId });
-            set({ currentProjectId: projectId });
         }
     },
 
@@ -328,6 +333,14 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
     _removeCursor: (clientId) => {
         const cursors = new Map(get().cursors);
         cursors.delete(clientId);
+        set({ cursors });
+    },
+
+    _removeCursorsByUserId: (userId) => {
+        const cursors = new Map(get().cursors);
+        for (const [clientId, cursor] of cursors) {
+            if ((cursor as any).userId === userId) cursors.delete(clientId);
+        }
         set({ cursors });
     },
 

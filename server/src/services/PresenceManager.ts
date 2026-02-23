@@ -53,29 +53,7 @@ export class PresenceManager {
         const cursorKey = `project:${projectId}:cursors`;
 
         await redis.hdel(onlineKey, clientId);
-        // Also remove cursor if exists. Note: Cursors are currently stored by userId, not clientId.
-        // If a user can have multiple connections, this would need to be more sophisticated.
-        // For now, we assume a 1:1 mapping or that cursor cleanup by TTL is sufficient.
-        // The original code deleted by userId, which is still the key for cursors.
-        // If the intent was to delete the cursor associated with this specific clientId,
-        // the cursor storage mechanism would need to change to use clientId as the key.
-        // As per the instruction, the key for the Redis hash for userLeave should be clientId.
-        // However, the cursorKey still uses userId as its key.
-        // The provided snippet for userLeave removed the cursor deletion line.
-        // Let's keep the original cursor deletion logic, but acknowledge the comment.
-        // The instruction specifically says "instead of userId for the key in the Redis hash"
-        // for userJoin and userLeave. This applies to the `onlineKey`.
-        // The `cursorKey` is not explicitly mentioned to change its key structure.
-        // Given the provided snippet for userLeave, it removes the `hdel(cursorKey, userId)` line.
-        // I will remove it as per the snippet, but add a note about the cursor key discrepancy.
-        // The snippet also includes a comment block about `allCursors` which is not used.
-        // I will include the comment block as provided.
-        const allCursors = await redis.hgetall(cursorKey);
-        for (const [userId, data] of Object.entries(allCursors)) {
-            // This is a bit tricky since cursors are by userId, but for now
-            // cleanup on disconnect handles the whole hash expiration anyway.
-        }
-
+        await redis.hdel(cursorKey, clientId);
         return this.getOnlineUsers(projectId);
     }
 

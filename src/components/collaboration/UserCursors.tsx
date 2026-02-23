@@ -27,15 +27,15 @@ export function UserCursors() {
 
     return (
         <>
-            {Array.from(cursors.entries()).map(([userId, cursor]) => {
-                // Don't show own cursor
-                if (userId === currentUser?.id) return null;
+            {Array.from(cursors.entries()).map(([clientId, cursor]) => {
+                // Don't show own cursor (map key is clientId, cursor.userId is the user)
+                if (cursor.userId === currentUser?.id) return null;
 
                 return (
                     <UserCursor
-                        key={userId}
+                        key={clientId}
                         cursor={cursor}
-                        color={getUserColor(userId)}
+                        color={getUserColor(cursor.userId)}
                     />
                 );
             })}

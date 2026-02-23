@@ -8,6 +8,7 @@ import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
+import { EntityLockBadge, useEntityLock } from './collaboration';
 
 // DB Types Map
 const DB_TYPES: Record<string, string[]> = {
@@ -272,7 +273,9 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const { updateScreen, deleteScreen } = useScreenDesignStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
-    const isLocked = screen.isLocked ?? true;
+    const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
+    const isLocalLocked = screen.isLocked ?? true;
+    const isLocked = isLocalLocked || isLockedByOther;
 
     const syncUpdate = (updates: Partial<Screen>) => {
         sendOperation({
@@ -310,9 +313,18 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
     const handleToggleLock = (e: React.MouseEvent) => {
         e.stopPropagation();
-        const nextLocked = !isLocked;
-        updateScreen(screen.id, { isLocked: nextLocked });
-        syncUpdate({ isLocked: nextLocked });
+        if (isLockedByOther) {
+            alert(`${lockedBy}님이 수정 중입니다.`);
+            return;
+        }
+        const newLockedState = !isLocalLocked;
+        updateScreen(screen.id, { isLocked: newLockedState });
+        syncUpdate({ isLocked: newLockedState });
+        if (!newLockedState) {
+            requestLock();
+        } else {
+            releaseLock();
+        }
     };
 
     const handleDelete = (e: React.MouseEvent) => {
@@ -394,11 +406,12 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
     return (
         <div
-            className={`transition-all group relative`}
+            className={`transition-all group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''}`}
             style={{ width: 1000 }}
         >
+            <EntityLockBadge entityId={screen.id} />
             {/* Main Content Wrapper with Overflow Hidden */}
-            <div className={`bg-white rounded-[15px] overflow-hidden shadow-xl border-2 flex flex-col ${selected && !isExporting
+            <div className={`relative bg-white rounded-[15px] overflow-hidden shadow-xl border-2 flex flex-col ${selected && !isExporting
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-md'
@@ -407,13 +420,13 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                 {/* Lock Overlay */}
                 {isLocked && (
                     <div
-                        onDoubleClick={handleToggleLock}
+                        onDoubleClick={!isLockedByOther ? handleToggleLock : undefined}
                         className="absolute inset-0 z-[100] cursor-pointer group/mask hover:bg-white/10 transition-all duration-300 rounded-[inherit]"
                     >
                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-sm px-4 py-3 rounded-2xl shadow-2xl border border-gray-200 opacity-0 group-hover/mask:opacity-100 transition-all transform scale-90 group-hover/mask:scale-100 flex flex-col items-center gap-1.5 pointer-events-none">
-                            <Lock size={20} className="text-gray-400" />
+                            <Lock size={20} className={isLockedByOther ? 'text-amber-500' : 'text-gray-400'} />
                             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                                Double Click to Edit
+                                {isLockedByOther ? `${lockedBy}님이 수정 중` : 'Double Click to Edit'}
                             </span>
                         </div>
                     </div>
@@ -439,8 +452,9 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                         <button
                             onClick={handleToggleLock}
                             onMouseDown={(e) => e.stopPropagation()}
-                            className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
-                            title={isLocked ? "잠금 해제" : "잠금"}
+                            disabled={isLockedByOther}
+                            className={`nodrag p-1.5 rounded-md transition-colors pointer-events-auto ${isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'}`}
+                            title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? "잠금 해제" : "잠금"}
                         >
                             {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
                         </button>

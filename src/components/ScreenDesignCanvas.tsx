@@ -13,6 +13,7 @@ import ReactFlow, {
     ReactFlowProvider,
     PanOnScrollMode,
     useReactFlow,
+    useViewport,
     reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -33,7 +34,7 @@ import {
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { copyToClipboard } from '../utils/clipboard';
-import { OnlineUsers } from './collaboration';
+import { OnlineUsers, UserCursors } from './collaboration';
 import { toPng } from 'html-to-image';
 import { useSyncStore } from '../store/syncStore';
 
@@ -47,6 +48,19 @@ const edgeTypes = {
 };
 
 import { ExportModeContext } from '../contexts/ExportModeContext';
+
+// ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
+const UserCursorsLayer: React.FC = () => {
+    const { x, y, zoom } = useViewport();
+    return (
+        <div
+            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
+            style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})` }}
+        >
+            <UserCursors />
+        </div>
+    );
+};
 
 // ── Toolbar Undo/Redo (ERD 스타일) ──────────────────────────
 const ToolbarUndoRedo: React.FC = () => {
@@ -84,7 +98,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     } = useScreenDesignStore();
 
     const { user, logout } = useAuthStore();
-    const { sendOperation } = useSyncStore();
+    const { sendOperation, updateCursor, isSynced } = useSyncStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
@@ -97,7 +111,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
-    const { getNodes, fitView } = useReactFlow();
+    const { getNodes, fitView, screenToFlowPosition } = useReactFlow();
+
+    // Broadcast cursor position (ERD와 동일)
+    const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
+        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        updateCursor({ ...position });
+    }, [screenToFlowPosition, updateCursor]);
 
     // Initial load for local projects
     useEffect(() => {
@@ -283,6 +303,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
         // Listen for Remote Operations
         const handleRemoteOp = (e: CustomEvent) => {
             const op = e.detail;
+            if (!op) return;
+            // Skip own operations (본인 작업은 이미 로컬에 반영됨)
+            if (user && op.userId === user.id) return;
+
             if (op.type.startsWith('SCREEN_')) {
                 if (op.type === 'SCREEN_CREATE') addScreen(op.payload as any);
                 else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateScreen(op.targetId, op.payload as any);
@@ -298,7 +322,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             window.removeEventListener('erd:state_sync', handleSync as EventListener);
             window.removeEventListener('erd:remote_operation', handleRemoteOp as EventListener);
         };
-    }, [importData, addScreen, updateScreen, deleteScreen]);
+    }, [importData, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, deleteFlow, user]);
 
     // Keyboard shortcuts: Delete selected screens or flows
     useEffect(() => {
@@ -736,15 +760,25 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [fitView]);
 
+    // 서버 프로젝트: state_sync 도착 전 편집 시 이미지 등이 덮어쓰여 사라지는 것 방지
+    if (currentProjectId && !currentProjectId.startsWith('local_') && !isSynced) {
+        return (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50">
+                <div className="w-12 h-12 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin mb-4" />
+                <p className="text-gray-500 font-medium">서버와 동기화 중...</p>
+            </div>
+        );
+    }
+
     return (
         <ScreenDesignUndoRedoProvider>
         <ExportModeContext.Provider value={isExporting}>
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
-            <div className="relative flex h-full">
+            <div className="relative flex h-full min-w-0">
                 <div
-                    className={`h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl ${isSidebarOpen ? 'w-72 flex-shrink-0' : 'w-0 border-none'}`}
+                    className={`h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
                 >
-                    <div className="w-72 h-full">
+                    <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
                         <ScreenSidebar />
                     </div>
                 </div>
@@ -758,19 +792,19 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 </button>
             </div>
 
-            <div className="flex-1 h-full relative" ref={flowWrapper}>
-                <div className={`absolute top-4 ${isSidebarOpen ? 'left-6' : 'left-8'} z-10 bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-1.5 flex gap-1.5 transition-all duration-300`}>
+            <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
+                <div className={`absolute top-4 right-4 z-10 bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
                     <button
                         onClick={() => setCurrentProject(null)}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                         title="프로젝트 목록으로 돌아가기"
                     >
-                        <Home size={16} className="text-violet-500" />
+                        <Home size={16} className="text-violet-500 shrink-0" />
                     </button>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <div className="flex flex-col justify-center px-1 mr-2" title="클릭하여 ID 복사">
+                    <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
                         <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
                         <button
                             onClick={async () => {
@@ -783,69 +817,71 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     }
                                 }
                             }}
-                            className="text-xs font-mono font-bold text-gray-700 hover:text-violet-600 transition-colors text-left"
+                            className="text-xs font-mono font-bold text-gray-700 hover:text-violet-600 transition-colors text-left truncate max-w-[140px] sm:max-w-[180px]"
                         >
                             {currentProject?.id}
                         </button>
                     </div>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <button
                         onClick={handleAddScreenClick}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
                     >
-                        <Plus size={16} />
-                        화면 추가
+                        <Plus size={16} className="shrink-0" />
+                        <span className="whitespace-nowrap">화면 추가</span>
                     </button>
 
                     <button
                         onClick={handleAddSpec}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
                     >
-                        <FileText size={16} />
-                        명세 추가
+                        <FileText size={16} className="shrink-0" />
+                        <span className="whitespace-nowrap hidden sm:inline">명세 추가</span>
                     </button>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <ToolbarUndoRedo />
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <button
                         onClick={() => setIsExportModalOpen(true)}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                     >
-                        <Upload size={16} className="text-green-500" />
-                        <span>내보내기</span>
+                        <Upload size={16} className="text-green-500 shrink-0" />
+                        <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
                     </button>
 
                     <button
                         disabled
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-400 border border-gray-200 rounded-lg text-sm font-bold shadow-sm cursor-not-allowed opacity-60"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-400 border border-gray-200 rounded-lg text-sm font-bold shadow-sm cursor-not-allowed opacity-60 shrink-0"
                         title="가져오기 기능 준비중"
                     >
-                        <Download size={16} className="text-gray-400" />
-                        가져오기
+                        <Download size={16} className="text-gray-400 shrink-0" />
+                        <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
                     </button>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <OnlineUsers />
+                    <div className="shrink-0">
+                        <OnlineUsers />
+                    </div>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <div className="flex items-center gap-2 px-1">
-                        <div className="flex items-center gap-2 pl-2 pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
+                    <div className="flex items-center gap-2 px-1 shrink-0">
+                        <div className="flex items-center gap-2 pl-2 pr-2 sm:pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100 min-w-0">
                             {user?.picture ? (
-                                <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm" />
+                                <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm shrink-0" />
                             ) : (
-                                <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-violet-600">
+                                <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
                                     <UserIcon size={14} />
                                 </div>
                             )}
-                            <span className="text-sm font-bold text-gray-700">{user?.name}</span>
+                            <span className="text-sm font-bold text-gray-700 truncate max-w-[80px] sm:max-w-none">{user?.name}</span>
                         </div>
                         <button
                             onClick={() => {
@@ -854,7 +890,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     logout();
                                 }
                             }}
-                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95"
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
                             title="로그아웃"
                         >
                             <LogOut size={18} />
@@ -892,7 +928,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         // Notify all ScreenNodes to clear selection
                         window.dispatchEvent(new CustomEvent('clear-screen-selection'));
                     }}
+                    onPaneMouseMove={onPaneMouseMove}
                 >
+                    <UserCursorsLayer />
                     <Controls />
                     <MiniMap
                         nodeColor={() => '#8b5cf6'}

@@ -1,3 +1,4 @@
+import path from 'path';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -22,6 +23,11 @@ export const config = {
 
     frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
     basePath: process.env.BASE_PATH || '', // e.g. /erd
+
+    // 이미지 업로드 경로: 로컬=./upload, 운영=UPLOAD_DIR env (예: /app/upload)
+    upload: {
+        dir: process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'),
+    },
 
     email: {
         host: process.env.EMAIL_HOST || 'smtp.gmail.com',

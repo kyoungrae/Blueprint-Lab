@@ -323,7 +323,7 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => 
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 transition-all min-w-[300px] group relative ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 transition-all min-w-[300px] group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''} ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'

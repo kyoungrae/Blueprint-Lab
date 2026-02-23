@@ -17,24 +17,24 @@ export function EntityLockBadge({ entityId }: EntityLockBadgeProps) {
 
     return (
         <div
-            className={`absolute -top-2 -right-2 px-2 py-0.5 rounded-full text-xs flex items-center gap-1 shadow-lg z-10 ${isOwnLock
+            className={`absolute -top-2 -right-2 px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5 shadow-lg z-10 whitespace-nowrap shrink-0 ${isOwnLock
                 ? 'bg-blue-500 text-white'
                 : 'bg-amber-500 text-black'
                 }`}
         >
             {isOwnLock ? (
                 <>
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                     </svg>
-                    <span>Editing</span>
+                    <span className="shrink-0">Editing</span>
                 </>
             ) : (
                 <>
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
-                    <span>{lock.userName}</span>
+                    <span className="shrink-0">{lock.userName}</span>
                 </>
             )}
         </div>

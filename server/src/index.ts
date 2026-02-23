@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
@@ -79,6 +81,11 @@ async function start() {
         // Test Redis connection
         await redis.ping();
         logger.info('✅ Redis ping successful');
+
+        // 이미지 업로드 폴더 생성 (없으면 자동 생성)
+        const uploadDir = path.join(config.upload.dir, 'images');
+        fs.mkdirSync(uploadDir, { recursive: true });
+        logger.info(`✅ Upload directory ready: ${uploadDir}`);
 
         // Start HTTP server
         httpServer.listen(config.port, () => {
