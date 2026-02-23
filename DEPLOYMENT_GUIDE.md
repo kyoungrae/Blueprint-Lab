@@ -218,6 +218,7 @@ podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 
 podman run -d --name blueprint-frontend --network blueprint-network -p 8085:80 --restart unless-stopped blueprint-frontend
 
 podman run -d --name blueprint-redis --network blueprint-network -p 6380:6379 -v ~/projects/blueprint-lab/redis_data:/data --restart unless-stopped docker.io/library/redis:7-alpine redis-server --appendonly yes
+
 ```
 ---
 

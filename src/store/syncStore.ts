@@ -2,8 +2,12 @@ import { io, Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import type { ERDState, HistoryLog } from '../types/erd';
 
-// Socket Server URL (empty = same origin as frontend)
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+// Socket Server URL
+// - Dev: localhost:3001 (backend)
+// - Prod with VITE_SOCKET_URL empty: same origin (window.location.origin)
+// - Prod with VITE_SOCKET_URL set: use that value
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL
+    || (import.meta.env.DEV ? 'http://localhost:3001' : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'));
 
 // Online User Interface
 export interface OnlineUser {
