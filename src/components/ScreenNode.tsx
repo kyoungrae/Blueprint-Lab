@@ -453,16 +453,23 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const scaleX = canvasRef.current.clientWidth / rect.width;
         const scaleY = canvasRef.current.clientHeight / rect.height;
 
-        let nextSelected = [...selectedElementIds];
+        const clickedEl = drawElements.find(el => el.id === id);
+
+        let nextSelected: string[];
         if (e.shiftKey) {
+            nextSelected = [...selectedElementIds];
             if (nextSelected.includes(id)) {
                 nextSelected = nextSelected.filter(sid => sid !== id);
             } else {
                 nextSelected.push(id);
             }
         } else {
-            if (!nextSelected.includes(id)) {
+            if (clickedEl?.groupId) {
+                nextSelected = drawElements.filter(el => el.groupId === clickedEl.groupId).map(el => el.id);
+            } else if (!selectedElementIds.includes(id)) {
                 nextSelected = [id];
+            } else {
+                nextSelected = selectedElementIds;
             }
         }
         setSelectedElementIds(nextSelected);
@@ -583,7 +590,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             setDragSelectRect({ x: selX, y: selY, w: selW, h: selH });
 
             // Select elements that intersect with the drag selection rectangle
-            const intersecting = drawElements.filter(el => {
+            let intersecting = drawElements.filter(el => {
                 const elRight = el.x + el.width;
                 const elBottom = el.y + el.height;
                 return (
@@ -593,6 +600,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     elBottom > selY
                 );
             }).map(el => el.id);
+            // 그룹된 객체가 포함된 경우 그룹 전체 선택
+            const groupIds = new Set(drawElements.filter(el => intersecting.includes(el.id) && el.groupId).map(el => el.groupId!).filter(Boolean));
+            groupIds.forEach(gid => {
+                const inGroup = drawElements.filter(el => el.groupId === gid).map(el => el.id);
+                intersecting = [...new Set([...intersecting, ...inGroup])];
+            });
             setSelectedElementIds(intersecting);
             return;
         }
@@ -621,18 +634,28 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             return;
         }
 
-        // Moving Logic
+        // Moving Logic - keep objects within canvas bounds (preserve relative positions when dragging group)
         if (draggingElementIds.length > 0) {
+            const cw = canvasRef.current.clientWidth;
+            const ch = canvasRef.current.clientHeight;
+            const dragged = drawElements.filter(el => draggingElementIds.includes(el.id));
+            const withOffsets = dragged.map(item => {
+                const offset = dragOffsets[item.id];
+                if (!offset) return null;
+                return { ...item, newX: x - offset.x, newY: y - offset.y };
+            }).filter(Boolean) as Array<{ newX: number; newY: number } & (typeof dragged[0])>;
+            if (withOffsets.length === 0) return;
+            // Single correction so entire group stays in bounds while preserving relative positions
+            const minNewX = Math.min(...withOffsets.map(o => o.newX));
+            const maxRight = Math.max(...withOffsets.map(o => o.newX + o.width));
+            const minNewY = Math.min(...withOffsets.map(o => o.newY));
+            const maxBottom = Math.max(...withOffsets.map(o => o.newY + o.height));
+            const corrX = Math.max(-minNewX, Math.min(cw - maxRight, 0));
+            const corrY = Math.max(-minNewY, Math.min(ch - maxBottom, 0));
             const nextElements = drawElements.map(item => {
-                if (draggingElementIds.includes(item.id)) {
-                    const offset = dragOffsets[item.id];
-                    if (offset) {
-                        return {
-                            ...item,
-                            x: x - offset.x,
-                            y: y - offset.y
-                        };
-                    }
+                const o = withOffsets.find(w => w.id === item.id);
+                if (o) {
+                    return { ...item, x: o.newX + corrX, y: o.newY + corrY };
                 }
                 return item;
             });
@@ -802,6 +825,32 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
+    };
+
+    const handleGroup = () => {
+        if (selectedElementIds.length < 2) return;
+        const groupId = `grp_${Date.now()}`;
+        const nextElements = drawElements.map(el =>
+            selectedElementIds.includes(el.id) ? { ...el, groupId } : el
+        );
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
+    };
+
+    const handleUngroup = () => {
+        const toUngroup = selectedElementIds.filter(id => {
+            const el = drawElements.find(e => e.id === id);
+            return el?.groupId != null;
+        });
+        if (toUngroup.length === 0) return;
+        const nextElements = drawElements.map(el =>
+            toUngroup.includes(el.id) ? { ...el, groupId: undefined } : el
+        );
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
+        setSelectedElementIds(prev => prev.filter(id => toUngroup.includes(id)));
     };
 
     // 삭제 계층: 1) 화면 엔티티(캔버스에서 처리) 2) 그리기 객체 3) 텍스트 입력 영역(문자만 삭제)
@@ -1448,7 +1497,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         <div className="nodrag w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar">
                                     <div className="flex items-center gap-1 flex-1 min-w-max px-1">
                                             {/* Undo/Redo Controls */}
-                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1">
+                                            <div className="flex items-center gap-0.5 border-l border-gray-200 ml-1">
                                                 <PremiumTooltip label="되돌리기 (Ctrl+Z)">
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); undo(); }}
@@ -1842,6 +1891,36 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 </div>
                                             )}
 
+                                            {/* 그룹화 / 그룹화 해제 */}
+                                            {selectedElementIds.length >= 1 && (() => {
+                                                const selectedEls = drawElements.filter(el => selectedElementIds.includes(el.id));
+                                                const hasGrouped = selectedEls.some(el => el.groupId != null);
+                                                const groupEnabled = selectedElementIds.length >= 2 && !hasGrouped;
+                                                const ungroupEnabled = hasGrouped;
+                                                return (
+                                                    <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1">
+                                                        <PremiumTooltip label="객체 그룹화">
+                                                            <button
+                                                                onClick={() => handleGroup()}
+                                                                disabled={!groupEnabled}
+                                                                className={`p-2 rounded-lg transition-colors ${groupEnabled ? 'hover:bg-gray-100 text-gray-600' : 'text-gray-300 cursor-not-allowed'}`}
+                                                            >
+                                                                <Group size={18} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        <PremiumTooltip label="그룹화 해제">
+                                                            <button
+                                                                onClick={() => handleUngroup()}
+                                                                disabled={!ungroupEnabled}
+                                                                className={`p-2 rounded-lg transition-colors ${ungroupEnabled ? 'hover:bg-gray-100 text-gray-600' : 'text-gray-300 cursor-not-allowed'}`}
+                                                            >
+                                                                <Ungroup size={18} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                    </div>
+                                                );
+                                            })()}
+
                                             <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
                                                 <PremiumTooltip label="색상 및 스타일">
                                                     <button
@@ -1983,7 +2062,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 style={commonStyle}
                                                 onMouseDown={(e) => handleElementMouseDown(el.id, e)}
                                                 onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
-                                                className={`group-canvas-element ${isSelected ? '' : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
+                                                className={`group-canvas-element ${isSelected ? 'ring-2 ring-offset-2' : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
                                                 data-element-id={el.id}
                                             >
                                                 {el.type === 'rect' && (
