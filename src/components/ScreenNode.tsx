@@ -32,7 +32,14 @@ interface ScreenNodeData {
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
     const { screen } = data;
-    const { updateScreen, deleteScreen } = useScreenDesignStore();
+    const {
+        updateScreen,
+        deleteScreen,
+        canvasClipboard,
+        setCanvasClipboard,
+        lastInteractedScreenId,
+        setLastInteractedScreenId,
+    } = useScreenDesignStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
 
@@ -195,8 +202,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const tablePanelDragOffsetRef = useRef({ x: 0, y: 0 });
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
     const dragStartCellIndexRef = useRef<number>(-1); // cell index where drag started
-    const clipboardRef = useRef<DrawElement[]>([]); // clipboard for copy-paste
-
     // Split Dialog State
     const [showSplitDialog, setShowSplitDialog] = useState(false);
     const [splitTarget, setSplitTarget] = useState<{ elId: string, cellIdx: number } | null>(null);
@@ -244,7 +249,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         // (locked nodes have no nodrag class → ReactFlow intercepts and stops bubble).
         const handleMouseDownCapture = (e: MouseEvent) => {
             if (containerRef.current && containerRef.current.contains(e.target as Node)) {
-                // Click was inside this node → keep selection
+                setLastInteractedScreenId(screen.id);
                 return;
             }
             clearSelection();
@@ -252,12 +257,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
         document.addEventListener('mousedown', handleMouseDownCapture, true);
         window.addEventListener('clear-screen-selection', clearSelection);
-        
+
         return () => {
             document.removeEventListener('mousedown', handleMouseDownCapture, true);
             window.removeEventListener('clear-screen-selection', clearSelection);
         };
-    }, []);
+    }, [setLastInteractedScreenId, screen.id]);
 
 
 
@@ -805,24 +810,25 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const active = document.activeElement as HTMLElement | null;
             const isInput = active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || active?.isContentEditable || editingTextId != null || (editingTableId != null && editingCellIndex != null);
 
-            // Ctrl+C (Copy)
+            // Ctrl+C (Copy) - 전역 클립보드에 저장 (다른 엔티티에서 붙여넣기 가능)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
                 if (isInput || selectedElementIds.length === 0) return;
                 e.preventDefault();
                 const toCopy = drawElements.filter(el => selectedElementIds.includes(el.id));
-                clipboardRef.current = JSON.parse(JSON.stringify(toCopy)); // Deep clone
+                setCanvasClipboard(JSON.parse(JSON.stringify(toCopy)));
                 return;
             }
 
-            // Ctrl+V (Paste)
+            // Ctrl+V (Paste) - 이 노드가 마지막 상호작용 대상일 때만 붙여넣기
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-                if (isInput || clipboardRef.current.length === 0) return;
+                if (isInput || canvasClipboard.length === 0) return;
+                if (lastInteractedScreenId !== screen.id) return; // 다른 엔티티에 포커스된 경우 스킵
                 e.preventDefault();
-                
-                const newElements = clipboardRef.current.map((el, idx) => ({
+
+                const newElements = canvasClipboard.map((el, idx) => ({
                     ...el,
                     id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
-                    x: el.x + 20, // Offset pasted elements
+                    x: el.x + 20,
                     y: el.y + 20
                 }));
 
@@ -830,12 +836,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 update({ drawElements: nextElements });
                 syncUpdate({ drawElements: nextElements });
                 saveHistory(nextElements);
-                
-                // Select the newly pasted elements
+
                 setSelectedElementIds(newElements.map(el => el.id));
-                
-                // Update clipboard for next paste (so they keep offsetting)
-                clipboardRef.current = newElements;
+                setCanvasClipboard(newElements);
                 return;
             }
 
@@ -873,7 +876,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         };
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex]);
+    }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard]);
 
 
     // ── Table V2 Utilities (flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells, gcd imported from ./screenNode/types) ──────────────────────────────────

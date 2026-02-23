@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Screen, ScreenFlow, ScreenDesignState } from '../types/screenDesign';
+import type { Screen, ScreenFlow, ScreenDesignState, DrawElement } from '../types/screenDesign';
 
 interface ScreenDesignStore {
     screens: Screen[];
@@ -15,6 +15,14 @@ interface ScreenDesignStore {
 
     exportData: () => ScreenDesignState;
     importData: (data: ScreenDesignState) => void;
+
+    // 전역 클립보드 (엔티티 간 복사/붙여넣기)
+    canvasClipboard: DrawElement[];
+    setCanvasClipboard: (elements: DrawElement[]) => void;
+
+    // 마지막 상호작용한 화면 ID (붙여넣기 대상 판단)
+    lastInteractedScreenId: string | null;
+    setLastInteractedScreenId: (id: string | null) => void;
 }
 
 export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
@@ -73,4 +81,10 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
             flows: data.flows || [],
         });
     },
+
+    canvasClipboard: [],
+    setCanvasClipboard: (elements) => set({ canvasClipboard: elements }),
+
+    lastInteractedScreenId: null,
+    setLastInteractedScreenId: (id) => set({ lastInteractedScreenId: id }),
 }));
