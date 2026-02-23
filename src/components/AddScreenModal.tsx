@@ -10,7 +10,7 @@ interface AddScreenModalProps {
 
 const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) => {
     const [pageSize, setPageSize] = useState<PageSizeOption>('A4');
-    const [pageOrientation, setPageOrientation] = useState<PageOrientation>('portrait');
+    const [pageOrientation, setPageOrientation] = useState<PageOrientation>('landscape');
 
     const handleConfirm = () => {
         onConfirm(pageSize, pageOrientation);
@@ -42,7 +42,7 @@ const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) =
                 {/* Size Selection */}
                 <div className="px-6 py-4 border-b border-gray-100">
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">용지 크기</label>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                         {PAGE_SIZE_OPTIONS.map((size) => {
                             const dim = PAGE_SIZE_DIMENSIONS_MM[size];
                             const labelW = pageOrientation === 'portrait' ? dim.w : dim.h;
@@ -51,14 +51,14 @@ const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) =
                                 <button
                                     key={size}
                                     onClick={() => setPageSize(size)}
-                                    className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all flex flex-col items-center gap-0.5 ${
+                                    className={`min-w-0 px-3 py-2.5 rounded-xl font-bold text-sm transition-all flex flex-col items-center gap-0.5 ${
                                         pageSize === size
                                             ? 'bg-violet-600 text-white shadow-md'
                                             : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
                                     }`}
                                 >
                                     <span>{size}</span>
-                                    <span className={`text-[10px] font-normal ${pageSize === size ? 'text-white/90' : 'text-gray-400'}`}>
+                                    <span className={`text-[10px] font-normal truncate max-w-full ${pageSize === size ? 'text-white/90' : 'text-gray-400'}`}>
                                         {labelW} × {labelH} mm
                                     </span>
                                 </button>

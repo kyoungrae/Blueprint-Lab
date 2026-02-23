@@ -16,31 +16,37 @@ const labelCell = "bg-[#2c3e7c] text-white text-[11px] font-bold px-3 py-2 borde
 const valueCell = "bg-white text-xs text-gray-800 px-2 py-1 border-r border-[#e2e8f0] align-middle";
 
 const MetaInfoTable: React.FC<MetaInfoTableProps> = ({ screen, isLocked, update, syncUpdate }) => {
+    const colWidth = `${100 / 6}%`;
     return (
         <div className="border-b border-gray-200">
-            <table className="nodrag w-full border-collapse">
+            <table className="nodrag w-full border-collapse table-fixed">
+                <colgroup>
+                    {[...Array(6)].map((_, i) => (
+                        <col key={i} style={{ width: colWidth }} />
+                    ))}
+                </colgroup>
                 <tbody>
-                    {/* Row 1 */}
+                    {/* Row 1 - 1:1:1:1:1:1 */}
                     <tr className="border-b border-[#e2e8f0]">
-                        <td className={labelCell} style={{ width: 100 }}>시스템명</td>
-                        <td className={valueCell} style={{ width: 180 }}>
+                        <td className={labelCell}>시스템명</td>
+                        <td className={valueCell}>
                             <EditableCell value={screen.systemName} onChange={(v) => update({ systemName: v })} onBlur={(v) => syncUpdate({ systemName: v })} isLocked={isLocked} placeholder="시스템명" className="text-center font-bold" />
                         </td>
-                        <td className={labelCell} style={{ width: 80 }}>작성자</td>
-                        <td className={valueCell} style={{ width: 140 }}>
+                        <td className={labelCell}>작성자</td>
+                        <td className={valueCell}>
                             <EditableCell value={screen.author} onChange={(v) => update({ author: v })} onBlur={(v) => syncUpdate({ author: v })} isLocked={isLocked} placeholder="작성자" className="text-center" />
                         </td>
-                        <td className={labelCell} style={{ width: 90 }}>작성일자</td>
+                        <td className={labelCell}>작성일자</td>
                         <td className={`${valueCell} border-r-0`}>
                             <EditableCell value={screen.createdDate} onChange={(v) => update({ createdDate: v })} onBlur={(v) => syncUpdate({ createdDate: v })} isLocked={isLocked} placeholder="YYYY-MM-DD" mono className="text-center" />
                         </td>
                     </tr>
 
-                    {/* Row 2 */}
+                    {/* Row 2 - 1:1:1:1:1:1 */}
                     <tr className="border-b border-[#e2e8f0]">
                         <td className={labelCell}>화면ID</td>
                         <td className={valueCell}>
-                            <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} onBlur={(v) => syncUpdate({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c]" />
+                            <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} onBlur={(v) => syncUpdate({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c] text-center" />
                         </td>
                         <td className={labelCell}>화면유형</td>
                         <td className={valueCell}>

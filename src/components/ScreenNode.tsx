@@ -1660,6 +1660,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
+                                                                    if (!showTablePicker) {
+                                                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                        setTablePickerPos({ top: rect.bottom + 8, left: rect.left });
+                                                                    }
                                                                     setShowTablePicker(!showTablePicker);
                                                                     setTablePickerHover(null);
                                                                 }}
