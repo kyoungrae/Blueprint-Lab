@@ -2,7 +2,7 @@ import React, { memo, useState, useRef, useEffect, useContext } from 'react';
 import { type NodeProps } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
 
-import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2 } from 'lucide-react';
+import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -1983,7 +1983,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 style={commonStyle}
                                                 onMouseDown={(e) => handleElementMouseDown(el.id, e)}
                                                 onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
-                                                className={`group-canvas-element ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2' : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
+                                                className={`group-canvas-element ${isSelected ? '' : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
                                                 data-element-id={el.id}
                                             >
                                                 {el.type === 'rect' && (

@@ -103,6 +103,7 @@ export interface DrawElement {
     textAlign?: 'left' | 'center' | 'right';
     verticalAlign?: 'top' | 'middle' | 'bottom';
     zIndex: number;
+    groupId?: string;
     // Table-specific properties
     tableRows?: number;
     tableCols?: number;
