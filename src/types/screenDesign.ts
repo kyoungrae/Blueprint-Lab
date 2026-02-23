@@ -56,13 +56,18 @@ export interface Screen {
     specs?: ScreenSpecItem[];
 
     // ── 캔버스 위치 ──
-    // ── 캔버스 위치 ──
     position: { x: number; y: number };
+
+    // ── 화면 엔티티 크기 설정 (용지 사이즈) ──
+    pageSize?: PageSizeOption;
+    pageOrientation?: PageOrientation;
     imageWidth?: number;
     imageHeight?: number;
     tablePanelHeight?: number;
     functionPanelHeight?: number;
     contentPanelHeight?: number;
+    /** RightPane 패널 비율 (0–100, 합 100). [초기화면설정, 기능상세, 관련테이블] */
+    rightPaneRatios?: [number, number, number];
     isLocked?: boolean;
     contentMode?: 'IMAGE' | 'DRAW'; // UI 콘텐츠 모드 (이미지 업로드 vs 직접 그리기)
     drawElements?: DrawElement[];   // 직접 그리기 영역의 요소들
@@ -158,6 +163,29 @@ export interface ScreenDesignState {
     screens: Screen[];
     flows: ScreenFlow[];
 }
+
+/** 용지 크기 프리셋 (px, 96dpi 기준) */
+export const PAGE_SIZE_PRESETS: Record<string, { width: number; height: number }> = {
+    A4: { width: 794, height: 1123 },
+    B4: { width: 945, height: 1334 },
+    A3: { width: 1123, height: 1587 },
+    Letter: { width: 816, height: 1056 },
+};
+
+/** 용지 크기 표시용 치수 (mm, 세로 기준) */
+export const PAGE_SIZE_DIMENSIONS_MM: Record<string, { w: number; h: number }> = {
+    A4: { w: 210, h: 297 },
+    B4: { w: 250, h: 353 },
+    A3: { w: 297, h: 420 },
+    Letter: { w: 216, h: 279 },
+};
+
+/** 화면 엔티티 용지 크기 선택지 */
+export const PAGE_SIZE_OPTIONS = ['A4', 'B4', 'A3', 'Letter'] as const;
+export type PageSizeOption = (typeof PAGE_SIZE_OPTIONS)[number];
+
+/** 용지 방향 */
+export type PageOrientation = 'portrait' | 'landscape';
 
 /** 화면 유형 목록 */
 export const SCREEN_TYPES = [

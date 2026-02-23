@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
-import { Trash2, Database } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Trash2, Database, GripHorizontal } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
+
+const DEFAULT_RATIOS: [number, number, number] = [40, 35, 25];
+const MIN_PANEL_PCT = 10;
+const RESIZE_HANDLE_HEIGHT = 6;
+const TOTAL_HANDLE_HEIGHT = RESIZE_HANDLE_HEIGHT * 2;
 
 interface RightPaneProps {
     screen: Screen;
@@ -85,11 +90,59 @@ const RightPane: React.FC<RightPaneProps> = ({
         return propValue;
     };
 
+    const ratios = screen.rightPaneRatios || DEFAULT_RATIOS;
+
+    const clampRatios = (r: [number, number, number]): [number, number, number] => {
+        const a = Math.max(MIN_PANEL_PCT, Math.min(80, r[0]));
+        const b = Math.max(MIN_PANEL_PCT, Math.min(80, r[1]));
+        const c = Math.max(MIN_PANEL_PCT, Math.min(80, r[2]));
+        const sum = a + b + c;
+        return [a / sum * 100, b / sum * 100, c / sum * 100];
+    };
+
+    const handleResizeStart = useCallback((divider: 'func' | 'table', e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const onMove = (ev: MouseEvent) => {
+            const container = rightPaneRef.current;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const totalH = rect.height;
+            const contentH = totalH - TOTAL_HANDLE_HEIGHT;
+            const mouseYLocal = ev.clientY - rect.top;
+            const ratioFromTop = Math.max(0, Math.min(100, (mouseYLocal / contentH) * 100));
+
+            let next: [number, number, number];
+            if (divider === 'func') {
+                const r0 = Math.max(MIN_PANEL_PCT, Math.min(80, ratioFromTop));
+                const remaining = 100 - r0;
+                const r1 = Math.max(MIN_PANEL_PCT, Math.min(remaining - MIN_PANEL_PCT, ratios[1]));
+                const r2 = Math.max(MIN_PANEL_PCT, remaining - r1);
+                next = [r0, r1, r2];
+            } else {
+                const r0 = ratios[0];
+                const cumTopTwo = Math.max(r0 + MIN_PANEL_PCT, Math.min(90, ratioFromTop));
+                const r1 = Math.max(MIN_PANEL_PCT, cumTopTwo - r0);
+                const r2 = Math.max(MIN_PANEL_PCT, 100 - r0 - r1);
+                next = [r0, r1, r2];
+            }
+            const clamped = clampRatios(next);
+            update({ rightPaneRatios: clamped });
+            syncUpdate({ rightPaneRatios: clamped });
+        };
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    }, [ratios, update, syncUpdate]);
+
     return (
-        <div ref={rightPaneRef} className="w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px]" style={{ minWidth: 250 }}>
+        <div ref={rightPaneRef} className="w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px] overflow-hidden" style={{ minWidth: 250 }}>
 
             {/* Panel: 초기화면설정 */}
-            <div className="flex-1 flex flex-col border-t border-gray-200 min-h-[50px] min-w-0 overflow-hidden">
+            <div className="flex flex-col border-t border-gray-200 min-h-[50px] min-w-0 overflow-hidden" style={{ flex: `${ratios[0]} 1 0` }}>
                 <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 초기화면설정
                 </div>
@@ -109,9 +162,20 @@ const RightPane: React.FC<RightPaneProps> = ({
                 </div>
             </div>
 
+            {/* Resize handle: 기능상세 상단 */}
+            {!isLocked && (
+                <div
+                    onMouseDown={(e) => handleResizeStart('func', e)}
+                    className="nodrag cursor-n-resize bg-[#5c6b9e] hover:bg-[#6b7aae] active:bg-[#4a588a] h-1.5 flex items-center justify-center shrink-0 group/resize transition-colors"
+                    title="드래그하여 초기화면설정/기능상세 영역 크기 조절"
+                >
+                    <GripHorizontal size={12} className="text-white/60 group-hover/resize:text-white" />
+                </div>
+            )}
+
             {/* Panel: 기능상세 */}
-            <div className="flex flex-col border-t border-gray-200">
-                <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5">
+            <div className="flex flex-col border-t border-gray-200 min-h-[60px] min-w-0 overflow-hidden" style={{ flex: `${ratios[1]} 1 0` }}>
+                <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 기능상세
                 </div>
                 <div className="p-3 space-y-2">
@@ -154,8 +218,19 @@ const RightPane: React.FC<RightPaneProps> = ({
                 </div>
             </div>
 
-            {/* Panel: 관련테이블 */}
-            <div className="flex flex-col border-t border-gray-200 rounded-br-[13px]">
+            {/* Resize handle: 관련테이블 상단 */}
+            {!isLocked && (
+                <div
+                    onMouseDown={(e) => handleResizeStart('table', e)}
+                    className="nodrag cursor-n-resize bg-[#5e6b7c] hover:bg-[#6d7a8b] active:bg-[#4a5463] h-1.5 flex items-center justify-center shrink-0 group/resize transition-colors"
+                    title="드래그하여 기능상세/관련테이블 영역 크기 조절"
+                >
+                    <GripHorizontal size={12} className="text-white/60 group-hover/resize:text-white" />
+                </div>
+            )}
+
+            {/* Panel: 관련테이블 - min-h로 입력창/빈상태 모두 표시 */}
+            <div className="flex flex-col border-t border-gray-200 rounded-br-[13px] min-h-[150px] min-w-0 overflow-hidden" style={{ flex: `${ratios[2]} 1 0` }}>
                 <div className="bg-[#5e6b7c] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a5463] select-none shadow-sm flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 관련테이블
@@ -211,44 +286,46 @@ const RightPane: React.FC<RightPaneProps> = ({
                     )}
                 </div>
 
-                {/* Table list */}
-                <div className="p-2">
-                    {tableLines.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-4 text-gray-300 text-center">
-                            <Database size={18} className="opacity-20 mb-1" />
-                            <p className="text-[10px] font-bold">관련 테이블 없음</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-0.5">
-                            {tableLines.map((line, idx) => {
-                                const displayLine = line.trim().startsWith('•') ? line.trim().substring(1).trim() : line.trim();
-                                return (
-                                    <div key={idx} className="flex items-center justify-between group/table px-1.5 py-1 hover:bg-blue-50/50 rounded transition-colors text-[10px] font-mono min-w-0">
-                                        <div className="flex items-center gap-1.5 flex-1">
-                                            <span className="text-blue-500 font-bold shrink-0 text-[8px]">•</span>
-                                            <span className="text-gray-700 font-bold break-all">{displayLine}</span>
+                {/* Table list - scrollable area + input fixed at bottom (입력창 우선 보장) */}
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2">
+                        {tableLines.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-4 text-gray-300 text-center">
+                                <Database size={18} className="opacity-20 mb-1" />
+                                <p className="text-[10px] font-bold">관련 테이블 없음</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-0.5">
+                                {tableLines.map((line, idx) => {
+                                    const displayLine = line.trim().startsWith('•') ? line.trim().substring(1).trim() : line.trim();
+                                    return (
+                                        <div key={idx} className="flex items-center justify-between group/table px-1.5 py-1 hover:bg-blue-50/50 rounded transition-colors text-[10px] font-mono min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-1">
+                                                <span className="text-blue-500 font-bold shrink-0 text-[8px]">•</span>
+                                                <span className="text-gray-700 font-bold break-all">{displayLine}</span>
+                                            </div>
+                                            {!isLocked && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const newLines = tableLines.filter((_, i) => i !== idx);
+                                                        update({ relatedTables: newLines.join('\n') });
+                                                        syncUpdate({ relatedTables: newLines.join('\n') });
+                                                    }}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    className="p-1 text-gray-400 hover:text-red-500 transition-all active:scale-90 shrink-0"
+                                                >
+                                                    <Trash2 size={11} />
+                                                </button>
+                                            )}
                                         </div>
-                                        {!isLocked && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const newLines = tableLines.filter((_, i) => i !== idx);
-                                                    update({ relatedTables: newLines.join('\n') });
-                                                    syncUpdate({ relatedTables: newLines.join('\n') });
-                                                }}
-                                                onMouseDown={(e) => e.stopPropagation()}
-                                                className="p-1 text-gray-400 hover:text-red-500 transition-all active:scale-90 shrink-0"
-                                            >
-                                                <Trash2 size={11} />
-                                            </button>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                     {!isLocked && (
-                        <div className="pt-2 border-t border-gray-100 mt-2">
+                        <div className="shrink-0 p-2 border-t border-gray-100 bg-white">
                             <input
                                 type="text"
                                 placeholder="테이블 직접 입력 후 Enter..."

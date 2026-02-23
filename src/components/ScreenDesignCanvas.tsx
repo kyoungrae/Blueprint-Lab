@@ -22,14 +22,18 @@ import SpecNode from './SpecNode';
 import ScreenEdge from './ScreenEdge';
 import ScreenSidebar from './ScreenSidebar';
 import ScreenExportModal from './ScreenExportModal';
+import AddScreenModal from './AddScreenModal';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
-import type { Screen } from '../types/screenDesign';
+import type { Screen, PageSizeOption, PageOrientation } from '../types/screenDesign';
+import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
 import {
-    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft
+    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2
 } from 'lucide-react';
+import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { copyToClipboard } from '../utils/clipboard';
+import { OnlineUsers } from './collaboration';
 import { toPng } from 'html-to-image';
 import { useSyncStore } from '../store/syncStore';
 
@@ -43,6 +47,32 @@ const edgeTypes = {
 };
 
 import { ExportModeContext } from '../contexts/ExportModeContext';
+
+// ── Toolbar Undo/Redo (ERD 스타일) ──────────────────────────
+const ToolbarUndoRedo: React.FC = () => {
+    const { handlers } = useScreenDesignUndoRedo();
+    return (
+        <div className="flex bg-gray-50/50 rounded-lg border border-gray-100 p-0.5">
+            <button
+                onClick={handlers.undo}
+                disabled={!handlers.canUndo}
+                className={`p-2 rounded-md transition-all ${handlers.canUndo ? 'text-gray-700 hover:bg-white hover:shadow-sm active:scale-95' : 'text-gray-200 cursor-not-allowed'}`}
+                title="되돌리기 (Ctrl+Z)"
+            >
+                <Undo2 size={18} />
+            </button>
+            <div className="w-[1px] h-4 bg-gray-200 self-center mx-0.5" />
+            <button
+                onClick={handlers.redo}
+                disabled={!handlers.canRedo}
+                className={`p-2 rounded-md transition-all ${handlers.canRedo ? 'text-gray-700 hover:bg-white hover:shadow-sm active:scale-95' : 'text-gray-200 cursor-not-allowed'}`}
+                title="다시실행 (Ctrl+Y)"
+            >
+                <Redo2 size={18} />
+            </button>
+        </div>
+    );
+};
 
 // ── Canvas Content ──────────────────────────────────────────
 const ScreenDesignCanvasContent: React.FC = () => {
@@ -64,6 +94,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const { getNodes, fitView } = useReactFlow();
@@ -92,19 +123,43 @@ const ScreenDesignCanvasContent: React.FC = () => {
         }
     }, [screens, flows, currentProjectId, updateProjectData]);
 
-    // Sync screens → ReactFlow nodes
+    // Sync screens → ReactFlow nodes (캔버스 70% 반영하여 entity 크기 계산)
+    const computeNodeStyle = (screen: Screen): React.CSSProperties | undefined => {
+        if (screen.variant === 'SPEC') return undefined;
+        const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
+        const CANVAS_WIDTH_RATIO = 0.7;
+        const FIXED_TOP_HEIGHT = 180;
+        const sizeKey: (typeof PAGE_SIZE_OPTIONS)[number] =
+            screen.pageSize && PAGE_SIZE_OPTIONS.includes(screen.pageSize as any) ? screen.pageSize! : 'A4';
+        const preset = PAGE_SIZE_PRESETS[sizeKey];
+        const orientation = screen.pageOrientation || 'portrait';
+        let canvasW = orientation === 'landscape' ? preset.height : preset.width;
+        let canvasH = orientation === 'landscape' ? preset.width : preset.height;
+        if (canvasW < MIN_CANVAS_WIDTH) {
+            const scale = MIN_CANVAS_WIDTH / canvasW;
+            canvasW = MIN_CANVAS_WIDTH;
+            canvasH = Math.round(canvasH * scale);
+        }
+        return {
+            width: Math.ceil(canvasW / CANVAS_WIDTH_RATIO),
+            height: canvasH + FIXED_TOP_HEIGHT,
+        };
+    };
+
     useEffect(() => {
         setNodes((prevNodes) => {
             return screens.map((screen) => {
                 const existingNode = prevNodes.find((n) => n.id === screen.id);
-                return {
+                const style = computeNodeStyle(screen);
+                const node: RFNode = {
                     id: screen.id,
-                    width: undefined, height: undefined, // Clear style
                     type: screen.variant === 'SPEC' ? 'spec' : 'screen',
                     position: screen.position,
                     data: { screen },
                     selected: existingNode?.selected,
                 };
+                if (style) node.style = style;
+                return node;
             });
         });
     }, [screens, setNodes]);
@@ -471,7 +526,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
         return connection.source !== connection.target;
     }, []);
 
-    const handleAddScreen = useCallback(() => {
+    const handleAddScreenClick = useCallback(() => {
+        setIsAddScreenModalOpen(true);
+    }, []);
+
+    const handleAddScreenConfirm = useCallback((pageSize: PageSizeOption, pageOrientation: PageOrientation) => {
         const baseName = '새 화면';
         const existingNames = new Set(screens.map(s => s.name));
         let newName = baseName;
@@ -505,6 +564,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
             position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
             fields: [],
             isLocked: true,
+            pageSize,
+            pageOrientation,
         };
         addScreen(newScreen);
 
@@ -676,6 +737,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     }, [fitView]);
 
     return (
+        <ScreenDesignUndoRedoProvider>
         <ExportModeContext.Provider value={isExporting}>
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
             <div className="relative flex h-full">
@@ -730,7 +792,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
 
                     <button
-                        onClick={handleAddScreen}
+                        onClick={handleAddScreenClick}
                         className="flex items-center gap-2 px-3.5 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95"
                     >
                         <Plus size={16} />
@@ -744,6 +806,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         <FileText size={16} />
                         명세 추가
                     </button>
+
+                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+
+                    <ToolbarUndoRedo />
 
                     <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
 
@@ -763,6 +829,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         <Download size={16} className="text-gray-400" />
                         가져오기
                     </button>
+
+                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+
+                    <OnlineUsers />
 
                     <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
 
@@ -841,6 +911,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         screens={screens}
                         onExport={handleExportImage}
                         onClose={() => setIsExportModalOpen(false)}
+                    />
+                )}
+
+                {isAddScreenModalOpen && (
+                    <AddScreenModal
+                        onConfirm={handleAddScreenConfirm}
+                        onClose={() => setIsAddScreenModalOpen(false)}
                     />
                 )}
 
@@ -981,6 +1058,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             </div>
         </div>
         </ExportModeContext.Provider>
+        </ScreenDesignUndoRedoProvider>
     );
 };
 

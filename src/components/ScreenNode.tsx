@@ -1,8 +1,10 @@
-import React, { memo, useState, useRef, useEffect, useContext } from 'react';
+import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { type NodeProps } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
+import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../types/screenDesign';
 
-import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup } from 'lucide-react';
+import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, SlidersHorizontal, RectangleHorizontal, RectangleVertical } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -12,6 +14,7 @@ import { useAuthStore } from '../store/authStore';
 
 import ScreenHandles from './screenNode/ScreenHandles';
 import { ExportModeContext } from '../contexts/ExportModeContext';
+import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import DrawTextComponent from './screenNode/DrawTextComponent';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
@@ -31,6 +34,7 @@ interface ScreenNodeData {
 
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
+    const { setHandlers } = useScreenDesignUndoRedo();
     const { screen } = data;
     const {
         updateScreen,
@@ -55,20 +59,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     const isLocked = screen.isLocked ?? true;
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
+    const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
     const tableListRef = useRef<HTMLDivElement>(null);
+    const screenOptionsRef = useRef<HTMLDivElement>(null);
     const rightPaneRef = useRef<HTMLDivElement>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
-
-    // Close table list on click outside
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (tableListRef.current && !tableListRef.current.contains(e.target as Node)) {
-                setIsTableListOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
 
     // Linked ERD Project Data
     const { projects, currentProjectId } = useProjectStore();
@@ -120,8 +115,45 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [showLayerPanel, setShowLayerPanel] = useState(false);
     const [showTablePicker, setShowTablePicker] = useState(false);
     const [tablePickerHover, setTablePickerHover] = useState<{ r: number, c: number } | null>(null);
+    const [tablePickerPos, setTablePickerPos] = useState({ top: 0, left: 0 });
+    const tablePickerRef = useRef<HTMLDivElement>(null);
     const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
+    // Close table list, screen options, table picker on click outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node;
+            if (tableListRef.current && !tableListRef.current.contains(target)) {
+                setIsTableListOpen(false);
+            }
+            if (screenOptionsRef.current && !screenOptionsRef.current.contains(target)) {
+                setShowScreenOptionsPanel(false);
+            }
+            if (showTablePicker && tablePickerRef.current && !tablePickerRef.current.contains(target) && !(target as Element).closest('[data-table-picker-portal]')) {
+                setShowTablePicker(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showTablePicker]);
+
+    // Update table picker position for portal (escapes overflow clipping)
+    useLayoutEffect(() => {
+        if (!showTablePicker || !tablePickerRef.current) return;
+        const updatePos = () => {
+            if (tablePickerRef.current) {
+                const rect = tablePickerRef.current.getBoundingClientRect();
+                setTablePickerPos({ top: rect.bottom + 8, left: rect.left });
+            }
+        };
+        updatePos();
+        window.addEventListener('scroll', updatePos, true);
+        window.addEventListener('resize', updatePos);
+        return () => {
+            window.removeEventListener('scroll', updatePos, true);
+            window.removeEventListener('resize', updatePos);
+        };
+    }, [showTablePicker]);
 
 
 
@@ -195,6 +227,22 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             setHistory({ past: [screen.drawElements], future: [] });
         }
     }, []);
+
+    // 상단 툴바에 Undo/Redo 노출 (선택된 화면이 잠금 해제일 때)
+    useEffect(() => {
+        if (selected && !isLocked) {
+            setHandlers(screen.id, {
+                undo,
+                redo,
+                canUndo: history.past.length > 1,
+                canRedo: history.future.length > 0,
+            });
+        } else {
+            setHandlers(screen.id, null);
+        }
+        return () => setHandlers(screen.id, null);
+    }, [selected, isLocked, history.past.length, history.future.length, setHandlers, screen.id]);
+
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
     const [showTablePanel, setShowTablePanel] = useState(false);
     const [tablePanelPos, setTablePanelPos] = useState<{ x: number | string, y: number }>({ x: 1020, y: 40 });
@@ -1419,15 +1467,33 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
 
 
+    // Entity dimensions from page size/orientation (캔버스가 70%이므로 entityWidth = canvasWidth/0.7)
+    const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일 (B4/A3 등 실제 크기 유지)
+    const CANVAS_WIDTH_RATIO = 0.7; // 왼쪽 캔버스가 entity의 70%
+    const FIXED_TOP_HEIGHT = 180; // 헤더+메타+툴바 등 상단 고정 영역
+    const sizeKey: (typeof PAGE_SIZE_OPTIONS)[number] =
+        screen.pageSize && PAGE_SIZE_OPTIONS.includes(screen.pageSize as any) ? screen.pageSize! : 'A4';
+    const preset = PAGE_SIZE_PRESETS[sizeKey];
+    const orientation = screen.pageOrientation || 'portrait';
+    let canvasW = orientation === 'landscape' ? preset.height : preset.width;
+    let canvasH = orientation === 'landscape' ? preset.width : preset.height;
+    if (canvasW < MIN_CANVAS_WIDTH) {
+        const scale = MIN_CANVAS_WIDTH / canvasW;
+        canvasW = MIN_CANVAS_WIDTH;
+        canvasH = Math.round(canvasH * scale);
+    }
+    const entityWidth = Math.ceil(canvasW / CANVAS_WIDTH_RATIO);
+    const entityHeight = canvasH + FIXED_TOP_HEIGHT;
+
     return (
         <div
             ref={containerRef}
             className={`transition-all group relative`}
-            style={{ width: 1000, height: 'auto' }}
+            style={{ width: entityWidth, height: entityHeight }}
         >
             <div
                 ref={nodeRef}
-                className={`bg-white rounded-[15px] shadow-xl border-2 flex flex-col ${selected && !isExporting
+                className={`h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected && !isExporting
                     ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                     : isLocked
                         ? 'border-gray-200 shadow-md'
@@ -1465,6 +1531,65 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                     {/* Header Actions */}
                     <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
+                        {/* 화면 옵션 (용지 크기/방향) */}
+                        <div className="relative" ref={screenOptionsRef}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setShowScreenOptionsPanel(v => !v); }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
+                                title="화면 옵션"
+                            >
+                                <SlidersHorizontal size={16} />
+                            </button>
+                            {showScreenOptionsPanel && (
+                                <div
+                                    className="nodrag absolute right-0 top-full mt-1.5 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in-95 duration-150"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">용지 크기</div>
+                                    <div className="grid grid-cols-2 gap-1.5 mb-3">
+                                        {PAGE_SIZE_OPTIONS.map((s) => {
+                                            const dim = PAGE_SIZE_DIMENSIONS_MM[s];
+                                            const ori = (screen.pageOrientation || 'portrait') as 'portrait' | 'landscape';
+                                            const labelW = ori === 'portrait' ? dim.w : dim.h;
+                                            const labelH = ori === 'portrait' ? dim.h : dim.w;
+                                            return (
+                                                <button
+                                                    key={s}
+                                                    type="button"
+                                                    onClick={() => { update({ pageSize: s }); syncUpdate({ pageSize: s }); }}
+                                                    className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                                        (screen.pageSize || 'A4') === s
+                                                            ? 'bg-[#2c3e7c] text-white'
+                                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                    }`}
+                                                >
+                                                    <span className="block">{s}</span>
+                                                    <span className="block text-[8px] font-normal opacity-90">{labelW}×{labelH}mm</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">방향</div>
+                                    <div className="flex gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => { update({ pageOrientation: 'portrait' }); syncUpdate({ pageOrientation: 'portrait' }); }}
+                                            className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${(screen.pageOrientation || 'portrait') === 'portrait' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                        >
+                                            <RectangleVertical size={12} /> 세로
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { update({ pageOrientation: 'landscape' }); syncUpdate({ pageOrientation: 'landscape' }); }}
+                                            className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${screen.pageOrientation === 'landscape' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                        >
+                                            <RectangleHorizontal size={12} /> 가로
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button
                             onClick={handleToggleLock}
                             onMouseDown={(e) => e.stopPropagation()}
@@ -1490,7 +1615,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
 
                 {/* ── 3. Body Content: Toolbar full width, then Split Layout ── */}
-                <div className="flex flex-col bg-white rounded-[15px]">
+                <div className="flex-1 flex flex-col min-h-0 bg-white rounded-[15px]">
 
                     {/* Drawing Toolbar - Full width (100%) */}
                     {!isLocked && (
@@ -1530,10 +1655,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     </PremiumTooltip>
                                                 </div>
                                                 <div className="flex items-center gap-0.5">
-                                                    <div className="relative">
+                                                    <div className="relative" ref={tablePickerRef}>
                                                         <PremiumTooltip label="표 삽입">
                                                             <button
-                                                                onClick={() => {
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
                                                                     setShowTablePicker(!showTablePicker);
                                                                     setTablePickerHover(null);
                                                                 }}
@@ -1542,9 +1668,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 <Table2 size={18} />
                                                             </button>
                                                         </PremiumTooltip>
-                                                        {showTablePicker && (
+                                                        {showTablePicker && createPortal(
                                                             <div
-                                                                className="nodrag absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in duration-150"
+                                                                data-table-picker-portal
+                                                                className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9999] animate-in fade-in zoom-in duration-150"
+                                                                style={{ top: tablePickerPos.top, left: tablePickerPos.left }}
                                                                 onMouseLeave={() => setTablePickerHover(null)}
                                                             >
                                                                 <div className="text-[11px] font-bold text-gray-600 mb-2 flex items-center gap-1.5">
@@ -1564,12 +1692,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                             : 'bg-gray-50 border-gray-300 hover:border-gray-400'
                                                                                             }`}
                                                                                         onMouseEnter={() => setTablePickerHover({ r: rIdx, c: cIdx })}
-                                                                                        onClick={() => {
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            e.preventDefault();
                                                                                             const rows = rIdx + 1;
                                                                                             const cols = cIdx + 1;
-                                                                                            const canvasRect = canvasRef.current?.getBoundingClientRect();
-                                                                                            const cx = canvasRect ? canvasRect.width / 2 - (cols * 60) / 2 : 50;
-                                                                                            const cy = canvasRect ? canvasRect.height / 2 - (rows * 30) / 2 : 50;
+                                                                                            const cw = canvasRef.current?.clientWidth ?? 0;
+                                                                                            const ch = canvasRef.current?.clientHeight ?? 0;
+                                                                                            const cx = cw ? cw / 2 - (cols * 60) / 2 : 50;
+                                                                                            const cy = ch ? ch / 2 - (rows * 30) / 2 : 50;
                                                                                             const newId = `draw_${Date.now()}`;
                                                                                             const tableEl: DrawElement = {
                                                                                                 id: newId,
@@ -1609,7 +1740,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         : '행 × 열 선택'
                                                                     }
                                                                 </div>
-                                                            </div>
+                                                            </div>,
+                                                            document.body
                                                         )}
                                                     </div>
                                                     {/* Table Panel Button — shown only when a table is selected */}
@@ -2019,13 +2151,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         </div>
                     )}
 
-                    {/* Left + Right pane row */}
-                    <div className="flex" style={{ minHeight: 500 }}>
+                    {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
+                    <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
                     {/* [LEFT PANE 70%] - Drawing Canvas */}
-                    <div className="w-[70%] flex-shrink-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px]">
+                    <div className="w-[70%] flex-shrink-0 min-w-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px]">
 
                         {/* Drawing Canvas Area (canvas only) */}
-                        <div className="flex-1 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
+                        <div className="flex-1 min-h-0 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
                             style={{
                                 backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
                                 backgroundSize: '20px 20px'
