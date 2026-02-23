@@ -1,5 +1,6 @@
-import React, { memo } from 'react';
+import React, { memo, useContext } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
+import { ExportModeContext } from '../contexts/ExportModeContext';
 import type { Screen, ScreenSpecItem } from '../types/screenDesign';
 import { SCREEN_FIELD_TYPES, SCREEN_TYPES } from '../types/screenDesign';
 import { Plus, Trash2, Lock, Unlock, X, ChevronDown, GripVertical, FileText } from 'lucide-react';
@@ -267,6 +268,7 @@ interface SpecNodeData {
 
 const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const { screen } = data;
+    const isExporting = useContext(ExportModeContext);
     const { updateScreen, deleteScreen } = useScreenDesignStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
@@ -396,7 +398,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
             style={{ width: 1000 }}
         >
             {/* Main Content Wrapper with Overflow Hidden */}
-            <div className={`bg-white rounded-[15px] overflow-hidden shadow-xl border-2 flex flex-col ${selected
+            <div className={`bg-white rounded-[15px] overflow-hidden shadow-xl border-2 flex flex-col ${selected && !isExporting
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-md'

@@ -4,7 +4,6 @@ import type { PanelPosition } from './types';
 
 interface LayerPanelProps {
     show: boolean;
-    isToolbarCollapsed: boolean;
     selectedElementIds: string[];
     layerPanelPos: PanelPosition;
     onClose: () => void;
@@ -14,14 +13,13 @@ interface LayerPanelProps {
 
 const LayerPanel: React.FC<LayerPanelProps> = ({
     show,
-    isToolbarCollapsed,
     selectedElementIds,
     layerPanelPos,
     onClose,
     onDragStart,
     onLayerAction,
 }) => {
-    if (selectedElementIds.length === 0 || !show || isToolbarCollapsed) return null;
+    if (selectedElementIds.length === 0 || !show) return null;
 
     return (
         <div

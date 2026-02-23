@@ -5,7 +5,6 @@ import type { PanelPosition } from './types';
 
 interface StylePanelProps {
     show: boolean;
-    isToolbarCollapsed: boolean;
     selectedElementIds: string[];
     drawElements: DrawElement[];
     stylePanelPos: PanelPosition;
@@ -19,7 +18,6 @@ interface StylePanelProps {
 
 const StylePanel: React.FC<StylePanelProps> = ({
     show,
-    isToolbarCollapsed,
     selectedElementIds,
     drawElements,
     stylePanelPos,
@@ -30,7 +28,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
     onClose,
     onDragStart,
 }) => {
-    if (selectedElementIds.length === 0 || !show || isToolbarCollapsed) return null;
+    if (selectedElementIds.length === 0 || !show) return null;
 
     const selectedEl = drawElements.find(el => selectedElementIds.includes(el.id));
     const isTable = selectedEl?.type === 'table';

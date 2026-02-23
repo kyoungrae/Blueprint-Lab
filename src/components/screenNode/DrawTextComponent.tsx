@@ -42,7 +42,15 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
         }
     }, [autoFocus]);
 
-    const handleInput = () => {
+    const handleInput = (e: React.FormEvent) => {
+        if (divRef.current) {
+            // Check if we are in the middle of IME composition (Korean, Japanese, etc.)
+            if ((e.nativeEvent as any).isComposing) return;
+            onUpdate({ text: divRef.current.innerHTML });
+        }
+    };
+
+    const handleCompositionEnd = () => {
         if (divRef.current) {
             onUpdate({ text: divRef.current.innerHTML });
         }
@@ -66,6 +74,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             ref={divRef}
             contentEditable={!isLocked && isSelected}
             onInput={handleInput}
+            onCompositionEnd={handleCompositionEnd}
             onSelect={handleSelect}
             onMouseUp={handleSelect}
             onKeyUp={handleSelect}

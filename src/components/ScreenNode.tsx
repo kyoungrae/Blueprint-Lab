@@ -1,8 +1,8 @@
-import React, { memo, useState, useRef, useEffect } from 'react';
+import React, { memo, useState, useRef, useEffect, useContext } from 'react';
 import { type NodeProps } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
 
-import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, ChevronLeft, ChevronRight, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split } from 'lucide-react';
+import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2 } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -11,6 +11,7 @@ import { useAuthStore } from '../store/authStore';
 // ── Sub-Components ────────────────────────────────────────────
 
 import ScreenHandles from './screenNode/ScreenHandles';
+import { ExportModeContext } from '../contexts/ExportModeContext';
 import DrawTextComponent from './screenNode/DrawTextComponent';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
@@ -29,6 +30,7 @@ interface ScreenNodeData {
 }
 
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
+    const isExporting = useContext(ExportModeContext);
     const { screen } = data;
     const { updateScreen, deleteScreen } = useScreenDesignStore();
     const { sendOperation } = useSyncStore();
@@ -96,7 +98,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
 
     // ── 4. Drawing Mode Logic ──
-    const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table'>('select');
+    const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no'>('select');
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -119,6 +121,73 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const tableRowResizeRef = useRef<{ elId: string, rowIdx: number, startY: number, startHeights: number[] } | null>(null);
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
+
+    // Undo/Redo History State
+    const [history, setHistory] = useState<{
+        past: DrawElement[][],
+        future: DrawElement[][]
+    }>({ past: [], future: [] });
+    const MAX_HISTORY = 50;
+
+    const saveHistory = (elements: DrawElement[]) => {
+        setHistory(prev => {
+            // If the last state is the same as current, don't save
+            if (prev.past.length > 0 && JSON.stringify(prev.past[prev.past.length - 1]) === JSON.stringify(elements)) {
+                return prev;
+            }
+            const newPast = [...prev.past, elements].slice(-MAX_HISTORY);
+            return {
+                past: newPast,
+                future: [] // Clear future when a new action is performed
+            };
+        });
+    };
+
+    const undo = () => {
+        if (history.past.length <= 1) return;
+
+        setHistory(prev => {
+            const newPast = [...prev.past];
+            const current = newPast.pop();
+            const previous = newPast[newPast.length - 1];
+
+            if (!current || !previous) return prev;
+
+            update({ drawElements: previous });
+            syncUpdate({ drawElements: previous });
+
+            return {
+                past: newPast,
+                future: [current, ...prev.future].slice(0, MAX_HISTORY)
+            };
+        });
+    };
+
+    const redo = () => {
+        if (history.future.length === 0) return;
+
+        setHistory(prev => {
+            const newFuture = [...prev.future];
+            const next = newFuture.shift();
+
+            if (!next) return prev;
+
+            update({ drawElements: next });
+            syncUpdate({ drawElements: next });
+
+            return {
+                past: [...prev.past, next].slice(-MAX_HISTORY),
+                future: newFuture
+            };
+        });
+    };
+
+    // Initial history save
+    useEffect(() => {
+        if (history.past.length === 0 && screen.drawElements) {
+            setHistory({ past: [screen.drawElements], future: [] });
+        }
+    }, []);
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
     const [showTablePanel, setShowTablePanel] = useState(false);
     const [tablePanelPos, setTablePanelPos] = useState<{ x: number | string, y: number }>({ x: 1020, y: 40 });
@@ -127,7 +196,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
     const dragStartCellIndexRef = useRef<number>(-1); // cell index where drag started
     const clipboardRef = useRef<DrawElement[]>([]); // clipboard for copy-paste
-    const mouseDownInsideRef = useRef(false); // track if mousedown happened inside this node
 
     // Split Dialog State
     const [showSplitDialog, setShowSplitDialog] = useState(false);
@@ -145,7 +213,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const isDraggingLayerPanelRef = useRef(false);
     const layerPanelDragOffsetRef = useRef({ x: 0, y: 0 });
 
-    const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
     const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
 
     // Marquee drag-selection state
@@ -161,7 +228,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     useEffect(() => {
         setStylePanelPos({ x: '50%', y: 240 });
         setLayerPanelPos({ x: '50%', y: 240 });
-        setIsToolbarCollapsed(false);
     }, [isLocked]);
 
     // Clear selection when clicking outside the node (on the outer ReactFlow canvas)
@@ -174,21 +240,21 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             setEditingCellIndex(null);
         };
 
-        // When mousedown fires on document and mouseDownInsideRef is false,
-        // it means the click originated outside this node → clear selection.
-        const handleClickOutside = () => {
-            if (mouseDownInsideRef.current) {
-                mouseDownInsideRef.current = false;
+        // Use capture phase so this fires before ReactFlow can stop propagation
+        // (locked nodes have no nodrag class → ReactFlow intercepts and stops bubble).
+        const handleMouseDownCapture = (e: MouseEvent) => {
+            if (containerRef.current && containerRef.current.contains(e.target as Node)) {
+                // Click was inside this node → keep selection
                 return;
             }
             clearSelection();
         };
 
-        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('mousedown', handleMouseDownCapture, true);
         window.addEventListener('clear-screen-selection', clearSelection);
         
         return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('mousedown', handleMouseDownCapture, true);
             window.removeEventListener('clear-screen-selection', clearSelection);
         };
     }, []);
@@ -291,7 +357,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
         if (activeTool === 'select') {
             // Start marquee drag-selection on background click
-            if (e.target === canvasRef.current) {
+            // Check if we clicked the canvas background or an element that should allow marquee
+            const target = e.target as HTMLElement;
+            const isBackground = target === canvasRef.current || 
+                               target.classList.contains('react-flow__pane') ||
+                               (!target.closest('.group-canvas-element') && !target.closest('.floating-panel') && !target.closest('.nodrag'));
+            
+            if (isBackground) {
                 if (!e.shiftKey) {
                     setSelectedElementIds([]);
                     setEditingTableId(null);
@@ -310,27 +382,60 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         setDrawStartPos({ x, y });
 
         const newId = `draw_${Date.now()}`;
-        const newElement: DrawElement = {
-            id: newId,
-            type: activeTool === 'table' ? 'table' : activeTool === 'rect' ? 'rect' : activeTool === 'circle' ? 'circle' : activeTool === 'text' ? 'text' : 'image',
-            x,
-            y,
-            width: activeTool === 'table' ? 200 : 0,
-            height: activeTool === 'table' ? 120 : 0,
-            fill: '#ffffff',
-            stroke: '#2c3e7c',
-            strokeWidth: 2,
-            zIndex: drawElements.length + 1,
-            text: activeTool === 'text' ? '텍스트 입력' : undefined,
-            fontSize: 14,
-            color: '#333333',
-            ...(activeTool === 'table' ? {
-                tableRows: 3,
-                tableCols: 3,
-                tableCellData: Array(9).fill(''),
-                tableColWidths: [100 / 3, 100 / 3, 100 / 3]
-            } : {})
-        };
+        let newElement: DrawElement;
+
+        if (activeTool === 'func-no') {
+            // Find the highest number in existing func-no elements
+            const existingFuncNos = drawElements.filter(el => el.type === 'func-no');
+            let nextNo = 1;
+            if (existingFuncNos.length > 0) {
+                const numbers = existingFuncNos
+                    .map(el => parseInt(el.text || '0'))
+                    .filter(n => !isNaN(n));
+                if (numbers.length > 0) {
+                    nextNo = Math.max(...numbers) + 1;
+                }
+            }
+
+            newElement = {
+                id: newId,
+                type: 'func-no',
+                x,
+                y,
+                width: 24,
+                height: 24,
+                fill: '#ef4444', // Red color for function numbers
+                stroke: '#ffffff',
+                strokeWidth: 2,
+                zIndex: drawElements.length + 1,
+                text: nextNo.toString(),
+                fontSize: 12,
+                color: '#ffffff',
+                borderRadius: 12, // Circle shape
+            };
+        } else {
+            newElement = {
+                id: newId,
+                type: activeTool === 'table' ? 'table' : activeTool === 'rect' ? 'rect' : activeTool === 'circle' ? 'circle' : activeTool === 'text' ? 'text' : 'image',
+                x,
+                y,
+                width: activeTool === 'table' ? 200 : 0,
+                height: activeTool === 'table' ? 120 : 0,
+                fill: '#ffffff',
+                stroke: '#2c3e7c',
+                strokeWidth: 2,
+                zIndex: drawElements.length + 1,
+                text: activeTool === 'text' ? '텍스트 입력' : undefined,
+                fontSize: 14,
+                color: '#333333',
+                ...(activeTool === 'table' ? {
+                    tableRows: 3,
+                    tableCols: 3,
+                    tableCellData: Array(9).fill(''),
+                    tableColWidths: [100 / 3, 100 / 3, 100 / 3]
+                } : {})
+            };
+        }
         setTempElement(newElement);
     };
 
@@ -544,11 +649,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 const nextElements = [...drawElements, tempElement];
                 update({ drawElements: nextElements });
                 syncUpdate({ drawElements: nextElements });
+                saveHistory(nextElements);
                 setSelectedElementIds([tempElement.id]);
             }
         } else if (draggingElementIds.length > 0) {
             // Finalize move sync
             syncUpdate({ drawElements });
+            saveHistory(drawElements);
             setDraggingElementIds([]);
             setIsMoving(false);
         }
@@ -562,12 +669,14 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const nextElements = drawElements.map(el => el.id === id ? { ...el, ...updates } : el);
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
     };
 
     const deleteElements = (ids: string[]) => {
         const nextElements = drawElements.filter(el => !ids.includes(el.id));
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
         setSelectedElementIds([]);
     };
 
@@ -603,6 +712,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const updatedElements = nextElements.map((el, i) => ({ ...el, zIndex: i + 1 }));
         update({ drawElements: updatedElements });
         syncUpdate({ drawElements: updatedElements });
+        saveHistory(updatedElements);
     };
 
     // ── Object-to-Object Alignment ──────────────────────────────
@@ -686,6 +796,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
     };
 
     // 삭제 계층: 1) 화면 엔티티(캔버스에서 처리) 2) 그리기 객체 3) 텍스트 입력 영역(문자만 삭제)
@@ -718,12 +829,29 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 const nextElements = [...drawElements, ...newElements];
                 update({ drawElements: nextElements });
                 syncUpdate({ drawElements: nextElements });
+                saveHistory(nextElements);
                 
                 // Select the newly pasted elements
                 setSelectedElementIds(newElements.map(el => el.id));
                 
                 // Update clipboard for next paste (so they keep offsetting)
                 clipboardRef.current = newElements;
+                return;
+            }
+
+            // Ctrl+Z (Undo)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+                if (isInput) return;
+                e.preventDefault();
+                undo();
+                return;
+            }
+
+            // Ctrl+Y or Ctrl+Shift+Z (Redo)
+            if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+                if (isInput) return;
+                e.preventDefault();
+                redo();
                 return;
             }
 
@@ -747,121 +875,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         return () => window.removeEventListener('keydown', handleKeyDown, true);
     }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex]);
 
-
-    // Resizing Logic for Right Panels
-    const [tableHeight, setTableHeight] = useState(screen.tablePanelHeight || 200);
-    const [functionHeight, setFunctionHeight] = useState(screen.functionPanelHeight || 250);
-
-    useEffect(() => {
-        if (screen.tablePanelHeight) setTableHeight(screen.tablePanelHeight);
-    }, [screen.tablePanelHeight]);
-
-    useEffect(() => {
-        if (screen.functionPanelHeight) setFunctionHeight(screen.functionPanelHeight);
-    }, [screen.functionPanelHeight]);
-
-    const handleTablePanelResize = (e: React.MouseEvent) => {
-        if (isLocked) return;
-        e.preventDefault();
-        e.stopPropagation();
-
-        const container = rightPaneRef.current;
-        if (!container) return;
-
-        const startY = e.clientY;
-        const startTableH = tableHeight;
-        const startFunctionH = functionHeight;
-        let finalTableH = startTableH;
-        let finalFunctionH = startFunctionH;
-
-        const onMouseMove = (moveEvent: MouseEvent) => {
-            const dy = moveEvent.clientY - startY;
-
-            // Dragging UP (dy < 0) -> Table grows, Function shrinks
-            // Dragging DOWN (dy > 0) -> Table shrinks, Function grows
-
-            // Constrain 1: Function Details min-height (100)
-            // startFunctionH + dy >= 100  =>  dy >= 100 - startFunctionH
-            const minDy = 100 - startFunctionH;
-
-            // Constrain 2: Related Tables min-height (100)
-            // startTableH - dy >= 100  =>  dy <= startTableH - 100
-            const maxDy = startTableH - 100;
-
-            const clampedDy = Math.max(minDy, Math.min(maxDy, dy));
-
-            const newTableH = startTableH - clampedDy;
-            const newFunctionH = startFunctionH + clampedDy;
-
-            setTableHeight(newTableH);
-            setFunctionHeight(newFunctionH);
-            finalTableH = newTableH;
-            finalFunctionH = newFunctionH;
-        };
-
-        const onMouseUp = () => {
-            update({
-                tablePanelHeight: finalTableH,
-                functionPanelHeight: finalFunctionH
-            });
-            syncUpdate({
-                tablePanelHeight: finalTableH,
-                functionPanelHeight: finalFunctionH
-            });
-            window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup', onMouseUp);
-        };
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
-    };
-
-    const handleFunctionPanelResize = (e: React.MouseEvent) => {
-        if (isLocked) return;
-        e.preventDefault();
-        e.stopPropagation();
-
-        const container = rightPaneRef.current;
-        if (!container) return;
-        const totalHeight = container.clientHeight;
-
-        const startY = e.clientY;
-        const startH = functionHeight;
-        let finalH = startH;
-
-        const onMouseMove = (moveEvent: MouseEvent) => {
-            const dy = moveEvent.clientY - startY;
-
-            // Dragging UP (dy < 0) -> Function grows, Initial Settings shrinks
-            // Dragging DOWN (dy > 0) -> Function shrinks, Initial Settings grows
-
-            // Initial Settings is flex-1. Its height is: total - function - table.
-            // total - (startH - dy) - tableHeight >= 100
-            // startH - dy <= total - tableHeight - 100
-            // dy >= startH - (total - tableHeight - 100)
-            const minDy = startH - (totalHeight - tableHeight - 100);
-
-            // Function Details min-height (100)
-            // startH - dy >= 100  =>  dy <= startH - 100
-            const maxDy = startH - 100;
-
-            const clampedDy = Math.max(minDy, Math.min(maxDy, dy));
-            const newH = startH - clampedDy;
-
-            setFunctionHeight(newH);
-            finalH = newH;
-        };
-
-        const onMouseUp = () => {
-            update({ functionPanelHeight: finalH });
-            syncUpdate({ functionPanelHeight: finalH });
-            window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup', onMouseUp);
-        };
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
-    };
 
     // ── Table V2 Utilities (flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells, gcd imported from ./screenNode/types) ──────────────────────────────────
 
@@ -1359,11 +1372,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             ref={containerRef}
             className={`transition-all group relative`}
             style={{ width: 1000, height: 'auto' }}
-            onMouseDown={() => { mouseDownInsideRef.current = true; }}
         >
             <div
                 ref={nodeRef}
-                className={`bg-white rounded-[15px] shadow-xl border-2 flex flex-col ${selected
+                className={`bg-white rounded-[15px] shadow-xl border-2 flex flex-col ${selected && !isExporting
                     ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                     : isLocked
                         ? 'border-gray-200 shadow-md'
@@ -1426,30 +1438,34 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
 
                 {/* ── 3. Body Content: Toolbar full width, then Split Layout ── */}
-                <div className="flex flex-col bg-white min-h-[500px] rounded-[15px]">
+                <div className="flex flex-col bg-white rounded-[15px]">
 
                     {/* Drawing Toolbar - Full width (100%) */}
                     {!isLocked && (
-                        <div className="nodrag w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px]">
-                                    <div className="flex items-center gap-1 flex-1">
-                                    {/* Collapse/Expand Toggle */}
-                                    <PremiumTooltip label={isToolbarCollapsed ? "펼치기" : "접기"}>
-                                        <button
-                                            onClick={() => {
-                                                setIsToolbarCollapsed(!isToolbarCollapsed);
-                                                if (!isToolbarCollapsed) {
-                                                    setShowStylePanel(false);
-                                                    setShowLayerPanel(false);
-                                                }
-                                            }}
-                                            className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
-                                        >
-                                            {isToolbarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-                                        </button>
-                                    </PremiumTooltip>
+                        <div className="nodrag w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar">
+                                    <div className="flex items-center gap-1 flex-1 min-w-max px-1">
+                                            {/* Undo/Redo Controls */}
+                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1">
+                                                <PremiumTooltip label="되돌리기 (Ctrl+Z)">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); undo(); }}
+                                                        disabled={history.past.length <= 1}
+                                                        className={`p-2 rounded-lg transition-colors ${history.past.length <= 1 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                    >
+                                                        <Undo2 size={18} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                                <PremiumTooltip label="다시실행 (Ctrl+Y)">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); redo(); }}
+                                                        disabled={history.future.length === 0}
+                                                        className={`p-2 rounded-lg transition-colors ${history.future.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                    >
+                                                        <Redo2 size={18} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                            </div>
 
-                                    {!isToolbarCollapsed && (
-                                        <>
                                             <div className="flex items-center gap-1 animate-in slide-in-from-left-1 duration-200">
                                                 <div className="flex items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
                                                     <PremiumTooltip label="선택" dotColor="#3b82f6">
@@ -1602,6 +1618,69 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             <ImageIcon size={18} />
                                                         </button>
                                                     </PremiumTooltip>
+                                                    <div className="w-px h-6 bg-gray-200 mx-1" />
+                                                    <PremiumTooltip label="기능 번호">
+                                                        <button
+                                                            onClick={() => {
+                                                                // If already select tool, just set tool. 
+                                                                // But user wants "auto-add" when clicking this button.
+                                                                const existingFuncNos = drawElements.filter(el => el.type === 'func-no');
+                                                                let nextNo = 1;
+                                                                let nextX = 20;
+                                                                let nextY = 20;
+
+                                                                if (existingFuncNos.length > 0) {
+                                                                    const numbers = existingFuncNos
+                                                                        .map(el => parseInt(el.text || '0'))
+                                                                        .filter(n => !isNaN(n));
+                                                                    if (numbers.length > 0) {
+                                                                        nextNo = Math.max(...numbers) + 1;
+                                                                    }
+
+                                                                    // Find a position that doesn't overlap with existing func-nos
+                                                                    // We'll try to find the "last" added func-no and offset from it, 
+                                                                    // or just keep shifting until we find a clear spot.
+                                                                    const lastFuncNo = existingFuncNos[existingFuncNos.length - 1];
+                                                                    nextX = lastFuncNo.x + 30;
+                                                                    nextY = lastFuncNo.y;
+
+                                                                    // If we go too far right, move down and reset X
+                                                                    if (nextX > 400) {
+                                                                        nextX = 20;
+                                                                        nextY += 40;
+                                                                    }
+                                                                }
+
+                                                                const newId = `draw_${Date.now()}`;
+                                                                const newElement: DrawElement = {
+                                                                    id: newId,
+                                                                    type: 'func-no',
+                                                                    x: nextX,
+                                                                    y: nextY,
+                                                                    width: 24,
+                                                                    height: 24,
+                                                                    fill: '#ef4444',
+                                                                    stroke: '#ffffff',
+                                                                    strokeWidth: 2,
+                                                                    zIndex: drawElements.length + 1,
+                                                                    text: nextNo.toString(),
+                                                                    fontSize: 12,
+                                                                    color: '#ffffff',
+                                                                    borderRadius: 12,
+                                                                };
+
+                                                                const nextElements = [...drawElements, newElement];
+                                                                update({ drawElements: nextElements });
+                                                                syncUpdate({ drawElements: nextElements });
+                                                                saveHistory(nextElements);
+                                                                setSelectedElementIds([newId]);
+                                                                setActiveTool('select');
+                                                            }}
+                                                            className={`p-2 rounded-lg transition-colors ${activeTool === 'func-no' ? 'bg-red-100 text-red-600' : 'hover:bg-red-50 text-gray-500'}`}
+                                                        >
+                                                            <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${activeTool === 'func-no' ? 'bg-red-600 text-white' : 'bg-red-500 text-white'}`}>N</div>
+                                                        </button>
+                                                    </PremiumTooltip>
                                                 </div>
                                             </div>
 
@@ -1686,67 +1765,75 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             {selectedElementIds.length >= 2 && (
                                                 <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
                                                     <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-left')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                            title="객체 왼쪽 정렬"
-                                                        >
-                                                            <AlignHorizontalJustifyStart size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-center-h')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                            title="객체 가로 중앙 정렬"
-                                                        >
-                                                            <AlignHorizontalJustifyCenter size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-right')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                            title="객체 오른쪽 정렬"
-                                                        >
-                                                            <AlignHorizontalJustifyEnd size={16} />
-                                                        </button>
+                                                        <PremiumTooltip label="객체 왼쪽 정렬">
+                                                            <button
+                                                                onClick={() => handleObjectAlign('align-left')}
+                                                                className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            >
+                                                                <AlignHorizontalJustifyStart size={16} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        <PremiumTooltip label="객체 가로 중앙 정렬">
+                                                            <button
+                                                                onClick={() => handleObjectAlign('align-center-h')}
+                                                                className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            >
+                                                                <AlignHorizontalJustifyCenter size={16} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        <PremiumTooltip label="객체 오른쪽 정렬">
+                                                            <button
+                                                                onClick={() => handleObjectAlign('align-right')}
+                                                                className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            >
+                                                                <AlignHorizontalJustifyEnd size={16} />
+                                                            </button>
+                                                        </PremiumTooltip>
                                                     </div>
                                                     <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-top')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                            title="객체 상단 정렬"
-                                                        >
-                                                            <AlignVerticalJustifyStart size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-center-v')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                            title="객체 세로 중앙 정렬"
-                                                        >
-                                                            <AlignVerticalJustifyCenter size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-bottom')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                            title="객체 하단 정렬"
-                                                        >
-                                                            <AlignVerticalJustifyEnd size={16} />
-                                                        </button>
+                                                        <PremiumTooltip label="객체 상단 정렬">
+                                                            <button
+                                                                onClick={() => handleObjectAlign('align-top')}
+                                                                className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            >
+                                                                <AlignVerticalJustifyStart size={16} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        <PremiumTooltip label="객체 세로 중앙 정렬">
+                                                            <button
+                                                                onClick={() => handleObjectAlign('align-center-v')}
+                                                                className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            >
+                                                                <AlignVerticalJustifyCenter size={16} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        <PremiumTooltip label="객체 하단 정렬">
+                                                            <button
+                                                                onClick={() => handleObjectAlign('align-bottom')}
+                                                                className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
+                                                            >
+                                                                <AlignVerticalJustifyEnd size={16} />
+                                                            </button>
+                                                        </PremiumTooltip>
                                                     </div>
                                                     {selectedElementIds.length >= 3 && (
                                                         <div className="flex gap-0.5 bg-gradient-to-r from-purple-50 to-pink-50 p-0.5 rounded-lg border border-purple-100">
-                                                            <button
-                                                                onClick={() => handleObjectAlign('distribute-h')}
-                                                                className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
-                                                                title="가로 균등 분배"
-                                                            >
-                                                                <AlignHorizontalDistributeCenter size={16} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleObjectAlign('distribute-v')}
-                                                                className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
-                                                                title="세로 균등 분배"
-                                                            >
-                                                                <AlignVerticalDistributeCenter size={16} />
-                                                            </button>
+                                                            <PremiumTooltip label="가로 균등 분배">
+                                                                <button
+                                                                    onClick={() => handleObjectAlign('distribute-h')}
+                                                                    className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
+                                                                >
+                                                                    <AlignHorizontalDistributeCenter size={16} />
+                                                                </button>
+                                                            </PremiumTooltip>
+                                                            <PremiumTooltip label="세로 균등 분배">
+                                                                <button
+                                                                    onClick={() => handleObjectAlign('distribute-v')}
+                                                                    className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
+                                                                >
+                                                                    <AlignVerticalDistributeCenter size={16} />
+                                                                </button>
+                                                            </PremiumTooltip>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1776,8 +1863,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     </button>
                                                 </PremiumTooltip>
                                             </div>
-                                        </>
-                                    )}
 
                                     {/* Text Style Settings - same line as tools when text is selected */}
                                     {textSelectionRect && selectedElementIds.length > 0 && (() => {
@@ -1853,7 +1938,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     )}
 
                     {/* Left + Right pane row */}
-                    <div className="flex flex-1 min-h-0">
+                    <div className="flex" style={{ minHeight: 500 }}>
                     {/* [LEFT PANE 70%] - Drawing Canvas */}
                     <div className="w-[70%] flex-shrink-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px]">
 
@@ -1896,6 +1981,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 onMouseDown={(e) => handleElementMouseDown(el.id, e)}
                                                 onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
                                                 className={`group-canvas-element ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2' : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
+                                                data-element-id={el.id}
                                             >
                                                 {el.type === 'rect' && (
                                                     <div className={`w-full h-full shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
@@ -2291,6 +2377,87 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     </div>
                                                 )
                                                 }
+                                                {el.type === 'func-no' && (
+                                                    <div
+                                                        className="w-full h-full rounded-full flex items-center justify-center font-bold text-white shadow-md select-none group/func"
+                                                        style={{
+                                                            backgroundColor: el.fill || '#ef4444',
+                                                            fontSize: el.fontSize || 12,
+                                                            border: `${el.strokeWidth || 2}px solid ${el.stroke || '#ffffff'}`,
+                                                            lineHeight: 1,
+                                                            padding: 0,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}
+                                                    >
+                                                        <span style={{ marginTop: '-1px' }}>{el.text}</span>
+                                                        {!isLocked && (
+                                                            <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 flex gap-1 opacity-0 group-hover/func:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm p-1 rounded-lg shadow-xl border border-gray-200 z-[120]">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const current = el.text || '1';
+                                                                        let nextText = '';
+                                                                        if (current.includes('-')) {
+                                                                            const parts = current.split('-');
+                                                                            nextText = `${parts[0]}-${parseInt(parts[1]) + 1}`;
+                                                                        } else {
+                                                                            nextText = `${current}-1`;
+                                                                        }
+                                                                        
+                                                                        const newId = `draw_${Date.now()}`;
+                                                                        const newElement: DrawElement = {
+                                                                            ...el,
+                                                                            id: newId,
+                                                                            text: nextText,
+                                                                            x: el.x + 30, // Offset from original
+                                                                            y: el.y + 30,
+                                                                            zIndex: drawElements.length + 1,
+                                                                            description: '' // New element starts with empty description
+                                                                        };
+                                                                        const nextElements = [...drawElements, newElement];
+                                                                        update({ drawElements: nextElements });
+                                                                        syncUpdate({ drawElements: nextElements });
+                                                                        saveHistory(nextElements);
+                                                                        setSelectedElementIds([newId]);
+                                                                    }}
+                                                                    className="px-1.5 py-0.5 bg-blue-500 text-white text-[9px] rounded hover:bg-blue-600 whitespace-nowrap"
+                                                                    title="새 하위 번호 객체 생성"
+                                                                >
+                                                                    + 하위
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const current = el.text || '1';
+                                                                        const nextText = (parseInt(current.split('-')[0]) + 1).toString();
+                                                                        
+                                                                        const newId = `draw_${Date.now()}`;
+                                                                        const newElement: DrawElement = {
+                                                                            ...el,
+                                                                            id: newId,
+                                                                            text: nextText,
+                                                                            x: el.x + 30, // Offset from original
+                                                                            y: el.y + 30,
+                                                                            zIndex: drawElements.length + 1,
+                                                                            description: '' // New element starts with empty description
+                                                                        };
+                                                                        const nextElements = [...drawElements, newElement];
+                                                                        update({ drawElements: nextElements });
+                                                                        syncUpdate({ drawElements: nextElements });
+                                                                        saveHistory(nextElements);
+                                                                        setSelectedElementIds([newId]);
+                                                                    }}
+                                                                    className="px-1.5 py-0.5 bg-gray-500 text-white text-[9px] rounded hover:bg-gray-600 whitespace-nowrap"
+                                                                    title="새 다음 번호 객체 생성"
+                                                                >
+                                                                    다음 번호
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                                 {isSelected && !isLocked && selectedElementIds.length === 1 && (
                                                     <button
                                                         onClick={(e) => {
@@ -2307,17 +2474,20 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 {/* Resize Handles */}
                                                 {isSelected && !isLocked && selectedElementIds.length === 1 && (
                                                     <>
+                                                        {/* Single blue selection border */}
+                                                        <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
+                                                        
                                                         {/* Corners */}
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[5px] -left-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[5px] -right-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[5px] -left-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[5px] -right-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize pointer-events-auto z-[130]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize pointer-events-auto z-[130]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize pointer-events-auto z-[130]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize pointer-events-auto z-[130]" />
 
                                                         {/* Middles */}
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[5px] left-1/2 -translate-x-1/2 w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[5px] left-1/2 -translate-x-1/2 w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize z-[105]" />
-                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[5px] w-[10px] h-[10px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-150 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize z-[105]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize pointer-events-auto z-[130]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize pointer-events-auto z-[130]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize pointer-events-auto z-[130]" />
+                                                        <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize pointer-events-auto z-[130]" />
                                                     </>
                                                 )}
                                             </div>
@@ -2342,6 +2512,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             {tempElement.type === 'table' && (
                                                 <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm flex items-center justify-center">
                                                     <Table2 size={24} className="text-blue-400 opacity-60" />
+                                                </div>
+                                            )}
+                                            {tempElement.type === 'func-no' && (
+                                                <div className="w-full h-full border-2 border-red-500 border-dashed bg-red-50/20 rounded-full flex items-center justify-center text-[10px] text-red-600 font-bold">
+                                                    {tempElement.text}
                                                 </div>
                                             )}
                                         </div>
@@ -2380,10 +2555,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         setIsTableListOpen={setIsTableListOpen}
                         linkedErdProject={linkedErdProject}
                         erdTables={erdTables}
-                        tableHeight={tableHeight}
-                        functionHeight={functionHeight}
-                        handleTablePanelResize={handleTablePanelResize}
-                        handleFunctionPanelResize={handleFunctionPanelResize}
+                        drawElements={drawElements}
                     />
                     </div>
                 </div> {/* End Body Split Layout */}
@@ -2404,7 +2576,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             {/* Style Panel */}
                             <StylePanel
                                 show={showStylePanel}
-                                isToolbarCollapsed={isToolbarCollapsed}
                                 selectedElementIds={selectedElementIds}
                                 drawElements={drawElements}
                                 stylePanelPos={stylePanelPos}
@@ -2419,7 +2590,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
 
                             {/* ─── Table Panel ─── */}
-                            {(showTablePanel && !isToolbarCollapsed) ? (() => {
+                            {showTablePanel ? (() => {
                                 const selectedEl = drawElements.find(el => el.id === selectedElementIds[0]);
                                 if (!selectedEl || selectedEl.type !== 'table') return null;
                                 const rows = selectedEl.tableRows || 3;
@@ -3226,7 +3397,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             {/* Layer Panel */}
                             <LayerPanel
                                 show={showLayerPanel}
-                                isToolbarCollapsed={isToolbarCollapsed}
                                 selectedElementIds={selectedElementIds}
                                 layerPanelPos={layerPanelPos}
                                 onClose={() => setShowLayerPanel(false)}

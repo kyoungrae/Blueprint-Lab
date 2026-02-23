@@ -42,6 +42,8 @@ const edgeTypes = {
     screenEdge: ScreenEdge,
 };
 
+import { ExportModeContext } from '../contexts/ExportModeContext';
+
 // ── Canvas Content ──────────────────────────────────────────
 const ScreenDesignCanvasContent: React.FC = () => {
     const {
@@ -62,8 +64,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
-    const { getNodes } = useReactFlow();
+    const { getNodes, fitView } = useReactFlow();
 
     // Initial load for local projects
     useEffect(() => {
@@ -574,7 +577,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [updateScreen, sendOperation, user]);
 
-    const handleExportImage = useCallback((_selectedIds: string[]) => {
+    const handleExportImage = useCallback((selectedIds: string[]) => {
         setIsExportModalOpen(false);
 
         const element = document.querySelector('.react-flow') as HTMLElement;
@@ -583,22 +586,97 @@ const ScreenDesignCanvasContent: React.FC = () => {
             return;
         }
 
-        toPng(element, {
-            backgroundColor: '#f9fafb',
+        const selectedSet = new Set(selectedIds);
+
+        // 선택된 노드만 보이도록 뷰 맞춤
+        try {
+            fitView({
+                nodes: selectedIds.map(id => ({ id })),
+                padding: 0.15,
+                duration: 0,
+                includeHiddenNodes: false,
+            });
+        } catch (_) {
+            // fitView 실패 시 무시 (전체 뷰로 캡처)
+        }
+
+        const baseOptions = {
+            backgroundColor: '#ffffff',
             quality: 1,
-            pixelRatio: 2,
-        }).then((dataUrl) => {
-            const link = document.createElement('a');
-            link.download = `screen-design-${Date.now()}.png`;
-            link.href = dataUrl;
-            link.click();
-        }).catch((err) => {
-            console.error('Export failed:', err);
-            alert('이미지 내보내기에 실패했습니다.');
+            pixelRatio: 1.5,
+            cacheBust: true,
+            imagePlaceholder: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f3f4f6" width="100" height="100"/%3E%3Ctext x="50" y="55" fill="%239ca3af" font-size="12" text-anchor="middle"%3E?%3C/text%3E%3C/svg%3E',
+        };
+
+        const doCapture = (opts: { filter?: (node: HTMLElement) => boolean }) =>
+            toPng(element, { ...baseOptions, ...opts });
+
+        setIsExporting(true);
+
+        // 뷰 업데이트 및 export 모드 적용 후 캡처
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                const filterWithSelection = (node: HTMLElement) => {
+                    const excludeSelectors = [
+                        '.react-flow__controls',
+                        '.react-flow__minimap',
+                        '.react-flow__background',
+                        '.react-flow__panel',
+                        '.react-flow__edges',
+                        '.react-flow__edgelabel-renderer',
+                        '.react-flow__handle',
+                    ];
+                    if (excludeSelectors.some(sel => node.closest?.(sel))) return false;
+                    if (node.classList?.contains('react-flow__node')) {
+                        const id = node.getAttribute?.('data-id');
+                        return id ? selectedSet.has(id) : false;
+                    }
+                    return true;
+                };
+
+                const fallbackFilter = (node: HTMLElement) => {
+                    const excludeSelectors = [
+                        '.react-flow__controls',
+                        '.react-flow__minimap',
+                        '.react-flow__background',
+                        '.react-flow__panel',
+                        '.react-flow__edges',
+                        '.react-flow__edgelabel-renderer',
+                        '.react-flow__handle',
+                    ];
+                    return !excludeSelectors.some(sel => node.closest?.(sel));
+                };
+
+                const download = (dataUrl: string) => {
+                    const link = document.createElement('a');
+                    link.download = `screen-design-${Date.now()}.png`;
+                    link.href = dataUrl;
+                    link.click();
+                };
+
+                doCapture({ filter: filterWithSelection })
+                    .then(download)
+                    .catch(() =>
+                        doCapture({ filter: fallbackFilter })
+                            .then(download)
+                            .catch(() =>
+                                doCapture({})
+                                    .then(download)
+                                    .catch((err: unknown) => {
+                                        console.error('Export failed:', err);
+                                        alert('이미지 내보내기에 실패했습니다.');
+                                    })
+                            )
+                    )
+                    .finally(() => setIsExporting(false));
+                });
+            });
         });
-    }, []);
+    }, [fitView]);
 
     return (
+        <ExportModeContext.Provider value={isExporting}>
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
             <div className="relative flex h-full">
                 <div
@@ -902,6 +980,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 )}
             </div>
         </div>
+        </ExportModeContext.Provider>
     );
 };
 

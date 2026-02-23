@@ -81,7 +81,7 @@ export interface TableCellData {
 /** 직접 그리기 요소 타입 */
 export interface DrawElement {
     id: string;
-    type: 'rect' | 'circle' | 'text' | 'image' | 'table';
+    type: 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no';
     x: number;
     y: number;
     width: number;
@@ -98,6 +98,7 @@ export interface DrawElement {
     opacity?: number;
     fillOpacity?: number;
     strokeOpacity?: number;
+    description?: string;
     borderRadius?: number;
     textAlign?: 'left' | 'center' | 'right';
     verticalAlign?: 'top' | 'middle' | 'bottom';
