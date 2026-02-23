@@ -52,7 +52,7 @@ export interface Project {
     linkedErdProjectId?: string;
 }
 
-export type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE' | 'PROJECT_SET' | 'IMPORT';
+export type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE' | 'PROJECT_SET' | 'IMPORT' | 'MOVE';
 
 export interface HistoryLog {
     id: string;

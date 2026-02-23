@@ -42,10 +42,10 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
         }
     }, [autoFocus]);
 
-    const handleInput = (e: React.FormEvent) => {
+    const handleInput = (e?: React.FormEvent) => {
         if (divRef.current) {
             // Check if we are in the middle of IME composition (Korean, Japanese, etc.)
-            if ((e.nativeEvent as any).isComposing) return;
+            if (e?.nativeEvent && (e.nativeEvent as any).isComposing) return;
             onUpdate({ text: divRef.current.innerHTML });
         }
     };

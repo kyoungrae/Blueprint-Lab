@@ -10,7 +10,7 @@ interface DatePickerProps {
     trigger: React.ReactNode;
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    anchorRef?: React.RefObject<HTMLElement>;
+    anchorRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -49,7 +49,6 @@ const DatePicker: React.FC<DatePickerProps> = ({
         return () => document.removeEventListener('mousedown', handleClick);
     }, [open, onOpenChange, anchorRef]);
 
-    const max = maxDate ? parseISO(maxDate) : new Date();
     const start = startOfMonth(viewDate);
     const end = endOfMonth(viewDate);
     const days = eachDayOfInterval({ start, end });

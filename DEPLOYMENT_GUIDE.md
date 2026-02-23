@@ -187,8 +187,8 @@ docker build --platform linux/amd64 -t blueprint-frontend -f Dockerfile.frontend
 docker build --platform linux/amd64 -t blueprint-backend -f server/Dockerfile ./server
 
 # .tar 파일로 저장
-docker save erd-frontend > erd-frontend.tar
-docker save erd-backend > erd-backend.tar
+docker save blueprint-frontend > blueprint-frontend.tar
+docker save blueprint-backend > blueprint-backend.tar
 ```
 
 ### 2단계: 신규 이미지 전송
@@ -206,8 +206,8 @@ cd ~/projects/blueprint-lab
 podman rm -f blueprint-frontend blueprint-backend blueprint-mongodb
 
 # 2. 신규 이미지 로드 및 호환 DB 다운로드
-podman load < erd-frontend.tar
-podman load < erd-backend.tar
+podman load < blueprint-frontend.tar
+podman load < blueprint-backend.tar
 podman pull docker.io/library/mongo:4.4
 
 # 3. 서비스 재시작 (한 줄씩 복사)
@@ -216,9 +216,22 @@ podman run -d --name blueprint-mongodb --network blueprint-network -p 27017:2701
 podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped blueprint-backend
 
 podman run -d --name blueprint-frontend --network blueprint-network -p 8085:80 --restart unless-stopped blueprint-frontend
-```
 
+podman run -d --name blueprint-redis --network blueprint-network -p 6380:6379 -v ~/projects/blueprint-lab/redis_data:/data --restart unless-stopped docker.io/library/redis:7-alpine redis-server --appendonly yes
+```
 ---
+
+# blueprint-backend 로그 (실시간)
+podman logs -f blueprint-backend
+
+# blueprint-frontend 로그
+podman logs -f blueprint-frontend
+
+# blueprint-mongodb 로그
+podman logs -f blueprint-mongodb
+
+# blueprint-redis 로그 (실행 중인 경우)
+podman logs -f blueprint-redis
 
 ## 🛠 유지보수 및 팁
 
