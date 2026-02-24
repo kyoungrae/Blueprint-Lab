@@ -958,6 +958,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     />
                 </ReactFlow>
 
+                {/* 그리기 도구 팝업 포털 - 상단 메뉴바/사이드바(z-10001) 아래에 렌더링 */}
+                <div id="panel-portal-root" className="fixed inset-0 z-[9000] pointer-events-none" aria-hidden="true" />
+
                 {isExportModalOpen && (
                     <ScreenExportModal
                         screens={screens}

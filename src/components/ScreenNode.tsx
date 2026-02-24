@@ -27,6 +27,8 @@ import { normalizeImageUrlForStorage } from '../utils/imageUrl';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
 
+const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
+
 
 
 // (ScreenHandles, DrawTextComponent, PremiumTooltip imported from ./screenNode/)
@@ -1791,7 +1793,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     }
                                                                 </div>
                                                             </div>,
-                                                            document.body
+                                                            getPanelPortalRoot()
                                                         );
                                                         })()}
                                                         {showImageStylePanel && (() => {
@@ -1812,7 +1814,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         onDragEnd={() => { isDraggingImageStylePanelRef.current = false; }}
                                                                     />
                                                                 </div>,
-                                                                document.body
+                                                                getPanelPortalRoot()
                                                             );
                                                         })()}
                                                     </div>
@@ -2970,7 +2972,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     onDragStart={() => { isDraggingStylePanelRef.current = true; }}
                                     onDragEnd={() => { isDraggingStylePanelRef.current = false; }}
                                 />,
-                                document.body
+                                getPanelPortalRoot()
                             )}
 
 
@@ -3766,7 +3768,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             </div>
                                         </div>
                                     </div>,
-                                    document.body
+                                    getPanelPortalRoot()
                                 );
                             })()}
 
@@ -3785,7 +3787,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     onDragEnd={() => { isDraggingLayerPanelRef.current = false; }}
                                     onLayerAction={handleLayerAction}
                                 />,
-                                document.body
+                                getPanelPortalRoot()
                             )}
                         </>
                     )
