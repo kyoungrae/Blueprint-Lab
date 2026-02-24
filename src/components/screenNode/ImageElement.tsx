@@ -228,6 +228,8 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
     }, [element, isLocked, onUpdate]);
 
     const displayUrl = getImageDisplayUrl(element.imageUrl);
+    const crop = element.imageCrop ?? { x: 0, y: 0, width: 1, height: 1 };
+    const hasCrop = crop.x !== 0 || crop.y !== 0 || crop.width !== 1 || crop.height !== 1;
 
     return (
         <div ref={containerRef} className="w-full h-full relative select-none">
@@ -245,12 +247,13 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                             inset: 0,
                             width: '100%',
                             height: '100%',
-                            objectFit: (element.imageCrop && (element.imageCrop.x !== 0 || element.imageCrop.y !== 0 || element.imageCrop.width !== 1 || element.imageCrop.height !== 1)) ? 'fill' : 'contain',
+                            // In crop-edit mode, keep display stable (no sudden zoom/stretch).
+                            objectFit: isCropMode ? 'contain' : (hasCrop ? 'fill' : 'contain'),
                             display: 'block',
                             pointerEvents: 'none',
-                            ...(element.imageCrop && (element.imageCrop.x !== 0 || element.imageCrop.y !== 0 || element.imageCrop.width !== 1 || element.imageCrop.height !== 1)
+                            ...(!isCropMode && hasCrop
                                 ? {
-                                    clipPath: `inset(${(element.imageCrop.y || 0) * 100}% ${(1 - (element.imageCrop.x || 0) - (element.imageCrop.width || 1)) * 100}% ${(1 - (element.imageCrop.y || 0) - (element.imageCrop.height || 1)) * 100}% ${(element.imageCrop.x || 0) * 100}%)`,
+                                    clipPath: `inset(${crop.y * 100}% ${(1 - crop.x - crop.width) * 100}% ${(1 - crop.y - crop.height) * 100}% ${crop.x * 100}%)`,
                                 }
                                 : {}),
                             transform: [
@@ -267,6 +270,91 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                             console.warn('[ImageElement] 이미지 로드 실패:', displayUrl);
                         }}
                     />
+                    {isSelected && isCropMode && (
+                        <div className="absolute inset-0 pointer-events-none z-[120]">
+                            <div
+                                className="absolute border border-amber-500 rounded-sm"
+                                style={{
+                                    left: `${crop.x * 100}%`,
+                                    top: `${crop.y * 100}%`,
+                                    width: `${crop.width * 100}%`,
+                                    height: `${crop.height * 100}%`,
+                                    boxShadow: '0 0 0 9999px rgba(17, 24, 39, 0.35)',
+                                }}
+                            />
+
+                            {/* Crop line drag areas */}
+                            <div
+                                data-image-crop-handle
+                                className="absolute pointer-events-auto cursor-n-resize"
+                                style={{
+                                    left: `${crop.x * 100}%`,
+                                    top: `${crop.y * 100}%`,
+                                    width: `${crop.width * 100}%`,
+                                    height: 10,
+                                    transform: 'translateY(-50%)',
+                                }}
+                                onMouseDown={(e) => handleCropMouseDown(e, 'n')}
+                            />
+                            <div
+                                data-image-crop-handle
+                                className="absolute pointer-events-auto cursor-s-resize"
+                                style={{
+                                    left: `${crop.x * 100}%`,
+                                    top: `${(crop.y + crop.height) * 100}%`,
+                                    width: `${crop.width * 100}%`,
+                                    height: 10,
+                                    transform: 'translateY(-50%)',
+                                }}
+                                onMouseDown={(e) => handleCropMouseDown(e, 's')}
+                            />
+                            <div
+                                data-image-crop-handle
+                                className="absolute pointer-events-auto cursor-w-resize"
+                                style={{
+                                    left: `${crop.x * 100}%`,
+                                    top: `${crop.y * 100}%`,
+                                    width: 10,
+                                    height: `${crop.height * 100}%`,
+                                    transform: 'translateX(-50%)',
+                                }}
+                                onMouseDown={(e) => handleCropMouseDown(e, 'w')}
+                            />
+                            <div
+                                data-image-crop-handle
+                                className="absolute pointer-events-auto cursor-e-resize"
+                                style={{
+                                    left: `${(crop.x + crop.width) * 100}%`,
+                                    top: `${crop.y * 100}%`,
+                                    width: 10,
+                                    height: `${crop.height * 100}%`,
+                                    transform: 'translateX(-50%)',
+                                }}
+                                onMouseDown={(e) => handleCropMouseDown(e, 'e')}
+                            />
+
+                            {/* Crop corner handles */}
+                            {[
+                                { pos: 'nw', left: crop.x, top: crop.y, cursor: 'nw-resize' },
+                                { pos: 'ne', left: crop.x + crop.width, top: crop.y, cursor: 'ne-resize' },
+                                { pos: 'sw', left: crop.x, top: crop.y + crop.height, cursor: 'sw-resize' },
+                                { pos: 'se', left: crop.x + crop.width, top: crop.y + crop.height, cursor: 'se-resize' },
+                            ].map((h) => (
+                                <div
+                                    key={h.pos}
+                                    data-image-crop-handle
+                                    className="absolute w-2.5 h-2.5 border border-amber-500 bg-amber-100 rounded-sm shadow-sm pointer-events-auto z-[200]"
+                                    style={{
+                                        left: `${h.left * 100}%`,
+                                        top: `${h.top * 100}%`,
+                                        transform: 'translate(-50%, -50%)',
+                                        cursor: h.cursor,
+                                    }}
+                                    onMouseDown={(e) => handleCropMouseDown(e, h.pos)}
+                                />
+                            ))}
+                        </div>
+                    )}
                 </div>
             ) : (
                 /* 이미지가 없을 때 또는 로드 실패 시 드롭 전용 영역 (클릭 업로드 없음) */
@@ -290,8 +378,8 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                 </div>
             )}
 
-            {/* 리사이즈/크롭 핸들 (선택 시 표시) */}
-            {isSelected && !isLocked && (
+            {/* 리사이즈 핸들 (선택 시 표시, 크롭 모드 제외) */}
+            {isSelected && !isLocked && !isCropMode && (
                 <>
                     {RESIZE_HANDLES.map((handle) => (
                         <div
