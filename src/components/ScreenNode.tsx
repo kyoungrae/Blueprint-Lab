@@ -2274,7 +2274,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             {/* Canvas Viewboard */}
                             <div
                                 ref={canvasRef}
-                                className="nodrag flex-1 relative overflow-hidden outline-none cursor-crosshair h-full"
+                                className="nodrag flex-1 relative overflow-visible outline-none cursor-crosshair h-full"
                                 onMouseDown={handleCanvasMouseDown}
                                 onMouseMove={handleCanvasMouseMove}
                                 onMouseUp={handleCanvasMouseUp}
@@ -2284,6 +2284,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     {drawElements.map((el) => {
                                         const isSelected = selectedElementIds.includes(el.id);
                                         const isDraggingThis = draggingElementIds.includes(el.id);
+                                        const rot = el.type === 'image' ? (el.imageRotation ?? 0) : 0;
                                         const commonStyle: React.CSSProperties = {
                                             position: 'absolute',
                                             left: el.x,
@@ -2293,7 +2294,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             zIndex: isDraggingThis ? 9999 : (el.zIndex || 1),
                                             transition: (isDrawing || isMoving) ? 'none' : 'all 0.1s ease',
                                             pointerEvents: isDrawing ? 'none' : 'auto',
-                                            opacity: el.opacity !== undefined ? el.opacity : 1
+                                            opacity: el.opacity !== undefined ? el.opacity : 1,
+                                            ...(el.type === 'image' && rot !== 0
+                                                ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' }
+                                                : {}),
                                         };
 
                                         return (

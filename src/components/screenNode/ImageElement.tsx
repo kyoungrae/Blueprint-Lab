@@ -57,7 +57,6 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
         rotation: number;
         flipX: boolean;
         flipY: boolean;
-        fitScale: number;
     } | null>(null);
 
     const uploadToServer = async (file: File): Promise<string> => {
@@ -182,10 +181,6 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
         const crop = element.imageCrop ?? { x: 0, y: 0, width: 1, height: 1 };
         const rot = ((element.imageRotation ?? 0) % 360 + 360) % 360;
         const rotSnap = Math.round(rot / 90) % 4 * 90;
-        const w = element.width;
-        const h = element.height;
-        const needsFit = rotSnap === 90 || rotSnap === 270;
-        const fs = needsFit && w > 0 && h > 0 ? Math.min(w / h, h / w) : 1;
 
         cropStateRef.current = {
             position,
@@ -197,7 +192,6 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
             rotation: rotSnap,
             flipX: element.imageFlipX ?? false,
             flipY: element.imageFlipY ?? false,
-            fitScale: fs,
         };
 
         const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -209,20 +203,19 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
 
             const dx = (me.clientX - state.startX) / state.rectWidth;
             const dy = (me.clientY - state.startY) / state.rectHeight;
-            const s = state.fitScale;
 
-            // 화면 좌표(dx, dy) → 이미지 좌표(dImgX, dImgY) 변환 (회전·플립·fitScale 반영)
+            // 화면 좌표(dx, dy) → 이미지 좌표(dImgX, dImgY) 변환 (회전·플립 반영, wrapper가 회전 적용)
             let dImgX: number;
             let dImgY: number;
             if (state.rotation === 90) {
-                dImgX = dy / s;
-                dImgY = -dx / s;
+                dImgX = dy;
+                dImgY = -dx;
             } else if (state.rotation === 180) {
                 dImgX = -dx;
                 dImgY = -dy;
             } else if (state.rotation === 270) {
-                dImgX = -dy / s;
-                dImgY = dx / s;
+                dImgX = -dy;
+                dImgY = dx;
             } else {
                 dImgX = dx;
                 dImgY = dy;
@@ -267,21 +260,35 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
     const crop = element.imageCrop ?? { x: 0, y: 0, width: 1, height: 1 };
     const hasCrop = crop.x !== 0 || crop.y !== 0 || crop.width !== 1 || crop.height !== 1;
 
-    // 90°/270° 회전 시 회전된 콘텐츠가 컨테이너 밖으로 나가지 않도록 fit scale 적용
+    // 회전은 부모 wrapper(ScreenNode)에서 적용됨. 여기서는 플립만 적용
     const rot = element.imageRotation ?? 0;
     const rotNorm = ((rot % 360) + 360) % 360;
     const rot90 = Math.round(rotNorm / 90) % 4;
-    const needsFitScale = rot90 === 1 || rot90 === 3;
-    const w = element.width;
-    const h = element.height;
-    const fitScale = needsFitScale && w > 0 && h > 0 ? Math.min(w / h, h / w) : 1;
 
     const imageTransform = [
-        needsFitScale ? `scale(${fitScale})` : '',
-        `rotate(${rot}deg)`,
         element.imageFlipX ? 'scaleX(-1)' : '',
         element.imageFlipY ? 'scaleY(-1)' : '',
     ].filter(Boolean).join(' ') || undefined;
+
+    // 회전·플립에 따라 크롭 핸들 커서를 화면 방향에 맞게 변환
+    const getCropCursor = (pos: 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se'): string => {
+        const rotMap: Record<number, Record<string, string>> = {
+            0: { n: 'n', s: 's', e: 'e', w: 'w', nw: 'nw', ne: 'ne', sw: 'sw', se: 'se' },
+            1: { n: 'e', s: 'w', e: 's', w: 'n', nw: 'ne', ne: 'se', sw: 'nw', se: 'sw' },
+            2: { n: 's', s: 'n', e: 'w', w: 'e', nw: 'se', ne: 'sw', sw: 'ne', se: 'nw' },
+            3: { n: 'w', s: 'e', e: 'n', w: 's', nw: 'sw', ne: 'nw', sw: 'se', se: 'ne' },
+        };
+        let dir = rotMap[rot90]?.[pos] ?? pos;
+        if (element.imageFlipX) {
+            const swap: Record<string, string> = { e: 'w', w: 'e', ne: 'nw', nw: 'ne', se: 'sw', sw: 'se' };
+            dir = swap[dir] ?? dir;
+        }
+        if (element.imageFlipY) {
+            const swap: Record<string, string> = { n: 's', s: 'n', ne: 'se', se: 'ne', nw: 'sw', sw: 'nw' };
+            dir = swap[dir] ?? dir;
+        }
+        return `${dir}-resize`;
+    };
 
     return (
         <div ref={containerRef} className="w-full h-full relative select-none">
@@ -299,8 +306,8 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                             inset: 0,
                             width: '100%',
                             height: '100%',
-                            // In crop-edit mode, keep display stable (no sudden zoom/stretch).
-                            objectFit: isCropMode ? 'contain' : (hasCrop ? 'fill' : 'contain'),
+                            // hasCrop일 때는 항상 fill로 통일 → 크롭 모드 전환 시 objectFit 점프 방지
+                            objectFit: hasCrop ? 'fill' : 'contain',
                             display: 'block',
                             pointerEvents: 'none',
                             ...(!isCropMode && hasCrop
@@ -344,59 +351,63 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                                 {/* Crop line drag areas */}
                                 <div
                                     data-image-crop-handle
-                                    className="absolute pointer-events-auto cursor-n-resize"
+                                    className="absolute pointer-events-auto"
                                     style={{
                                         left: `${crop.x * 100}%`,
                                         top: `${crop.y * 100}%`,
                                         width: `${crop.width * 100}%`,
                                         height: 10,
                                         transform: 'translateY(-50%)',
+                                        cursor: getCropCursor('n'),
                                     }}
                                     onMouseDown={(e) => handleCropMouseDown(e, 'n')}
                                 />
                                 <div
                                     data-image-crop-handle
-                                    className="absolute pointer-events-auto cursor-s-resize"
+                                    className="absolute pointer-events-auto"
                                     style={{
                                         left: `${crop.x * 100}%`,
                                         top: `${(crop.y + crop.height) * 100}%`,
                                         width: `${crop.width * 100}%`,
                                         height: 10,
                                         transform: 'translateY(-50%)',
+                                        cursor: getCropCursor('s'),
                                     }}
                                     onMouseDown={(e) => handleCropMouseDown(e, 's')}
                                 />
                                 <div
                                     data-image-crop-handle
-                                    className="absolute pointer-events-auto cursor-w-resize"
+                                    className="absolute pointer-events-auto"
                                     style={{
                                         left: `${crop.x * 100}%`,
                                         top: `${crop.y * 100}%`,
                                         width: 10,
                                         height: `${crop.height * 100}%`,
                                         transform: 'translateX(-50%)',
+                                        cursor: getCropCursor('w'),
                                     }}
                                     onMouseDown={(e) => handleCropMouseDown(e, 'w')}
                                 />
                                 <div
                                     data-image-crop-handle
-                                    className="absolute pointer-events-auto cursor-e-resize"
+                                    className="absolute pointer-events-auto"
                                     style={{
                                         left: `${(crop.x + crop.width) * 100}%`,
                                         top: `${crop.y * 100}%`,
                                         width: 10,
                                         height: `${crop.height * 100}%`,
                                         transform: 'translateX(-50%)',
+                                        cursor: getCropCursor('e'),
                                     }}
                                     onMouseDown={(e) => handleCropMouseDown(e, 'e')}
                                 />
 
                                 {/* Crop corner handles */}
                                 {[
-                                    { pos: 'nw', left: crop.x, top: crop.y, cursor: 'nw-resize' },
-                                    { pos: 'ne', left: crop.x + crop.width, top: crop.y, cursor: 'ne-resize' },
-                                    { pos: 'sw', left: crop.x, top: crop.y + crop.height, cursor: 'sw-resize' },
-                                    { pos: 'se', left: crop.x + crop.width, top: crop.y + crop.height, cursor: 'se-resize' },
+                                    { pos: 'nw' as const, left: crop.x, top: crop.y },
+                                    { pos: 'ne' as const, left: crop.x + crop.width, top: crop.y },
+                                    { pos: 'sw' as const, left: crop.x, top: crop.y + crop.height },
+                                    { pos: 'se' as const, left: crop.x + crop.width, top: crop.y + crop.height },
                                 ].map((h) => (
                                     <div
                                         key={h.pos}
@@ -406,7 +417,7 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                                             left: `${h.left * 100}%`,
                                             top: `${h.top * 100}%`,
                                             transform: 'translate(-50%, -50%)',
-                                            cursor: h.cursor,
+                                            cursor: getCropCursor(h.pos),
                                         }}
                                         onMouseDown={(e) => handleCropMouseDown(e, h.pos)}
                                     />
