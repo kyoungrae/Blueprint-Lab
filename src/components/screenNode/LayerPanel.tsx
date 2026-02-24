@@ -1,13 +1,17 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Layers, GripVertical, X, ChevronDown } from 'lucide-react';
-import type { PanelPosition } from './types';
 
 interface LayerPanelProps {
     show: boolean;
     selectedElementIds: string[];
-    layerPanelPos: PanelPosition;
+    layerPanelPos: { x: number; y: number };
+    onPositionChange: (pos: { x: number; y: number }) => void;
+    zoom: number;
+    screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
+    flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     onClose: () => void;
-    onDragStart: (e: React.MouseEvent, type: 'style' | 'layer') => void;
+    onDragStart?: () => void;
+    onDragEnd?: () => void;
     onLayerAction: (action: 'front' | 'back' | 'forward' | 'backward') => void;
 }
 
@@ -15,24 +19,56 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
     show,
     selectedElementIds,
     layerPanelPos,
+    onPositionChange,
+    zoom,
+    screenToFlowPosition,
+    flowToScreenPosition,
     onClose,
     onDragStart,
+    onDragEnd,
     onLayerAction,
 }) => {
+    const isDraggingRef = useRef(false);
+
     if (selectedElementIds.length === 0 || !show) return null;
+
+    const handleHeaderMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isDraggingRef.current = true;
+        onDragStart?.();
+        const flowAtClick = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        const offsetFlowX = flowAtClick.x - layerPanelPos.x;
+        const offsetFlowY = flowAtClick.y - layerPanelPos.y;
+        const onMove = (me: MouseEvent) => {
+            if (!isDraggingRef.current) return;
+            me.stopImmediatePropagation();
+            const flowAtMove = screenToFlowPosition({ x: me.clientX, y: me.clientY });
+            onPositionChange({ x: flowAtMove.x - offsetFlowX, y: flowAtMove.y - offsetFlowY });
+        };
+        const onUp = () => {
+            isDraggingRef.current = false;
+            onDragEnd?.();
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp);
+    };
 
     return (
         <div
-            className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in"
+            data-layer-panel
+            className="nodrag floating-panel fixed z-[9999] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in origin-top-left"
             style={{
-                left: layerPanelPos.x,
-                top: layerPanelPos.y,
-                transform: layerPanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
+                left: flowToScreenPosition({ x: layerPanelPos.x, y: layerPanelPos.y }).x,
+                top: flowToScreenPosition({ x: layerPanelPos.x, y: layerPanelPos.y }).y,
+                transform: `scale(${0.85 * zoom})`,
             }}
         >
             <div
                 className="flex items-center justify-between border-b border-gray-100 pb-2 mb-1 cursor-grab active:cursor-grabbing group/header"
-                onMouseDown={(e) => onDragStart(e, 'layer')}
+                onMouseDown={handleHeaderMouseDown}
                 title="드래그하여 이동"
             >
                 <div className="flex items-center gap-2">

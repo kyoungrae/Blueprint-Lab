@@ -16,8 +16,11 @@ import logger from './utils/logger';
 const app = express();
 const httpServer = createServer(app);
 
-// Middleware
-app.use(helmet());
+// Middleware (이미지 cross-origin 로딩 허용: localhost:5173 → localhost:3001)
+app.use(helmet({
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin
@@ -52,10 +55,10 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Routes
+// Routes (이미지 라우트를 먼저 등록 - /:id/images/:imageId가 /:id보다 먼저 매칭되도록)
 app.use('/api/auth', authRoutes);
-app.use('/api/projects', projectRoutes);
 app.use('/api/projects', imageRoutes);
+app.use('/api/projects', projectRoutes);
 
 // API routes will be added here
 app.get('/api', (req, res) => {

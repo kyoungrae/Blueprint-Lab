@@ -100,6 +100,14 @@ export interface DrawElement {
     fontWeight?: string;
     color?: string;
     imageUrl?: string;
+    /** 이미지 회전 (도, 0-360) */
+    imageRotation?: number;
+    /** 이미지 좌우 대칭 */
+    imageFlipX?: boolean;
+    /** 이미지 상하 대칭 */
+    imageFlipY?: boolean;
+    /** 이미지 크롭 영역 (0-1 정규화: x,y=좌상단, width,height=크롭 크기) */
+    imageCrop?: { x: number; y: number; width: number; height: number };
     opacity?: number;
     fillOpacity?: number;
     strokeOpacity?: number;

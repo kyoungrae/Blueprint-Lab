@@ -2,6 +2,9 @@ import path from 'path';
 import dotenv from 'dotenv';
 dotenv.config();
 
+// server/src/config -> __dirname = dist/config, SERVER_ROOT = server/
+const SERVER_ROOT = path.resolve(__dirname, '..', '..');
+
 export const config = {
     env: process.env.NODE_ENV || 'development',
     port: parseInt(process.env.PORT || '3001', 10),
@@ -24,9 +27,9 @@ export const config = {
     frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
     basePath: process.env.BASE_PATH || '', // e.g. /erd
 
-    // 이미지 업로드 경로: 로컬=./upload, 운영=UPLOAD_DIR env (예: /app/upload)
+    // 이미지 업로드 경로: 개발=server/upload, 운영=UPLOAD_DIR env (예: /app/upload)
     upload: {
-        dir: process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'),
+        dir: process.env.UPLOAD_DIR || path.join(SERVER_ROOT, 'upload'),
     },
 
     email: {

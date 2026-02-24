@@ -1,10 +1,10 @@
-import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext } from 'react';
+import React, { memo, useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { type NodeProps } from 'reactflow';
+import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
 import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../types/screenDesign';
 
-import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, SlidersHorizontal, RectangleHorizontal, RectangleVertical } from 'lucide-react';
+import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, SlidersHorizontal, RectangleHorizontal, RectangleVertical, Crop } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -22,12 +22,22 @@ import RightPane from './screenNode/RightPane';
 import StylePanel from './screenNode/StylePanel';
 import LayerPanel from './screenNode/LayerPanel';
 import ImageElement from './screenNode/ImageElement';
+import { ImageStylePanel } from './screenNode/ImageStylePanel';
+import { normalizeImageUrlForStorage } from '../utils/imageUrl';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
 
 
 
 // (ScreenHandles, DrawTextComponent, PremiumTooltip imported from ./screenNode/)
+
+/** mousedown target이 Text/SVG 등일 수 있어 Element로 안전하게 변환 */
+function getClickTargetElement(target: EventTarget | null): Element | null {
+    if (!target) return null;
+    if (target instanceof Element) return target;
+    if (target instanceof Node && target.parentElement) return target.parentElement;
+    return null;
+}
 
 // ── Screen Node ─────────────────────────────────────────────
 interface ScreenNodeData {
@@ -36,6 +46,8 @@ interface ScreenNodeData {
 
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
+    const { zoom } = useViewport();
+    const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
     const { setHandlers } = useScreenDesignUndoRedo();
     const { screen } = data;
     const {
@@ -69,7 +81,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         });
         if (!res.ok) throw new Error('Image upload failed');
         const json = await res.json() as { imageId: string; url: string };
-        return json.url;
+        return normalizeImageUrlForStorage(json.url) ?? json.url;
     };
 
     const syncUpdate = (updates: Partial<Screen>) => {
@@ -153,46 +165,59 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [showLayerPanel, setShowLayerPanel] = useState(false);
     const [showTablePicker, setShowTablePicker] = useState(false);
     const [tablePickerHover, setTablePickerHover] = useState<{ r: number, c: number } | null>(null);
-    const [tablePickerPos, setTablePickerPos] = useState({ top: 0, left: 0 });
+    const [tablePickerPos, setTablePickerPos] = useState({ x: 0, y: 0 });
+    const isDraggingTablePickerRef = useRef(false);
     const tablePickerRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+
+    const handleTablePickerHeaderMouseDown = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        isDraggingTablePickerRef.current = true;
+        const flowAtClick = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        const offsetFlowX = flowAtClick.x - tablePickerPos.x;
+        const offsetFlowY = flowAtClick.y - tablePickerPos.y;
+        const onMove = (me: MouseEvent) => {
+            if (!isDraggingTablePickerRef.current) return;
+            me.stopImmediatePropagation();
+            const flowAtMove = screenToFlowPosition({ x: me.clientX, y: me.clientY });
+            setTablePickerPos({ x: flowAtMove.x - offsetFlowX, y: flowAtMove.y - offsetFlowY });
+        };
+        const onUp = () => {
+            isDraggingTablePickerRef.current = false;
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp);
+    }, [screenToFlowPosition, tablePickerPos]);
+    const [showImageStylePanel, setShowImageStylePanel] = useState(false);
+    const [imageStylePanelPos, setImageStylePanelPos] = useState({ x: 0, y: 0 });
+    const isDraggingImageStylePanelRef = useRef(false);
     const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
-    // Close table list, screen options, table picker on click outside
+    // Close table list, screen options, table picker, image style panel on click outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
+            const el = getClickTargetElement(e.target);
             if (tableListRef.current && !tableListRef.current.contains(target)) {
                 setIsTableListOpen(false);
             }
             if (screenOptionsRef.current && !screenOptionsRef.current.contains(target)) {
                 setShowScreenOptionsPanel(false);
             }
-            if (showTablePicker && tablePickerRef.current && !tablePickerRef.current.contains(target) && !(target as Element).closest('[data-table-picker-portal]')) {
+            if (showTablePicker && !isDraggingTablePickerRef.current && tablePickerRef.current && !tablePickerRef.current.contains(target) && !el?.closest('[data-table-picker-portal]')) {
                 setShowTablePicker(false);
             }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showTablePicker]);
-
-    // Update table picker position for portal (escapes overflow clipping)
-    useLayoutEffect(() => {
-        if (!showTablePicker || !tablePickerRef.current) return;
-        const updatePos = () => {
-            if (tablePickerRef.current) {
-                const rect = tablePickerRef.current.getBoundingClientRect();
-                setTablePickerPos({ top: rect.bottom + 8, left: rect.left });
+            if (showImageStylePanel && !isDraggingImageStylePanelRef.current && !el?.closest('[data-image-style-panel]')) {
+                setShowImageStylePanel(false);
             }
         };
-        updatePos();
-        window.addEventListener('scroll', updatePos, true);
-        window.addEventListener('resize', updatePos);
-        return () => {
-            window.removeEventListener('scroll', updatePos, true);
-            window.removeEventListener('resize', updatePos);
-        };
-    }, [showTablePicker]);
+        document.addEventListener('mousedown', handleClickOutside, true);
+        return () => document.removeEventListener('mousedown', handleClickOutside, true);
+    }, [showTablePicker, showImageStylePanel]);
+
 
 
 
@@ -284,9 +309,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
     const [showTablePanel, setShowTablePanel] = useState(false);
-    const [tablePanelPos, setTablePanelPos] = useState<{ x: number | string, y: number }>({ x: 1020, y: 40 });
+    const [tablePanelPos, setTablePanelPos] = useState({ x: 200, y: 100 });
     const isDraggingTablePanelRef = useRef(false);
-    const tablePanelDragOffsetRef = useRef({ x: 0, y: 0 });
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
     const dragStartCellIndexRef = useRef<number>(-1); // cell index where drag started
     // Split Dialog State
@@ -297,13 +321,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     // Panel Dragging State (toolbarPos removed as toolbar is now inside canvas area)
 
-    const [stylePanelPos, setStylePanelPos] = useState<{ x: number | string, y: number }>({ x: '50%', y: 64 });
+    const [stylePanelPos, setStylePanelPos] = useState({ x: 200, y: 100 });
     const isDraggingStylePanelRef = useRef(false);
-    const stylePanelDragOffsetRef = useRef({ x: 0, y: 0 });
 
-    const [layerPanelPos, setLayerPanelPos] = useState<{ x: number | string, y: number }>({ x: '50%', y: 64 });
+    const [layerPanelPos, setLayerPanelPos] = useState({ x: 200, y: 100 });
     const isDraggingLayerPanelRef = useRef(false);
-    const layerPanelDragOffsetRef = useRef({ x: 0, y: 0 });
 
     const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
 
@@ -318,8 +340,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     // Reset positions when locked/unlocked
     useEffect(() => {
-        setStylePanelPos({ x: '50%', y: 240 });
-        setLayerPanelPos({ x: '50%', y: 240 });
+        setStylePanelPos({ x: 200, y: 240 });
+        setLayerPanelPos({ x: 200, y: 240 });
     }, [isLocked]);
 
     // Clear selection when clicking outside the node (on the outer ReactFlow canvas)
@@ -336,6 +358,16 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         // (locked nodes have no nodrag class → ReactFlow intercepts and stops bubble).
         const handleMouseDownCapture = (e: MouseEvent) => {
             if (containerRef.current && containerRef.current.contains(e.target as Node)) {
+                setLastInteractedScreenId(screen.id);
+                return;
+            }
+            // 포털로 body에 렌더된 패널 클릭 시 또는 패널 드래그 중에는 선택 해제하지 않음
+            if (isDraggingImageStylePanelRef.current || isDraggingStylePanelRef.current || isDraggingLayerPanelRef.current || isDraggingTablePanelRef.current || isDraggingTablePickerRef.current) {
+                setLastInteractedScreenId(screen.id);
+                return;
+            }
+            const el = getClickTargetElement(e.target);
+            if (el?.closest('[data-image-style-panel], [data-table-picker-portal], [data-style-panel], [data-layer-panel], [data-table-panel]')) {
                 setLastInteractedScreenId(screen.id);
                 return;
             }
@@ -532,8 +564,20 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
     const handleElementMouseDown = (id: string, e: React.MouseEvent) => {
-        if (isLocked || activeTool !== 'select') return;
+        if (isLocked) return;
         e.stopPropagation();
+
+        // 이미지/표 등 기존 요소 클릭 시 선택만 하고 드래그는 select 도구일 때만
+        if (activeTool !== 'select') {
+            const clickedEl = drawElements.find(el => el.id === id);
+            if (clickedEl) {
+                const nextSelected = clickedEl.groupId
+                    ? drawElements.filter(el => el.groupId === clickedEl.groupId).map(el => el.id)
+                    : [id];
+                setSelectedElementIds(nextSelected);
+            }
+            return;
+        }
 
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect || !canvasRef.current) return;
@@ -605,60 +649,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         // Table double-click is handled at the cell level
     };
 
-
-    const handlePanelDragStart = (e: React.MouseEvent, type: 'style' | 'layer') => {
-        if (isLocked) return;
-        e.stopPropagation();
-        e.preventDefault();
-
-        const isStyle = type === 'style';
-        if (isStyle) isDraggingStylePanelRef.current = true;
-        else isDraggingLayerPanelRef.current = true;
-
-        const panel = (e.target as HTMLElement).closest('.floating-panel') as HTMLElement;
-        if (!panel || !nodeRef.current) return;
-
-        const panelRect = panel.getBoundingClientRect();
-        const containerRect = nodeRef.current.getBoundingClientRect();
-        const scale = containerRect.width / nodeRef.current.clientWidth;
-
-        const offset = {
-            x: (e.clientX - panelRect.left) / scale,
-            y: (e.clientY - panelRect.top) / scale
-        };
-
-        if (isStyle) stylePanelDragOffsetRef.current = offset;
-        else layerPanelDragOffsetRef.current = offset;
-
-        const handleWindowMouseMove = (moveEvent: MouseEvent) => {
-            if ((isStyle && !isDraggingStylePanelRef.current) || (!isStyle && !isDraggingLayerPanelRef.current) || !nodeRef.current) return;
-            moveEvent.stopImmediatePropagation();
-
-            const cRect = nodeRef.current.getBoundingClientRect();
-            const layoutWidth = nodeRef.current.clientWidth;
-            const currentScale = cRect.width / layoutWidth;
-
-            const layoutX = (moveEvent.clientX - cRect.left) / currentScale;
-            const layoutY = (moveEvent.clientY - cRect.top) / currentScale;
-
-            const currentOffset = isStyle ? stylePanelDragOffsetRef.current : layerPanelDragOffsetRef.current;
-            let newX = layoutX - currentOffset.x;
-            let newY = layoutY - currentOffset.y;
-
-            if (isStyle) setStylePanelPos({ x: newX, y: newY });
-            else setLayerPanelPos({ x: newX, y: newY });
-        };
-
-        const handleWindowMouseUp = () => {
-            if (isStyle) isDraggingStylePanelRef.current = false;
-            else isDraggingLayerPanelRef.current = false;
-            window.removeEventListener('mousemove', handleWindowMouseMove, true);
-            window.removeEventListener('mouseup', handleWindowMouseUp, true);
-        };
-
-        window.addEventListener('mousemove', handleWindowMouseMove, true);
-        window.addEventListener('mouseup', handleWindowMouseUp, true);
-    };
 
     const handleCanvasMouseMove = (e: React.MouseEvent) => {
         if (!canvasRef.current) return;
@@ -1704,7 +1694,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     e.stopPropagation();
                                                                     if (!showTablePicker) {
                                                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                                                        setTablePickerPos({ top: rect.bottom + 8, left: rect.left });
+                                                                        const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                        setTablePickerPos({ x: flowPos.x, y: flowPos.y });
                                                                     }
                                                                     setShowTablePicker(!showTablePicker);
                                                                     setTablePickerHover(null);
@@ -1714,16 +1705,29 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 <Table2 size={18} />
                                                             </button>
                                                         </PremiumTooltip>
-                                                        {showTablePicker && createPortal(
+                                                        {showTablePicker && (() => {
+                                                            const screenPos = flowToScreenPosition({ x: tablePickerPos.x, y: tablePickerPos.y });
+                                                            return createPortal(
                                                             <div
                                                                 data-table-picker-portal
-                                                                className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9999] animate-in fade-in zoom-in duration-150"
-                                                                style={{ top: tablePickerPos.top, left: tablePickerPos.left }}
+                                                                className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9999] animate-in fade-in zoom-in duration-150 origin-top-left"
+                                                                style={{
+                                                                    left: screenPos.x,
+                                                                    top: screenPos.y,
+                                                                    transform: `scale(${0.85 * zoom})`,
+                                                                }}
                                                                 onMouseLeave={() => setTablePickerHover(null)}
                                                             >
-                                                                <div className="text-[11px] font-bold text-gray-600 mb-2 flex items-center gap-1.5">
-                                                                    <Table2 size={12} className="text-[#2c3e7c]" />
-                                                                    표 삽입
+                                                                <div
+                                                                    className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2 cursor-grab active:cursor-grabbing group/header"
+                                                                    onMouseDown={handleTablePickerHeaderMouseDown}
+                                                                    title="드래그하여 이동"
+                                                                >
+                                                                    <div className="flex items-center gap-2">
+                                                                        <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
+                                                                        <Table2 size={12} className="text-[#2c3e7c]" />
+                                                                        <span className="text-[11px] font-bold text-gray-600">표 삽입</span>
+                                                                    </div>
                                                                 </div>
                                                                 <div className="flex flex-col gap-[2px]">
                                                                     {Array.from({ length: 8 }).map((_, rIdx) => (
@@ -1788,7 +1792,29 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 </div>
                                                             </div>,
                                                             document.body
-                                                        )}
+                                                        );
+                                                        })()}
+                                                        {showImageStylePanel && (() => {
+                                                            const imgEl = drawElements.find(el => selectedElementIds.includes(el.id) && el.type === 'image');
+                                                            if (!imgEl || imgEl.type !== 'image') return null;
+                                                            return createPortal(
+                                                                <div data-image-style-panel>
+                                                                    <ImageStylePanel
+                                                                        element={imgEl}
+                                                                        onUpdate={(u) => updateElement(imgEl.id, u)}
+                                                                        onClose={() => setShowImageStylePanel(false)}
+                                                                        position={imageStylePanelPos}
+                                                                        onPositionChange={setImageStylePanelPos}
+                                                                        zoom={zoom}
+                                                                        screenToFlowPosition={screenToFlowPosition}
+                                                                        flowToScreenPosition={flowToScreenPosition}
+                                                                        onDragStart={() => { isDraggingImageStylePanelRef.current = true; }}
+                                                                        onDragEnd={() => { isDraggingImageStylePanelRef.current = false; }}
+                                                                    />
+                                                                </div>,
+                                                                document.body
+                                                            );
+                                                        })()}
                                                     </div>
                                                     {/* Table Panel Button — shown only when a table is selected */}
                                                     {(() => {
@@ -1797,7 +1823,14 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         return <div className="flex items-center gap-1 border-l border-gray-200 pl-1 ml-1">
                                                             <PremiumTooltip label="표 설정">
                                                                 <button
-                                                                    onClick={() => setShowTablePanel(prev => !prev)}
+                                                                    onClick={(e) => {
+                                                                        if (!showTablePanel) {
+                                                                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                            const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                            setTablePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                        }
+                                                                        setShowTablePanel(prev => !prev);
+                                                                    }}
                                                                     className={`p-2 rounded-lg transition-colors ${showTablePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
                                                                 >
                                                                     <Settings2 size={18} />
@@ -1815,6 +1848,29 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             </PremiumTooltip>
                                                         </div>
                                                             ;
+                                                    })()}
+                                                    {/* 이미지 스타일 버튼 - 이미지 선택 시 표시 */}
+                                                    {(() => {
+                                                        const selEl = drawElements.find(el => selectedElementIds.includes(el.id));
+                                                        if (!selEl || selEl.type !== 'image') return null;
+                                                        return (
+                                                            <div className="flex items-center gap-1 border-l border-gray-200 pl-1 ml-1">
+                                                                <PremiumTooltip label="이미지 스타일">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                            const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                            setImageStylePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                            setShowImageStylePanel(prev => !prev);
+                                                                        }}
+                                                                        className={`p-2 rounded-lg transition-colors ${showImageStylePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                                    >
+                                                                        <Crop size={18} />
+                                                                    </button>
+                                                                </PremiumTooltip>
+                                                            </div>
+                                                        );
                                                     })()}
                                                     <PremiumTooltip label="사각형">
                                                         <button
@@ -2146,7 +2202,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
                                                 <PremiumTooltip label="색상 및 스타일">
                                                     <button
-                                                        onClick={() => {
+                                                        onClick={(e) => {
+                                                            if (!showStylePanel) {
+                                                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                setStylePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                            }
                                                             setShowStylePanel(!showStylePanel);
                                                             setShowLayerPanel(false);
                                                         }}
@@ -2157,7 +2218,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 </PremiumTooltip>
                                                 <PremiumTooltip label="레이어 순서">
                                                     <button
-                                                        onClick={() => {
+                                                        onClick={(e) => {
+                                                            if (!showLayerPanel) {
+                                                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                setLayerPanelPos({ x: flowPos.x, y: flowPos.y });
+                                                            }
                                                             setShowLayerPanel(!showLayerPanel);
                                                             setShowStylePanel(false);
                                                         }}
@@ -2886,24 +2952,31 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     !isLocked && (
                         <>
                             {/* Style Panel */}
-                            {/* Style Panel */}
-                            <StylePanel
-                                show={showStylePanel}
-                                selectedElementIds={selectedElementIds}
-                                drawElements={drawElements}
-                                stylePanelPos={stylePanelPos}
-                                editingTableId={editingTableId}
-                                selectedCellIndices={selectedCellIndices}
-                                update={update}
-                                syncUpdate={syncUpdate}
-                                onClose={() => setShowStylePanel(false)}
-                                onDragStart={handlePanelDragStart}
-                            />
+                            {showStylePanel && selectedElementIds.length > 0 && createPortal(
+                                <StylePanel
+                                    show={showStylePanel}
+                                    selectedElementIds={selectedElementIds}
+                                    drawElements={drawElements}
+                                    stylePanelPos={stylePanelPos}
+                                    onPositionChange={setStylePanelPos}
+                                    zoom={zoom}
+                                    screenToFlowPosition={screenToFlowPosition}
+                                    flowToScreenPosition={flowToScreenPosition}
+                                    editingTableId={editingTableId}
+                                    selectedCellIndices={selectedCellIndices}
+                                    update={update}
+                                    syncUpdate={syncUpdate}
+                                    onClose={() => setShowStylePanel(false)}
+                                    onDragStart={() => { isDraggingStylePanelRef.current = true; }}
+                                    onDragEnd={() => { isDraggingStylePanelRef.current = false; }}
+                                />,
+                                document.body
+                            )}
 
 
 
                             {/* ─── Table Panel ─── */}
-                            {showTablePanel ? (() => {
+                            {showTablePanel && (() => {
                                 const selectedEl = drawElements.find(el => el.id === selectedElementIds[0]);
                                 if (!selectedEl || selectedEl.type !== 'table') return null;
                                 const rows = selectedEl.tableRows || 3;
@@ -2914,53 +2987,43 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     '#fee2e2', '#fef3c7', '#dcfce7', '#dbeafe', '#ede9fe',
                                     '#2c3e7c', '#1e40af', '#059669', '#d97706', '#dc2626'
                                 ];
-                                return (
+                                const handleTablePanelHeaderMouseDown = (e: React.MouseEvent) => {
+                                    if (isLocked) return;
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    isDraggingTablePanelRef.current = true;
+                                    const flowAtClick = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+                                    const offsetFlowX = flowAtClick.x - tablePanelPos.x;
+                                    const offsetFlowY = flowAtClick.y - tablePanelPos.y;
+                                    const onMove = (me: MouseEvent) => {
+                                        if (!isDraggingTablePanelRef.current) return;
+                                        me.stopImmediatePropagation();
+                                        const flowAtMove = screenToFlowPosition({ x: me.clientX, y: me.clientY });
+                                        setTablePanelPos({ x: flowAtMove.x - offsetFlowX, y: flowAtMove.y - offsetFlowY });
+                                    };
+                                    const onUp = () => {
+                                        isDraggingTablePanelRef.current = false;
+                                        window.removeEventListener('mousemove', onMove, true);
+                                        window.removeEventListener('mouseup', onUp);
+                                    };
+                                    window.addEventListener('mousemove', onMove, true);
+                                    window.addEventListener('mouseup', onUp);
+                                };
+                                const tablePanelScreenPos = flowToScreenPosition({ x: tablePanelPos.x, y: tablePanelPos.y });
+                                return createPortal(
                                     <div
-                                        className="nodrag floating-panel absolute z-[210] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in"
+                                        data-table-panel
+                                        className="nodrag floating-panel fixed z-[9999] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in origin-top-left"
                                         style={{
-                                            left: tablePanelPos.x,
-                                            top: tablePanelPos.y,
-                                            transform: tablePanelPos.x === '50%' ? 'translateX(-50%)' : 'none'
+                                            left: tablePanelScreenPos.x,
+                                            top: tablePanelScreenPos.y,
+                                            transform: `scale(${0.85 * zoom})`,
                                         }}
                                     >
                                         {/* Header */}
                                         <div
                                             className="flex items-center justify-between border-b border-gray-100 pb-2 cursor-grab active:cursor-grabbing group/header"
-                                            onMouseDown={(e) => {
-                                                if (isLocked) return;
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                                isDraggingTablePanelRef.current = true;
-                                                const panel = (e.target as HTMLElement).closest('.floating-panel') as HTMLElement;
-                                                if (!panel || !nodeRef.current) return;
-                                                const panelRect = panel.getBoundingClientRect();
-                                                const containerRect = nodeRef.current.getBoundingClientRect();
-                                                const scale = containerRect.width / nodeRef.current.clientWidth;
-                                                tablePanelDragOffsetRef.current = {
-                                                    x: (e.clientX - panelRect.left) / scale,
-                                                    y: (e.clientY - panelRect.top) / scale
-                                                };
-                                                const onMove = (me: MouseEvent) => {
-                                                    if (!isDraggingTablePanelRef.current || !nodeRef.current) return;
-                                                    me.stopImmediatePropagation();
-                                                    const cRect = nodeRef.current.getBoundingClientRect();
-                                                    const layoutWidth = nodeRef.current.clientWidth;
-                                                    const currentScale = cRect.width / layoutWidth;
-                                                    const layoutX = (me.clientX - cRect.left) / currentScale;
-                                                    const layoutY = (me.clientY - cRect.top) / currentScale;
-                                                    setTablePanelPos({
-                                                        x: layoutX - tablePanelDragOffsetRef.current.x,
-                                                        y: layoutY - tablePanelDragOffsetRef.current.y
-                                                    });
-                                                };
-                                                const onUp = () => {
-                                                    isDraggingTablePanelRef.current = false;
-                                                    window.removeEventListener('mousemove', onMove, true);
-                                                    window.removeEventListener('mouseup', onUp);
-                                                };
-                                                window.addEventListener('mousemove', onMove, true);
-                                                window.addEventListener('mouseup', onUp);
-                                            }}
+                                            onMouseDown={handleTablePanelHeaderMouseDown}
                                         >
                                             <div className="flex items-center gap-2">
                                                 <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
@@ -3702,20 +3765,28 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    </div>,
+                                    document.body
                                 );
-                            })() : null}
+                            })()}
 
                             {/* Layer Panel */}
-                            {/* Layer Panel */}
-                            <LayerPanel
-                                show={showLayerPanel}
-                                selectedElementIds={selectedElementIds}
-                                layerPanelPos={layerPanelPos}
-                                onClose={() => setShowLayerPanel(false)}
-                                onDragStart={handlePanelDragStart}
-                                onLayerAction={handleLayerAction}
-                            />
+                            {showLayerPanel && selectedElementIds.length > 0 && createPortal(
+                                <LayerPanel
+                                    show={showLayerPanel}
+                                    selectedElementIds={selectedElementIds}
+                                    layerPanelPos={layerPanelPos}
+                                    onPositionChange={setLayerPanelPos}
+                                    zoom={zoom}
+                                    screenToFlowPosition={screenToFlowPosition}
+                                    flowToScreenPosition={flowToScreenPosition}
+                                    onClose={() => setShowLayerPanel(false)}
+                                    onDragStart={() => { isDraggingLayerPanelRef.current = true; }}
+                                    onDragEnd={() => { isDraggingLayerPanelRef.current = false; }}
+                                    onLayerAction={handleLayerAction}
+                                />,
+                                document.body
+                            )}
                         </>
                     )
                 }

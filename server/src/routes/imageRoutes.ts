@@ -124,6 +124,7 @@ router.get('/:id/images/:imageId', async (req: Request, res: Response) => {
 
     res.set('Content-Type', mimeType);
     res.set('Cache-Control', 'public, max-age=2592000'); // 30일 캐시
+    res.set('Access-Control-Allow-Origin', '*'); // cross-origin 이미지 로딩 허용
     res.sendFile(path.resolve(filePath));
 });
 

@@ -27,7 +27,7 @@ interface ImageElementProps {
     projectId?: string;
 }
 
-import { getImageDisplayUrl } from '../../utils/imageUrl';
+import { getImageDisplayUrl, normalizeImageUrlForStorage } from '../../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -73,7 +73,7 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
             return dataUrl;
         }
         const json = await res.json() as { imageId: string; url: string };
-        return json.url;
+        return normalizeImageUrlForStorage(json.url) ?? json.url;
     };
 
     const loadFile = async (file: File) => {
@@ -169,8 +169,25 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                     <img
                         src={displayUrl}
                         alt=""
-                        className="w-full h-full"
-                        style={{ objectFit: 'contain', display: 'block', pointerEvents: 'none' }}
+                        className="absolute"
+                        style={{
+                            ...(element.imageCrop && (element.imageCrop.x !== 0 || element.imageCrop.y !== 0 || element.imageCrop.width !== 1 || element.imageCrop.height !== 1)
+                                ? {
+                                    width: `${100 / (element.imageCrop.width || 1)}%`,
+                                    height: `${100 / (element.imageCrop.height || 1)}%`,
+                                    left: `${-(element.imageCrop.x || 0) / (element.imageCrop.width || 1) * 100}%`,
+                                    top: `${-(element.imageCrop.y || 0) / (element.imageCrop.height || 1) * 100}%`,
+                                }
+                                : { inset: 0, width: '100%', height: '100%' }),
+                            objectFit: element.imageCrop && (element.imageCrop.x !== 0 || element.imageCrop.y !== 0 || element.imageCrop.width !== 1 || element.imageCrop.height !== 1) ? 'fill' : 'contain',
+                            display: 'block',
+                            pointerEvents: 'none',
+                            transform: [
+                                `rotate(${element.imageRotation ?? 0}deg)`,
+                                element.imageFlipX ? 'scaleX(-1)' : '',
+                                element.imageFlipY ? 'scaleY(-1)' : '',
+                            ].filter(Boolean).join(' ') || undefined,
+                        }}
                         draggable={false}
                         referrerPolicy="no-referrer"
                         onLoad={() => setLoadFailed(false)}
@@ -208,7 +225,7 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                     {RESIZE_HANDLES.map((handle) => (
                         <div
                             key={handle.position}
-                            className="absolute w-2.5 h-2.5 bg-white border-2 border-blue-500 rounded-sm z-50 shadow-sm"
+                            className="absolute w-2.5 h-2.5  border-blue-500 rounded-sm z-50 shadow-sm"
                             style={{ ...handle.style, cursor: handle.cursor }}
                             onMouseDown={(e) => handleResizeMouseDown(e, handle.position)}
                         />

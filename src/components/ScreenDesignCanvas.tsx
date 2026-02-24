@@ -776,7 +776,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
             <div className="relative flex h-full min-w-0">
                 <div
-                    className={`h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
+                    className={`h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10000] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
                 >
                     <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
                         <ScreenSidebar />
