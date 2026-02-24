@@ -160,7 +160,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     // Sync screens → ReactFlow nodes (캔버스 70% 반영하여 entity 크기 계산)
     const computeNodeStyle = (screen: Screen): React.CSSProperties | undefined => {
-        if (screen.variant === 'SPEC') return undefined;
         const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
         const CANVAS_WIDTH_RATIO = 0.7;
         const FIXED_TOP_HEIGHT = 180;
@@ -175,10 +174,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
             canvasW = MIN_CANVAS_WIDTH;
             canvasH = Math.round(canvasH * scale);
         }
-        return {
-            width: Math.ceil(canvasW / CANVAS_WIDTH_RATIO),
-            height: canvasH + FIXED_TOP_HEIGHT,
-        };
+        const width = Math.ceil(canvasW / CANVAS_WIDTH_RATIO);
+        const height = canvasH + FIXED_TOP_HEIGHT;
+        return { width, height };
     };
 
     useEffect(() => {
@@ -193,7 +191,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     data: { screen },
                     selected: existingNode?.selected,
                 };
-                if (style) node.style = style;
+                if (style) {
+                    node.style = style;
+                    // React Flow가 초기 크기를 인식하도록 width/height 직접 설정
+                    node.width = style.width;
+                    node.height = style.height;
+                }
                 return node;
             });
         });
@@ -586,6 +589,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
         const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
         const screenId = `SCR-${String(nextNum).padStart(3, '0')}`;
         const today = new Date().toISOString().split('T')[0];
+        const preset = PAGE_SIZE_PRESETS[pageSize];
+        const orientation = pageOrientation || 'portrait';
+        const imageWidth = orientation === 'landscape' ? preset.height : preset.width;
+        const imageHeight = orientation === 'landscape' ? preset.width : preset.height;
 
         const newScreen: Screen = {
             id: `screen_${Date.now()}`,
@@ -605,6 +612,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
             isLocked: true,
             pageSize,
             pageOrientation,
+            imageWidth,
+            imageHeight,
         };
         addScreen(newScreen);
 
@@ -638,6 +647,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
         const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
         const screenId = `SCR-${String(nextNum).padStart(3, '0')}`;
         const today = new Date().toISOString().split('T')[0];
+        const preset = PAGE_SIZE_PRESETS[pageSize];
+        const orientation = pageOrientation || 'portrait';
+        const imageWidth = orientation === 'landscape' ? preset.height : preset.width;
+        const imageHeight = orientation === 'landscape' ? preset.width : preset.height;
 
         const newScreen: Screen = {
             id: `spec_${Date.now()}`,
@@ -659,6 +672,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
             isLocked: true,
             pageSize,
             pageOrientation,
+            imageWidth,
+            imageHeight,
         };
         addScreen(newScreen);
 

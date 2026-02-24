@@ -2,7 +2,7 @@ import React, { memo, useContext } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { ExportModeContext } from '../contexts/ExportModeContext';
 import type { Screen, ScreenSpecItem } from '../types/screenDesign';
-import { SCREEN_FIELD_TYPES, SCREEN_TYPES } from '../types/screenDesign';
+import { SCREEN_FIELD_TYPES, SCREEN_TYPES, PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
 import { Plus, Trash2, Lock, Unlock, X, ChevronDown, GripVertical, FileText } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
@@ -404,14 +404,31 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const labelCell = "bg-[#2c3e7c] text-white text-[11px] font-bold px-3 py-2 border-r border-[#1e2d5e] select-none text-center align-middle whitespace-nowrap";
     const valueCell = "bg-white text-xs text-gray-800 px-2 py-1 border-r border-[#e2e8f0] align-middle";
 
+    // Entity dimensions from page size/orientation (ScreenNode과 동일 로직)
+    const MIN_CANVAS_WIDTH = 794;
+    const CANVAS_WIDTH_RATIO = 0.7;
+    const FIXED_TOP_HEIGHT = 180;
+    const sizeKey = screen.pageSize && PAGE_SIZE_OPTIONS.includes(screen.pageSize as (typeof PAGE_SIZE_OPTIONS)[number]) ? screen.pageSize! : 'A4';
+    const preset = PAGE_SIZE_PRESETS[sizeKey];
+    const orientation = (screen.pageOrientation || 'portrait') as 'portrait' | 'landscape';
+    let canvasW = orientation === 'landscape' ? preset.height : preset.width;
+    let canvasH = orientation === 'landscape' ? preset.width : preset.height;
+    if (canvasW < MIN_CANVAS_WIDTH) {
+        const scale = MIN_CANVAS_WIDTH / canvasW;
+        canvasW = MIN_CANVAS_WIDTH;
+        canvasH = Math.round(canvasH * scale);
+    }
+    const entityWidth = Math.ceil(canvasW / CANVAS_WIDTH_RATIO);
+    const entityHeight = canvasH + FIXED_TOP_HEIGHT;
+
     return (
         <div
             className={`transition-all group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''}`}
-            style={{ width: 1000 }}
+            style={{ width: entityWidth, height: entityHeight }}
         >
             <EntityLockBadge entityId={screen.id} />
             {/* Main Content Wrapper with Overflow Hidden */}
-            <div className={`relative bg-white rounded-[15px] overflow-hidden shadow-xl border-2 flex flex-col ${selected && !isExporting
+            <div className={`relative h-full w-full bg-white rounded-[15px] overflow-hidden shadow-xl border-2 flex flex-col ${selected && !isExporting
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-md'

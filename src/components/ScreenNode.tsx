@@ -218,6 +218,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         return () => document.removeEventListener('mousedown', handleClickOutside, true);
     }, [showTablePicker]);
 
+    // 이미지 스타일 패널이 닫히면 크롭 모드도 항상 해제
+    useEffect(() => {
+        if (!showImageStylePanel && imageCropMode) {
+            setImageCropMode(false);
+        }
+    }, [showImageStylePanel, imageCropMode]);
+
 
 
 
