@@ -199,7 +199,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const isDraggingImageStylePanelRef = useRef(false);
     const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
-    // Close table list, screen options, table picker, image style panel on click outside
+    // Close table list, screen options, table picker on click outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
@@ -213,14 +213,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             if (showTablePicker && !isDraggingTablePickerRef.current && tablePickerRef.current && !tablePickerRef.current.contains(target) && !el?.closest('[data-table-picker-portal]')) {
                 setShowTablePicker(false);
             }
-            if (showImageStylePanel && !isDraggingImageStylePanelRef.current && !el?.closest('[data-image-style-panel]') && !el?.closest('[data-image-crop-handle]')) {
-                setShowImageStylePanel(false);
-                setImageCropMode(false);
-            }
         };
         document.addEventListener('mousedown', handleClickOutside, true);
         return () => document.removeEventListener('mousedown', handleClickOutside, true);
-    }, [showTablePicker, showImageStylePanel]);
+    }, [showTablePicker]);
 
 
 
