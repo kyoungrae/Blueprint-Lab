@@ -131,13 +131,28 @@ const ScreenDesignCanvasContent: React.FC = () => {
             e.preventDefault();
             e.stopPropagation();
 
-            // Ctrl/Cmd + wheel: zoom (React Flow 기본 wheelDelta 체감과 동일하게 보정)
+            // Ctrl/Cmd + wheel: zoom (포인터 앵커 기준으로 x/y 동시 보정)
             if (e.ctrlKey || e.metaKey) {
                 const factor = (e.ctrlKey || e.metaKey) ? 10 : 1;
                 const wheelDelta = -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002) * factor;
                 const { x, y, zoom } = getViewport();
                 const nextZoom = Math.max(0.05, Math.min(4, zoom * Math.pow(2, wheelDelta)));
-                setViewport({ x, y, zoom: nextZoom });
+
+                const wrapperRect = flowWrapper.current?.getBoundingClientRect();
+                if (!wrapperRect) {
+                    setViewport({ x, y, zoom: nextZoom });
+                    return;
+                }
+
+                // 화면 좌표(포인터)를 flow 좌표로 고정하여, 줌 후에도 같은 포인터 위치를 유지
+                const px = e.clientX - wrapperRect.left;
+                const py = e.clientY - wrapperRect.top;
+                const flowX = (px - x) / zoom;
+                const flowY = (py - y) / zoom;
+                const nextX = px - flowX * nextZoom;
+                const nextY = py - flowY * nextZoom;
+
+                setViewport({ x: nextX, y: nextY, zoom: nextZoom });
                 return;
             }
 
