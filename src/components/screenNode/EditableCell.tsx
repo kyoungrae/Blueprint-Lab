@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 interface EditableCellProps {
@@ -14,6 +14,33 @@ interface EditableCellProps {
 }
 
 const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlur, isLocked, placeholder, className = '', isSelect, options, mono }) => {
+    // IME 조합 중(한글 등) 자음/모음 분리 방지
+    const [composing, setComposing] = useState<string | null>(null);
+    const displayValue = composing !== null ? composing : value;
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            setComposing(v);
+            return;
+        }
+        setComposing(null);
+        onChange(v);
+    };
+
+    const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+        const v = (e.target as HTMLInputElement).value;
+        setComposing(null);
+        onChange(v);
+    };
+
+    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        setComposing(null);
+        onChange(v);
+        onBlur?.(v);
+    };
+
     if (isSelect && options) {
         return (
             <div className="relative w-full h-full flex items-center">
@@ -34,9 +61,10 @@ const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlu
     return (
         <input
             type="text"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onBlur={(e) => onBlur?.(e.target.value)}
+            value={displayValue}
+            onChange={handleChange}
+            onCompositionEnd={handleCompositionEnd}
+            onBlur={handleBlur}
             onMouseDown={(e) => !isLocked && e.stopPropagation()}
             disabled={isLocked}
             className={`w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'} ${mono ? 'font-mono' : ''} ${className}`}

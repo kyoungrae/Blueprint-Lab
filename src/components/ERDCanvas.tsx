@@ -462,7 +462,7 @@ const ERDCanvasContent: React.FC = () => {
                     isFK: false,
                 },
             ],
-            isLocked: false,
+            isLocked: true,
         };
         addEntity(newEntity, user); // 4. user 객체 전달
 
