@@ -232,20 +232,30 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
 
-    // Undo/Redo History State
+    type HistorySnapshot = {
+        drawElements: DrawElement[];
+        position: { x: number; y: number };
+    };
+
+    // Undo/Redo History State (요소 + 엔티티 위치)
     const [history, setHistory] = useState<{
-        past: DrawElement[][],
-        future: DrawElement[][]
+        past: HistorySnapshot[],
+        future: HistorySnapshot[]
     }>({ past: [], future: [] });
     const MAX_HISTORY = 50;
+    const restoringHistoryRef = useRef(false);
 
-    const saveHistory = (elements: DrawElement[]) => {
+    const saveHistory = (elements: DrawElement[], position = screen.position) => {
+        const snapshot: HistorySnapshot = {
+            drawElements: elements,
+            position: { x: position.x, y: position.y },
+        };
         setHistory(prev => {
             // If the last state is the same as current, don't save
-            if (prev.past.length > 0 && JSON.stringify(prev.past[prev.past.length - 1]) === JSON.stringify(elements)) {
+            if (prev.past.length > 0 && JSON.stringify(prev.past[prev.past.length - 1]) === JSON.stringify(snapshot)) {
                 return prev;
             }
-            const newPast = [...prev.past, elements].slice(-MAX_HISTORY);
+            const newPast = [...prev.past, snapshot].slice(-MAX_HISTORY);
             return {
                 past: newPast,
                 future: [] // Clear future when a new action is performed
@@ -263,8 +273,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
             if (!current || !previous) return prev;
 
-            update({ drawElements: previous });
-            syncUpdate({ drawElements: previous });
+            restoringHistoryRef.current = true;
+            // undo/redo는 잠금 여부와 관계없이 실행 (의도적인 복원 동작)
+            updateScreen(screen.id, { drawElements: previous.drawElements, position: previous.position });
+            syncUpdate({ drawElements: previous.drawElements, position: previous.position });
+            requestAnimationFrame(() => {
+                restoringHistoryRef.current = false;
+            });
 
             return {
                 past: newPast,
@@ -282,8 +297,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
             if (!next) return prev;
 
-            update({ drawElements: next });
-            syncUpdate({ drawElements: next });
+            restoringHistoryRef.current = true;
+            // undo/redo는 잠금 여부와 관계없이 실행 (의도적인 복원 동작)
+            updateScreen(screen.id, { drawElements: next.drawElements, position: next.position });
+            syncUpdate({ drawElements: next.drawElements, position: next.position });
+            requestAnimationFrame(() => {
+                restoringHistoryRef.current = false;
+            });
 
             return {
                 past: [...prev.past, next].slice(-MAX_HISTORY),
@@ -295,13 +315,25 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // Initial history save
     useEffect(() => {
         if (history.past.length === 0 && screen.drawElements) {
-            setHistory({ past: [screen.drawElements], future: [] });
+            setHistory({
+                past: [{
+                    drawElements: screen.drawElements,
+                    position: { x: screen.position.x, y: screen.position.y },
+                }],
+                future: []
+            });
         }
     }, []);
 
-    // 상단 툴바에 Undo/Redo 노출 (선택된 화면이 잠금 해제일 때)
+    // 엔티티 이동(position)도 undo/redo 히스토리에 포함
     useEffect(() => {
-        if (selected && !isLocked) {
+        if (restoringHistoryRef.current) return;
+        saveHistory(screen.drawElements || [], screen.position);
+    }, [screen.position.x, screen.position.y]);
+
+    // 상단 툴바에 Undo/Redo 노출 (선택된 화면이면 잠금 여부와 관계없이 항상 노출)
+    useEffect(() => {
+        if (selected) {
             setHandlers(screen.id, {
                 undo,
                 redo,
@@ -312,7 +344,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             setHandlers(screen.id, null);
         }
         return () => setHandlers(screen.id, null);
-    }, [selected, isLocked, history.past.length, history.future.length, setHandlers, screen.id]);
+    }, [selected, history.past.length, history.future.length, setHandlers, screen.id]);
 
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
     const [showTablePanel, setShowTablePanel] = useState(false);
@@ -1033,6 +1065,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const nextElements = drawElements.map(el => el.id === elId ? { ...el, ...updates } : el);
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
     };
 
     const handleExecSplit = (el: DrawElement, cellIdx: number, splitRowCount: number, splitColCount: number) => {
@@ -1256,6 +1289,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const nextElements = drawElements.map(it => it.id === el.id ? targetEl : it);
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
         setSelectedCellIndices([]);
     };
 
@@ -1265,174 +1299,67 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const rows = selectedEl.tableRows;
         const cols = selectedEl.tableCols;
 
-        // Construct or get structure
-        let rowColWidths = selectedEl.tableRowColWidths
-            ? JSON.parse(JSON.stringify(selectedEl.tableRowColWidths))
-            : Array(rows).fill(null).map(() => {
-                const c = selectedEl.tableCols || 1;
-                return selectedEl.tableColWidths || Array(c).fill(100 / c);
-            });
-
-        let cellData = selectedEl.tableCellData ? [...selectedEl.tableCellData] : Array(rows * cols).fill('');
-        let cellColors = selectedEl.tableCellColors ? [...selectedEl.tableCellColors] : [];
-        let cellStyles = selectedEl.tableCellStyles ? [...selectedEl.tableCellStyles] : [];
-
-        // Get or create V2 cells
-        let v2Cells = deepCopyCells(getV2Cells(selectedEl));
-
-        // Helper to get coordinates (supports jagged row widths)
-        const getCoords = (idx: number) => {
-            let counter = 0;
-            for (let r = 0; r < rows; r++) {
-                const w = rowColWidths[r];
-                if (idx < counter + w.length) {
-                    return { r, c: idx - counter, flatIdx: idx };
-                }
-                counter += w.length;
-            }
-            return null;
-        };
-
-        const coords = selectedCellIndices.map(getCoords).filter(x => x !== null) as { r: number, c: number, flatIdx: number }[];
+        // 렌더러는 항상 uniform grid(rows×cols)를 사용하므로 flatIdx → (r,c) 매핑은 flatIdxToRowCol 사용
+        const coords = selectedCellIndices.map(idx => {
+            const { r, c } = flatIdxToRowCol(idx, cols);
+            return { r, c, flatIdx: idx };
+        });
         if (!coords.length) return;
 
-        // Group by row
-        const rowsMap = new Map<number, number[]>();
-        coords.forEach(({ r, c }) => {
-            if (!rowsMap.has(r)) rowsMap.set(r, []);
-            rowsMap.get(r)!.push(c);
-        });
+        // 모든 병합을 V2(rowSpan/colSpan) 방식으로 통일 (가로/세로/사각형 모두)
+        const minRow = Math.min(...coords.map(c => c.r));
+        const maxRow = Math.max(...coords.map(c => c.r));
+        const minCol = Math.min(...coords.map(c => c.c));
+        const maxCol = Math.max(...coords.map(c => c.c));
 
-        // 1. Attempt Horizontal Structural Merge
-        let horizontalChange = false;
+        const rowSpanVal = maxRow - minRow + 1;
+        const colSpanVal = maxCol - minCol + 1;
 
-        // Build Structure for splice ops
-        let dataStructure: any[][] = [];
-        let colorStructure: any[][] = [];
-        let styleStructure: any[][] = [];
-
-        let counter = 0;
-        for (let r = 0; r < rows; r++) {
-            const colsInRow = rowColWidths[r].length;
-            const sliceEnd = counter + colsInRow;
-            dataStructure.push(cellData.slice(counter, sliceEnd));
-            if (cellColors.length) colorStructure.push(cellColors.slice(counter, sliceEnd));
-            if (cellStyles.length) styleStructure.push(cellStyles.slice(counter, sliceEnd));
-            counter += colsInRow;
+        let v2Cells = deepCopyCells(getV2Cells(selectedEl));
+        const totalCells = rows * cols;
+        while (v2Cells.length < totalCells) {
+            v2Cells.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
         }
 
-        rowsMap.forEach((colIndices, r) => {
-            if (colIndices.length < 2) return;
+        const masterFlatIdx = rowColToFlatIdx(minRow, minCol, cols);
 
-            colIndices.sort((a, b) => a - b);
-            // Check adjacency
-            for (let i = 0; i < colIndices.length - 1; i++) {
-                if (colIndices[i + 1] !== colIndices[i] + 1) return;
+        // 병합된 영역의 내용: 좌상단 셀 내용 사용 (기존 master 유지)
+        v2Cells[masterFlatIdx] = {
+            ...v2Cells[masterFlatIdx],
+            rowSpan: rowSpanVal,
+            colSpan: colSpanVal,
+            isMerged: false,
+        };
+
+        for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+                const idx = rowColToFlatIdx(r, c, cols);
+                if (idx === masterFlatIdx) continue;
+                v2Cells[idx] = {
+                    ...v2Cells[idx],
+                    rowSpan: 1,
+                    colSpan: 1,
+                    isMerged: true,
+                };
             }
-
-            const startC = colIndices[0];
-            const count = colIndices.length;
-
-            // Update width
-            const widths = rowColWidths[r];
-            let newWidth = 0;
-            for (let i = startC; i < startC + count; i++) {
-                newWidth += widths[i];
-            }
-            widths.splice(startC, count, newWidth);
-
-            // Update Data
-            if (dataStructure[r]) dataStructure[r].splice(startC, count, dataStructure[r][startC]);
-            if (colorStructure[r] && colorStructure[r].length) colorStructure[r].splice(startC, count, colorStructure[r][startC]);
-            if (styleStructure[r] && styleStructure[r].length) styleStructure[r].splice(startC, count, styleStructure[r][startC]);
-
-            horizontalChange = true;
-        });
-
-        if (horizontalChange) {
-            const newCellData = dataStructure.flat();
-            const newCellColors = colorStructure.length ? colorStructure.flat() : undefined;
-            const newCellStyles = styleStructure.length ? styleStructure.flat() : undefined;
-
-            const targetEl = {
-                ...selectedEl,
-                tableRowColWidths: rowColWidths,
-                tableCellData: newCellData,
-                tableCellColors: newCellColors,
-                tableCellStyles: newCellStyles,
-                tableCellSpans: undefined,
-                tableCellDataV2: undefined, // Reset V2 so it re-derives from legacy
-            };
-
-            const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
-            update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
-            setSelectedCellIndices([]);
-            return;
         }
 
-        // 2. Attempt Vertical/Rectangular Merge (using V2 structure)
-        const distinctRows = Array.from(new Set(coords.map(c => c.r))).sort((a, b) => a - b);
+        const nextSpans = v2Cells.map(cell => ({
+            rowSpan: cell.isMerged ? 0 : cell.rowSpan,
+            colSpan: cell.isMerged ? 0 : cell.colSpan,
+        }));
 
-        if (distinctRows.length > 1) {
-            // Calculate bounding rectangle
-            const minRow = Math.min(...coords.map(c => c.r));
-            const maxRow = Math.max(...coords.map(c => c.r));
-            const minCol = Math.min(...coords.map(c => c.c));
-            const maxCol = Math.max(...coords.map(c => c.c));
-
-            const rowSpanVal = maxRow - minRow + 1;
-            const colSpanVal = maxCol - minCol + 1;
-
-            // Ensure V2 has correct size (use uniform grid: rows * cols for V2)
-            // Note: V2 uses uniform grid, not jagged. If we have jagged widths, V2 spans are metadata-only.
-            const totalCells = rows * cols;
-            while (v2Cells.length < totalCells) {
-                v2Cells.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
-            }
-
-            // Master cell index (top-left of the selection rectangle)
-            const masterFlatIdx = rowColToFlatIdx(minRow, minCol, cols);
-
-            // Set master cell
-            v2Cells[masterFlatIdx] = {
-                ...v2Cells[masterFlatIdx],
-                rowSpan: rowSpanVal,
-                colSpan: colSpanVal,
-                isMerged: false,
-            };
-
-            // Set slave cells
-            for (let r = minRow; r <= maxRow; r++) {
-                for (let c = minCol; c <= maxCol; c++) {
-                    const idx = rowColToFlatIdx(r, c, cols);
-                    if (idx === masterFlatIdx) continue;
-                    v2Cells[idx] = {
-                        ...v2Cells[idx],
-                        rowSpan: 1,
-                        colSpan: 1,
-                        isMerged: true,
-                    };
-                }
-            }
-
-            // Also update legacy spans for backward compat
-            const nextSpans = v2Cells.map(cell => ({
-                rowSpan: cell.isMerged ? 0 : cell.rowSpan,
-                colSpan: cell.isMerged ? 0 : cell.colSpan,
-            }));
-
-            const targetEl = {
-                ...selectedEl,
-                tableCellDataV2: v2Cells,
-                tableCellSpans: nextSpans,
-            };
-            const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
-            update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
-            setSelectedCellIndices([]);
-            return;
-        }
+        const targetEl = {
+            ...selectedEl,
+            tableCellDataV2: v2Cells,
+            tableCellSpans: nextSpans,
+            tableRowColWidths: undefined, // jagged 구조 제거, uniform grid만 사용
+        };
+        const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
+        setSelectedCellIndices([]);
     };
 
     const handleSplitCells = (selectedEl: DrawElement) => {
@@ -1485,10 +1412,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 ...selectedEl,
                 tableCellSpans: nextSpans,
                 tableCellDataV2: undefined, // Reset V2 to re-derive
+                tableRowColWidths: undefined,
             };
             const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
             update({ drawElements: nextElements });
             syncUpdate({ drawElements: nextElements });
+            saveHistory(nextElements);
             setSelectedCellIndices([]);
             return;
         }
@@ -2473,7 +2402,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             {(() => {
                                                                 const rows = el.tableRows || 3;
                                                                 const cols = el.tableCols || 3;
-                                                                const globalWidths = el.tableColWidths || Array(cols).fill(100 / cols);
                                                                 const v2Cells = getV2Cells(el);
                                                                 const totalCells = rows * cols;
 
@@ -2640,48 +2568,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 </div>
                                                                             )}
 
-                                                                            {/* Column Resize Handle (between columns) */}
-                                                                            {editingTableId === el.id && !isLocked && c + cellColSpan - 1 < cols - 1 && r === 0 && (
-                                                                                <div
-                                                                                    className="absolute top-0 bottom-0 right-0 w-[6px] cursor-col-resize z-[15] hover:bg-blue-400/60 opacity-0 hover:opacity-100 transition-opacity"
-                                                                                    style={{ marginRight: -3 }}
-                                                                                    onMouseDown={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        e.preventDefault();
-                                                                                        const startX = e.clientX;
-                                                                                        const colIdx = c + cellColSpan - 1;
-                                                                                        const startWidths = [...globalWidths];
-                                                                                        const minWidthPercent = (20 / el.width) * 100; // 20px minimum
-
-                                                                                        const handleMove = (moveE: MouseEvent) => {
-                                                                                            moveE.preventDefault();
-                                                                                            moveE.stopPropagation();
-                                                                                            const deltaX = moveE.clientX - startX;
-                                                                                            const deltaPercent = (deltaX / el.width) * 100;
-                                                                                            const newWidths = [...startWidths];
-                                                                                            let w1 = startWidths[colIdx] + deltaPercent;
-                                                                                            let w2 = startWidths[colIdx + 1] - deltaPercent;
-
-                                                                                            if (w1 < minWidthPercent) { w2 -= (minWidthPercent - w1); w1 = minWidthPercent; }
-                                                                                            if (w2 < minWidthPercent) { w1 -= (minWidthPercent - w2); w2 = minWidthPercent; }
-
-                                                                                            newWidths[colIdx] = w1;
-                                                                                            newWidths[colIdx + 1] = w2;
-
-                                                                                            updateElement(el.id, { tableColWidths: newWidths });
-                                                                                        };
-
-                                                                                        const handleUp = () => {
-                                                                                            window.removeEventListener('mousemove', handleMove, true);
-                                                                                            window.removeEventListener('mouseup', handleUp, true);
-                                                                                            syncUpdate({ drawElements });
-                                                                                        };
-
-                                                                                        window.addEventListener('mousemove', handleMove, true);
-                                                                                        window.addEventListener('mouseup', handleUp, true);
-                                                                                    }}
-                                                                                />
-                                                                            )}
                                                                         </div>
                                                                     );
                                                                 }
@@ -2690,6 +2576,64 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             })()}
                                                         </div>
 
+
+                                                        {/* Column Resize Handles (오버레이 - 인접 셀에 가리지 않도록) */}
+                                                        {editingTableId === el.id && !isLocked && (() => {
+                                                            const colsLocal = el.tableCols || 3;
+                                                            const widthsLocal = el.tableColWidths || Array(colsLocal).fill(100 / colsLocal);
+                                                            let accLeft = 0;
+                                                            return Array.from({ length: colsLocal - 1 }).map((_, colIdx) => {
+                                                                accLeft += widthsLocal[colIdx];
+                                                                return (
+                                                                    <div
+                                                                        key={`col-resize-${colIdx}`}
+                                                                        className="nodrag absolute top-0 bottom-0 cursor-col-resize z-[115] group/colresize"
+                                                                        style={{
+                                                                            left: `calc(${accLeft}% - 4px)`,
+                                                                            width: 8,
+                                                                        }}
+                                                                        onMouseDown={(e) => {
+                                                                            e.stopPropagation();
+                                                                            e.preventDefault();
+                                                                            const startX = e.clientX;
+                                                                            const startWidths = [...widthsLocal];
+                                                                            const tableRect = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
+                                                                            const tableWidthPx = tableRect?.width ?? el.width;
+                                                                            const minWidthPercent = Math.max(5, (20 / tableWidthPx) * 100);
+
+                                                                            const handleMove = (moveE: MouseEvent) => {
+                                                                                moveE.preventDefault();
+                                                                                moveE.stopPropagation();
+                                                                                const deltaX = moveE.clientX - startX;
+                                                                                const deltaPercent = (deltaX / tableWidthPx) * 100;
+                                                                                const newWidths = [...startWidths];
+                                                                                let w1 = startWidths[colIdx] + deltaPercent;
+                                                                                let w2 = startWidths[colIdx + 1] - deltaPercent;
+
+                                                                                if (w1 < minWidthPercent) { w2 -= (minWidthPercent - w1); w1 = minWidthPercent; }
+                                                                                if (w2 < minWidthPercent) { w1 -= (minWidthPercent - w2); w2 = minWidthPercent; }
+
+                                                                                newWidths[colIdx] = w1;
+                                                                                newWidths[colIdx + 1] = w2;
+
+                                                                                updateElement(el.id, { tableColWidths: newWidths });
+                                                                            };
+
+                                                                            const handleUp = () => {
+                                                                                window.removeEventListener('mousemove', handleMove, true);
+                                                                                window.removeEventListener('mouseup', handleUp, true);
+                                                                                syncUpdate({ drawElements });
+                                                                            };
+
+                                                                            window.addEventListener('mousemove', handleMove, true);
+                                                                            window.addEventListener('mouseup', handleUp, true);
+                                                                        }}
+                                                                    >
+                                                                        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
+                                                                    </div>
+                                                                );
+                                                            });
+                                                        })()}
 
                                                         {/* Row Resize Handles */}
                                                         {editingTableId === el.id && !isLocked && (() => {
@@ -2723,7 +2667,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 return segments.map((seg, segIdx) => (
                                                                     <div
                                                                         key={`row-resize-${idx}-${segIdx}`}
-                                                                        className="absolute cursor-row-resize z-[120] group/rowresize"
+                                                                        className="nodrag absolute cursor-row-resize z-[120] group/rowresize"
                                                                         style={{
                                                                             top: `${accPercent}%`,
                                                                             height: 8,

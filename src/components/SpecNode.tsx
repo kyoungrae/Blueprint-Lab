@@ -9,6 +9,7 @@ import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
 import { EntityLockBadge, useEntityLock } from './collaboration';
+import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 
 // 명세 그리드 기본 컬럼 너비(px): [항목명, 필드명, 항목타입, Format, 자릿수, 초기값, Validation, 비고]
 const DEFAULT_SPEC_COLUMN_WIDTHS = [128, 128, 96, 80, 64, 64, 80, 96];
@@ -311,6 +312,40 @@ interface SpecNodeData {
     screen: Screen;
 }
 
+type SpecHistorySnapshot = Pick<
+    Screen,
+    | 'name'
+    | 'systemName'
+    | 'author'
+    | 'createdDate'
+    | 'screenId'
+    | 'screenType'
+    | 'page'
+    | 'screenDescription'
+    | 'pageSize'
+    | 'pageOrientation'
+    | 'specs'
+    | 'specColumnWidths'
+    | 'specMetaColumnWidths'
+>;
+
+const cloneSpecs = (specs?: ScreenSpecItem[]) => (specs || []).map((s) => ({ ...s }));
+const makeSpecSnapshot = (screen: Screen): SpecHistorySnapshot => ({
+    name: screen.name,
+    systemName: screen.systemName,
+    author: screen.author,
+    createdDate: screen.createdDate,
+    screenId: screen.screenId,
+    screenType: screen.screenType,
+    page: screen.page,
+    screenDescription: screen.screenDescription,
+    pageSize: screen.pageSize,
+    pageOrientation: screen.pageOrientation,
+    specs: cloneSpecs(screen.specs),
+    specColumnWidths: screen.specColumnWidths ? [...screen.specColumnWidths] : undefined,
+    specMetaColumnWidths: screen.specMetaColumnWidths ? [...screen.specMetaColumnWidths] : undefined,
+});
+
 const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const { screen } = data;
     const isExporting = useContext(ExportModeContext);
@@ -318,8 +353,15 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
+    const { setHandlers } = useScreenDesignUndoRedo();
     const isLocalLocked = screen.isLocked ?? true;
     const isLocked = isLocalLocked || isLockedByOther;
+    const MAX_HISTORY = 50;
+    const restoringRef = React.useRef(false);
+    const [history, setHistory] = React.useState<{ past: SpecHistorySnapshot[]; future: SpecHistorySnapshot[] }>({
+        past: [],
+        future: [],
+    });
 
     const syncUpdate = (updates: Partial<Screen>) => {
         sendOperation({
@@ -400,6 +442,82 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         if (isLocked) return;
         updateScreen(screen.id, updates);
     };
+
+    const applySnapshot = React.useCallback((snapshot: SpecHistorySnapshot) => {
+        restoringRef.current = true;
+        updateScreen(screen.id, snapshot);
+        syncUpdate(snapshot);
+        requestAnimationFrame(() => {
+            restoringRef.current = false;
+        });
+    }, [screen.id]);
+
+    const undo = React.useCallback(() => {
+        if (history.past.length <= 1) return;
+        setHistory((prev) => {
+            const newPast = [...prev.past];
+            const current = newPast.pop();
+            const previous = newPast[newPast.length - 1];
+            if (!current || !previous) return prev;
+            applySnapshot(previous);
+            return {
+                past: newPast,
+                future: [current, ...prev.future].slice(0, MAX_HISTORY),
+            };
+        });
+    }, [history.past.length, applySnapshot]);
+
+    const redo = React.useCallback(() => {
+        if (history.future.length === 0) return;
+        setHistory((prev) => {
+            const newFuture = [...prev.future];
+            const next = newFuture.shift();
+            if (!next) return prev;
+            applySnapshot(next);
+            return {
+                past: [...prev.past, next].slice(-MAX_HISTORY),
+                future: newFuture,
+            };
+        });
+    }, [history.future.length, applySnapshot]);
+
+    const snapshot = React.useMemo(() => makeSpecSnapshot(screen), [screen]);
+    const snapshotKey = React.useMemo(() => JSON.stringify(snapshot), [snapshot]);
+
+    // Initial history
+    React.useEffect(() => {
+        if (history.past.length === 0) {
+            setHistory({ past: [snapshot], future: [] });
+        }
+    }, [history.past.length, snapshot]);
+
+    // Track spec-level edits for undo/redo
+    React.useEffect(() => {
+        if (restoringRef.current) return;
+        setHistory((prev) => {
+            const last = prev.past[prev.past.length - 1];
+            if (last && JSON.stringify(last) === snapshotKey) return prev;
+            return {
+                past: [...prev.past, snapshot].slice(-MAX_HISTORY),
+                future: [],
+            };
+        });
+    }, [snapshotKey, snapshot]);
+
+    // 상단 툴바에 Undo/Redo 노출 (선택된 명세면 잠금 여부와 관계없이 항상 노출)
+    React.useEffect(() => {
+        if (selected) {
+            setHandlers(screen.id, {
+                undo,
+                redo,
+                canUndo: history.past.length > 1,
+                canRedo: history.future.length > 0,
+            });
+        } else {
+            setHandlers(screen.id, null);
+        }
+        return () => setHandlers(screen.id, null);
+    }, [selected, history.past.length, history.future.length, setHandlers, screen.id, undo, redo]);
 
     const handleToggleLock = (e: React.MouseEvent) => {
         e.stopPropagation();
