@@ -112,7 +112,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isAddSpecModalOpen, setIsAddSpecModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
-    const { getNodes, fitView, screenToFlowPosition, zoomIn, zoomOut } = useReactFlow();
+    const { getNodes, fitView, screenToFlowPosition, getViewport, setViewport } = useReactFlow();
 
     // Broadcast cursor position (ERD와 동일)
     const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
@@ -120,19 +120,37 @@ const ScreenDesignCanvasContent: React.FC = () => {
         updateCursor({ ...position });
     }, [screenToFlowPosition, updateCursor]);
 
-    // 그리기 도구 팝업 위에서 Ctrl+스크롤/핀치 시 브라우저 줌 대신 캔버스 줌 적용
+    // 그리기 도구 팝업 위 휠 입력을 캔버스 줌/팬으로 전달
     useEffect(() => {
         const handleWheel = (e: WheelEvent) => {
-            const isOverPopup = (e.target as Element)?.closest?.('[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal]');
-            if (!isOverPopup || !(e.ctrlKey || e.metaKey)) return;
+            const isOverPopup = (e.target as Element)?.closest?.(
+                '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], .floating-panel'
+            );
+            if (!isOverPopup) return;
+
             e.preventDefault();
             e.stopPropagation();
-            if (e.deltaY < 0) zoomIn();
-            else zoomOut();
+
+            // Ctrl/Cmd + wheel: zoom (React Flow 기본 wheelDelta 체감과 동일하게 보정)
+            if (e.ctrlKey || e.metaKey) {
+                const factor = (e.ctrlKey || e.metaKey) ? 10 : 1;
+                const wheelDelta = -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002) * factor;
+                const { x, y, zoom } = getViewport();
+                const nextZoom = Math.max(0.05, Math.min(4, zoom * Math.pow(2, wheelDelta)));
+                setViewport({ x, y, zoom: nextZoom });
+                return;
+            }
+
+            // 일반 wheel: pan
+            const { x, y, zoom } = getViewport();
+            const deltaNormalize = e.deltaMode === 1 ? 20 : 1;
+            const nextX = x - e.deltaX * deltaNormalize * 0.5;
+            const nextY = y - e.deltaY * deltaNormalize * 0.5;
+            setViewport({ x: nextX, y: nextY, zoom });
         };
         document.addEventListener('wheel', handleWheel, { passive: false, capture: true });
         return () => document.removeEventListener('wheel', handleWheel, { capture: true });
-    }, [zoomIn, zoomOut]);
+    }, [getViewport, setViewport]);
 
     // Initial load for local projects
     useEffect(() => {
@@ -951,6 +969,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     connectionMode={ConnectionMode.Loose}
                     panOnScroll={true}
                     panOnScrollMode={PanOnScrollMode.Free}
+                    noPanClassName="no-pan-scroll"
                     zoomOnScroll={false}
                     zoomOnDoubleClick={false}
                     zoomActivationKeyCode="Control"

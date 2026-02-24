@@ -139,14 +139,14 @@ const RightPane: React.FC<RightPaneProps> = ({
     }, [ratios, update, syncUpdate]);
 
     return (
-        <div ref={rightPaneRef} className="nodrag nopan w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px] overflow-hidden" style={{ minWidth: 250 }} onMouseDown={(e) => e.stopPropagation()}>
+        <div ref={rightPaneRef} className="nodrag w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px] overflow-hidden" style={{ minWidth: 250 }} onMouseDown={(e) => e.stopPropagation()}>
 
             {/* Panel: 초기화면설정 */}
             <div className="flex flex-col border-t border-gray-200 min-h-[50px] min-w-0 overflow-hidden" style={{ flex: `${ratios[0]} 1 0` }}>
                 <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 초기화면설정
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar no-pan-scroll">
                     <textarea
                         value={displayValue('initialSettings', screen.initialSettings || '')}
                         onChange={(e) => handleChange('initialSettings', e.target.value, e)}
@@ -250,7 +250,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                     ref={(el) => {
                                         if (el) el.addEventListener('wheel', (e) => e.stopPropagation(), { passive: false });
                                     }}
-                                    className="nodrag nopan absolute right-0 top-full mt-1 w-48 max-h-56 overflow-y-auto bg-white border border-gray-200 shadow-xl rounded-lg z-[1001] animate-in fade-in zoom-in duration-150 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
+                                    className="nodrag no-pan-scroll absolute right-0 top-full mt-1 w-48 max-h-56 overflow-y-auto bg-white border border-gray-200 shadow-xl rounded-lg z-[1001] animate-in fade-in zoom-in duration-150 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
                                     onWheel={(e) => e.stopPropagation()}
                                     onWheelCapture={(e) => e.stopPropagation()}
                                     onPointerDown={(e) => e.stopPropagation()}
@@ -288,7 +288,7 @@ const RightPane: React.FC<RightPaneProps> = ({
 
                 {/* Table list - scrollable area + input fixed at bottom (입력창 우선 보장) */}
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2">
+                    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar no-pan-scroll p-2">
                         {tableLines.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-4 text-gray-300 text-center">
                                 <Database size={18} className="opacity-20 mb-1" />

@@ -1662,7 +1662,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     {/* Drawing Toolbar - Full width (100%) */}
                     {!isLocked && (
                         <div
-                            className="nodrag nopan w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar"
+                            className="nodrag w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar"
                             onMouseDown={(e) => e.stopPropagation()}
                         >
                                     <div className="flex items-center gap-1 flex-1 min-w-max px-1">

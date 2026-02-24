@@ -610,7 +610,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
                 {/* ── 3. Spec Table (Main Body) ── */}
                 <div className="flex-1 bg-white flex flex-col min-h-[400px]">
-                    <div className="flex-1 overflow-auto">
+                    <div className="flex-1 overflow-auto no-pan-scroll">
                         <table className="nodrag w-full border-collapse border border-gray-200 text-xs table-fixed">
                             {/* Table Header with sticky */}
                             <thead className="nodrag sticky top-0 z-10">
