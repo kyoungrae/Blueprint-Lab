@@ -2,8 +2,8 @@ import React, { memo, useContext } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { ExportModeContext } from '../contexts/ExportModeContext';
 import type { Screen, ScreenSpecItem } from '../types/screenDesign';
-import { SCREEN_FIELD_TYPES, SCREEN_TYPES, PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
-import { Plus, Trash2, Lock, Unlock, X, ChevronDown, GripVertical, FileText } from 'lucide-react';
+import { SCREEN_FIELD_TYPES, SCREEN_TYPES, PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../types/screenDesign';
+import { Plus, Trash2, Lock, Unlock, X, ChevronDown, GripVertical, FileText, SlidersHorizontal, RectangleVertical, RectangleHorizontal } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -305,6 +305,20 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const specs = screen.specs || [];
 
     const [draggedIndex, setDraggedIndex] = React.useState<number | null>(null);
+    const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
+    const screenOptionsRef = React.useRef<HTMLDivElement>(null);
+
+    // 용지 옵션 패널 외부 클릭 시 닫기
+    React.useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node;
+            if (screenOptionsRef.current && !screenOptionsRef.current.contains(target)) {
+                setShowScreenOptionsPanel(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside, true);
+        return () => document.removeEventListener('mousedown', handleClickOutside, true);
+    }, []);
 
     const update = (updates: Partial<Screen>) => {
         if (isLocked) return;
@@ -466,6 +480,65 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
                     {/* Header Actions */}
                     <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
+                        {/* 화면 옵션 (용지 크기/방향) */}
+                        <div className="relative" ref={screenOptionsRef}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setShowScreenOptionsPanel(v => !v); }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
+                                title="화면 옵션"
+                            >
+                                <SlidersHorizontal size={16} />
+                            </button>
+                            {showScreenOptionsPanel && (
+                                <div
+                                    className="nodrag absolute right-0 top-full mt-1.5 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in-95 duration-150"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">용지 크기</div>
+                                    <div className="grid grid-cols-2 gap-1.5 mb-3">
+                                        {PAGE_SIZE_OPTIONS.map((s) => {
+                                            const dim = PAGE_SIZE_DIMENSIONS_MM[s];
+                                            const ori = (screen.pageOrientation || 'portrait') as 'portrait' | 'landscape';
+                                            const labelW = ori === 'portrait' ? dim.w : dim.h;
+                                            const labelH = ori === 'portrait' ? dim.h : dim.w;
+                                            return (
+                                                <button
+                                                    key={s}
+                                                    type="button"
+                                                    onClick={() => { update({ pageSize: s }); syncUpdate({ pageSize: s }); }}
+                                                    className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                                        (screen.pageSize || 'A4') === s
+                                                            ? 'bg-[#2c3e7c] text-white'
+                                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                    }`}
+                                                >
+                                                    <span className="block">{s}</span>
+                                                    <span className="block text-[8px] font-normal opacity-90">{labelW}×{labelH}mm</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">방향</div>
+                                    <div className="flex gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => { update({ pageOrientation: 'portrait' }); syncUpdate({ pageOrientation: 'portrait' }); }}
+                                            className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${(screen.pageOrientation || 'portrait') === 'portrait' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                        >
+                                            <RectangleVertical size={12} /> 세로
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { update({ pageOrientation: 'landscape' }); syncUpdate({ pageOrientation: 'landscape' }); }}
+                                            className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${screen.pageOrientation === 'landscape' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                        >
+                                            <RectangleHorizontal size={12} /> 가로
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button
                             onClick={handleToggleLock}
                             onMouseDown={(e) => e.stopPropagation()}
