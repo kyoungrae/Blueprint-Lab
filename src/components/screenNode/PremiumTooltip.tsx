@@ -34,7 +34,8 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
     return (
         <div
             ref={wrapperRef}
-            className="relative flex items-center justify-center"
+            className="nodrag nopan relative flex items-center justify-center"
+            onMouseDown={(e) => e.stopPropagation()}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
         >

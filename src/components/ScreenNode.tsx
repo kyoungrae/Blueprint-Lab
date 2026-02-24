@@ -1548,7 +1548,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 )}
 
                 {/* ── 1. Top Header Bar (ERD Style) ── */}
-                <div className={`px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[13px]`}>
+                <div
+                    className={`nodrag nopan px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[13px]`}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
                     <Monitor size={16} className="flex-shrink-0 text-white/90" />
                     <input
                         type="text"
@@ -1649,11 +1652,14 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
 
                 {/* ── 3. Body Content: Toolbar full width, then Split Layout ── */}
-                <div className="flex-1 flex flex-col min-h-0 bg-white rounded-[15px]">
+                <div className="nodrag nopan flex-1 flex flex-col min-h-0 bg-white rounded-[15px]" onMouseDown={(e) => e.stopPropagation()}>
 
                     {/* Drawing Toolbar - Full width (100%) */}
                     {!isLocked && (
-                        <div className="nodrag w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar">
+                        <div
+                            className="nodrag nopan w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar"
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
                                     <div className="flex items-center gap-1 flex-1 min-w-max px-1">
                                             {/* Undo/Redo Controls */}
                                             <div className="flex items-center gap-0.5 border-l border-gray-200 ml-1">
@@ -2243,7 +2249,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         return (
                                             <>
                                                 <div className="w-px h-6 bg-gray-200 mx-1" />
-                                                <div className="nodrag flex items-center gap-2 bg-gray-50/80 rounded-lg px-2 py-1 animate-in fade-in duration-200">
+                                                <div className="nodrag nopan flex items-center gap-2 bg-gray-50/80 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => e.stopPropagation()}>
                                                     <div className="flex items-center gap-1.5 px-1 border-r border-gray-200 pr-2">
                                                         <Type size={12} className="text-gray-400" />
                                                         <input

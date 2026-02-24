@@ -18,7 +18,7 @@ const valueCell = "bg-white text-xs text-gray-800 px-2 py-1 border-r border-[#e2
 const MetaInfoTable: React.FC<MetaInfoTableProps> = ({ screen, isLocked, update, syncUpdate }) => {
     const colWidth = `${100 / 6}%`;
     return (
-        <div className="border-b border-gray-200">
+        <div className="nodrag nopan border-b border-gray-200" onMouseDown={(e) => e.stopPropagation()}>
             <table className="nodrag w-full border-collapse table-fixed">
                 <colgroup>
                     {[...Array(6)].map((_, i) => (

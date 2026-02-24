@@ -139,7 +139,7 @@ const RightPane: React.FC<RightPaneProps> = ({
     }, [ratios, update, syncUpdate]);
 
     return (
-        <div ref={rightPaneRef} className="w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px] overflow-hidden" style={{ minWidth: 250 }}>
+        <div ref={rightPaneRef} className="nodrag nopan w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px] overflow-hidden" style={{ minWidth: 250 }} onMouseDown={(e) => e.stopPropagation()}>
 
             {/* Panel: 초기화면설정 */}
             <div className="flex flex-col border-t border-gray-200 min-h-[50px] min-w-0 overflow-hidden" style={{ flex: `${ratios[0]} 1 0` }}>
