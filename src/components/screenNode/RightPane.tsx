@@ -182,7 +182,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                     {funcNos.map(fn => (
                         <div key={fn.id} className="flex gap-2 items-start">
                             <div
-                                className="w-5 h-5 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0 shadow-sm mt-0.5"
+                                className="w-6 h-6 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0 shadow-sm mt-0.5"
                                 style={{ backgroundColor: fn.fill || '#ef4444', lineHeight: 1 }}
                             >
                                 <span style={{ marginTop: '-1px' }}>{fn.text}</span>
