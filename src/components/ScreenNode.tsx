@@ -347,7 +347,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     }, [selected, history.past.length, history.future.length, setHandlers, screen.id]);
 
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
+    // IME 조합 중(한글 등) 자음/모음 분리 방지
+    const [tableCellComposing, setTableCellComposing] = useState<{ cellIndex: number; value: string } | null>(null);
     const [showTablePanel, setShowTablePanel] = useState(false);
+
+    useEffect(() => {
+        setTableCellComposing(null);
+    }, [editingCellIndex]);
     const [tablePanelPos, setTablePanelPos] = useState({ x: 200, y: 100 });
     const isDraggingTablePanelRef = useRef(false);
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
@@ -2537,20 +2543,51 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 <textarea
                                                                                     autoFocus
                                                                                     className="w-full h-full bg-white border-none outline-none resize-none p-1 text-[10px] absolute inset-0 z-[20]"
-                                                                                    value={cellData}
+                                                                                    value={tableCellComposing?.cellIndex === cellIndex ? tableCellComposing.value : cellData}
                                                                                     onChange={(e) => {
+                                                                                        const val = e.target.value;
+                                                                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                                                            setTableCellComposing({ cellIndex, value: val });
+                                                                                            return;
+                                                                                        }
+                                                                                        setTableCellComposing(null);
                                                                                         // V2 업데이트
                                                                                         const newV2 = deepCopyCells(getV2Cells(el));
                                                                                         if (newV2[cellIndex]) {
-                                                                                            newV2[cellIndex] = { ...newV2[cellIndex], content: e.target.value };
+                                                                                            newV2[cellIndex] = { ...newV2[cellIndex], content: val };
                                                                                         }
                                                                                         // Legacy도 동시 업데이트
                                                                                         const newData = [...(el.tableCellData || [])];
-                                                                                        newData[cellIndex] = e.target.value;
+                                                                                        newData[cellIndex] = val;
                                                                                         const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
                                                                                         update({ drawElements: nextElements });
                                                                                     }}
-                                                                                    onBlur={() => { setEditingCellIndex(null); syncUpdate({ drawElements }); }}
+                                                                                    onCompositionEnd={(e) => {
+                                                                                        const val = (e.target as HTMLTextAreaElement).value;
+                                                                                        setTableCellComposing(null);
+                                                                                        const newV2 = deepCopyCells(getV2Cells(el));
+                                                                                        if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: val };
+                                                                                        const newData = [...(el.tableCellData || [])];
+                                                                                        newData[cellIndex] = val;
+                                                                                        const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
+                                                                                        update({ drawElements: nextElements });
+                                                                                    }}
+                                                                                    onBlur={() => {
+                                                                                        if (tableCellComposing?.cellIndex === cellIndex) {
+                                                                                            const val = tableCellComposing.value;
+                                                                                            setTableCellComposing(null);
+                                                                                            const newV2 = deepCopyCells(getV2Cells(el));
+                                                                                            if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: val };
+                                                                                            const newData = [...(el.tableCellData || [])];
+                                                                                            newData[cellIndex] = val;
+                                                                                            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
+                                                                                            update({ drawElements: nextElements });
+                                                                                            syncUpdate({ drawElements: nextElements });
+                                                                                        } else {
+                                                                                            syncUpdate({ drawElements });
+                                                                                        }
+                                                                                        setEditingCellIndex(null);
+                                                                                    }}
                                                                                     onKeyDown={(e) => {
                                                                                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingCellIndex(null); syncUpdate({ drawElements }); }
                                                                                     }}
