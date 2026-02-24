@@ -111,13 +111,27 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
-    const { getNodes, fitView, screenToFlowPosition } = useReactFlow();
+    const { getNodes, fitView, screenToFlowPosition, zoomIn, zoomOut } = useReactFlow();
 
     // Broadcast cursor position (ERD와 동일)
     const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         updateCursor({ ...position });
     }, [screenToFlowPosition, updateCursor]);
+
+    // 그리기 도구 팝업 위에서 Ctrl+스크롤/핀치 시 브라우저 줌 대신 캔버스 줌 적용
+    useEffect(() => {
+        const handleWheel = (e: WheelEvent) => {
+            const isOverPopup = (e.target as Element)?.closest?.('[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal]');
+            if (!isOverPopup || !(e.ctrlKey || e.metaKey)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.deltaY < 0) zoomIn();
+            else zoomOut();
+        };
+        document.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+        return () => document.removeEventListener('wheel', handleWheel, { capture: true });
+    }, [zoomIn, zoomOut]);
 
     // Initial load for local projects
     useEffect(() => {
@@ -776,7 +790,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
             <div className="relative flex h-full min-w-0">
                 <div
-                    className={`h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10000] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
+                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
                 >
                     <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
                         <ScreenSidebar />
@@ -793,7 +807,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             </div>
 
             <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
-                <div className={`absolute top-4 right-4 z-10 bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
+                <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
                     <button
                         onClick={() => setCurrentProject(null)}
                         className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"

@@ -78,7 +78,7 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
     return (
         <div
             data-image-style-panel
-            className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-[9999] min-w-[240px] animate-in fade-in origin-top-left"
+            className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-[9000] min-w-[240px] animate-in fade-in origin-top-left"
             style={{
                 left: flowToScreenPosition({ x: position.x, y: position.y }).x,
                 top: flowToScreenPosition({ x: position.x, y: position.y }).y,

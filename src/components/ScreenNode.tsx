@@ -1710,7 +1710,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             return createPortal(
                                                             <div
                                                                 data-table-picker-portal
-                                                                className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9999] animate-in fade-in zoom-in duration-150 origin-top-left"
+                                                                className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in duration-150 origin-top-left"
                                                                 style={{
                                                                     left: screenPos.x,
                                                                     top: screenPos.y,
@@ -3013,7 +3013,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                 return createPortal(
                                     <div
                                         data-table-panel
-                                        className="nodrag floating-panel fixed z-[9999] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in origin-top-left"
+                                        className="nodrag floating-panel fixed z-[9000] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in origin-top-left"
                                         style={{
                                             left: tablePanelScreenPos.x,
                                             top: tablePanelScreenPos.y,

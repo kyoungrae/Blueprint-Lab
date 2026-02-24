@@ -120,7 +120,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
     return (
         <div
             data-style-panel
-            className="nodrag floating-panel fixed z-[9999] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in origin-top-left"
+            className="nodrag floating-panel fixed z-[9000] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in origin-top-left"
             style={{
                 left: flowToScreenPosition({ x: stylePanelPos.x, y: stylePanelPos.y }).x,
                 top: flowToScreenPosition({ x: stylePanelPos.x, y: stylePanelPos.y }).y,
