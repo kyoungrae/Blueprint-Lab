@@ -25,13 +25,16 @@ interface ImageElementProps {
     isLocked: boolean;
     onUpdate: (updates: Partial<DrawElement>) => void;
     projectId?: string;
+    /** 직접 크롭 모드: 핸들을 드래그하면 imageCrop 영역 조절 */
+    isCropMode?: boolean;
 }
 
 import { getImageDisplayUrl, normalizeImageUrlForStorage } from '../../utils/imageUrl';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
-const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLocked, onUpdate, projectId }) => {
+const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLocked, onUpdate, projectId, isCropMode }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
     const [isDragOver, setIsDragOver] = useState(false);
     const [loadFailed, setLoadFailed] = useState(false);
     useEffect(() => setLoadFailed(false), [element.imageUrl]);
@@ -43,6 +46,14 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
         startElY: number;
         startW: number;
         startH: number;
+    } | null>(null);
+    const cropStateRef = useRef<{
+        position: string;
+        startX: number;
+        startY: number;
+        startCrop: { x: number; y: number; width: number; height: number };
+        rectWidth: number;
+        rectHeight: number;
     } | null>(null);
 
     const uploadToServer = async (file: File): Promise<string> => {
@@ -156,10 +167,70 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
         window.addEventListener('mouseup', onMouseUp);
     }, [element, isLocked, onUpdate]);
 
+    const handleCropMouseDown = useCallback((e: React.MouseEvent, position: string) => {
+        if (isLocked || !element.imageUrl) return;
+        e.stopPropagation();
+        e.preventDefault();
+
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0 || rect.height <= 0) return;
+
+        const crop = element.imageCrop ?? { x: 0, y: 0, width: 1, height: 1 };
+        cropStateRef.current = {
+            position,
+            startX: e.clientX,
+            startY: e.clientY,
+            startCrop: { ...crop },
+            rectWidth: rect.width,
+            rectHeight: rect.height,
+        };
+
+        const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+        const MIN_DIM = 0.02;
+
+        const onMouseMove = (me: MouseEvent) => {
+            const state = cropStateRef.current;
+            if (!state) return;
+
+            const dx = (me.clientX - state.startX) / state.rectWidth;
+            const dy = (me.clientY - state.startY) / state.rectHeight;
+            let { x, y, width, height } = { ...state.startCrop };
+            const pos = state.position;
+
+            if (pos.includes('e')) {
+                width = clamp(state.startCrop.width + dx, MIN_DIM, 1 - x);
+            }
+            if (pos.includes('w')) {
+                const newX = clamp(state.startCrop.x + dx, 0, state.startCrop.x + state.startCrop.width - MIN_DIM);
+                width = state.startCrop.width + (state.startCrop.x - newX);
+                x = newX;
+            }
+            if (pos.includes('s')) {
+                height = clamp(state.startCrop.height + dy, MIN_DIM, 1 - y);
+            }
+            if (pos.includes('n')) {
+                const newY = clamp(state.startCrop.y + dy, 0, state.startCrop.y + state.startCrop.height - MIN_DIM);
+                height = state.startCrop.height + (state.startCrop.y - newY);
+                y = newY;
+            }
+
+            onUpdate({ imageCrop: { x, y, width, height } });
+        };
+
+        const onMouseUp = () => {
+            cropStateRef.current = null;
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    }, [element, isLocked, onUpdate]);
+
     const displayUrl = getImageDisplayUrl(element.imageUrl);
 
     return (
-        <div className="w-full h-full relative select-none">
+        <div ref={containerRef} className="w-full h-full relative select-none">
             {element.imageUrl && !loadFailed ? (
                 /* 이미지가 있을 때 */
                 <div
@@ -171,17 +242,17 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                         alt=""
                         className="absolute"
                         style={{
-                            ...(element.imageCrop && (element.imageCrop.x !== 0 || element.imageCrop.y !== 0 || element.imageCrop.width !== 1 || element.imageCrop.height !== 1)
-                                ? {
-                                    width: `${100 / (element.imageCrop.width || 1)}%`,
-                                    height: `${100 / (element.imageCrop.height || 1)}%`,
-                                    left: `${-(element.imageCrop.x || 0) / (element.imageCrop.width || 1) * 100}%`,
-                                    top: `${-(element.imageCrop.y || 0) / (element.imageCrop.height || 1) * 100}%`,
-                                }
-                                : { inset: 0, width: '100%', height: '100%' }),
-                            objectFit: element.imageCrop && (element.imageCrop.x !== 0 || element.imageCrop.y !== 0 || element.imageCrop.width !== 1 || element.imageCrop.height !== 1) ? 'fill' : 'contain',
+                            inset: 0,
+                            width: '100%',
+                            height: '100%',
+                            objectFit: (element.imageCrop && (element.imageCrop.x !== 0 || element.imageCrop.y !== 0 || element.imageCrop.width !== 1 || element.imageCrop.height !== 1)) ? 'fill' : 'contain',
                             display: 'block',
                             pointerEvents: 'none',
+                            ...(element.imageCrop && (element.imageCrop.x !== 0 || element.imageCrop.y !== 0 || element.imageCrop.width !== 1 || element.imageCrop.height !== 1)
+                                ? {
+                                    clipPath: `inset(${(element.imageCrop.y || 0) * 100}% ${(1 - (element.imageCrop.x || 0) - (element.imageCrop.width || 1)) * 100}% ${(1 - (element.imageCrop.y || 0) - (element.imageCrop.height || 1)) * 100}% ${(element.imageCrop.x || 0) * 100}%)`,
+                                }
+                                : {}),
                             transform: [
                                 `rotate(${element.imageRotation ?? 0}deg)`,
                                 element.imageFlipX ? 'scaleX(-1)' : '',
@@ -219,15 +290,20 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                 </div>
             )}
 
-            {/* 리사이즈 핸들 (선택 시 표시) */}
+            {/* 리사이즈/크롭 핸들 (선택 시 표시) */}
             {isSelected && !isLocked && (
                 <>
                     {RESIZE_HANDLES.map((handle) => (
                         <div
                             key={handle.position}
-                            className="absolute w-2.5 h-2.5  border-blue-500 rounded-sm z-50 shadow-sm"
+                            data-image-crop-handle={isCropMode ? '' : undefined}
+                            className={`absolute w-2.5 h-2.5 rounded-sm shadow-sm nodrag nopan ${isCropMode ? 'border-amber-500 bg-amber-100 z-[200]' : 'border-blue-500 z-50'}`}
                             style={{ ...handle.style, cursor: handle.cursor }}
-                            onMouseDown={(e) => handleResizeMouseDown(e, handle.position)}
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                isCropMode ? handleCropMouseDown(e, handle.position) : handleResizeMouseDown(e, handle.position);
+                            }}
                         />
                     ))}
                 </>

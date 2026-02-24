@@ -13,11 +13,14 @@ interface ImageStylePanelProps {
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     onDragStart?: () => void;
     onDragEnd?: () => void;
+    /** 직접 크롭 모드 (캔버스에서 핸들로 영역 조절) */
+    isCropMode?: boolean;
+    onCropModeToggle?: (enabled: boolean) => void;
 }
 
 const ROTATION_PRESETS = [0, 90, 180, 270];
 
-export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpdate, onClose, position, onPositionChange, zoom, screenToFlowPosition, flowToScreenPosition, onDragStart, onDragEnd }) => {
+export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpdate, onClose, position, onPositionChange, zoom, screenToFlowPosition, flowToScreenPosition, onDragStart, onDragEnd, isCropMode, onCropModeToggle }) => {
     const isDraggingRef = useRef(false);
     const rotation = element.imageRotation ?? 0;
     const flipX = element.imageFlipX ?? false;
@@ -165,6 +168,16 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                         </button>
                     )}
                 </div>
+                <button
+                    onClick={() => onCropModeToggle?.(!isCropMode)}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border transition-colors mb-2 ${
+                        isCropMode ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                    }`}
+                >
+                    <Crop size={16} />
+                    <span className="text-xs font-medium">직접 크롭</span>
+                </button>
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
                         <span className="w-8 text-xs text-gray-500">X</span>

@@ -195,6 +195,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     }, [screenToFlowPosition, tablePickerPos]);
     const [showImageStylePanel, setShowImageStylePanel] = useState(false);
     const [imageStylePanelPos, setImageStylePanelPos] = useState({ x: 0, y: 0 });
+    const [imageCropMode, setImageCropMode] = useState(false);
     const isDraggingImageStylePanelRef = useRef(false);
     const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
@@ -212,8 +213,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             if (showTablePicker && !isDraggingTablePickerRef.current && tablePickerRef.current && !tablePickerRef.current.contains(target) && !el?.closest('[data-table-picker-portal]')) {
                 setShowTablePicker(false);
             }
-            if (showImageStylePanel && !isDraggingImageStylePanelRef.current && !el?.closest('[data-image-style-panel]')) {
+            if (showImageStylePanel && !isDraggingImageStylePanelRef.current && !el?.closest('[data-image-style-panel]') && !el?.closest('[data-image-crop-handle]')) {
                 setShowImageStylePanel(false);
+                setImageCropMode(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside, true);
@@ -1810,7 +1812,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     <ImageStylePanel
                                                                         element={imgEl}
                                                                         onUpdate={(u) => updateElement(imgEl.id, u)}
-                                                                        onClose={() => setShowImageStylePanel(false)}
+                                                                        onClose={() => { setShowImageStylePanel(false); setImageCropMode(false); }}
                                                                         position={imageStylePanelPos}
                                                                         onPositionChange={setImageStylePanelPos}
                                                                         zoom={zoom}
@@ -1818,6 +1820,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         flowToScreenPosition={flowToScreenPosition}
                                                                         onDragStart={() => { isDraggingImageStylePanelRef.current = true; }}
                                                                         onDragEnd={() => { isDraggingImageStylePanelRef.current = false; }}
+                                                                        isCropMode={imageCropMode}
+                                                                        onCropModeToggle={setImageCropMode}
                                                                     />
                                                                 </div>,
                                                                 getPanelPortalRoot()
@@ -1870,7 +1874,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                                                                             const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
                                                                             setImageStylePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                            const willOpen = !showImageStylePanel;
                                                                             setShowImageStylePanel(prev => !prev);
+                                                                            if (willOpen) setImageCropMode(true);
                                                                         }}
                                                                         className={`p-2 rounded-lg transition-colors ${showImageStylePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
                                                                     >
@@ -2411,6 +2417,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         isLocked={isLocked}
                                                         onUpdate={(updates) => updateElement(el.id, updates)}
                                                         projectId={currentProjectId ?? undefined}
+                                                        isCropMode={imageCropMode && selectedElementIds.includes(el.id)}
                                                     />
                                                 )}
                                                 {el.type === 'table' && (
@@ -2858,8 +2865,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     </button>
                                                 )}
 
-                                                {/* Resize Handles */}
-                                                {isSelected && !isLocked && selectedElementIds.length === 1 && (
+                                                {/* Resize Handles (이미지 직접 크롭 모드에서는 ImageElement 크롭 핸들 사용) */}
+                                                {isSelected && !isLocked && selectedElementIds.length === 1 && !(el.type === 'image' && imageCropMode) && (
                                                     <>
                                                         {/* Single blue selection border */}
                                                         <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
