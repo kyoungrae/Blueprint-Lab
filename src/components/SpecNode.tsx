@@ -10,6 +10,26 @@ import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 
+// 명세 그리드 기본 컬럼 너비(px): [항목명, 필드명, 항목타입, Format, 자릿수, 초기값, Validation, 비고]
+const DEFAULT_SPEC_COLUMN_WIDTHS = [128, 128, 96, 80, 64, 64, 80, 96];
+const MIN_COL_WIDTH = 48;
+const MAX_COL_WIDTH = 400;
+
+// ── Resize Handle ─────────────────────────────────────────
+const SpecColResizeHandle: React.FC<{
+    onResizeStart: (colIdx: number, clientX: number) => void;
+    colIdx: number;
+    disabled?: boolean;
+}> = memo(({ onResizeStart, colIdx, disabled }) => (
+    <div
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); if (!disabled) onResizeStart(colIdx, e.clientX); }}
+        className={`nodrag absolute top-0 right-0 w-1.5 h-full cursor-col-resize z-20 flex items-center justify-center group/resize ${disabled ? 'pointer-events-none' : 'hover:bg-blue-400/60'}`}
+        title="드래그하여 너비 조절"
+    >
+        <div className="w-0.5 h-4 bg-gray-300 group-hover/resize:bg-blue-500 rounded-full opacity-0 group-hover/resize:opacity-100 transition-opacity" />
+    </div>
+));
+
 // DB Types Map
 const DB_TYPES: Record<string, string[]> = {
     'MySQL': ['INT', 'VARCHAR', 'TEXT', 'DATETIME', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'JSON'],
@@ -39,6 +59,24 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
     item, isLocked, htmlTypes, dbTypes, onUpdate, onBlur, onDelete,
     onDragStart, onDragEnter, onDragEnd, isDragging
 }) => {
+    // IME 조합 중(한글 등) 자음/모음 분리 방지
+    const [composing, setComposing] = React.useState<{ field: string; value: string } | null>(null);
+    const displayValue = (field: string, propValue: string) =>
+        composing?.field === field ? composing.value : propValue;
+    const handleChange = (field: string, value: string, e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            setComposing({ field, value });
+            return;
+        }
+        setComposing(null);
+        onUpdate({ [field]: value } as Partial<ScreenSpecItem>);
+    };
+    const handleCompositionEnd = (field: string, value: string) => {
+        setComposing(null);
+        onUpdate({ [field]: value } as Partial<ScreenSpecItem>);
+        onBlur?.({ [field]: value } as Partial<ScreenSpecItem>);
+    };
+
     // 공통 셀 스타일
     const cellClass = `px-2 py-1.5 border-r border-gray-200 align-middle bg-white relative`;
     const inputClass = `w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-800' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'}`;
@@ -71,9 +109,10 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
             <td className={cellClass}>
                 <input
                     type="text"
-                    value={item.fieldName}
-                    onChange={(e) => onUpdate({ fieldName: e.target.value })}
-                    onBlur={(e) => onBlur?.({ fieldName: e.target.value })}
+                    value={displayValue('fieldName', item.fieldName)}
+                    onChange={(e) => handleChange('fieldName', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('fieldName', (e.target as HTMLInputElement).value)}
+                    onBlur={(e) => { if (!composing?.field) onBlur?.({ fieldName: e.target.value }); }}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} font-bold`}
@@ -84,9 +123,10 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
             <td className={cellClass}>
                 <input
                     type="text"
-                    value={item.controlName}
-                    onChange={(e) => onUpdate({ controlName: e.target.value })}
-                    onBlur={(e) => onBlur?.({ controlName: e.target.value })}
+                    value={displayValue('controlName', item.controlName)}
+                    onChange={(e) => handleChange('controlName', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('controlName', (e.target as HTMLInputElement).value)}
+                    onBlur={(e) => { if (!composing?.field) onBlur?.({ controlName: e.target.value }); }}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} font-mono text-blue-800`}
@@ -131,9 +171,10 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
             <td className={cellClass}>
                 <input
                     type="text"
-                    value={item.length}
-                    onChange={(e) => onUpdate({ length: e.target.value })}
-                    onBlur={(e) => onBlur?.({ length: e.target.value })}
+                    value={displayValue('length', item.length)}
+                    onChange={(e) => handleChange('length', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('length', (e.target as HTMLInputElement).value)}
+                    onBlur={(e) => { if (!composing?.field) onBlur?.({ length: e.target.value }); }}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} text-center`}
@@ -144,9 +185,10 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
             <td className={cellClass}>
                 <input
                     type="text"
-                    value={item.defaultValue}
-                    onChange={(e) => onUpdate({ defaultValue: e.target.value })}
-                    onBlur={(e) => onBlur?.({ defaultValue: e.target.value })}
+                    value={displayValue('defaultValue', item.defaultValue)}
+                    onChange={(e) => handleChange('defaultValue', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('defaultValue', (e.target as HTMLInputElement).value)}
+                    onBlur={(e) => { if (!composing?.field) onBlur?.({ defaultValue: e.target.value }); }}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} text-center`}
@@ -157,9 +199,10 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
             <td className={cellClass}>
                 <input
                     type="text"
-                    value={item.validation}
-                    onChange={(e) => onUpdate({ validation: e.target.value })}
-                    onBlur={(e) => onBlur?.({ validation: e.target.value })}
+                    value={displayValue('validation', item.validation)}
+                    onChange={(e) => handleChange('validation', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('validation', (e.target as HTMLInputElement).value)}
+                    onBlur={(e) => { if (!composing?.field) onBlur?.({ validation: e.target.value }); }}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass}`}
@@ -171,9 +214,10 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
             <td className={cellClass}>
                 <input
                     type="text"
-                    value={item.memo}
-                    onChange={(e) => onUpdate({ memo: e.target.value })}
-                    onBlur={(e) => onBlur?.({ memo: e.target.value })}
+                    value={displayValue('memo', item.memo)}
+                    onChange={(e) => handleChange('memo', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('memo', (e.target as HTMLInputElement).value)}
+                    onBlur={(e) => { if (!composing?.field) onBlur?.({ memo: e.target.value }); }}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass}`}
@@ -307,6 +351,38 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const [draggedIndex, setDraggedIndex] = React.useState<number | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
     const screenOptionsRef = React.useRef<HTMLDivElement>(null);
+
+    // 명세 그리드 컬럼 너비
+    const colWidths = React.useMemo(() => {
+        const saved = screen.specColumnWidths;
+        if (saved && saved.length === 8) return [...saved];
+        return [...DEFAULT_SPEC_COLUMN_WIDTHS];
+    }, [screen.specColumnWidths]);
+
+    const handleSpecColResizeStart = React.useCallback((colIdx: number, clientX: number) => {
+        const startWidth = colWidths[colIdx];
+        const onMove = (e: MouseEvent) => {
+            const dx = e.clientX - clientX;
+            const nextWidth = Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, startWidth + dx));
+            const store = useScreenDesignStore.getState();
+            const currentScreen = store.screens.find((s) => s.id === screen.id);
+            const currentWidths = currentScreen?.specColumnWidths || colWidths;
+            const next = [...currentWidths];
+            next[colIdx] = nextWidth;
+            store.updateScreen(screen.id, { specColumnWidths: next });
+        };
+        const onUp = () => {
+            const store = useScreenDesignStore.getState();
+            const currentScreen = store.screens.find((s) => s.id === screen.id);
+            if (currentScreen?.specColumnWidths) {
+                syncUpdate({ specColumnWidths: currentScreen.specColumnWidths });
+            }
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }, [colWidths, screen.id, syncUpdate]);
 
     // 용지 옵션 패널 외부 클릭 시 닫기
     React.useEffect(() => {
@@ -612,24 +688,60 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                 <div className="flex-1 bg-white flex flex-col min-h-[400px]">
                     <div className="flex-1 overflow-auto no-pan-scroll">
                         <table className="nodrag w-full border-collapse border border-gray-200 text-xs table-fixed">
+                            <colgroup>
+                                {!isLocked && <col style={{ width: 32 }} />}
+                                <col style={{ width: colWidths[0] }} />
+                                <col style={{ width: colWidths[1] }} />
+                                <col style={{ width: colWidths[2] }} />
+                                <col style={{ width: colWidths[3] }} />
+                                <col style={{ width: colWidths[4] }} />
+                                <col style={{ width: colWidths[5] }} />
+                                <col style={{ width: colWidths[6] }} />
+                                <col style={{ width: colWidths[7] }} />
+                                {!isLocked && <col style={{ width: 40 }} />}
+                            </colgroup>
                             {/* Table Header with sticky */}
                             <thead className="nodrag sticky top-0 z-10">
                                 {/* Header Row 1 */}
                                 <tr className="bg-blue-50/80 border-b border-gray-200">
                                     {!isLocked && <th rowSpan={2} className="w-8 bg-gray-50 border-r border-gray-200"></th>}
-                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 w-32">항목명(한글)</th>
-                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 w-32">필드명(영문)</th>
-                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 w-24">항목타입</th>
+                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
+                                        항목명(한글)
+                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={0} />}
+                                    </th>
+                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
+                                        필드명(영문)
+                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={1} />}
+                                    </th>
+                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
+                                        항목타입
+                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={2} />}
+                                    </th>
                                     <th colSpan={4} className="border-r border-gray-200 border-b px-2 py-1 font-bold text-gray-700 bg-blue-100/50">항목정의</th>
-                                    <th rowSpan={2} className="px-2 py-1.5 font-bold text-gray-700 border-r border-gray-200 w-24">비고</th>
+                                    <th rowSpan={2} className="px-2 py-1.5 font-bold text-gray-700 border-r border-gray-200 relative">
+                                        비고
+                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={7} />}
+                                    </th>
                                     {!isLocked && <th rowSpan={2} className="w-10 bg-gray-50 border-l border-gray-200"></th>}
                                 </tr>
                                 {/* Header Row 2 */}
                                 <tr className="bg-blue-50/80 border-b border-gray-200">
-                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 w-20">Format</th>
-                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 w-16">자릿수</th>
-                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 w-16">초기값</th>
-                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 w-20">Validation</th>
+                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
+                                        Format
+                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={3} />}
+                                    </th>
+                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
+                                        자릿수
+                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={4} />}
+                                    </th>
+                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
+                                        초기값
+                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={5} />}
+                                    </th>
+                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
+                                        Validation
+                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={6} />}
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>

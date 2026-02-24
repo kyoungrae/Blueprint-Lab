@@ -54,6 +54,8 @@ export interface Screen {
 
     // ── 기능 명세 데이터 (SPEC 모드) ──
     specs?: ScreenSpecItem[];
+    /** 명세 그리드 컬럼 너비(px): [항목명, 필드명, 항목타입, Format, 자릿수, 초기값, Validation, 비고] */
+    specColumnWidths?: number[];
 
     // ── 캔버스 위치 ──
     position: { x: number; y: number };
