@@ -33,7 +33,7 @@ const Sidebar: React.FC = () => {
     };
 
     return (
-        <div className="w-72 h-full bg-white flex flex-col z-20 overflow-hidden">
+        <div className="w-full min-w-0 h-full bg-white flex flex-col z-20 overflow-hidden">
             {/* Sidebar Header */}
             <div className="p-6 border-b border-gray-100 bg-gray-50/50">
                 <div className="flex items-center gap-2 mb-4">

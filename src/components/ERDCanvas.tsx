@@ -686,13 +686,12 @@ const ERDCanvasContent: React.FC = () => {
 
     return (
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
-            {/* Left Sidebar wrapper with transition */}
-            <div className="relative flex h-full">
+            {/* Left Sidebar wrapper with transition (반응형: 화면 설계와 동일) */}
+            <div className="relative flex h-full min-w-0">
                 <div
-                    className={`h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl ${isSidebarOpen ? 'w-72 flex-shrink-0' : 'w-0 border-none'
-                        }`}
+                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
                 >
-                    <div className="w-72 h-full">
+                    <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
                         <Sidebar />
                     </div>
                 </div>
@@ -709,20 +708,20 @@ const ERDCanvasContent: React.FC = () => {
             </div>
 
             {/* Main Canvas Area */}
-            <div className="flex-1 h-full relative" ref={flowWrapper}>
-                {/* Toolbar */}
-                <div className={`absolute top-4 ${isSidebarOpen ? 'left-6' : 'left-8'} z-10 bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-1.5 flex gap-1.5 transition-all duration-300`}>
+            <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
+                {/* Toolbar (반응형: 화면 설계와 동일) */}
+                <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
                     <button
                         onClick={() => setCurrentProject(null)}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                         title="프로젝트 목록으로 돌아가기"
                     >
-                        <Home size={16} className="text-blue-500" />
+                        <Home size={16} className="text-blue-500 shrink-0" />
                     </button>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <div className="flex flex-col justify-center px-1 mr-2" title="클릭하여 ID 복사">
+                    <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
                         <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
                         <button
                             onClick={async () => {
@@ -735,32 +734,32 @@ const ERDCanvasContent: React.FC = () => {
                                     }
                                 }
                             }}
-                            className="text-xs font-mono font-bold text-gray-700 hover:text-blue-600 transition-colors text-left"
+                            className="text-xs font-mono font-bold text-gray-700 hover:text-blue-600 transition-colors text-left truncate max-w-[140px] sm:max-w-[180px]"
                         >
                             {currentProject?.id}
                         </button>
                     </div>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <button
                         onClick={handleAddEntity}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
                     >
-                        <Plus size={16} />
-                        테이블 추가
+                        <Plus size={16} className="shrink-0" />
+                        <span className="whitespace-nowrap hidden sm:inline">테이블 추가</span>
                     </button>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <div className="relative">
+                    <div className="relative shrink-0">
                         <button
                             onClick={() => setIsLayoutMenuOpen(!isLayoutMenuOpen)}
-                            className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
                         >
-                            <Layout size={16} className="text-orange-500" />
-                            <span>정렬</span>
-                            <ChevronDown size={14} className={`text-gray-400 transition-transform ${isLayoutMenuOpen ? 'rotate-180' : ''}`} />
+                            <Layout size={16} className="text-orange-500 shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">정렬</span>
+                            <ChevronDown size={14} className={`text-gray-400 transition-transform shrink-0 ${isLayoutMenuOpen ? 'rotate-180' : ''}`} />
                         </button>
 
                         {isLayoutMenuOpen && (
@@ -806,9 +805,9 @@ const ERDCanvasContent: React.FC = () => {
                         )}
                     </div>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <div className="flex bg-gray-50/50 rounded-lg border border-gray-100 p-0.5">
+                    <div className="flex bg-gray-50/50 rounded-lg border border-gray-100 p-0.5 shrink-0">
                         <button
                             onClick={undo}
                             disabled={!canUndo}
@@ -831,23 +830,23 @@ const ERDCanvasContent: React.FC = () => {
                     {/* 5. 툴바의 Undo/Redo 버튼 옆에 히스토리 버튼 배치 */}
                     <button
                         onClick={() => setIsHistoryModalOpen(true)}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                         title="변경 이력 보기"
                     >
-                        <History size={16} className="text-blue-500" />
-                        <span>히스토리</span>
+                        <History size={16} className="text-blue-500 shrink-0" />
+                        <span className="whitespace-nowrap hidden sm:inline">히스토리</span>
                     </button>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <div className="relative">
+                    <div className="relative shrink-0">
                         <button
                             onClick={handleExport}
-                            className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
                         >
-                            <Upload size={16} className="text-green-500" />
-                            <span>내보내기</span>
-                            <ChevronDown size={14} className={`text-gray-400 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+                            <Upload size={16} className="text-green-500 shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
+                            <ChevronDown size={14} className={`text-gray-400 transition-transform shrink-0 ${isExportMenuOpen ? 'rotate-180' : ''}`} />
                         </button>
 
                         {isExportMenuOpen && (
@@ -882,23 +881,23 @@ const ERDCanvasContent: React.FC = () => {
 
                     <button
                         onClick={() => setIsImportModalOpen(true)}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                     >
-                        <Download size={16} className="text-purple-500" />
-                        가져오기
+                        <Download size={16} className="text-purple-500 shrink-0" />
+                        <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
                     </button>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     {/* Online Users */}
-                    <div className="flex items-center gap-2 px-1">
+                    <div className="flex items-center gap-2 px-1 shrink-0">
                         <OnlineUsers />
                     </div>
 
-                    <div className="w-[1px] h-8 bg-gray-200 mx-1 self-center" />
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     {/* User Profile & Logout */}
-                    <div className="flex items-center gap-2 px-1">
+                    <div className="flex items-center gap-2 px-1 shrink-0">
                         <div className="flex items-center gap-2 pl-2 pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
                             {user?.picture ? (
                                 <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm" />

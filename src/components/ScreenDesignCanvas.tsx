@@ -1198,7 +1198,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                                     setEditingFlowId(null);
                                                 }
                                             }}
-                                            className="px-6 py-2.5 text-xs font-black text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                            className="px-4 py-2 text-sm bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 transition-all font-semibold active:scale-95"
                                         >
                                             관계 삭제
                                         </button>
