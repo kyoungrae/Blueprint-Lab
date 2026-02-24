@@ -226,9 +226,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 };
                 if (style) {
                     node.style = style;
-                    // React Flow가 초기 크기를 인식하도록 width/height 직접 설정
-                    node.width = style.width;
-                    node.height = style.height;
+                    node.width = typeof style.width === 'number' ? style.width : undefined;
+                    node.height = typeof style.height === 'number' ? style.height : undefined;
                 }
                 return node;
             });
