@@ -54,6 +54,10 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
         startCrop: { x: number; y: number; width: number; height: number };
         rectWidth: number;
         rectHeight: number;
+        rotation: number;
+        flipX: boolean;
+        flipY: boolean;
+        fitScale: number;
     } | null>(null);
 
     const uploadToServer = async (file: File): Promise<string> => {
@@ -176,6 +180,13 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
         if (!rect || rect.width <= 0 || rect.height <= 0) return;
 
         const crop = element.imageCrop ?? { x: 0, y: 0, width: 1, height: 1 };
+        const rot = ((element.imageRotation ?? 0) % 360 + 360) % 360;
+        const rotSnap = Math.round(rot / 90) % 4 * 90;
+        const w = element.width;
+        const h = element.height;
+        const needsFit = rotSnap === 90 || rotSnap === 270;
+        const fs = needsFit && w > 0 && h > 0 ? Math.min(w / h, h / w) : 1;
+
         cropStateRef.current = {
             position,
             startX: e.clientX,
@@ -183,6 +194,10 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
             startCrop: { ...crop },
             rectWidth: rect.width,
             rectHeight: rect.height,
+            rotation: rotSnap,
+            flipX: element.imageFlipX ?? false,
+            flipY: element.imageFlipY ?? false,
+            fitScale: fs,
         };
 
         const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -194,22 +209,43 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
 
             const dx = (me.clientX - state.startX) / state.rectWidth;
             const dy = (me.clientY - state.startY) / state.rectHeight;
+            const s = state.fitScale;
+
+            // 화면 좌표(dx, dy) → 이미지 좌표(dImgX, dImgY) 변환 (회전·플립·fitScale 반영)
+            let dImgX: number;
+            let dImgY: number;
+            if (state.rotation === 90) {
+                dImgX = dy / s;
+                dImgY = -dx / s;
+            } else if (state.rotation === 180) {
+                dImgX = -dx;
+                dImgY = -dy;
+            } else if (state.rotation === 270) {
+                dImgX = -dy / s;
+                dImgY = dx / s;
+            } else {
+                dImgX = dx;
+                dImgY = dy;
+            }
+            if (state.flipX) dImgX = -dImgX;
+            if (state.flipY) dImgY = -dImgY;
+
             let { x, y, width, height } = { ...state.startCrop };
             const pos = state.position;
 
             if (pos.includes('e')) {
-                width = clamp(state.startCrop.width + dx, MIN_DIM, 1 - x);
+                width = clamp(state.startCrop.width + dImgX, MIN_DIM, 1 - x);
             }
             if (pos.includes('w')) {
-                const newX = clamp(state.startCrop.x + dx, 0, state.startCrop.x + state.startCrop.width - MIN_DIM);
+                const newX = clamp(state.startCrop.x + dImgX, 0, state.startCrop.x + state.startCrop.width - MIN_DIM);
                 width = state.startCrop.width + (state.startCrop.x - newX);
                 x = newX;
             }
             if (pos.includes('s')) {
-                height = clamp(state.startCrop.height + dy, MIN_DIM, 1 - y);
+                height = clamp(state.startCrop.height + dImgY, MIN_DIM, 1 - y);
             }
             if (pos.includes('n')) {
-                const newY = clamp(state.startCrop.y + dy, 0, state.startCrop.y + state.startCrop.height - MIN_DIM);
+                const newY = clamp(state.startCrop.y + dImgY, 0, state.startCrop.y + state.startCrop.height - MIN_DIM);
                 height = state.startCrop.height + (state.startCrop.y - newY);
                 y = newY;
             }
@@ -230,6 +266,22 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
     const displayUrl = getImageDisplayUrl(element.imageUrl);
     const crop = element.imageCrop ?? { x: 0, y: 0, width: 1, height: 1 };
     const hasCrop = crop.x !== 0 || crop.y !== 0 || crop.width !== 1 || crop.height !== 1;
+
+    // 90°/270° 회전 시 회전된 콘텐츠가 컨테이너 밖으로 나가지 않도록 fit scale 적용
+    const rot = element.imageRotation ?? 0;
+    const rotNorm = ((rot % 360) + 360) % 360;
+    const rot90 = Math.round(rotNorm / 90) % 4;
+    const needsFitScale = rot90 === 1 || rot90 === 3;
+    const w = element.width;
+    const h = element.height;
+    const fitScale = needsFitScale && w > 0 && h > 0 ? Math.min(w / h, h / w) : 1;
+
+    const imageTransform = [
+        needsFitScale ? `scale(${fitScale})` : '',
+        `rotate(${rot}deg)`,
+        element.imageFlipX ? 'scaleX(-1)' : '',
+        element.imageFlipY ? 'scaleY(-1)' : '',
+    ].filter(Boolean).join(' ') || undefined;
 
     return (
         <div ref={containerRef} className="w-full h-full relative select-none">
@@ -256,11 +308,8 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                                     clipPath: `inset(${crop.y * 100}% ${(1 - crop.x - crop.width) * 100}% ${(1 - crop.y - crop.height) * 100}% ${crop.x * 100}%)`,
                                 }
                                 : {}),
-                            transform: [
-                                `rotate(${element.imageRotation ?? 0}deg)`,
-                                element.imageFlipX ? 'scaleX(-1)' : '',
-                                element.imageFlipY ? 'scaleY(-1)' : '',
-                            ].filter(Boolean).join(' ') || undefined,
+                            transform: imageTransform,
+                            transformOrigin: 'center center',
                         }}
                         draggable={false}
                         referrerPolicy="no-referrer"
@@ -271,88 +320,98 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                         }}
                     />
                     {isSelected && isCropMode && (
-                        <div className="absolute inset-0 pointer-events-none z-[120]">
+                        <div className="absolute inset-0 z-[120]">
+                            {/* 이미지와 동일한 transform 적용 → 회전/플립 시 크롭 오버레이가 이미지와 정렬됨 */}
                             <div
-                                className="absolute border border-amber-500 rounded-sm"
+                                className="absolute inset-0"
                                 style={{
-                                    left: `${crop.x * 100}%`,
-                                    top: `${crop.y * 100}%`,
-                                    width: `${crop.width * 100}%`,
-                                    height: `${crop.height * 100}%`,
-                                    boxShadow: '0 0 0 9999px rgba(17, 24, 39, 0.35)',
+                                    transform: imageTransform,
+                                    transformOrigin: 'center center',
+                                    pointerEvents: 'auto',
                                 }}
-                            />
-
-                            {/* Crop line drag areas */}
-                            <div
-                                data-image-crop-handle
-                                className="absolute pointer-events-auto cursor-n-resize"
-                                style={{
-                                    left: `${crop.x * 100}%`,
-                                    top: `${crop.y * 100}%`,
-                                    width: `${crop.width * 100}%`,
-                                    height: 10,
-                                    transform: 'translateY(-50%)',
-                                }}
-                                onMouseDown={(e) => handleCropMouseDown(e, 'n')}
-                            />
-                            <div
-                                data-image-crop-handle
-                                className="absolute pointer-events-auto cursor-s-resize"
-                                style={{
-                                    left: `${crop.x * 100}%`,
-                                    top: `${(crop.y + crop.height) * 100}%`,
-                                    width: `${crop.width * 100}%`,
-                                    height: 10,
-                                    transform: 'translateY(-50%)',
-                                }}
-                                onMouseDown={(e) => handleCropMouseDown(e, 's')}
-                            />
-                            <div
-                                data-image-crop-handle
-                                className="absolute pointer-events-auto cursor-w-resize"
-                                style={{
-                                    left: `${crop.x * 100}%`,
-                                    top: `${crop.y * 100}%`,
-                                    width: 10,
-                                    height: `${crop.height * 100}%`,
-                                    transform: 'translateX(-50%)',
-                                }}
-                                onMouseDown={(e) => handleCropMouseDown(e, 'w')}
-                            />
-                            <div
-                                data-image-crop-handle
-                                className="absolute pointer-events-auto cursor-e-resize"
-                                style={{
-                                    left: `${(crop.x + crop.width) * 100}%`,
-                                    top: `${crop.y * 100}%`,
-                                    width: 10,
-                                    height: `${crop.height * 100}%`,
-                                    transform: 'translateX(-50%)',
-                                }}
-                                onMouseDown={(e) => handleCropMouseDown(e, 'e')}
-                            />
-
-                            {/* Crop corner handles */}
-                            {[
-                                { pos: 'nw', left: crop.x, top: crop.y, cursor: 'nw-resize' },
-                                { pos: 'ne', left: crop.x + crop.width, top: crop.y, cursor: 'ne-resize' },
-                                { pos: 'sw', left: crop.x, top: crop.y + crop.height, cursor: 'sw-resize' },
-                                { pos: 'se', left: crop.x + crop.width, top: crop.y + crop.height, cursor: 'se-resize' },
-                            ].map((h) => (
+                            >
                                 <div
-                                    key={h.pos}
-                                    data-image-crop-handle
-                                    className="absolute w-2.5 h-2.5 border border-amber-500 bg-amber-100 rounded-sm shadow-sm pointer-events-auto z-[200]"
+                                    className="absolute border border-amber-500 rounded-sm"
                                     style={{
-                                        left: `${h.left * 100}%`,
-                                        top: `${h.top * 100}%`,
-                                        transform: 'translate(-50%, -50%)',
-                                        cursor: h.cursor,
+                                        left: `${crop.x * 100}%`,
+                                        top: `${crop.y * 100}%`,
+                                        width: `${crop.width * 100}%`,
+                                        height: `${crop.height * 100}%`,
+                                        boxShadow: '0 0 0 9999px rgba(17, 24, 39, 0.35)',
                                     }}
-                                    onMouseDown={(e) => handleCropMouseDown(e, h.pos)}
                                 />
-                            ))}
+
+                                {/* Crop line drag areas */}
+                                <div
+                                    data-image-crop-handle
+                                    className="absolute pointer-events-auto cursor-n-resize"
+                                    style={{
+                                        left: `${crop.x * 100}%`,
+                                        top: `${crop.y * 100}%`,
+                                        width: `${crop.width * 100}%`,
+                                        height: 10,
+                                        transform: 'translateY(-50%)',
+                                    }}
+                                    onMouseDown={(e) => handleCropMouseDown(e, 'n')}
+                                />
+                                <div
+                                    data-image-crop-handle
+                                    className="absolute pointer-events-auto cursor-s-resize"
+                                    style={{
+                                        left: `${crop.x * 100}%`,
+                                        top: `${(crop.y + crop.height) * 100}%`,
+                                        width: `${crop.width * 100}%`,
+                                        height: 10,
+                                        transform: 'translateY(-50%)',
+                                    }}
+                                    onMouseDown={(e) => handleCropMouseDown(e, 's')}
+                                />
+                                <div
+                                    data-image-crop-handle
+                                    className="absolute pointer-events-auto cursor-w-resize"
+                                    style={{
+                                        left: `${crop.x * 100}%`,
+                                        top: `${crop.y * 100}%`,
+                                        width: 10,
+                                        height: `${crop.height * 100}%`,
+                                        transform: 'translateX(-50%)',
+                                    }}
+                                    onMouseDown={(e) => handleCropMouseDown(e, 'w')}
+                                />
+                                <div
+                                    data-image-crop-handle
+                                    className="absolute pointer-events-auto cursor-e-resize"
+                                    style={{
+                                        left: `${(crop.x + crop.width) * 100}%`,
+                                        top: `${crop.y * 100}%`,
+                                        width: 10,
+                                        height: `${crop.height * 100}%`,
+                                        transform: 'translateX(-50%)',
+                                    }}
+                                    onMouseDown={(e) => handleCropMouseDown(e, 'e')}
+                                />
+
+                                {/* Crop corner handles */}
+                                {[
+                                    { pos: 'nw', left: crop.x, top: crop.y, cursor: 'nw-resize' },
+                                    { pos: 'ne', left: crop.x + crop.width, top: crop.y, cursor: 'ne-resize' },
+                                    { pos: 'sw', left: crop.x, top: crop.y + crop.height, cursor: 'sw-resize' },
+                                    { pos: 'se', left: crop.x + crop.width, top: crop.y + crop.height, cursor: 'se-resize' },
+                                ].map((h) => (
+                                    <div
+                                        key={h.pos}
+                                        data-image-crop-handle
+                                        className="absolute w-2.5 h-2.5 border border-amber-500 bg-amber-100 rounded-sm shadow-sm pointer-events-auto z-[200]"
+                                        style={{
+                                            left: `${h.left * 100}%`,
+                                            top: `${h.top * 100}%`,
+                                            transform: 'translate(-50%, -50%)',
+                                            cursor: h.cursor,
+                                        }}
+                                        onMouseDown={(e) => handleCropMouseDown(e, h.pos)}
+                                    />
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>
