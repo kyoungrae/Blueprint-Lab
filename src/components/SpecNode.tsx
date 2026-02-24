@@ -16,7 +16,7 @@ const MIN_COL_WIDTH = 48;
 const MAX_COL_WIDTH = 400;
 
 // ── Resize Handle ─────────────────────────────────────────
-const SpecColResizeHandle: React.FC<{
+const ColResizeHandle: React.FC<{
     onResizeStart: (colIdx: number, clientX: number) => void;
     colIdx: number;
     disabled?: boolean;
@@ -490,9 +490,42 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         syncUpdate({ specs });
     };
 
-    // Label/Value cell styles (Shared with ScreenNode for consistency)
+    // Label/Value cell styles (스크린샷과 동일: 중앙 정렬)
     const labelCell = "bg-[#2c3e7c] text-white text-[11px] font-bold px-3 py-2 border-r border-[#1e2d5e] select-none text-center align-middle whitespace-nowrap";
-    const valueCell = "bg-white text-xs text-gray-800 px-2 py-1 border-r border-[#e2e8f0] align-middle";
+    const valueCell = "bg-white text-xs text-gray-800 px-2 py-1 border-r border-[#e2e8f0] align-middle text-center";
+
+    // 메타 테이블 컬럼 너비 (6열)
+    const DEFAULT_META_COL_WIDTHS = [100, 180, 80, 140, 90, 120];
+    const metaColWidths = React.useMemo(() => {
+        const saved = screen.specMetaColumnWidths;
+        if (saved && saved.length === 6) return [...saved];
+        return [...DEFAULT_META_COL_WIDTHS];
+    }, [screen.specMetaColumnWidths]);
+
+    const handleMetaColResizeStart = React.useCallback((colIdx: number, clientX: number) => {
+        const startWidth = metaColWidths[colIdx];
+        const onMove = (e: MouseEvent) => {
+            const dx = e.clientX - clientX;
+            const nextWidth = Math.max(48, Math.min(400, startWidth + dx));
+            const store = useScreenDesignStore.getState();
+            const currentScreen = store.screens.find((s) => s.id === screen.id);
+            const currentWidths = currentScreen?.specMetaColumnWidths || metaColWidths;
+            const next = [...currentWidths];
+            next[colIdx] = nextWidth;
+            store.updateScreen(screen.id, { specMetaColumnWidths: next });
+        };
+        const onUp = () => {
+            const store = useScreenDesignStore.getState();
+            const currentScreen = store.screens.find((s) => s.id === screen.id);
+            if (currentScreen?.specMetaColumnWidths) {
+                syncUpdate({ specMetaColumnWidths: currentScreen.specMetaColumnWidths });
+            }
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }, [metaColWidths, screen.id, syncUpdate]);
 
     // Entity dimensions from page size/orientation (ScreenNode과 동일 로직)
     const MIN_CANVAS_WIDTH = 794;
@@ -637,23 +670,40 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                     </div>
                 </div>
 
-                {/* ── 2. Meta Info Table (Same as ScreenNode) ── */}
+                {/* ── 2. Meta Info Table (너비 조절 + 중앙 정렬) ── */}
                 <div className="border-b border-gray-200">
-                    <table className="nodrag w-full border-collapse">
+                    <table className="nodrag w-full border-collapse table-fixed">
+                        <colgroup>
+                            {metaColWidths.map((w, i) => (
+                                <col key={i} style={{ width: w }} />
+                            ))}
+                        </colgroup>
                         <tbody>
                             {/* Row 1 */}
                             <tr className="border-b border-[#e2e8f0]">
-                                <td className={labelCell} style={{ width: 100 }}>시스템명</td>
-                                <td className={valueCell} style={{ width: 180 }}>
+                                <td className={`${labelCell} relative`}>
+                                    시스템명
+                                    {!isLocked && <ColResizeHandle onResizeStart={handleMetaColResizeStart} colIdx={0} />}
+                                </td>
+                                <td className={`${valueCell} relative`}>
                                     <EditableCell value={screen.systemName} onChange={(v) => update({ systemName: v })} onBlur={(v) => syncUpdate({ systemName: v })} isLocked={isLocked} placeholder="시스템명" className="text-center font-bold" />
+                                    {!isLocked && <ColResizeHandle onResizeStart={handleMetaColResizeStart} colIdx={1} />}
                                 </td>
-                                <td className={labelCell} style={{ width: 80 }}>작성자</td>
-                                <td className={valueCell} style={{ width: 140 }}>
+                                <td className={`${labelCell} relative`}>
+                                    작성자
+                                    {!isLocked && <ColResizeHandle onResizeStart={handleMetaColResizeStart} colIdx={2} />}
+                                </td>
+                                <td className={`${valueCell} relative`}>
                                     <EditableCell value={screen.author} onChange={(v) => update({ author: v })} onBlur={(v) => syncUpdate({ author: v })} isLocked={isLocked} placeholder="작성자" className="text-center" />
+                                    {!isLocked && <ColResizeHandle onResizeStart={handleMetaColResizeStart} colIdx={3} />}
                                 </td>
-                                <td className={labelCell} style={{ width: 90 }}>작성일자</td>
-                                <td className={`${valueCell} border-r-0`}>
+                                <td className={`${labelCell} relative`}>
+                                    작성일자
+                                    {!isLocked && <ColResizeHandle onResizeStart={handleMetaColResizeStart} colIdx={4} />}
+                                </td>
+                                <td className={`${valueCell} border-r-0 relative`}>
                                     <EditableCell value={screen.createdDate} onChange={(v) => update({ createdDate: v })} onBlur={(v) => syncUpdate({ createdDate: v })} isLocked={isLocked} placeholder="YYYY-MM-DD" mono className="text-center" />
+                                    {!isLocked && <ColResizeHandle onResizeStart={handleMetaColResizeStart} colIdx={5} />}
                                 </td>
                             </tr>
 
@@ -661,7 +711,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                             <tr className="border-b border-[#e2e8f0]">
                                 <td className={labelCell}>화면ID</td>
                                 <td className={valueCell}>
-                                    <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} onBlur={(v) => syncUpdate({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c]" />
+                                    <EditableCell value={screen.screenId} onChange={(v) => update({ screenId: v })} onBlur={(v) => syncUpdate({ screenId: v })} isLocked={isLocked} placeholder="화면ID" mono className="font-bold text-[#2c3e7c] text-center" />
                                 </td>
                                 <td className={labelCell}>화면유형</td>
                                 <td className={valueCell}>
@@ -677,7 +727,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                             <tr>
                                 <td className={labelCell}>화면설명</td>
                                 <td className={`${valueCell} border-r-0`} colSpan={5}>
-                                    <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} onBlur={(v) => syncUpdate({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" />
+                                    <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} onBlur={(v) => syncUpdate({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" className="text-center" />
                                 </td>
                             </tr>
                         </tbody>
@@ -707,20 +757,20 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                     {!isLocked && <th rowSpan={2} className="w-8 bg-gray-50 border-r border-gray-200"></th>}
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
                                         항목명(한글)
-                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={0} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={0} />}
                                     </th>
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
                                         필드명(영문)
-                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={1} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={1} />}
                                     </th>
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
                                         항목타입
-                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={2} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={2} />}
                                     </th>
                                     <th colSpan={4} className="border-r border-gray-200 border-b px-2 py-1 font-bold text-gray-700 bg-blue-100/50">항목정의</th>
                                     <th rowSpan={2} className="px-2 py-1.5 font-bold text-gray-700 border-r border-gray-200 relative">
                                         비고
-                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={7} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={7} />}
                                     </th>
                                     {!isLocked && <th rowSpan={2} className="w-10 bg-gray-50 border-l border-gray-200"></th>}
                                 </tr>
@@ -728,19 +778,19 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                 <tr className="bg-blue-50/80 border-b border-gray-200">
                                     <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
                                         Format
-                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={3} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={3} />}
                                     </th>
                                     <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
                                         자릿수
-                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={4} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={4} />}
                                     </th>
                                     <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
                                         초기값
-                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={5} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={5} />}
                                     </th>
                                     <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
                                         Validation
-                                        {!isLocked && <SpecColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={6} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={6} />}
                                     </th>
                                 </tr>
                             </thead>

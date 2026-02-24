@@ -56,6 +56,8 @@ export interface Screen {
     specs?: ScreenSpecItem[];
     /** 명세 그리드 컬럼 너비(px): [항목명, 필드명, 항목타입, Format, 자릿수, 초기값, Validation, 비고] */
     specColumnWidths?: number[];
+    /** 명세 메타 테이블 컬럼 너비(px): [시스템명,값, 작성자,값, 작성일자,값] 6열 */
+    specMetaColumnWidths?: number[];
 
     // ── 캔버스 위치 ──
     position: { x: number; y: number };
