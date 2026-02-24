@@ -238,6 +238,22 @@ podman logs -f blueprint-mongodb
 # blueprint-redis 로그 (실행 중인 경우)
 podman logs -f blueprint-redis
 
+# blueprint-mongodb
+podman exec -it blueprint-mongodb mongo blueprint-lab --eval "db.projects.find().pretty()"
+podman exec -it blueprint-mongodb mongo
+
+// blueprint-lab DB 사용
+use blueprint-lab
+
+// 컬렉션 목록
+show collections
+
+// 예: 프로젝트 목록
+db.projects.find().pretty()
+
+// 예: 화면 설계 데이터
+db.screens.find().limit(5).pretty()
+
 ## 🛠 유지보수 및 팁
 
 - **로그 확인**: `podman logs -f erd-backend` 또는 `podman logs -f erd-frontend`
