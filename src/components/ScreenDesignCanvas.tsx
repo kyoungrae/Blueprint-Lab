@@ -447,6 +447,24 @@ const ScreenDesignCanvasContent: React.FC = () => {
             const specScreen = sourceScreen?.variant === 'SPEC' ? sourceScreen : targetScreen;
 
             if (uiScreen && specScreen && uiScreen.variant !== 'SPEC' && specScreen.variant === 'SPEC') {
+                // 부모 화면상세 설계 엔티티의 메타 값을 명세 엔티티에 반영
+                const metaUpdates: Partial<Screen> = {
+                    systemName: uiScreen.systemName,
+                    author: uiScreen.author,
+                    createdDate: uiScreen.createdDate,
+                    screenId: uiScreen.screenId,
+                    screenType: uiScreen.screenType,
+                    screenDescription: uiScreen.screenDescription,
+                };
+                updateScreen(specScreen.id, metaUpdates);
+                sendOperation({
+                    type: 'SCREEN_UPDATE',
+                    targetId: specScreen.id,
+                    userId: user?.id || 'anonymous',
+                    userName: user?.name || 'Anonymous',
+                    payload: metaUpdates
+                });
+
                 const relatedTablesText = uiScreen.relatedTables || '';
                 const tableNames = relatedTablesText.split('\n')
                     .map(line => line.trim())
@@ -586,8 +604,33 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 targetHandle: newConnection.targetHandle || undefined,
             }
         });
+
+        // 재연결 시에도 명세서 연결이면 부모 화면의 메타 값을 명세에 반영
+        const sourceScreen = screens.find(s => s.id === newConnection.source);
+        const targetScreen = screens.find(s => s.id === newConnection.target);
+        const uiScreen = sourceScreen?.variant !== 'SPEC' ? sourceScreen : targetScreen;
+        const specScreen = sourceScreen?.variant === 'SPEC' ? sourceScreen : targetScreen;
+        if (uiScreen && specScreen && uiScreen.variant !== 'SPEC' && specScreen.variant === 'SPEC') {
+            const metaUpdates: Partial<Screen> = {
+                systemName: uiScreen.systemName,
+                author: uiScreen.author,
+                createdDate: uiScreen.createdDate,
+                screenId: uiScreen.screenId,
+                screenType: uiScreen.screenType,
+                screenDescription: uiScreen.screenDescription,
+            };
+            updateScreen(specScreen.id, metaUpdates);
+            sendOperation({
+                type: 'SCREEN_UPDATE',
+                targetId: specScreen.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: metaUpdates
+            });
+        }
+
         setReconnectingEdgeId(null);
-    }, [updateFlow, setEdges, flows, sendOperation, user]);
+    }, [updateFlow, setEdges, flows, sendOperation, user, screens, updateScreen]);
 
     const onEdgeUpdateEnd = useCallback((_: any, _edge: RFEdge) => {
         setReconnectingEdgeId(null);
