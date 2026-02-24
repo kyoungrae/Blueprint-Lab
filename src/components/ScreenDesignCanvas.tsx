@@ -109,6 +109,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
+    const [isAddSpecModalOpen, setIsAddSpecModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const { getNodes, fitView, screenToFlowPosition, zoomIn, zoomOut } = useReactFlow();
@@ -616,7 +617,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [screens, addScreen, currentProject, user, sendOperation]);
 
-    const handleAddSpec = useCallback(() => {
+    const handleAddSpecClick = useCallback(() => {
+        setIsAddSpecModalOpen(true);
+    }, []);
+
+    const handleAddSpecConfirm = useCallback((pageSize: PageSizeOption, pageOrientation: PageOrientation) => {
         const baseName = '새 기능명세';
         const existingNames = new Set(screens.map(s => s.name));
         let newName = baseName;
@@ -652,6 +657,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
             variant: 'SPEC',
             specs: [],
             isLocked: true,
+            pageSize,
+            pageOrientation,
         };
         addScreen(newScreen);
 
@@ -848,7 +855,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     </button>
 
                     <button
-                        onClick={handleAddSpec}
+                        onClick={handleAddSpecClick}
                         className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
                     >
                         <FileText size={16} className="shrink-0" />
@@ -973,6 +980,14 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     <AddScreenModal
                         onConfirm={handleAddScreenConfirm}
                         onClose={() => setIsAddScreenModalOpen(false)}
+                    />
+                )}
+
+                {isAddSpecModalOpen && (
+                    <AddScreenModal
+                        variant="spec"
+                        onConfirm={handleAddSpecConfirm}
+                        onClose={() => setIsAddSpecModalOpen(false)}
                     />
                 )}
 

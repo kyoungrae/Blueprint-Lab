@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { X, Monitor, RectangleHorizontal, RectangleVertical } from 'lucide-react';
+import { X, Monitor, FileText, RectangleHorizontal, RectangleVertical } from 'lucide-react';
 import type { PageSizeOption, PageOrientation } from '../types/screenDesign';
 import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../types/screenDesign';
+
+type AddEntityVariant = 'screen' | 'spec';
 
 interface AddScreenModalProps {
     onConfirm: (pageSize: PageSizeOption, pageOrientation: PageOrientation) => void;
     onClose: () => void;
+    variant?: AddEntityVariant;
 }
 
-const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) => {
+const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose, variant = 'screen' }) => {
     const [pageSize, setPageSize] = useState<PageSizeOption>('A4');
     const [pageOrientation, setPageOrientation] = useState<PageOrientation>('landscape');
 
@@ -23,12 +26,12 @@ const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) =
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-violet-100 rounded-xl text-violet-600">
-                            <Monitor size={20} />
+                        <div className={`p-2 rounded-xl ${variant === 'spec' ? 'bg-indigo-100 text-indigo-600' : 'bg-violet-100 text-violet-600'}`}>
+                            {variant === 'spec' ? <FileText size={20} /> : <Monitor size={20} />}
                         </div>
                         <div>
-                            <h2 className="text-lg font-black text-gray-900">화면 추가</h2>
-                            <p className="text-xs text-gray-500">화면 엔티티 크기와 방향을 선택하세요</p>
+                            <h2 className="text-lg font-black text-gray-900">{variant === 'spec' ? '명세 추가' : '화면 추가'}</h2>
+                            <p className="text-xs text-gray-500">{variant === 'spec' ? '명세 엔티티 크기와 방향을 선택하세요' : '화면 엔티티 크기와 방향을 선택하세요'}</p>
                         </div>
                     </div>
                     <button
@@ -53,7 +56,7 @@ const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) =
                                     onClick={() => setPageSize(size)}
                                     className={`min-w-0 px-3 py-2.5 rounded-xl font-bold text-sm transition-all flex flex-col items-center gap-0.5 ${
                                         pageSize === size
-                                            ? 'bg-violet-600 text-white shadow-md'
+                                            ? (variant === 'spec' ? 'bg-indigo-600 text-white shadow-md' : 'bg-violet-600 text-white shadow-md')
                                             : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
                                     }`}
                                 >
@@ -75,7 +78,7 @@ const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) =
                             onClick={() => setPageOrientation('portrait')}
                             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
                                 pageOrientation === 'portrait'
-                                    ? 'bg-violet-600 text-white shadow-md'
+                                    ? (variant === 'spec' ? 'bg-indigo-600 text-white shadow-md' : 'bg-violet-600 text-white shadow-md')
                                     : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
                             }`}
                         >
@@ -86,7 +89,7 @@ const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) =
                             onClick={() => setPageOrientation('landscape')}
                             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
                                 pageOrientation === 'landscape'
-                                    ? 'bg-violet-600 text-white shadow-md'
+                                    ? (variant === 'spec' ? 'bg-indigo-600 text-white shadow-md' : 'bg-violet-600 text-white shadow-md')
                                     : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
                             }`}
                         >
@@ -106,7 +109,7 @@ const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose }) =
                     </button>
                     <button
                         onClick={handleConfirm}
-                        className="px-4 py-2.5 rounded-xl font-bold text-sm bg-violet-600 text-white hover:bg-violet-700 shadow-md transition-colors"
+                        className={`px-4 py-2.5 rounded-xl font-bold text-sm text-white shadow-md transition-colors ${variant === 'spec' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-violet-600 hover:bg-violet-700'}`}
                     >
                         추가
                     </button>
