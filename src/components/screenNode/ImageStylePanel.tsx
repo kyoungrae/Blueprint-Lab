@@ -19,16 +19,43 @@ interface ImageStylePanelProps {
 }
 
 const ROTATION_PRESETS = [0, 90, 180, 270];
+const normalizeAngle = (deg: number) => ((deg % 360) + 360) % 360;
 
 export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpdate, onClose, position, onPositionChange, zoom, screenToFlowPosition, flowToScreenPosition, onDragStart, onDragEnd, isCropMode, onCropModeToggle }) => {
     const isDraggingRef = useRef(false);
-    const rotation = element.imageRotation ?? 0;
+    const rotation = normalizeAngle(element.imageRotation ?? 0);
     const flipX = element.imageFlipX ?? false;
     const flipY = element.imageFlipY ?? false;
     const crop = element.imageCrop ?? { x: 0, y: 0, width: 1, height: 1 };
 
     const handleRotate = (deg: number) => {
         onUpdate({ imageRotation: deg });
+    };
+
+    const handleRotationDialMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        const updateFromPointer = (clientX: number, clientY: number) => {
+            const angleRad = Math.atan2(clientY - centerY, clientX - centerX);
+            const degFromTopClockwise = normalizeAngle((angleRad * 180) / Math.PI + 90);
+            // 0.1도 단위로 미세 조절
+            const snapped = Math.round(degFromTopClockwise * 10) / 10;
+            onUpdate({ imageRotation: snapped });
+        };
+
+        updateFromPointer(e.clientX, e.clientY);
+
+        const onMove = (me: MouseEvent) => updateFromPointer(me.clientX, me.clientY);
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('mouseup', onUp, true);
+        };
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp, true);
     };
 
     const handleFlipX = () => {
@@ -123,6 +150,34 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                             {deg}°
                         </button>
                     ))}
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                    <div
+                        className="relative w-20 h-20 cursor-grab active:cursor-grabbing select-none"
+                        onMouseDown={handleRotationDialMouseDown}
+                    >
+                        {(() => {
+                            const center = 40;
+                            const radius = 28;
+                            const rad = ((rotation - 90) * Math.PI) / 180;
+                            const lineX = center + Math.cos(rad) * (radius - 8);
+                            const lineY = center + Math.sin(rad) * (radius - 8);
+                            const knobX = center + Math.cos(rad) * radius;
+                            const knobY = center + Math.sin(rad) * radius;
+                            return (
+                                <svg width="80" height="80" viewBox="0 0 80 80" className="block">
+                                    <circle cx={center} cy={center} r={radius} fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1.5" />
+                                    <line x1={center} y1={center} x2={lineX} y2={lineY} stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" />
+                                    <circle cx={knobX} cy={knobY} r="5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
+                                    <circle cx={center} cy={center} r="2.5" fill="#94a3b8" />
+                                </svg>
+                            );
+                        })()}
+                    </div>
+                    <div className="text-xs text-gray-600">
+                        <div className="font-medium">미세 조절</div>
+                        <div className="text-[11px] text-gray-500">{rotation.toFixed(1)}°</div>
+                    </div>
                 </div>
             </div>
 
