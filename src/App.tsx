@@ -12,6 +12,15 @@ function App() {
   const { currentProjectId, projects } = useProjectStore();
   const { isConnected, isAuthenticatedOnSocket, connect, disconnect, authenticate, joinProject, leaveProject } = useSyncStore();
 
+  // 401 시 자동 로그아웃 (토큰 만료 등)
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      logout();
+    };
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, [logout]);
+
   // Guest Session Cleanup: Logout guest if browser was closed (sessionStorage cleared)
   useEffect(() => {
     const isSessionActive = sessionStorage.getItem('erd_session_active');

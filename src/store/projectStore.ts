@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -30,11 +31,8 @@ export const useProjectStore = create<ProjectStore>()(
                 if (!token) return;
 
                 try {
-                    const response = await fetch(`${API_URL}?t=${Date.now()}`, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Cache-Control': 'no-cache'
-                        },
+                    const response = await fetchWithAuth(`${API_URL}?t=${Date.now()}`, {
+                        headers: { 'Cache-Control': 'no-cache' },
                         cache: 'no-store'
                     });
                     if (response.ok) {
@@ -84,12 +82,9 @@ export const useProjectStore = create<ProjectStore>()(
                 }
 
                 try {
-                    const response = await fetch(API_URL, {
+                    const response = await fetchWithAuth(API_URL, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ name, dbType, description, projectType }),
                     });
 
@@ -135,7 +130,7 @@ export const useProjectStore = create<ProjectStore>()(
                     if (token) {
                         headers['Authorization'] = `Bearer ${token}`;
                         // Officially join the project on the server
-                        const joinResponse = await fetch(`${API_URL}/${id}/join`, {
+                        const joinResponse = await fetchWithAuth(`${API_URL}/${id}/join`, {
                             method: 'POST',
                             headers
                         });
@@ -150,7 +145,7 @@ export const useProjectStore = create<ProjectStore>()(
                         set({ currentProjectId: id });
                     } else {
                         // Guest mode: just fetch and add to local list
-                        const response = await fetch(`${API_URL}/${id}`, { headers });
+                        const response = await fetchWithAuth(`${API_URL}/${id}`, { headers });
                         if (!response.ok) throw new Error('Project not found or access denied');
 
                         const p = await response.json();
@@ -192,9 +187,8 @@ export const useProjectStore = create<ProjectStore>()(
                 // If token exists, try to delete from server
                 if (token) {
                     try {
-                        const response = await fetch(`${API_URL}/${id}`, {
+                        const response = await fetchWithAuth(`${API_URL}/${id}`, {
                             method: 'DELETE',
-                            headers: { 'Authorization': `Bearer ${token}` }
                         });
 
                         // If not successful and not 404, stop here
@@ -229,12 +223,9 @@ export const useProjectStore = create<ProjectStore>()(
                 if (!token || id.startsWith('local_')) return;
 
                 try {
-                    const response = await fetch(`${API_URL}/${id}`, {
+                    const response = await fetchWithAuth(`${API_URL}/${id}`, {
                         method: 'PATCH',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ data }),
                     });
 
@@ -257,12 +248,9 @@ export const useProjectStore = create<ProjectStore>()(
                 if (!token || id.startsWith('local_')) return;
 
                 try {
-                    const response = await fetch(`${API_URL}/${id}`, {
+                    const response = await fetchWithAuth(`${API_URL}/${id}`, {
                         method: 'PATCH',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(metadata),
                     });
 
@@ -278,12 +266,9 @@ export const useProjectStore = create<ProjectStore>()(
                 const token = localStorage.getItem('auth-token');
                 if (token) {
                     try {
-                        const response = await fetch(`${API_URL}/${id}`, {
+                        const response = await fetchWithAuth(`${API_URL}/${id}`, {
                             method: 'PATCH',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                            },
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ members }),
                         });
 
@@ -308,12 +293,9 @@ export const useProjectStore = create<ProjectStore>()(
                 const token = localStorage.getItem('auth-token');
                 if (!token) throw new Error('Authentication required');
 
-                const response = await fetch(`${API_URL}/invite`, {
+                const response = await fetchWithAuth(`${API_URL}/invite`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ projectId, email }),
                 });
 
@@ -327,12 +309,9 @@ export const useProjectStore = create<ProjectStore>()(
                 const token = localStorage.getItem('auth-token');
                 if (!token) throw new Error('Authentication required');
 
-                const response = await fetch(`${API_URL}/join-with-code`, {
+                const response = await fetchWithAuth(`${API_URL}/join-with-code`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ code }),
                 });
 

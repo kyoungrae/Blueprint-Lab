@@ -30,6 +30,7 @@ interface ImageElementProps {
 }
 
 import { getImageDisplayUrl, normalizeImageUrlForStorage } from '../../utils/imageUrl';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -69,12 +70,10 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
             });
             return dataUrl;
         }
-        const token = localStorage.getItem('auth-token');
         const formData = new FormData();
         formData.append('image', file);
-        const res = await fetch(`${API_URL}/${projectId}/images`, {
+        const res = await fetchWithAuth(`${API_URL}/${projectId}/images`, {
             method: 'POST',
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
             body: formData,
         });
         if (!res.ok) {

@@ -24,6 +24,7 @@ import LayerPanel from './screenNode/LayerPanel';
 import ImageElement from './screenNode/ImageElement';
 import { ImageStylePanel } from './screenNode/ImageStylePanel';
 import { normalizeImageUrlForStorage } from '../utils/imageUrl';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
 
@@ -73,12 +74,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 reader.readAsDataURL(file);
             });
         }
-        const token = localStorage.getItem('auth-token');
         const formData = new FormData();
         formData.append('image', file);
-        const res = await fetch(`${API_URL}/${currentProjectId}/images`, {
+        const res = await fetchWithAuth(`${API_URL}/${currentProjectId}/images`, {
             method: 'POST',
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
             body: formData,
         });
         if (!res.ok) throw new Error('Image upload failed');
