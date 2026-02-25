@@ -102,7 +102,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
+    const [flowLabelComposing, setFlowLabelComposing] = useState<string | null>(null);
     const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
+    useEffect(() => {
+        if (!editingFlowId) setFlowLabelComposing(null);
+    }, [editingFlowId]);
 
     const { projects, currentProjectId, setCurrentProject, updateProjectData } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
@@ -1163,9 +1167,26 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                             <div className="mt-4">
                                                 <input
                                                     type="text"
-                                                    value={editingFlow.label || ''}
+                                                    value={flowLabelComposing !== null ? flowLabelComposing : (editingFlow.label || '')}
                                                     onChange={(e) => {
                                                         const val = e.target.value;
+                                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                            setFlowLabelComposing(val);
+                                                            return;
+                                                        }
+                                                        setFlowLabelComposing(null);
+                                                        updateFlow(editingFlow.id, { label: val });
+                                                        sendOperation({
+                                                            type: 'SCREEN_FLOW_UPDATE',
+                                                            targetId: editingFlow.id,
+                                                            userId: user?.id || 'anonymous',
+                                                            userName: user?.name || 'Anonymous',
+                                                            payload: { label: val }
+                                                        });
+                                                    }}
+                                                    onCompositionEnd={(e) => {
+                                                        const val = (e.target as HTMLInputElement).value;
+                                                        setFlowLabelComposing(null);
                                                         updateFlow(editingFlow.id, { label: val });
                                                         sendOperation({
                                                             type: 'SCREEN_FLOW_UPDATE',

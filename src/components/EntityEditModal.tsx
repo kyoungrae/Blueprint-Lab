@@ -17,6 +17,9 @@ const EntityEditModal: React.FC<EntityEditModalProps> = ({
 }) => {
     const [name, setName] = useState(entity.name);
     const [attributes, setAttributes] = useState<Attribute[]>(entity.attributes);
+    const [composing, setComposing] = useState<{ field: string; value: string } | null>(null);
+    const displayValue = (field: string, propValue: string) =>
+        composing?.field === field ? composing.value : propValue;
 
     const handleAddAttribute = () => {
         const newAttr: Attribute = {
@@ -74,8 +77,21 @@ const EntityEditModal: React.FC<EntityEditModalProps> = ({
                         </label>
                         <input
                             type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            value={displayValue('entityName', name)}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                    setComposing({ field: 'entityName', value: v });
+                                    return;
+                                }
+                                setComposing(null);
+                                setName(v);
+                            }}
+                            onCompositionEnd={(e) => {
+                                const v = (e.target as HTMLInputElement).value;
+                                setComposing(null);
+                                setName(v);
+                            }}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                             placeholder="Enter entity name"
                         />
@@ -105,10 +121,21 @@ const EntityEditModal: React.FC<EntityEditModalProps> = ({
                                     {/* Attribute Name */}
                                     <input
                                         type="text"
-                                        value={attr.name}
-                                        onChange={(e) =>
-                                            handleUpdateAttribute(attr.id, { name: e.target.value })
-                                        }
+                                        value={displayValue(`attr-${attr.id}`, attr.name)}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                setComposing({ field: `attr-${attr.id}`, value: v });
+                                                return;
+                                            }
+                                            setComposing(null);
+                                            handleUpdateAttribute(attr.id, { name: v });
+                                        }}
+                                        onCompositionEnd={(e) => {
+                                            const v = (e.target as HTMLInputElement).value;
+                                            setComposing(null);
+                                            handleUpdateAttribute(attr.id, { name: v });
+                                        }}
                                         className="flex-1 px-3 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                                         placeholder="Column name"
                                     />

@@ -28,6 +28,9 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
     const [localName, setLocalName] = useState(attr.name);
     const [localComment, setLocalComment] = useState(attr.comment || '');
     const [localLength, setLocalLength] = useState(attr.length || '');
+    const [composing, setComposing] = useState<{ field: string; value: string } | null>(null);
+    const displayValue = (field: string, propValue: string) =>
+        composing?.field === field ? composing.value : propValue;
 
     // Sync local state when external data changes (but not while typing)
     useEffect(() => {
@@ -60,6 +63,24 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
         }
     };
 
+    const handleChange = (field: 'name' | 'comment' | 'length', value: string, e: React.ChangeEvent<HTMLInputElement>) => {
+        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            setComposing({ field, value });
+            return;
+        }
+        setComposing(null);
+        if (field === 'name') setLocalName(value);
+        else if (field === 'comment') setLocalComment(value);
+        else setLocalLength(value);
+    };
+
+    const handleCompositionEnd = (field: 'name' | 'comment' | 'length', value: string) => {
+        setComposing(null);
+        if (field === 'name') setLocalName(value);
+        else if (field === 'comment') setLocalComment(value);
+        else setLocalLength(value);
+    };
+
     return (
         <div className={`flex items-center gap-1 py-1 px-2 rounded group/attr transition-colors relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'}`}>
             {/* PK Icon/Toggle */}
@@ -80,8 +101,9 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
             <div className="flex-1 min-w-0 mx-1">
                 <input
                     type="text"
-                    value={localName}
-                    onChange={(e) => setLocalName(e.target.value)}
+                    value={displayValue('name', localName)}
+                    onChange={(e) => handleChange('name', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('name', (e.target as HTMLInputElement).value)}
                     onBlur={handleCommitName}
                     onKeyDown={(e) => e.key === 'Enter' && handleCommitName()}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
@@ -112,8 +134,9 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
                 <div className="w-10 flex-shrink-0">
                     <input
                         type="text"
-                        value={localLength}
-                        onChange={(e) => setLocalLength(e.target.value)}
+                        value={displayValue('length', localLength)}
+                        onChange={(e) => handleChange('length', e.target.value, e)}
+                        onCompositionEnd={(e) => handleCompositionEnd('length', (e.target as HTMLInputElement).value)}
                         onBlur={handleCommitLength}
                         onKeyDown={(e) => e.key === 'Enter' && handleCommitLength()}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
@@ -140,8 +163,9 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
                     <MessageSquare size={11} className={`shrink-0 ${attr.comment ? 'text-blue-400' : 'text-gray-200'}`} />
                     <input
                         type="text"
-                        value={localComment}
-                        onChange={(e) => setLocalComment(e.target.value)}
+                        value={displayValue('comment', localComment)}
+                        onChange={(e) => handleChange('comment', e.target.value, e)}
+                        onCompositionEnd={(e) => handleCompositionEnd('comment', (e.target as HTMLInputElement).value)}
                         onBlur={handleCommitComment}
                         onKeyDown={(e) => e.key === 'Enter' && handleCommitComment()}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
@@ -195,6 +219,9 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => 
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(entity.id);
     const isLocalLocked = entity.isLocked ?? true; // Default to locked
     const isLocked = isLocalLocked || isLockedByOther;
+
+    const [entityNameComposing, setEntityNameComposing] = useState<string | null>(null);
+    const [entityCommentComposing, setEntityCommentComposing] = useState<string | null>(null);
 
     const handleNameChange = (newName: string) => {
         if (isLocked) return;
@@ -350,8 +377,21 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => 
                 <Database size={16} className="flex-shrink-0" />
                 <input
                     type="text"
-                    value={entity.name}
-                    onChange={(e) => handleNameChange(e.target.value)}
+                    value={entityNameComposing !== null ? entityNameComposing : entity.name}
+                    onChange={(e) => {
+                        const v = e.target.value;
+                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                            setEntityNameComposing(v);
+                            return;
+                        }
+                        setEntityNameComposing(null);
+                        handleNameChange(v);
+                    }}
+                    onCompositionEnd={(e) => {
+                        const v = (e.target as HTMLInputElement).value;
+                        setEntityNameComposing(null);
+                        handleNameChange(v);
+                    }}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${!isLocked ? 'nodrag bg-blue-400/20' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 outline-none placeholder-blue-200 rounded transition-colors disabled:text-white`}
@@ -375,8 +415,21 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => 
                     <MessageSquare size={12} className="text-gray-400 shrink-0" />
                     <input
                         type="text"
-                        value={entity.comment || ''}
-                        onChange={(e) => updateEntity(entity.id, { comment: e.target.value })}
+                        value={entityCommentComposing !== null ? entityCommentComposing : (entity.comment || '')}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                setEntityCommentComposing(v);
+                                return;
+                            }
+                            setEntityCommentComposing(null);
+                            updateEntity(entity.id, { comment: v });
+                        }}
+                        onCompositionEnd={(e) => {
+                            const v = (e.target as HTMLInputElement).value;
+                            setEntityCommentComposing(null);
+                            updateEntity(entity.id, { comment: v });
+                        }}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
                         className={`text-[11px] w-full bg-transparent border-none focus:ring-0 p-0 outline-none italic placeholder-gray-300 ${isLocked ? 'text-gray-400' : 'text-blue-600 focus:bg-white transition-colors'}`}

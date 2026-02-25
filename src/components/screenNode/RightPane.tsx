@@ -331,7 +331,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 placeholder="테이블 직접 입력 후 Enter..."
                                 className="nodrag w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-[10px] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
+                                    if (e.key === 'Enter' && !(e.nativeEvent as { isComposing?: boolean }).isComposing) {
                                         const target = e.target as HTMLInputElement;
                                         const val = target.value.trim();
                                         if (val) {

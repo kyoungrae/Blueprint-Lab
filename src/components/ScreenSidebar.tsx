@@ -8,6 +8,8 @@ const ScreenSidebar: React.FC = () => {
     const { screens } = useScreenDesignStore();
     const { fitView, setNodes } = useReactFlow();
     const [search, setSearch] = useState('');
+    const [composing, setComposing] = useState<string | null>(null);
+    const displaySearch = composing !== null ? composing : search;
 
     const filteredScreens = screens.filter(s =>
         s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -55,8 +57,21 @@ const ScreenSidebar: React.FC = () => {
                     <input
                         type="text"
                         placeholder="화면 ID / 이름 검색..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        value={displaySearch}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                setComposing(v);
+                                return;
+                            }
+                            setComposing(null);
+                            setSearch(v);
+                        }}
+                        onCompositionEnd={(e) => {
+                            const v = (e.target as HTMLInputElement).value;
+                            setComposing(null);
+                            setSearch(v);
+                        }}
                         className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#2c3e7c]/20 focus:border-[#2c3e7c] outline-none transition-all"
                     />
                 </div>

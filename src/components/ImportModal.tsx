@@ -17,7 +17,9 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
     const { currentProjectId, updateProjectData } = useProjectStore();
     const [tab, setTab] = useState<'file' | 'code'>('file');
     const [sqlCode, setSqlCode] = useState('');
+    const [sqlComposing, setSqlComposing] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const displaySqlCode = sqlComposing !== null ? sqlComposing : sqlCode;
 
     const checkDuplicates = (newData: any) => {
         const duplicates = newData.entities.filter((newEntity: any) =>
@@ -173,10 +175,21 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
                         <div className="space-y-4">
                             <div className="relative group">
                                 <textarea
-                                    value={sqlCode}
+                                    value={displaySqlCode}
                                     onChange={(e) => {
-                                        setSqlCode(e.target.value);
+                                        const v = e.target.value;
+                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                            setSqlComposing(v);
+                                            return;
+                                        }
+                                        setSqlComposing(null);
+                                        setSqlCode(v);
                                         setError(null);
+                                    }}
+                                    onCompositionEnd={(e) => {
+                                        const v = (e.target as HTMLTextAreaElement).value;
+                                        setSqlComposing(null);
+                                        setSqlCode(v);
                                     }}
                                     className="w-full h-64 p-4 bg-gray-900 text-blue-100 font-mono text-sm rounded-xl outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                                     placeholder={`-- 예시 SQL DDL\nCREATE TABLE users (\n  id INT PRIMARY KEY,\n  username VARCHAR(255),\n  email VARCHAR(255) NOT NULL\n);`}

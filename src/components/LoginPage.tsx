@@ -15,6 +15,9 @@ const LoginPage: React.FC = () => {
     const [verificationCode, setVerificationCode] = useState('');
     const [invitationCode, setInvitationCode] = useState('');
     const [loading, setLoading] = useState(false);
+    const [composing, setComposing] = useState<{ field: string; value: string } | null>(null);
+    const displayValue = (field: string, propValue: string) =>
+        composing?.field === field ? composing.value : propValue;
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -222,8 +225,21 @@ const LoginPage: React.FC = () => {
                                             <input
                                                 type="text"
                                                 required
-                                                value={name}
-                                                onChange={(e) => setName(e.target.value)}
+                                                value={displayValue('name', name)}
+                                                onChange={(e) => {
+                                                    const v = e.target.value;
+                                                    if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                        setComposing({ field: 'name', value: v });
+                                                        return;
+                                                    }
+                                                    setComposing(null);
+                                                    setName(v);
+                                                }}
+                                                onCompositionEnd={(e) => {
+                                                    const v = (e.target as HTMLInputElement).value;
+                                                    setComposing(null);
+                                                    setName(v);
+                                                }}
                                                 placeholder="이름"
                                                 className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
                                             />
@@ -237,8 +253,21 @@ const LoginPage: React.FC = () => {
                                         <input
                                             type="email"
                                             required
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
+                                            value={displayValue('email', email)}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                    setComposing({ field: 'email', value: v });
+                                                    return;
+                                                }
+                                                setComposing(null);
+                                                setEmail(v);
+                                            }}
+                                            onCompositionEnd={(e) => {
+                                                const v = (e.target as HTMLInputElement).value;
+                                                setComposing(null);
+                                                setEmail(v);
+                                            }}
                                             placeholder="example@email.com"
                                             className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
                                         />
@@ -251,8 +280,21 @@ const LoginPage: React.FC = () => {
                                         <input
                                             type="password"
                                             required
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
+                                            value={displayValue('password', password)}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                    setComposing({ field: 'password', value: v });
+                                                    return;
+                                                }
+                                                setComposing(null);
+                                                setPassword(v);
+                                            }}
+                                            onCompositionEnd={(e) => {
+                                                const v = (e.target as HTMLInputElement).value;
+                                                setComposing(null);
+                                                setPassword(v);
+                                            }}
                                             placeholder="••••••••"
                                             className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
                                         />
@@ -267,8 +309,21 @@ const LoginPage: React.FC = () => {
                                             <input
                                                 type="password"
                                                 required
-                                                value={confirmPassword}
-                                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                                value={displayValue('confirmPassword', confirmPassword)}
+                                                onChange={(e) => {
+                                                    const v = e.target.value;
+                                                    if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                        setComposing({ field: 'confirmPassword', value: v });
+                                                        return;
+                                                    }
+                                                    setComposing(null);
+                                                    setConfirmPassword(v);
+                                                }}
+                                                onCompositionEnd={(e) => {
+                                                    const v = (e.target as HTMLInputElement).value;
+                                                    setComposing(null);
+                                                    setConfirmPassword(v);
+                                                }}
                                                 placeholder="••••••••"
                                                 className={`w-full px-5 py-3.5 bg-gray-50 border rounded-2xl focus:bg-white focus:ring-4 outline-none transition-all placeholder:text-gray-300 ${confirmPassword && password !== confirmPassword
                                                     ? 'border-red-200 focus:ring-red-500/10 focus:border-red-500'
@@ -293,8 +348,21 @@ const LoginPage: React.FC = () => {
                                         type="text"
                                         required
                                         maxLength={6}
-                                        value={verificationCode}
-                                        onChange={(e) => setVerificationCode(e.target.value)}
+                                        value={displayValue('verificationCode', verificationCode)}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                setComposing({ field: 'verificationCode', value: v });
+                                                return;
+                                            }
+                                            setComposing(null);
+                                            setVerificationCode(v);
+                                        }}
+                                        onCompositionEnd={(e) => {
+                                            const v = (e.target as HTMLInputElement).value;
+                                            setComposing(null);
+                                            setVerificationCode(v);
+                                        }}
                                         placeholder="000000"
                                         className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300 text-center font-bold tracking-[8px] text-lg"
                                     />

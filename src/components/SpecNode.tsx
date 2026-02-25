@@ -420,6 +420,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
 
     const [draggedIndex, setDraggedIndex] = React.useState<number | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
+    const [specNameComposing, setSpecNameComposing] = React.useState<string | null>(null);
     const screenOptionsRef = React.useRef<HTMLDivElement>(null);
 
     // 명세 그리드 컬럼 너비
@@ -723,9 +724,27 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                     <FileText size={16} className="flex-shrink-0 text-white/90" />
                     <input
                         type="text"
-                        value={screen.name}
-                        onChange={(e) => update({ name: e.target.value })}
-                        onBlur={(e) => syncUpdate({ name: e.target.value })}
+                        value={specNameComposing !== null ? specNameComposing : screen.name}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                setSpecNameComposing(v);
+                                return;
+                            }
+                            setSpecNameComposing(null);
+                            update({ name: v });
+                        }}
+                        onCompositionEnd={(e) => {
+                            const v = (e.target as HTMLInputElement).value;
+                            setSpecNameComposing(null);
+                            update({ name: v });
+                        }}
+                        onBlur={(e) => {
+                            const v = e.target.value;
+                            setSpecNameComposing(null);
+                            update({ name: v });
+                            syncUpdate({ name: v });
+                        }}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
                         className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}

@@ -27,6 +27,10 @@ const ProjectListPage: React.FC = () => {
     const [joinMode, setJoinMode] = useState<'CODE' | 'ID'>('CODE');
     const [joinCode, setJoinCode] = useState('');
 
+    const [composing, setComposing] = useState<{ field: string; value: string } | null>(null);
+    const displayValue = (field: string, propValue: string) =>
+        composing?.field === field ? composing.value : propValue;
+
     // Utility States
     const [isLoading, setIsLoading] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
@@ -573,8 +577,21 @@ const ProjectListPage: React.FC = () => {
                                 </label>
                                 <input
                                     type="text"
-                                    value={joinCode}
-                                    onChange={(e) => setJoinCode(joinMode === 'CODE' ? e.target.value.toUpperCase() : e.target.value)}
+                                    value={displayValue('joinCode', joinCode)}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                            setComposing({ field: 'joinCode', value: v });
+                                            return;
+                                        }
+                                        setComposing(null);
+                                        setJoinCode(joinMode === 'CODE' ? v.toUpperCase() : v);
+                                    }}
+                                    onCompositionEnd={(e) => {
+                                        const v = (e.target as HTMLInputElement).value;
+                                        setComposing(null);
+                                        setJoinCode(joinMode === 'CODE' ? v.toUpperCase() : v);
+                                    }}
                                     placeholder={joinMode === 'CODE' ? '8자리 초대 코드 입력' : '프로젝트 ID 입력'}
                                     className="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-bold tracking-wider text-center text-lg"
                                 />
@@ -660,8 +677,21 @@ const ProjectListPage: React.FC = () => {
                                 <input
                                     autoFocus
                                     type="text"
-                                    value={newProjectName}
-                                    onChange={(e) => setNewProjectName(e.target.value)}
+                                    value={displayValue('newProjectName', newProjectName)}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                            setComposing({ field: 'newProjectName', value: v });
+                                            return;
+                                        }
+                                        setComposing(null);
+                                        setNewProjectName(v);
+                                    }}
+                                    onCompositionEnd={(e) => {
+                                        const v = (e.target as HTMLInputElement).value;
+                                        setComposing(null);
+                                        setNewProjectName(v);
+                                    }}
                                     placeholder="프로젝트명을 입력하세요"
                                     className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white outline-none transition-all font-medium"
                                 />
@@ -689,8 +719,21 @@ const ProjectListPage: React.FC = () => {
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">설명 (선택사항)</label>
                                 <textarea
-                                    value={newProjectDesc}
-                                    onChange={(e) => setNewProjectDesc(e.target.value)}
+                                    value={displayValue('newProjectDesc', newProjectDesc)}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                            setComposing({ field: 'newProjectDesc', value: v });
+                                            return;
+                                        }
+                                        setComposing(null);
+                                        setNewProjectDesc(v);
+                                    }}
+                                    onCompositionEnd={(e) => {
+                                        const v = (e.target as HTMLTextAreaElement).value;
+                                        setComposing(null);
+                                        setNewProjectDesc(v);
+                                    }}
                                     placeholder="프로젝트 설명을 입력하세요"
                                     rows={2}
                                     className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white outline-none transition-all font-medium resize-none"
@@ -746,8 +789,21 @@ const ProjectListPage: React.FC = () => {
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
-                                        value={memberInput}
-                                        onChange={(e) => setMemberInput(e.target.value)}
+                                        value={displayValue('memberInput', memberInput)}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                setComposing({ field: 'memberInput', value: v });
+                                                return;
+                                            }
+                                            setComposing(null);
+                                            setMemberInput(v);
+                                        }}
+                                        onCompositionEnd={(e) => {
+                                            const v = (e.target as HTMLInputElement).value;
+                                            setComposing(null);
+                                            setMemberInput(v);
+                                        }}
                                         placeholder="이메일 입력"
                                         className="flex-1 px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none"
                                     />

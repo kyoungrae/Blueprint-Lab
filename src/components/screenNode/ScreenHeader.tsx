@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { Screen } from '../../types/screenDesign';
 import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../../types/screenDesign';
 import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal } from 'lucide-react';
@@ -30,6 +30,26 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
     setShowScreenOptionsPanel,
     screenOptionsRef,
 }) => {
+    const [composing, setComposing] = useState<string | null>(null);
+    const displayValue = composing !== null ? composing : screen.name;
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            setComposing(v);
+            return;
+        }
+        setComposing(null);
+        update({ name: v });
+    };
+
+    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        setComposing(null);
+        update({ name: v });
+        syncUpdate({ name: v });
+    };
+
     return (
         <div
             className={`nodrag nopan px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[13px]`}
@@ -38,9 +58,14 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
             <Monitor size={16} className="flex-shrink-0 text-white/90" />
             <input
                 type="text"
-                value={screen.name}
-                onChange={(e) => update({ name: e.target.value })}
-                onBlur={(e) => syncUpdate({ name: e.target.value })}
+                value={displayValue}
+                onChange={handleChange}
+                onCompositionEnd={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    setComposing(null);
+                    update({ name: v });
+                }}
+                onBlur={handleBlur}
                 onMouseDown={(e) => !isLocked && e.stopPropagation()}
                 disabled={isLocked}
                 className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
