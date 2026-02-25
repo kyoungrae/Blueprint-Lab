@@ -75,6 +75,11 @@ export interface Screen {
     isLocked?: boolean;
     contentMode?: 'IMAGE' | 'DRAW'; // UI 콘텐츠 모드 (이미지 업로드 vs 직접 그리기)
     drawElements?: DrawElement[];   // 직접 그리기 영역의 요소들
+    /** 캔버스 격자 보조선 (draw 요소와 분리 관리) */
+    guideLines?: {
+        vertical: number[];
+        horizontal: number[];
+    };
 }
 
 /** 테이블 셀 데이터 (엑셀형 고도화) */

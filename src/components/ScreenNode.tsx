@@ -4,7 +4,7 @@ import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
 import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
 
-import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop } from 'lucide-react';
+import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2 } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -167,6 +167,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuides | null>(null);
     const snapStateRef = useRef<SnapState>({});
     const [dragPreviewPositions, setDragPreviewPositions] = useState<Record<string, { x: number; y: number }> | null>(null);
+    const [showGridPanel, setShowGridPanel] = useState(false);
+    const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
+    const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
+    const guideLineDragRef = useRef<{ axis: 'vertical' | 'horizontal'; value: number } | null>(null);
 
     const [showStylePanel, setShowStylePanel] = useState(false);
     const [showLayerPanel, setShowLayerPanel] = useState(false);
@@ -198,6 +202,24 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         window.addEventListener('mousemove', onMove, true);
         window.addEventListener('mouseup', onUp);
     }, [screenToFlowPosition, tablePickerPos]);
+    const handleGridPanelHeaderMouseDown = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const flowAtClick = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        const offsetFlowX = flowAtClick.x - gridPanelPos.x;
+        const offsetFlowY = flowAtClick.y - gridPanelPos.y;
+        const onMove = (me: MouseEvent) => {
+            me.stopImmediatePropagation();
+            const flowAtMove = screenToFlowPosition({ x: me.clientX, y: me.clientY });
+            setGridPanelPos({ x: flowAtMove.x - offsetFlowX, y: flowAtMove.y - offsetFlowY });
+        };
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp);
+    }, [screenToFlowPosition, gridPanelPos]);
     const [showImageStylePanel, setShowImageStylePanel] = useState(false);
     const [imageStylePanelPos, setImageStylePanelPos] = useState({ x: 0, y: 0 });
     const [imageCropMode, setImageCropMode] = useState(false);
@@ -218,10 +240,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             if (showTablePicker && !isDraggingTablePickerRef.current && tablePickerRef.current && !tablePickerRef.current.contains(target) && !el?.closest('[data-table-picker-portal]')) {
                 setShowTablePicker(false);
             }
+            if (showGridPanel && gridPanelAnchorRef.current && !gridPanelAnchorRef.current.contains(target) && !el?.closest('[data-grid-panel]')) {
+                setShowGridPanel(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside, true);
         return () => document.removeEventListener('mousedown', handleClickOutside, true);
-    }, [showTablePicker]);
+    }, [showTablePicker, showGridPanel]);
 
     // 이미지 스타일 패널이 닫히면 크롭 모드도 항상 해제
     useEffect(() => {
@@ -417,7 +442,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 return;
             }
             const el = getClickTargetElement(e.target);
-            if (el?.closest('[data-image-style-panel], [data-table-picker-portal], [data-style-panel], [data-layer-panel], [data-table-panel]')) {
+            if (el?.closest('[data-image-style-panel], [data-table-picker-portal], [data-style-panel], [data-layer-panel], [data-table-panel], [data-grid-panel]')) {
                 setLastInteractedScreenId(screen.id);
                 return;
             }
@@ -436,6 +461,100 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
 
     const drawElements = screen.drawElements || [];
+    const guideLines = screen.guideLines || { vertical: [], horizontal: [] };
+
+    const addGuideLine = (axis: 'vertical' | 'horizontal') => {
+        const cw = canvasRef.current?.clientWidth ?? 400;
+        const ch = canvasRef.current?.clientHeight ?? 300;
+        if (cw <= 0 || ch <= 0) return;
+        const dim = axis === 'vertical' ? cw : ch;
+        const existing = axis === 'vertical' ? guideLines.vertical : guideLines.horizontal;
+        const minGap = 20;
+        const candidates = [0.5, 0.25, 0.75, 1/6, 2/6, 4/6, 5/6, 1/8, 3/8, 5/8, 7/8, 1/10, 3/10, 5/10, 7/10, 9/10]
+            .map(r => Math.round(dim * r))
+            .filter(p => p >= minGap && p <= dim - minGap)
+            .sort((a, b) => {
+                const distA = Math.abs(a - dim / 2);
+                const distB = Math.abs(b - dim / 2);
+                return distA - distB;
+            });
+        let nextValue = candidates.find(p => !existing.some(v => Math.abs(v - p) < minGap));
+        if (nextValue == null) {
+            const last = existing.length > 0 ? Math.max(...existing) : 0;
+            nextValue = Math.min(dim - minGap, last + minGap);
+            if (existing.some(v => Math.abs(v - nextValue!) < minGap)) {
+                nextValue = Math.round(dim / 2);
+            }
+        }
+        const nextLines = {
+            vertical: axis === 'vertical' ? [...guideLines.vertical, nextValue] : [...guideLines.vertical],
+            horizontal: axis === 'horizontal' ? [...guideLines.horizontal, nextValue] : [...guideLines.horizontal],
+        };
+        nextLines.vertical.sort((a, b) => a - b);
+        nextLines.horizontal.sort((a, b) => a - b);
+        update({ guideLines: nextLines });
+        syncUpdate({ guideLines: nextLines });
+    };
+
+    const moveGuideLine = (axis: 'vertical' | 'horizontal', oldValue: number, newValue: number) => {
+        const cw = canvasRef.current?.clientWidth ?? 400;
+        const ch = canvasRef.current?.clientHeight ?? 300;
+        const max = axis === 'vertical' ? cw : ch;
+        const clamped = Math.max(2, Math.min(max - 2, newValue));
+        const current = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.guideLines;
+        const vert = current?.vertical ?? guideLines.vertical;
+        const horz = current?.horizontal ?? guideLines.horizontal;
+        const nextLines = {
+            vertical: axis === 'vertical' ? vert.map(v => v === oldValue ? clamped : v) : [...vert],
+            horizontal: axis === 'horizontal' ? horz.map(v => v === oldValue ? clamped : v) : [...horz],
+        };
+        nextLines.vertical.sort((a, b) => a - b);
+        nextLines.horizontal.sort((a, b) => a - b);
+        update({ guideLines: nextLines });
+    };
+
+    const removeGuideLine = (axis: 'vertical' | 'horizontal', value: number) => {
+        const nextLines = {
+            vertical: guideLines.vertical.filter(v => !(axis === 'vertical' && v === value)),
+            horizontal: guideLines.horizontal.filter(v => !(axis === 'horizontal' && v === value)),
+        };
+        update({ guideLines: nextLines });
+        syncUpdate({ guideLines: nextLines });
+    };
+
+    const handleGuideLineDragStart = useCallback((axis: 'vertical' | 'horizontal', value: number, e: React.MouseEvent) => {
+        if (isLocked || !canvasRef.current) return;
+        e.stopPropagation();
+        e.preventDefault();
+        guideLineDragRef.current = { axis, value };
+        const rect = canvasRef.current.getBoundingClientRect();
+        const scaleX = canvasRef.current.clientWidth / rect.width;
+        const scaleY = canvasRef.current.clientHeight / rect.height;
+        const cw = canvasRef.current.clientWidth;
+        const ch = canvasRef.current.clientHeight;
+
+        const onMove = (me: MouseEvent) => {
+            if (!guideLineDragRef.current) return;
+            const { axis: ax, value: oldVal } = guideLineDragRef.current;
+            const newVal = ax === 'vertical'
+                ? Math.round((me.clientX - rect.left) * scaleX)
+                : Math.round((me.clientY - rect.top) * scaleY);
+            const clamped = Math.max(2, Math.min((ax === 'vertical' ? cw : ch) - 2, newVal));
+            moveGuideLine(ax, oldVal, clamped);
+            guideLineDragRef.current.value = clamped;
+        };
+        const onUp = () => {
+            if (guideLineDragRef.current) {
+                const current = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.guideLines;
+                if (current) syncUpdate({ guideLines: current });
+            }
+            guideLineDragRef.current = null;
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('mouseup', onUp, true);
+        };
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp, true);
+    }, [isLocked, screen.id, syncUpdate]);
 
     // Drawing Element Resizing Logic
     const elementResizeStartRef = useRef<{
@@ -1512,7 +1631,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             <EntityLockBadge entityId={screen.id} />
             <div
                 ref={nodeRef}
-                className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected && !isExporting
+                className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-visible ${selected && !isExporting
                     ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                     : isLocked
                         ? 'border-gray-200 shadow-md'
@@ -1916,6 +2035,77 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${activeTool === 'func-no' ? 'bg-red-600 text-white' : 'bg-red-500 text-white'}`}>N</div>
                                                         </button>
                                                     </PremiumTooltip>
+                                                    <div className="relative" ref={gridPanelAnchorRef}>
+                                                        <PremiumTooltip label="격자 보기">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (!showGridPanel) {
+                                                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                        const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                        setGridPanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                    }
+                                                                    setShowGridPanel(prev => !prev);
+                                                                }}
+                                                                className={`p-2 rounded-lg transition-colors ${showGridPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                            >
+                                                                <Grid3x3 size={18} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        {showGridPanel && createPortal(
+                                                            (() => {
+                                                                const screenPos = flowToScreenPosition({ x: gridPanelPos.x, y: gridPanelPos.y });
+                                                                return (
+                                                            <div
+                                                                data-grid-panel
+                                                                className="nodrag nopan floating-panel fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-2 z-[9000] flex flex-col animate-in fade-in zoom-in origin-top-left"
+                                                                style={{
+                                                                    left: screenPos.x,
+                                                                    top: screenPos.y,
+                                                                }}
+                                                                onMouseDown={(e) => e.stopPropagation()}
+                                                            >
+                                                                <div
+                                                                    className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2 cursor-grab active:cursor-grabbing group/header"
+                                                                    onMouseDown={handleGridPanelHeaderMouseDown}
+                                                                    title="드래그하여 이동"
+                                                                >
+                                                                    <div className="flex items-center gap-2">
+                                                                        <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
+                                                                        <Grid3x3 size={12} className="text-[#2c3e7c]" />
+                                                                        <span className="text-[11px] font-bold text-gray-600">격자 보기</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                <PremiumTooltip label="세로줄 추가">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            addGuideLine('vertical');
+                                                                        }}
+                                                                        className="px-2 py-1 text-[11px] rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700"
+                                                                    >
+                                                                        세로줄 추가
+                                                                    </button>
+                                                                </PremiumTooltip>
+                                                                <PremiumTooltip label="가로줄 추가">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            addGuideLine('horizontal');
+                                                                        }}
+                                                                        className="px-2 py-1 text-[11px] rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700"
+                                                                    >
+                                                                        가로줄 추가
+                                                                    </button>
+                                                                </PremiumTooltip>
+                                                                </div>
+                                                            </div>
+                                                                );
+                                                            })(),
+                                                            getPanelPortalRoot()
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -2875,6 +3065,110 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             }}
                                         />
                                     )}
+
+                                    {/* Canvas Grid Lines (보조선) - 잠금 시 숨김, 드래그 이동, 호버 시 삭제 버튼 표시 */}
+                                    {!isLocked && guideLines.vertical.map((vx) => (
+                                        <div
+                                            key={`grid-v-${vx}`}
+                                            className="group nodrag"
+                                            style={{
+                                                position: 'absolute',
+                                                left: vx - 12,
+                                                top: 0,
+                                                bottom: 0,
+                                                width: 24,
+                                                zIndex: 4500,
+                                                cursor: 'col-resize',
+                                            }}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                if (!(e.target as HTMLElement).closest('[data-guide-delete]')) {
+                                                    handleGuideLineDragStart('vertical', vx, e);
+                                                }
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: 11,
+                                                    top: 0,
+                                                    bottom: 0,
+                                                    width: 2,
+                                                    backgroundColor: 'rgba(232, 223, 177, 0.35)',
+                                                    pointerEvents: 'none',
+                                                }}
+                                            />
+                                            <div
+                                                data-guide-delete
+                                                className="opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity absolute"
+                                                style={{ left: 0, top: 4 }}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                            >
+                                                <PremiumTooltip label="세로줄 삭제">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            removeGuideLine('vertical', vx);
+                                                        }}
+                                                        className="w-5 h-5 rounded-md bg-white/80 hover:bg-white text-slate-500 hover:text-red-500 border border-slate-200 flex items-center justify-center shadow-sm"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {!isLocked && guideLines.horizontal.map((vy) => (
+                                        <div
+                                            key={`grid-h-${vy}`}
+                                            className="group nodrag"
+                                            style={{
+                                                position: 'absolute',
+                                                left: 0,
+                                                right: 0,
+                                                top: vy - 12,
+                                                height: 24,
+                                                zIndex: 4500,
+                                                cursor: 'row-resize',
+                                            }}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                if (!(e.target as HTMLElement).closest('[data-guide-delete]')) {
+                                                    handleGuideLineDragStart('horizontal', vy, e);
+                                                }
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: 0,
+                                                    right: 0,
+                                                    top: 11,
+                                                    height: 2,
+                                                    backgroundColor: 'rgba(232, 223, 177, 0.35)',
+                                                    pointerEvents: 'none',
+                                                }}
+                                            />
+                                            <div
+                                                data-guide-delete
+                                                className="opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity absolute"
+                                                style={{ left: 4, top: 0 }}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                            >
+                                                <PremiumTooltip label="가로줄 삭제">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            removeGuideLine('horizontal', vy);
+                                                        }}
+                                                        className="w-5 h-5 rounded-md bg-white/80 hover:bg-white text-slate-500 hover:text-red-500 border border-slate-200 flex items-center justify-center shadow-sm"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </PremiumTooltip>
+                                            </div>
+                                        </div>
+                                    ))}
 
                                     {/* Smart Guides - 정렬 시 가이드라인 */}
                                     {alignmentGuides && <AlignmentGuidesOverlay guides={alignmentGuides} />}
