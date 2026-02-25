@@ -26,10 +26,13 @@ function minBoxDistance(
     return Math.sqrt(dx * dx + dy * dy);
 }
 
+export type GuideLinesInput = { vertical: number[]; horizontal: number[] };
+
 export function getSmartGuidesAndSnap(
     draggedBounds: { left: number; top: number; right: number; bottom: number; centerX: number; centerY: number },
     otherElements: Array<{ id: string; x: number; y: number; width: number; height: number }>,
-    prevSnap: SnapState = {}
+    prevSnap: SnapState = {},
+    guideLines?: GuideLinesInput
 ): { deltaX: number; deltaY: number; guides: AlignmentGuides; nextSnap: SnapState } {
     const guides: AlignmentGuides = { vertical: [], horizontal: [] };
 
@@ -74,6 +77,7 @@ export function getSmartGuidesAndSnap(
         | { dist: number; delta: number; targetId: string; targetValue: number; ownEdge: OwnYEdge }
         | undefined;
 
+    // 1) 다른 객체와의 스냅
     for (const other of nearbyElements) {
         const otherXValues = [other.x, other.x + other.width, other.x + other.width / 2];
         const otherYValues = [other.y, other.y + other.height, other.y + other.height / 2];
@@ -100,6 +104,38 @@ export function getSmartGuidesAndSnap(
                         dist,
                         delta: targetValue - ourEdge.value,
                         targetId: other.id,
+                        targetValue,
+                        ownEdge: ourEdge.edge,
+                    };
+                }
+            }
+        }
+    }
+
+    // 2) 보조선(guideLines)과의 스냅 - 세로선(x), 가로선(y)
+    if (guideLines) {
+        for (const targetValue of guideLines.vertical) {
+            for (const ourEdge of ourXEdges) {
+                const dist = Math.abs(ourEdge.value - targetValue);
+                if (dist <= SNAP_THRESHOLD && (!bestX || dist < bestX.dist)) {
+                    bestX = {
+                        dist,
+                        delta: targetValue - ourEdge.value,
+                        targetId: `guideLine-v-${targetValue}`,
+                        targetValue,
+                        ownEdge: ourEdge.edge,
+                    };
+                }
+            }
+        }
+        for (const targetValue of guideLines.horizontal) {
+            for (const ourEdge of ourYEdges) {
+                const dist = Math.abs(ourEdge.value - targetValue);
+                if (dist <= SNAP_THRESHOLD && (!bestY || dist < bestY.dist)) {
+                    bestY = {
+                        dist,
+                        delta: targetValue - ourEdge.value,
+                        targetId: `guideLine-h-${targetValue}`,
                         targetValue,
                         ownEdge: ourEdge.edge,
                     };

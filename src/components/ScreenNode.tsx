@@ -171,6 +171,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
     const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
     const guideLineDragRef = useRef<{ axis: 'vertical' | 'horizontal'; value: number } | null>(null);
+    const [selectedGuideLine, setSelectedGuideLine] = useState<{ axis: 'vertical' | 'horizontal'; value: number } | null>(null);
 
     const [showStylePanel, setShowStylePanel] = useState(false);
     const [showLayerPanel, setShowLayerPanel] = useState(false);
@@ -242,6 +243,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             }
             if (showGridPanel && gridPanelAnchorRef.current && !gridPanelAnchorRef.current.contains(target) && !el?.closest('[data-grid-panel]')) {
                 setShowGridPanel(false);
+            }
+            if (!el?.closest('[data-guide-line]')) {
+                setSelectedGuideLine(null);
             }
         };
         document.addEventListener('mousedown', handleClickOutside, true);
@@ -527,6 +531,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         e.stopPropagation();
         e.preventDefault();
         guideLineDragRef.current = { axis, value };
+        let hasMoved = false;
         const rect = canvasRef.current.getBoundingClientRect();
         const scaleX = canvasRef.current.clientWidth / rect.width;
         const scaleY = canvasRef.current.clientHeight / rect.height;
@@ -535,6 +540,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
         const onMove = (me: MouseEvent) => {
             if (!guideLineDragRef.current) return;
+            hasMoved = true;
             const { axis: ax, value: oldVal } = guideLineDragRef.current;
             const newVal = ax === 'vertical'
                 ? Math.round((me.clientX - rect.left) * scaleX)
@@ -547,6 +553,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             if (guideLineDragRef.current) {
                 const current = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.guideLines;
                 if (current) syncUpdate({ guideLines: current });
+                if (!hasMoved) {
+                    setSelectedGuideLine({ axis, value: guideLineDragRef.current.value });
+                } else {
+                    setSelectedGuideLine(null);
+                }
             }
             guideLineDragRef.current = null;
             window.removeEventListener('mousemove', onMove, true);
@@ -663,6 +674,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     setEditingTextId(null);
                     setSelectedCellIndices([]);
                     setEditingCellIndex(null);
+                    setSelectedGuideLine(null);
                 }
                 setIsDragSelecting(true);
                 setDragSelectStart({ x, y });
@@ -908,7 +920,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const { deltaX, deltaY, guides, nextSnap } = getSmartGuidesAndSnap(
                 { left: minNewX, right: maxRight, centerX, top: minNewY, bottom: maxBottom, centerY },
                 otherElements,
-                snapStateRef.current
+                snapStateRef.current,
+                screen.guideLinesVisible !== false ? guideLines : undefined
             );
             snapStateRef.current = nextSnap;
 
@@ -2076,7 +2089,23 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         <span className="text-[11px] font-bold text-gray-600">격자 보기</span>
                                                                     </div>
                                                                 </div>
-                                                                <div className="flex items-center gap-1">
+                                                                <div className="flex items-center justify-between py-2 mb-2 border-b border-gray-100">
+                                                                    <span className="text-[11px] font-medium text-gray-600">격자 활성화</span>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            const next = !(screen.guideLinesVisible !== false);
+                                                                            update({ guideLinesVisible: next });
+                                                                            syncUpdate({ guideLinesVisible: next });
+                                                                        }}
+                                                                        className={`px-3 py-1 text-[11px] rounded-lg font-medium transition-colors ${screen.guideLinesVisible !== false ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}
+                                                                    >
+                                                                        {screen.guideLinesVisible !== false ? 'ON' : 'OFF'}
+                                                                    </button>
+                                                                </div>
+                                                                <div className="flex flex-col gap-1">
+                                                                    <span className="text-[10px] font-medium text-gray-500">격자 추가</span>
+                                                                    <div className="flex items-center gap-1">
                                                                 <PremiumTooltip label="세로줄 추가">
                                                                     <button
                                                                         onClick={(e) => {
@@ -2099,6 +2128,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         가로줄 추가
                                                                     </button>
                                                                 </PremiumTooltip>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                                 );
@@ -3066,10 +3096,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         />
                                     )}
 
-                                    {/* Canvas Grid Lines (보조선) - 잠금 시 숨김, 드래그 이동, 호버 시 삭제 버튼 표시 */}
-                                    {!isLocked && guideLines.vertical.map((vx) => (
+                                    {/* Canvas Grid Lines (보조선) - 잠금/비활성화 시 숨김, 드래그 이동, 선택 시 삭제 버튼 표시 */}
+                                    {!isLocked && screen.guideLinesVisible !== false && guideLines.vertical.map((vx) => (
                                         <div
                                             key={`grid-v-${vx}`}
+                                            data-guide-line
                                             className="group nodrag"
                                             style={{
                                                 position: 'absolute',
@@ -3100,7 +3131,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             />
                                             <div
                                                 data-guide-delete
-                                                className="opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity absolute"
+                                                className={`transition-opacity absolute ${selectedGuideLine?.axis === 'vertical' && selectedGuideLine?.value === vx ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                                                 style={{ left: 0, top: 4 }}
                                                 onMouseDown={(e) => e.stopPropagation()}
                                             >
@@ -3109,6 +3140,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             removeGuideLine('vertical', vx);
+                                                            setSelectedGuideLine(null);
                                                         }}
                                                         className="w-5 h-5 rounded-md bg-white/80 hover:bg-white text-slate-500 hover:text-red-500 border border-slate-200 flex items-center justify-center shadow-sm"
                                                     >
@@ -3118,9 +3150,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             </div>
                                         </div>
                                     ))}
-                                    {!isLocked && guideLines.horizontal.map((vy) => (
+                                    {!isLocked && screen.guideLinesVisible !== false && guideLines.horizontal.map((vy) => (
                                         <div
                                             key={`grid-h-${vy}`}
+                                            data-guide-line
                                             className="group nodrag"
                                             style={{
                                                 position: 'absolute',
@@ -3151,7 +3184,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             />
                                             <div
                                                 data-guide-delete
-                                                className="opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity absolute"
+                                                className={`transition-opacity absolute ${selectedGuideLine?.axis === 'horizontal' && selectedGuideLine?.value === vy ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                                                 style={{ left: 4, top: 0 }}
                                                 onMouseDown={(e) => e.stopPropagation()}
                                             >
@@ -3160,6 +3193,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             removeGuideLine('horizontal', vy);
+                                                            setSelectedGuideLine(null);
                                                         }}
                                                         className="w-5 h-5 rounded-md bg-white/80 hover:bg-white text-slate-500 hover:text-red-500 border border-slate-200 flex items-center justify-center shadow-sm"
                                                     >

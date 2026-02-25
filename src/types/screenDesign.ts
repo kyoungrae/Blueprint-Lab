@@ -80,6 +80,8 @@ export interface Screen {
         vertical: number[];
         horizontal: number[];
     };
+    /** 격자 보조선 표시 여부 (기본 true) */
+    guideLinesVisible?: boolean;
 }
 
 /** 테이블 셀 데이터 (엑셀형 고도화) */
