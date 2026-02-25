@@ -102,6 +102,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const isLocalLocked = screen.isLocked ?? true;
     const isLocked = isLocalLocked || isLockedByOther;
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
+    const [tableListPanelPos, setTableListPanelPos] = React.useState<{ x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
     const tableListRef = useRef<HTMLDivElement>(null);
     const screenOptionsRef = useRef<HTMLDivElement>(null);
@@ -232,7 +233,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
             const el = getClickTargetElement(e.target);
-            if (tableListRef.current && !tableListRef.current.contains(target)) {
+            if (tableListRef.current && !tableListRef.current.contains(target) && !el?.closest('[data-table-list-portal]')) {
                 setIsTableListOpen(false);
             }
             if (screenOptionsRef.current && !screenOptionsRef.current.contains(target)) {
@@ -259,8 +260,26 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         }
     }, [showImageStylePanel, imageCropMode]);
 
-
-
+    // 테이블 추가 패널: 생성 위치는 항상 "추가" 버튼 바로 아래로 고정
+    React.useLayoutEffect(() => {
+        if (!isTableListOpen || !tableListRef.current || !rightPaneRef.current) {
+            setTableListPanelPos(null);
+            return;
+        }
+        const rect = tableListRef.current.getBoundingClientRect();
+        const paneRect = rightPaneRef.current.getBoundingClientRect();
+        const DROPDOWN_W = 192;
+        const PAD = 8;
+        const spaceBelow = window.innerHeight - rect.bottom - PAD;
+        const spaceAbove = rect.top - PAD;
+        const openUpward = false;
+        const anchorScreenX = Math.max(paneRect.left + PAD, Math.min(rect.left, paneRect.right - DROPDOWN_W - PAD));
+        const anchorScreenY = rect.bottom + 4;
+        const flowPos = screenToFlowPosition({ x: anchorScreenX, y: anchorScreenY });
+        setTableListPanelPos({ x: flowPos.x, y: flowPos.y, openUpward, spaceBelow, spaceAbove });
+    // 스타일 패널과 동일 패턴: 열릴 때 앵커를 저장하고 줌 시 재계산하지 않음
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isTableListOpen]);
 
     const tableRowResizeRef = useRef<{ elId: string, rowIdx: number, startY: number, startHeights: number[] } | null>(null);
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
@@ -446,7 +465,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 return;
             }
             const el = getClickTargetElement(e.target);
-            if (el?.closest('[data-image-style-panel], [data-table-picker-portal], [data-style-panel], [data-layer-panel], [data-table-panel], [data-grid-panel]')) {
+            if (el?.closest('[data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-style-panel], [data-layer-panel], [data-table-panel], [data-grid-panel]')) {
                 setLastInteractedScreenId(screen.id);
                 return;
             }
@@ -2075,6 +2094,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 style={{
                                                                     left: screenPos.x,
                                                                     top: screenPos.y,
+                                                                    transform: `scale(${0.85 * zoom})`,
                                                                 }}
                                                                 onMouseDown={(e) => e.stopPropagation()}
                                                             >
@@ -3223,6 +3243,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         linkedErdProject={linkedErdProject}
                         erdTables={erdTables}
                         drawElements={drawElements}
+                        zoom={zoom}
+                        tableListPanelPos={tableListPanelPos}
+                        flowToScreenPosition={flowToScreenPosition}
                     />
                     </div>
                 </div> {/* End Body Split Layout */}

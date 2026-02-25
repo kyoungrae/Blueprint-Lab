@@ -1,9 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Trash2, Database, GripHorizontal } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
 
 const DEFAULT_RATIOS: [number, number, number] = [40, 35, 25];
 const MIN_PANEL_PCT = 10;
+const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 const RESIZE_HANDLE_HEIGHT = 6;
 const TOTAL_HANDLE_HEIGHT = RESIZE_HANDLE_HEIGHT * 2;
 
@@ -19,6 +21,9 @@ interface RightPaneProps {
     linkedErdProject: any;
     erdTables: string[];
     drawElements: DrawElement[];
+    zoom: number;
+    tableListPanelPos: { x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null;
+    flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
 }
 
 const getRows = (text: string | undefined, minRows = 2): number => {
@@ -39,6 +44,9 @@ const RightPane: React.FC<RightPaneProps> = ({
     linkedErdProject,
     erdTables,
     drawElements,
+    zoom,
+    tableListPanelPos,
+    flowToScreenPosition,
 }) => {
     const funcNos = (drawElements || [])
         .filter(el => el.type === 'func-no')
@@ -49,6 +57,31 @@ const RightPane: React.FC<RightPaneProps> = ({
         });
 
     const tableLines = (screen.relatedTables || '').split('\n').filter(line => line.trim() !== '');
+
+    useEffect(() => {
+        if (!isTableListOpen) return;
+
+        // Capture wheel at window-level first so React Flow cannot pan the canvas
+        // when the pointer is inside the table-list dropdown.
+        const handleWindowWheelCapture = (e: WheelEvent) => {
+            const target = e.target;
+            if (!(target instanceof Element)) return;
+            const panel = target.closest('[data-table-list-portal]') as HTMLDivElement | null;
+            if (!panel) return;
+
+            // Keep canvas zoom gesture available (pinch / ctrl+wheel).
+            if (e.ctrlKey || e.metaKey) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            panel.scrollTop += e.deltaY;
+            panel.scrollLeft += e.deltaX;
+        };
+
+        window.addEventListener('wheel', handleWindowWheelCapture, { capture: true, passive: false });
+        return () => window.removeEventListener('wheel', handleWindowWheelCapture, true);
+    }, [isTableListOpen]);
 
     // IME composition (한글 등) 시 자음/모음 분리 방지
     const [composing, setComposing] = useState<{ field: string; value: string } | null>(null);
@@ -245,42 +278,58 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 <Database size={10} />
                                 <span>추가</span>
                             </button>
-                            {isTableListOpen && (
-                                <div
-                                    ref={(el) => {
-                                        if (el) el.addEventListener('wheel', (e) => e.stopPropagation(), { passive: false });
-                                    }}
-                                    className="nodrag no-pan-scroll absolute right-0 top-full mt-1 w-48 max-h-56 overflow-y-auto bg-white border border-gray-200 shadow-xl rounded-lg z-[1001] animate-in fade-in zoom-in duration-150 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
-                                    onWheel={(e) => e.stopPropagation()}
-                                    onWheelCapture={(e) => e.stopPropagation()}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                >
-                                    <div className="p-1">
-                                        {erdTables.length > 0 ? erdTables.map(table => (
-                                            <button
-                                                key={table}
-                                                className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const current = screen.relatedTables || '';
-                                                    const toAdd = `• ${table}`;
-                                                    if (!current.includes(table)) {
-                                                        const newValue = current ? `${current}\n${toAdd}` : toAdd;
-                                                        update({ relatedTables: newValue });
-                                                        syncUpdate({ relatedTables: newValue });
-                                                    }
-                                                    setIsTableListOpen(false);
-                                                }}
-                                                onMouseDown={(e) => e.stopPropagation()}
-                                            >
-                                                {table}
-                                            </button>
-                                        )) : (
-                                            <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
-                                        )}
-                                    </div>
-                                </div>
+                            {isTableListOpen && tableListPanelPos && createPortal(
+                                (() => {
+                                    const stored = tableListPanelPos;
+                                    const screenPos = flowToScreenPosition({ x: stored.x, y: stored.y });
+                                    return (
+                                        <div
+                                            data-table-list-portal
+                                            className="nodrag nopan nowheel floating-panel fixed w-48 max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
+                                            style={{
+                                                left: screenPos.x,
+                                                ...(stored.openUpward ? { bottom: window.innerHeight - screenPos.y } : { top: screenPos.y }),
+                                                maxHeight: Math.max(100, Math.min(280, stored.openUpward ? stored.spaceAbove : stored.spaceBelow, window.innerHeight * 0.7)),
+                                                transform: `scale(${0.85 * zoom})`,
+                                                transformOrigin: stored.openUpward ? 'bottom left' : 'top left',
+                                            }}
+                                            onWheel={(e) => {
+                                                e.stopPropagation();
+                                            }}
+                                            onWheelCapture={(e) => {
+                                                e.stopPropagation();
+                                            }}
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                        >
+                                            <div className="p-1">
+                                                {erdTables.length > 0 ? erdTables.map(table => (
+                                                    <button
+                                                        key={table}
+                                                        className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const current = screen.relatedTables || '';
+                                                            const toAdd = `• ${table}`;
+                                                            if (!current.includes(table)) {
+                                                                const newValue = current ? `${current}\n${toAdd}` : toAdd;
+                                                                update({ relatedTables: newValue });
+                                                                syncUpdate({ relatedTables: newValue });
+                                                            }
+                                                            setIsTableListOpen(false);
+                                                        }}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                    >
+                                                        {table}
+                                                    </button>
+                                                )) : (
+                                                    <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })(),
+                                getPanelPortalRoot()
                             )}
                         </div>
                     )}

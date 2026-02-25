@@ -128,7 +128,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     useEffect(() => {
         const handleWheel = (e: WheelEvent) => {
             const isOverPopup = (e.target as Element)?.closest?.(
-                '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-grid-panel], .floating-panel'
+                '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-grid-panel], .floating-panel'
             );
             if (!isOverPopup) return;
 
