@@ -1,0 +1,150 @@
+import React from 'react';
+import type { Screen } from '../../types/screenDesign';
+import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../../types/screenDesign';
+import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal } from 'lucide-react';
+
+interface ScreenHeaderProps {
+    screen: Screen;
+    isLocked: boolean;
+    isLockedByOther: boolean;
+    lockedBy: string | null | undefined;
+    update: (updates: Partial<Screen>) => void;
+    syncUpdate: (updates: Partial<Screen>) => void;
+    onToggleLock: (e?: React.MouseEvent) => void;
+    onDelete: (e: React.MouseEvent) => void;
+    showScreenOptionsPanel: boolean;
+    setShowScreenOptionsPanel: (v: boolean | ((prev: boolean) => boolean)) => void;
+    screenOptionsRef: React.RefObject<HTMLDivElement | null>;
+}
+
+export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
+    screen,
+    isLocked,
+    isLockedByOther,
+    lockedBy,
+    update,
+    syncUpdate,
+    onToggleLock,
+    onDelete,
+    showScreenOptionsPanel,
+    setShowScreenOptionsPanel,
+    screenOptionsRef,
+}) => {
+    return (
+        <div
+            className={`nodrag nopan px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[13px]`}
+            onMouseDown={(e) => e.stopPropagation()}
+        >
+            <Monitor size={16} className="flex-shrink-0 text-white/90" />
+            <input
+                type="text"
+                value={screen.name}
+                onChange={(e) => update({ name: e.target.value })}
+                onBlur={(e) => syncUpdate({ name: e.target.value })}
+                onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                disabled={isLocked}
+                className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
+                placeholder="화면명"
+                spellCheck={false}
+            />
+
+            <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
+                <div className="relative" ref={screenOptionsRef}>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setShowScreenOptionsPanel((v) => !v);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
+                        title="화면 옵션"
+                    >
+                        <SlidersHorizontal size={16} />
+                    </button>
+                    {showScreenOptionsPanel && (
+                        <div
+                            className="nodrag absolute right-0 top-full mt-1.5 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in-95 duration-150"
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">용지 크기</div>
+                            <div className="grid grid-cols-2 gap-1.5 mb-3">
+                                {PAGE_SIZE_OPTIONS.map((s) => {
+                                    const dim = PAGE_SIZE_DIMENSIONS_MM[s];
+                                    const ori = (screen.pageOrientation || 'portrait') as 'portrait' | 'landscape';
+                                    const labelW = ori === 'portrait' ? dim.w : dim.h;
+                                    const labelH = ori === 'portrait' ? dim.h : dim.w;
+                                    return (
+                                        <button
+                                            key={s}
+                                            type="button"
+                                            onClick={() => {
+                                                update({ pageSize: s });
+                                                syncUpdate({ pageSize: s });
+                                            }}
+                                            className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                                (screen.pageSize || 'A4') === s ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}
+                                        >
+                                            <span className="block">{s}</span>
+                                            <span className="block text-[8px] font-normal opacity-90">
+                                                {labelW}×{labelH}mm
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">방향</div>
+                            <div className="flex gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        update({ pageOrientation: 'portrait' });
+                                        syncUpdate({ pageOrientation: 'portrait' });
+                                    }}
+                                    className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                        (screen.pageOrientation || 'portrait') === 'portrait' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    <RectangleVertical size={12} /> 세로
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        update({ pageOrientation: 'landscape' });
+                                        syncUpdate({ pageOrientation: 'landscape' });
+                                    }}
+                                    className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                        screen.pageOrientation === 'landscape' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    <RectangleHorizontal size={12} /> 가로
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+                <button
+                    onClick={onToggleLock}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    disabled={isLockedByOther}
+                    className={`nodrag p-1.5 rounded-md transition-colors pointer-events-auto ${
+                        isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'
+                    }`}
+                    title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? '잠금 해제' : '잠금'}
+                >
+                    {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                </button>
+                {!isLocked && (
+                    <button
+                        onClick={onDelete}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="nodrag opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-500 rounded-md text-white/90"
+                        title="삭제"
+                    >
+                        <X size={16} />
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+};

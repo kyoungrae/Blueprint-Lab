@@ -2,9 +2,9 @@ import React, { memo, useState, useRef, useEffect, useContext, useCallback } fro
 import { createPortal } from 'react-dom';
 import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
-import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../types/screenDesign';
+import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
 
-import { Plus, Minus, Lock, Unlock, Image as ImageIcon, X, Monitor, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, SlidersHorizontal, RectangleHorizontal, RectangleVertical, Crop } from 'lucide-react';
+import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop } from 'lucide-react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -27,9 +27,12 @@ import { normalizeImageUrlForStorage } from '../utils/imageUrl';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
+import { getSmartGuidesAndSnap, type AlignmentGuides, type SnapState } from './screenNode/smartGuides';
+import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
+import { ScreenHeader } from './screenNode/ScreenHeader';
+import { LockOverlay } from './screenNode/LockOverlay';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
-
 
 
 // (ScreenHandles, DrawTextComponent, PremiumTooltip imported from ./screenNode/)
@@ -122,8 +125,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         updateScreen(screen.id, updates);
     };
 
-    const handleToggleLock = (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleToggleLock = (e?: React.MouseEvent) => {
+        e?.stopPropagation();
         if (isLockedByOther) {
             alert(`${lockedBy}님이 수정 중입니다.`);
             return;
@@ -161,6 +164,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [draggingElementIds, setDraggingElementIds] = useState<string[]>([]);
     const [dragOffsets, setDragOffsets] = useState<Record<string, { x: number, y: number }>>({});
     const [isMoving, setIsMoving] = useState(false);
+    const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuides | null>(null);
+    const snapStateRef = useRef<SnapState>({});
+    const [dragPreviewPositions, setDragPreviewPositions] = useState<Record<string, { x: number; y: number }> | null>(null);
 
     const [showStylePanel, setShowStylePanel] = useState(false);
     const [showLayerPanel, setShowLayerPanel] = useState(false);
@@ -664,6 +670,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         // Prepare for dragging all selected elements
         setIsMoving(true);
         setDraggingElementIds(nextSelected);
+        snapStateRef.current = {};
+        setDragPreviewPositions(null);
 
         const offsets: Record<string, { x: number, y: number }> = {};
         nextSelected.forEach(sid => {
@@ -766,21 +774,51 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 return { ...item, newX: x - offset.x, newY: y - offset.y };
             }).filter(Boolean) as Array<{ newX: number; newY: number } & (typeof dragged[0])>;
             if (withOffsets.length === 0) return;
-            // Single correction so entire group stays in bounds while preserving relative positions
-            const minNewX = Math.min(...withOffsets.map(o => o.newX));
+
+            let minNewX = Math.min(...withOffsets.map(o => o.newX));
             const maxRight = Math.max(...withOffsets.map(o => o.newX + o.width));
-            const minNewY = Math.min(...withOffsets.map(o => o.newY));
+            let minNewY = Math.min(...withOffsets.map(o => o.newY));
             const maxBottom = Math.max(...withOffsets.map(o => o.newY + o.height));
-            const corrX = Math.max(-minNewX, Math.min(cw - maxRight, 0));
-            const corrY = Math.max(-minNewY, Math.min(ch - maxBottom, 0));
+            const centerX = (minNewX + maxRight) / 2;
+            const centerY = (minNewY + maxBottom) / 2;
+
+            // Smart Guides: 다른 요소와 정렬 시 스냅 + 가이드라인 표시
+            const otherElements = drawElements
+                .filter(el => !draggingElementIds.includes(el.id))
+                .map(el => ({ id: el.id, x: el.x, y: el.y, width: el.width, height: el.height }));
+            const { deltaX, deltaY, guides, nextSnap } = getSmartGuidesAndSnap(
+                { left: minNewX, right: maxRight, centerX, top: minNewY, bottom: maxBottom, centerY },
+                otherElements,
+                snapStateRef.current
+            );
+            snapStateRef.current = nextSnap;
+
+            const snapX = deltaX;
+            const snapY = deltaY;
+            const snappedMinX = minNewX + snapX;
+            const snappedMaxRight = maxRight + snapX;
+            const snappedMinY = minNewY + snapY;
+            const snappedMaxBottom = maxBottom + snapY;
+
+            // Single correction so entire group stays in bounds while preserving relative positions
+            const corrX = Math.max(-snappedMinX, Math.min(cw - snappedMaxRight, 0));
+            const corrY = Math.max(-snappedMinY, Math.min(ch - snappedMaxBottom, 0));
+
             const nextElements = drawElements.map(item => {
                 const o = withOffsets.find(w => w.id === item.id);
                 if (o) {
-                    return { ...item, x: o.newX + corrX, y: o.newY + corrY };
+                    return { ...item, x: o.newX + snapX + corrX, y: o.newY + snapY + corrY };
                 }
                 return item;
             });
-            update({ drawElements: nextElements });
+            const preview: Record<string, { x: number; y: number }> = {};
+            nextElements.forEach((el) => {
+                if (draggingElementIds.includes(el.id)) {
+                    preview[el.id] = { x: el.x, y: el.y };
+                }
+            });
+            setDragPreviewPositions(preview);
+            setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
         }
     };
 
@@ -802,12 +840,21 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 setSelectedElementIds([tempElement.id]);
             }
         } else if (draggingElementIds.length > 0) {
-            // Finalize move sync - 스토어의 최신 drawElements 사용 (클로저 stale 방지)
-            const currentElements = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.drawElements || [];
-            syncUpdate({ drawElements: currentElements });
-            saveHistory(currentElements);
+            // Finalize move: 드래그 중에는 프리뷰만 갱신하고, mouseup 시점에 한 번만 커밋
+            const committedElements = dragPreviewPositions
+                ? drawElements.map((el) => {
+                    const p = dragPreviewPositions[el.id];
+                    return p ? { ...el, x: p.x, y: p.y } : el;
+                })
+                : drawElements;
+            update({ drawElements: committedElements });
+            syncUpdate({ drawElements: committedElements });
+            saveHistory(committedElements);
             setDraggingElementIds([]);
             setIsMoving(false);
+            setAlignmentGuides(null);
+            snapStateRef.current = {};
+            setDragPreviewPositions(null);
         }
 
         setIsDrawing(false);
@@ -1472,120 +1519,27 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         : 'border-[#2c3e7c] shadow-blue-100'
                     }`}>
                 {/* Lock Overlay */}
-                {isLocked && (
-                    <div
-                        onDoubleClick={!isLockedByOther ? handleToggleLock : undefined}
-                        className="absolute inset-0 z-[100] cursor-pointer group/mask hover:bg-white/10 transition-all duration-300 rounded-[inherit]"
-                    >
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-sm px-4 py-3 rounded-2xl shadow-2xl border border-gray-200 opacity-0 group-hover/mask:opacity-100 transition-all transform scale-90 group-hover/mask:scale-100 flex flex-col items-center gap-1.5 pointer-events-none">
-                            <Lock size={20} className={isLockedByOther ? 'text-amber-500' : 'text-gray-400'} />
-                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                                {isLockedByOther ? `${lockedBy}님이 수정 중` : 'Double Click to Edit'}
-                            </span>
-                        </div>
-                    </div>
-                )}
+                <LockOverlay
+                    isLocked={isLocked}
+                    isLockedByOther={isLockedByOther}
+                    lockedBy={lockedBy}
+                    onDoubleClick={handleToggleLock}
+                />
 
                 {/* ── 1. Top Header Bar (ERD Style) ── */}
-                <div
-                    className={`nodrag nopan px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[13px]`}
-                    onMouseDown={(e) => e.stopPropagation()}
-                >
-                    <Monitor size={16} className="flex-shrink-0 text-white/90" />
-                    <input
-                        type="text"
-                        value={screen.name}
-                        onChange={(e) => update({ name: e.target.value })}
-                        onBlur={(e) => syncUpdate({ name: e.target.value })}
-                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                        disabled={isLocked}
-                        className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
-                        placeholder="화면명"
-                        spellCheck={false}
-                    />
-
-                    {/* Header Actions */}
-                    <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
-                        {/* 화면 옵션 (용지 크기/방향) */}
-                        <div className="relative" ref={screenOptionsRef}>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); setShowScreenOptionsPanel(v => !v); }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
-                                title="화면 옵션"
-                            >
-                                <SlidersHorizontal size={16} />
-                            </button>
-                            {showScreenOptionsPanel && (
-                                <div
-                                    className="nodrag absolute right-0 top-full mt-1.5 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in-95 duration-150"
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                >
-                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">용지 크기</div>
-                                    <div className="grid grid-cols-2 gap-1.5 mb-3">
-                                        {PAGE_SIZE_OPTIONS.map((s) => {
-                                            const dim = PAGE_SIZE_DIMENSIONS_MM[s];
-                                            const ori = (screen.pageOrientation || 'portrait') as 'portrait' | 'landscape';
-                                            const labelW = ori === 'portrait' ? dim.w : dim.h;
-                                            const labelH = ori === 'portrait' ? dim.h : dim.w;
-                                            return (
-                                                <button
-                                                    key={s}
-                                                    type="button"
-                                                    onClick={() => { update({ pageSize: s }); syncUpdate({ pageSize: s }); }}
-                                                    className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                                                        (screen.pageSize || 'A4') === s
-                                                            ? 'bg-[#2c3e7c] text-white'
-                                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                    }`}
-                                                >
-                                                    <span className="block">{s}</span>
-                                                    <span className="block text-[8px] font-normal opacity-90">{labelW}×{labelH}mm</span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">방향</div>
-                                    <div className="flex gap-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => { update({ pageOrientation: 'portrait' }); syncUpdate({ pageOrientation: 'portrait' }); }}
-                                            className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${(screen.pageOrientation || 'portrait') === 'portrait' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                                        >
-                                            <RectangleVertical size={12} /> 세로
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => { update({ pageOrientation: 'landscape' }); syncUpdate({ pageOrientation: 'landscape' }); }}
-                                            className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${screen.pageOrientation === 'landscape' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                                        >
-                                            <RectangleHorizontal size={12} /> 가로
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <button
-                            onClick={handleToggleLock}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            disabled={isLockedByOther}
-                            className={`nodrag p-1.5 rounded-md transition-colors pointer-events-auto ${isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'}`}
-                            title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? "잠금 해제" : "잠금"}
-                        >
-                            {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
-                        </button>
-                        {!isLocked && (
-                            <button
-                                onClick={handleDelete}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                className="nodrag opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-500 rounded-md text-white/90"
-                                title="삭제"
-                            >
-                                <X size={16} />
-                            </button>
-                        )}
-                    </div>
-                </div>
+                <ScreenHeader
+                    screen={screen}
+                    isLocked={isLocked}
+                    isLockedByOther={isLockedByOther}
+                    lockedBy={lockedBy}
+                    update={update}
+                    syncUpdate={syncUpdate}
+                    onToggleLock={handleToggleLock}
+                    onDelete={handleDelete}
+                    showScreenOptionsPanel={showScreenOptionsPanel}
+                    setShowScreenOptionsPanel={setShowScreenOptionsPanel}
+                    screenOptionsRef={screenOptionsRef}
+                />
 
                 {/* ── 2. Meta Info Table (Extracted) ── */}
                 <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
@@ -2284,12 +2238,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         const isSelected = selectedElementIds.includes(el.id);
                                         const isDraggingThis = draggingElementIds.includes(el.id);
                                         const rot = el.type === 'image' ? (el.imageRotation ?? 0) : 0;
+                                        const previewPos = dragPreviewPositions?.[el.id];
                                         const commonStyle: React.CSSProperties = {
                                             position: 'absolute',
-                                            left: el.x,
-                                            top: el.y,
-                                            width: el.width+11,
-                                            height: el.height+11,
+                                            left: previewPos?.x ?? el.x,
+                                            top: previewPos?.y ?? el.y,
+                                            width: el.width,
+                                            height: el.height,
                                             zIndex: isDraggingThis ? 9999 : (el.zIndex || 1),
                                             transition: (isDrawing || isMoving) ? 'none' : 'all 0.1s ease',
                                             pointerEvents: isDrawing ? 'none' : 'auto',
@@ -2920,6 +2875,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             }}
                                         />
                                     )}
+
+                                    {/* Smart Guides - 정렬 시 가이드라인 */}
+                                    {alignmentGuides && <AlignmentGuidesOverlay guides={alignmentGuides} />}
                                 </div>
                             </div>
                     </div>
