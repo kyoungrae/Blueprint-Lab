@@ -5,7 +5,7 @@ import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
 import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
 
 import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2 } from 'lucide-react';
-import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
@@ -14,6 +14,7 @@ import { useAuthStore } from '../store/authStore';
 
 import ScreenHandles from './screenNode/ScreenHandles';
 import { ExportModeContext } from '../contexts/ExportModeContext';
+import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import DrawTextComponent from './screenNode/DrawTextComponent';
 import PremiumTooltip from './screenNode/PremiumTooltip';
@@ -52,6 +53,7 @@ interface ScreenNodeData {
 
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
+    const canvasOnlyMode = useContext(CanvasOnlyModeContext);
     const { zoom } = useViewport();
     const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
     const { setHandlers } = useScreenDesignUndoRedo();
@@ -63,7 +65,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         setCanvasClipboard,
         lastInteractedScreenId,
         setLastInteractedScreenId,
-    } = useScreenDesignStore();
+        getScreenById,
+    } = useScreenNodeStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
@@ -115,8 +118,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
     // Extract table names safely
     const erdTables = React.useMemo(() => {
-        if (!linkedErdProject?.data?.entities) return [];
-        return linkedErdProject.data.entities.map(e => e.name).sort();
+        const data = linkedErdProject?.data as { entities?: { name: string }[] } | undefined;
+        if (!data?.entities) return [];
+        return data.entities.map((e: { name: string }) => e.name).sort();
     }, [linkedErdProject]);
 
 
@@ -524,7 +528,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const ch = canvasRef.current?.clientHeight ?? 300;
         const max = axis === 'vertical' ? cw : ch;
         const clamped = Math.max(2, Math.min(max - 2, newValue));
-        const current = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.guideLines;
+        const current = getScreenById(screen.id)?.guideLines;
         const vert = current?.vertical ?? guideLines.vertical;
         const horz = current?.horizontal ?? guideLines.horizontal;
         const nextLines = {
@@ -570,7 +574,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         };
         const onUp = () => {
             if (guideLineDragRef.current) {
-                const current = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.guideLines;
+                const current = getScreenById(screen.id)?.guideLines;
                 if (current) syncUpdate({ guideLines: current });
                 if (!hasMoved) {
                     setSelectedGuideLine({ axis, value: guideLineDragRef.current.value });
@@ -649,7 +653,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             }
 
             // Update in-place for smooth visual
-            const currentElements = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.drawElements || [];
+            const currentElements = getScreenById(screen.id)?.drawElements || [];
             const updated = currentElements.map(item =>
                 item.id === targetId ? { ...item, x: nextX, y: nextY, width: nextW, height: nextH } : item
             );
@@ -658,7 +662,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
         const handleWindowMouseUp = () => {
             if (elementResizeStartRef.current) {
-                const currentElements = useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.drawElements || [];
+                const currentElements = getScreenById(screen.id)?.drawElements || [];
                 syncUpdate({ drawElements: currentElements });
             }
             elementResizeStartRef.current = null;
@@ -1678,6 +1682,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 />
 
                 {/* ── 1. Top Header Bar (ERD Style) ── */}
+                {!canvasOnlyMode && (
                 <ScreenHeader
                     screen={screen}
                     isLocked={isLocked}
@@ -1691,15 +1696,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     setShowScreenOptionsPanel={setShowScreenOptionsPanel}
                     screenOptionsRef={screenOptionsRef}
                 />
+                )}
 
                 {/* ── 2. Meta Info Table (Extracted) ── */}
+                {!canvasOnlyMode && (
                 <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
+                )}
 
                 {/* ── 3. Body Content: Toolbar full width, then Split Layout ── */}
                 <div className="nodrag nopan flex-1 flex flex-col min-h-0 bg-white rounded-[15px]" onMouseDown={(e) => e.stopPropagation()}>
 
                     {/* Drawing Toolbar - Full width (100%) */}
-                    {!isLocked && (
+                    {!canvasOnlyMode && !isLocked && (
                         <div
                             className="nodrag w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar"
                             onMouseDown={(e) => e.stopPropagation()}
@@ -2454,8 +2462,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                     {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
                     <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
-                    {/* [LEFT PANE 70%] - Drawing Canvas */}
-                    <div className="w-[70%] flex-shrink-0 min-w-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px]">
+                    {/* [LEFT PANE 70% or 100% when canvasOnly] - Drawing Canvas */}
+                    <div className={`${canvasOnlyMode ? 'w-full' : 'w-[70%]'} flex-shrink-0 min-w-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px]`}>
 
                         {/* Drawing Canvas Area (canvas only) */}
                         <div className="flex-1 min-h-0 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
@@ -3231,6 +3239,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     </div>
 
                     {/* [RIGHT PANE 30%] - Details & Settings (Extracted) */}
+                    {!canvasOnlyMode && (
                     <RightPane
                         screen={screen}
                         isLocked={isLocked}
@@ -3247,6 +3256,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         tableListPanelPos={tableListPanelPos}
                         flowToScreenPosition={flowToScreenPosition}
                     />
+                    )}
                     </div>
                 </div> {/* End Body Split Layout */}
 

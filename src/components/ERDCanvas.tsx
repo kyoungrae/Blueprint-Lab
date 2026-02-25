@@ -194,7 +194,7 @@ const ERDCanvasContent: React.FC = () => {
     // Initial load for local projects
     useEffect(() => {
         if (currentProjectId?.startsWith('local_') && currentProject) {
-            importData(currentProject.data);
+            importData(currentProject.data as import('../types/erd').ERDState);
         }
     }, [currentProjectId]);
 

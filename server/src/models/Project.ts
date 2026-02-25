@@ -116,10 +116,18 @@ export interface IERDSnapshot {
     savedAt: Date;
 }
 
+// Component Snapshot Interface (reuses Screen structure)
+export interface IComponentSnapshot {
+    version: number;
+    components: IScreen[];
+    flows: IScreenFlow[];
+    savedAt: Date;
+}
+
 // Project Document Interface
 export interface IProject extends Document {
     name: string;
-    projectType: 'ERD' | 'SCREEN_DESIGN';
+    projectType: 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT';
     dbType: 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';
     description?: string;
     members: IProjectMember[];
@@ -127,7 +135,9 @@ export interface IProject extends Document {
     createdAt: Date;
     updatedAt: Date;
     screenSnapshot?: IScreenSnapshot;
+    componentSnapshot?: IComponentSnapshot;
     linkedErdProjectId?: string;
+    linkedComponentProjectId?: string;
 }
 
 const AttributeSchema = new Schema<IAttribute>({
@@ -235,6 +245,13 @@ const ScreenSnapshotSchema = new Schema<IScreenSnapshot>({
     savedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
+const ComponentSnapshotSchema = new Schema<IComponentSnapshot>({
+    version: { type: Number, default: 1 },
+    components: [ScreenSchema],
+    flows: [ScreenFlowSchema],
+    savedAt: { type: Date, default: Date.now },
+}, { _id: false });
+
 const ERDSnapshotSchema = new Schema<IERDSnapshot>({
     version: { type: Number, default: 1 },
     entities: [EntitySchema],
@@ -244,13 +261,15 @@ const ERDSnapshotSchema = new Schema<IERDSnapshot>({
 
 const ProjectSchema = new Schema<IProject>({
     name: { type: String, required: true },
-    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN'], default: 'ERD' },
+    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN', 'COMPONENT'], default: 'ERD' },
     dbType: { type: String, enum: ['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'], required: true },
     description: { type: String },
     members: [ProjectMemberSchema],
     currentSnapshot: { type: ERDSnapshotSchema, default: { version: 1, entities: [], relationships: [], savedAt: new Date() } },
     screenSnapshot: { type: ScreenSnapshotSchema, default: { version: 1, screens: [], flows: [], savedAt: new Date() } },
+    componentSnapshot: { type: ComponentSnapshotSchema, default: { version: 1, components: [], flows: [], savedAt: new Date() } },
     linkedErdProjectId: { type: String },
+    linkedComponentProjectId: { type: String },
 }, {
     timestamps: true, // createdAt, updatedAt 자동 생성
 });

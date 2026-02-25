@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box } from 'lucide-react';
 import './ProjectListPage.css';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
@@ -15,6 +15,7 @@ const ProjectListPage: React.FC = () => {
     const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
     const [editingMembersProject, setEditingMembersProject] = useState<string | null>(null);
     const [linkingProjectId, setLinkingProjectId] = useState<string | null>(null);
+    const [linkingMode, setLinkingMode] = useState<'erd' | 'component' | null>(null);
 
     // Form States
     const [selectedProjectType, setSelectedProjectType] = useState<ProjectType>('ERD');
@@ -430,9 +431,11 @@ const ProjectListPage: React.FC = () => {
                                         <div className="flex items-center gap-2">
                                             <div className={`p-3 rounded-2xl transition-colors duration-300 ${project.projectType === 'SCREEN_DESIGN'
                                                 ? 'bg-violet-50 text-violet-500 group-hover:bg-violet-600 group-hover:text-white'
-                                                : 'bg-gray-50 text-blue-500 group-hover:bg-blue-600 group-hover:text-white'
+                                                : project.projectType === 'COMPONENT'
+                                                    ? 'bg-teal-50 text-teal-500 group-hover:bg-teal-600 group-hover:text-white'
+                                                    : 'bg-gray-50 text-blue-500 group-hover:bg-blue-600 group-hover:text-white'
                                                 }`}>
-                                                {project.projectType === 'SCREEN_DESIGN' ? <Monitor size={24} /> : <Database size={24} />}
+                                                {project.projectType === 'SCREEN_DESIGN' ? <Monitor size={24} /> : project.projectType === 'COMPONENT' ? <Box size={24} /> : <Database size={24} />}
                                             </div>
                                             <div className="flex flex-col gap-1">
                                                 {isLocal && (
@@ -442,9 +445,11 @@ const ProjectListPage: React.FC = () => {
                                                 )}
                                                 <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${project.projectType === 'SCREEN_DESIGN'
                                                     ? 'bg-violet-50 text-violet-600'
-                                                    : 'bg-blue-50 text-blue-600'
+                                                    : project.projectType === 'COMPONENT'
+                                                        ? 'bg-teal-50 text-teal-600'
+                                                        : 'bg-blue-50 text-blue-600'
                                                     }`}>
-                                                    {project.projectType === 'SCREEN_DESIGN' ? '화면설계' : project.dbType}
+                                                    {project.projectType === 'SCREEN_DESIGN' ? '화면설계' : project.projectType === 'COMPONENT' ? '컴포넌트' : project.dbType}
                                                 </div>
                                             </div>
                                         </div>
@@ -505,25 +510,45 @@ const ProjectListPage: React.FC = () => {
                                         </p>
                                     </div>
 
-                                    <div className="mt-auto pt-6 border-t border-gray-50 flex items-center justify-between">
+                                        <div className="mt-auto pt-6 border-t border-gray-50 flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             {project.projectType === 'SCREEN_DESIGN' && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setLinkingProjectId(project.id);
-                                                    }}
-                                                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${project.linkedErdProjectId
-                                                        ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                                                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
-                                                        }`}
-                                                    title="ERD 프로젝트 연결"
-                                                >
-                                                    <Database size={10} />
-                                                    {project.linkedErdProjectId
-                                                        ? (projects.find(p => p.id === project.linkedErdProjectId)?.name || 'ERD 연결됨')
-                                                        : 'ERD 연결'}
-                                                </button>
+                                                <>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setLinkingProjectId(project.id);
+                                                            setLinkingMode('erd');
+                                                        }}
+                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${project.linkedErdProjectId
+                                                            ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
+                                                            }`}
+                                                        title="ERD 프로젝트 연결"
+                                                    >
+                                                        <Database size={10} />
+                                                        {project.linkedErdProjectId
+                                                            ? (projects.find(p => p.id === project.linkedErdProjectId)?.name || 'ERD 연결됨')
+                                                            : 'ERD 연결'}
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setLinkingProjectId(project.id);
+                                                            setLinkingMode('component');
+                                                        }}
+                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${project.linkedComponentProjectId
+                                                            ? 'bg-teal-50 text-teal-600 hover:bg-teal-100'
+                                                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
+                                                            }`}
+                                                        title="컴포넌트 프로젝트 연결"
+                                                    >
+                                                        <Box size={10} />
+                                                        {project.linkedComponentProjectId
+                                                            ? (projects.find(p => p.id === project.linkedComponentProjectId)?.name || '컴포넌트 연결됨')
+                                                            : '컴포넌트 연결'}
+                                                    </button>
+                                                </>
                                             )}
                                         </div>
 
@@ -615,7 +640,7 @@ const ProjectListPage: React.FC = () => {
 
             {isTypeSelectionOpen && (
                 <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden scale-in">
+                    <div className="bg-white rounded-[32px] w-full max-w-4xl shadow-2xl overflow-hidden scale-in">
                         <div className="p-8 border-b border-gray-100 flex items-center justify-between">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-900 mb-2">프로젝트 유형 선택</h3>
@@ -626,7 +651,7 @@ const ProjectListPage: React.FC = () => {
                             </button>
                         </div>
                         <div className="p-8">
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-3 gap-4">
                                 <button onClick={() => handleSelectProjectType('ERD')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-blue-400 hover:bg-blue-50/80 transition-all duration-300 active:scale-[0.97]">
                                     <div className="w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-5 group-hover:bg-blue-600 group-hover:text-white transition-all">
                                         <Database size={28} />
@@ -640,6 +665,13 @@ const ProjectListPage: React.FC = () => {
                                     </div>
                                     <h4 className="text-lg font-black text-gray-900 mb-2">화면 설계서</h4>
                                     <p className="text-xs text-gray-500 text-center font-medium">UI/UX 화면 구조를 설계하고 관리합니다</p>
+                                </button>
+                                <button onClick={() => handleSelectProjectType('COMPONENT')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-teal-400 hover:bg-teal-50/80 transition-all duration-300 active:scale-[0.97]">
+                                    <div className="w-16 h-16 rounded-2xl bg-teal-100 text-teal-600 flex items-center justify-center mb-5 group-hover:bg-teal-600 group-hover:text-white transition-all">
+                                        <Box size={28} />
+                                    </div>
+                                    <h4 className="text-lg font-black text-gray-900 mb-2">컴포넌트 프로젝트</h4>
+                                    <p className="text-xs text-gray-500 text-center font-medium">재사용 가능한 UI 컴포넌트를 설계하고 관리합니다</p>
                                 </button>
                             </div>
                         </div>
@@ -663,7 +695,7 @@ const ProjectListPage: React.FC = () => {
                                 </button>
                                 <div>
                                     <h3 className="text-2xl font-black text-gray-900">
-                                        {selectedProjectType === 'SCREEN_DESIGN' ? '화면 설계서 생성' : 'ERD 프로젝트 생성'}
+                                        {selectedProjectType === 'SCREEN_DESIGN' ? '화면 설계서 생성' : selectedProjectType === 'COMPONENT' ? '컴포넌트 프로젝트 생성' : 'ERD 프로젝트 생성'}
                                     </h3>
                                 </div>
                             </div>
@@ -699,7 +731,7 @@ const ProjectListPage: React.FC = () => {
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">
                                     데이터베이스 엔진
-                                    {selectedProjectType === 'SCREEN_DESIGN' && <span className="text-[10px] text-gray-400 font-normal ml-2">(화면 명세서의 기본 데이터 타입을 결정합니다)</span>}
+                                    {(selectedProjectType === 'SCREEN_DESIGN' || selectedProjectType === 'COMPONENT') && <span className="text-[10px] text-gray-400 font-normal ml-2">(명세서의 기본 데이터 타입을 결정합니다)</span>}
                                 </label>
                                 <div className="grid grid-cols-2 gap-3">
                                     {(['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'] as DBType[]).map((type) => (
@@ -708,7 +740,7 @@ const ProjectListPage: React.FC = () => {
                                             type="button"
                                             onClick={() => setNewProjectDbType(type)}
                                             className={`py-3 px-4 rounded-2xl border-2 transition-all font-bold text-sm ${newProjectDbType === type
-                                                ? (selectedProjectType === 'SCREEN_DESIGN' ? 'border-violet-500 bg-violet-50 text-violet-600' : 'border-blue-500 bg-blue-50 text-blue-600')
+                                                ? (selectedProjectType === 'SCREEN_DESIGN' ? 'border-violet-500 bg-violet-50 text-violet-600' : selectedProjectType === 'COMPONENT' ? 'border-teal-500 bg-teal-50 text-teal-600' : 'border-blue-500 bg-blue-50 text-blue-600')
                                                 : 'border-gray-100 bg-gray-50 text-gray-400'}`}
                                         >
                                             {type}
@@ -742,7 +774,7 @@ const ProjectListPage: React.FC = () => {
                             {createError && <div className="p-3 bg-red-50 text-red-500 text-xs rounded-xl border border-red-100">{createError}</div>}
                             <div className="flex gap-3 pt-2">
                                 <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-4 px-6 bg-gray-50 text-gray-600 rounded-2xl font-bold">취소</button>
-                                <button type="submit" disabled={isLoading} className={`flex-[2] py-4 px-6 text-white rounded-2xl font-bold ${selectedProjectType === 'SCREEN_DESIGN' ? 'bg-violet-600' : 'bg-blue-600'}`}>
+                                <button type="submit" disabled={isLoading} className={`flex-[2] py-4 px-6 text-white rounded-2xl font-bold ${selectedProjectType === 'SCREEN_DESIGN' ? 'bg-violet-600' : selectedProjectType === 'COMPONENT' ? 'bg-teal-600' : 'bg-blue-600'}`}>
                                     {isLoading ? '생성 중...' : '생성하기'}
                                 </button>
                             </div>
@@ -816,33 +848,38 @@ const ProjectListPage: React.FC = () => {
                 </div>
             )}
 
-            {linkingProjectId && (
+            {linkingProjectId && linkingMode && (
                 <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
                         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
                             <div>
-                                <h3 className="text-xl font-black text-gray-900 mb-1">ERD 프로젝트 연결</h3>
-                                <p className="text-gray-500 font-medium text-xs">연동할 ERD 프로젝트를 선택하세요.</p>
+                                <h3 className="text-xl font-black text-gray-900 mb-1">
+                                    {linkingMode === 'erd' ? 'ERD 프로젝트 연결' : '컴포넌트 프로젝트 연결'}
+                                </h3>
+                                <p className="text-gray-500 font-medium text-xs">
+                                    {linkingMode === 'erd' ? '연동할 ERD 프로젝트를 선택하세요.' : '연동할 컴포넌트 프로젝트를 선택하세요.'}
+                                </p>
                             </div>
-                            <button onClick={() => setLinkingProjectId(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400">
+                            <button onClick={() => { setLinkingProjectId(null); setLinkingMode(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400">
                                 <X size={20} />
                             </button>
                         </div>
                         <div className="p-2 max-h-[400px] overflow-y-auto">
-                            {projects.filter(p => p.projectType === 'ERD').map(erdProject => (
+                            {projects.filter(p => p.projectType === (linkingMode === 'erd' ? 'ERD' : 'COMPONENT')).map((proj) => (
                                 <button
-                                    key={erdProject.id}
+                                    key={proj.id}
                                     onClick={async () => {
-                                        await updateProjectMetadata(linkingProjectId, { linkedErdProjectId: erdProject.id });
+                                        await updateProjectMetadata(linkingProjectId, linkingMode === 'erd' ? { linkedErdProjectId: proj.id } : { linkedComponentProjectId: proj.id });
                                         setLinkingProjectId(null);
+                                        setLinkingMode(null);
                                     }}
-                                    className="w-full p-4 rounded-xl flex items-center gap-4 hover:bg-blue-50 text-left"
+                                    className={`w-full p-4 rounded-xl flex items-center gap-4 text-left ${linkingMode === 'erd' ? 'hover:bg-blue-50' : 'hover:bg-teal-50'}`}
                                 >
-                                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
-                                        <Database size={18} />
+                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${linkingMode === 'erd' ? 'bg-blue-100 text-blue-600' : 'bg-teal-100 text-teal-600'}`}>
+                                        {linkingMode === 'erd' ? <Database size={18} /> : <Box size={18} />}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-gray-900 truncate">{erdProject.name}</h4>
+                                        <h4 className="font-bold text-gray-900 truncate">{proj.name}</h4>
                                     </div>
                                 </button>
                             ))}
@@ -850,8 +887,9 @@ const ProjectListPage: React.FC = () => {
                         <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
                             <button
                                 onClick={async () => {
-                                    await updateProjectMetadata(linkingProjectId, { linkedErdProjectId: undefined });
+                                    await updateProjectMetadata(linkingProjectId, linkingMode === 'erd' ? { linkedErdProjectId: undefined } : { linkedComponentProjectId: undefined });
                                     setLinkingProjectId(null);
+                                    setLinkingMode(null);
                                 }}
                                 className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg"
                             >

@@ -30,7 +30,7 @@ export interface Relationship {
 
 export type DBType = 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';
 
-export type ProjectType = 'ERD' | 'SCREEN_DESIGN';
+export type ProjectType = 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT';
 
 export interface ProjectMember {
     id: string;
@@ -48,8 +48,9 @@ export interface Project {
     description?: string;
     updatedAt: string;
     members: ProjectMember[];
-    data: ERDState;
+    data: ERDState | Record<string, unknown>;
     linkedErdProjectId?: string;
+    linkedComponentProjectId?: string;
 }
 
 export type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE' | 'PROJECT_SET' | 'IMPORT' | 'MOVE';
@@ -72,3 +73,15 @@ export interface ERDState {
     relationships: Relationship[];
     history?: HistoryLog[];
 }
+
+export interface ScreenDesignState {
+    screens: unknown[];
+    flows: unknown[];
+}
+
+export interface ComponentState {
+    components: unknown[];
+    flows: unknown[];
+}
+
+export type ProjectData = ERDState | ScreenDesignState | ComponentState;

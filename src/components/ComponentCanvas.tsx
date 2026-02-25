@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import ReactFlow, {
     type Node as RFNode,
     type Edge as RFEdge,
@@ -21,10 +21,12 @@ import 'reactflow/dist/style.css';
 import ScreenNode from './ScreenNode';
 import SpecNode from './SpecNode';
 import ScreenEdge from './ScreenEdge';
-import ScreenSidebar from './ScreenSidebar';
+import ComponentSidebar from './ComponentSidebar';
 import ScreenExportModal from './ScreenExportModal';
 import AddScreenModal from './AddScreenModal';
-import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useComponentStore } from '../store/componentStore';
+import { ScreenCanvasStoreProvider } from '../contexts/ScreenCanvasStoreContext';
+import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import type { Screen, PageSizeOption, PageOrientation } from '../types/screenDesign';
@@ -89,13 +91,20 @@ const ToolbarUndoRedo: React.FC = () => {
 };
 
 // ── Canvas Content ──────────────────────────────────────────
-const ScreenDesignCanvasContent: React.FC = () => {
+const ComponentCanvasContent: React.FC = () => {
     const {
-        screens, flows,
-        addScreen, updateScreen, deleteScreen,
+        components, flows,
+        addComponent, updateComponent, deleteComponent,
         addFlow, updateFlow, deleteFlow,
-        importData
-    } = useScreenDesignStore();
+        importData,
+        canvasClipboard,
+        setCanvasClipboard,
+        lastInteractedScreenId,
+        setLastInteractedScreenId,
+    } = useComponentStore();
+    const screens = components;
+    const updateScreen = updateComponent;
+    const deleteScreen = deleteComponent;
 
     const { user, logout } = useAuthStore();
     const { sendOperation, updateCursor, isSynced } = useSyncStore();
@@ -171,29 +180,30 @@ const ScreenDesignCanvasContent: React.FC = () => {
         return () => document.removeEventListener('wheel', handleWheel, { capture: true });
     }, [getViewport, setViewport]);
 
-    // Initial load for local projects
+    // Initial load from project data (local or server)
     useEffect(() => {
-        if (currentProjectId?.startsWith('local_') && currentProject) {
-            // Priority: currentProject.data contains screens/flows directly 
-            const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
-            if (data) {
-                importData(data);
+        if (currentProjectId && currentProject) {
+            const data = (currentProject.data as any)?.components !== undefined
+                ? currentProject.data
+                : (currentProject as any).componentData;
+            if (data?.components || data?.flows) {
+                importData({ components: data.components || [], flows: data.flows || [] });
             }
         }
-    }, [currentProjectId]);
+    }, [currentProjectId, currentProject?.id]);
 
-    // Auto-save to ProjectStore for LOCAL projects
+    // Auto-save to ProjectStore (local and server)
     useEffect(() => {
-        if (currentProjectId?.startsWith('local_')) {
+        if (currentProjectId) {
             const timer = setTimeout(() => {
                 updateProjectData(currentProjectId, {
-                    screens,
+                    components,
                     flows,
                 });
             }, 1000);
             return () => clearTimeout(timer);
         }
-    }, [screens, flows, currentProjectId, updateProjectData]);
+    }, [components, flows, currentProjectId, updateProjectData]);
 
     // Sync screens → ReactFlow nodes (캔버스 70% 반영하여 entity 크기 계산)
     const computeNodeStyle = (screen: Screen): React.CSSProperties | undefined => {
@@ -346,10 +356,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
     // Listen for initial Sync from Server
     useEffect(() => {
         const handleSync = (e: CustomEvent) => {
-            const { screens, flows } = e.detail;
-            // Always import if data is provided, even if empty
-            if (screens || flows) {
-                importData({ screens: screens || [], flows: flows || [] });
+            const { components: comps, screens, flows: flws } = e.detail;
+            const items = comps || screens;
+            if (items || flws) {
+                importData({ components: items || [], flows: flws || [] });
             }
         };
         window.addEventListener('erd:state_sync', handleSync as EventListener);
@@ -362,9 +372,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
             if (user && op.userId === user.id) return;
 
             if (op.type.startsWith('SCREEN_')) {
-                if (op.type === 'SCREEN_CREATE') addScreen(op.payload as any);
-                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateScreen(op.targetId, op.payload as any);
-                else if (op.type === 'SCREEN_DELETE') deleteScreen(op.targetId);
+                if (op.type === 'SCREEN_CREATE') addComponent(op.payload as any);
+                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateComponent(op.targetId, op.payload as any);
+                else if (op.type === 'SCREEN_DELETE') deleteComponent(op.targetId);
                 else if (op.type === 'SCREEN_FLOW_CREATE') addFlow(op.payload as any);
                 else if (op.type === 'SCREEN_FLOW_UPDATE') updateFlow(op.targetId, op.payload as any);
                 else if (op.type === 'SCREEN_FLOW_DELETE') deleteFlow(op.targetId);
@@ -376,7 +386,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             window.removeEventListener('erd:state_sync', handleSync as EventListener);
             window.removeEventListener('erd:remote_operation', handleRemoteOp as EventListener);
         };
-    }, [importData, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, deleteFlow, user]);
+    }, [importData, addComponent, updateComponent, deleteComponent, addFlow, updateFlow, deleteFlow, user]);
 
     // Keyboard shortcuts: Delete selected screens or flows
     useEffect(() => {
@@ -394,8 +404,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     e.preventDefault();
                     if (selectedNodes.length > 0) {
                         const confirmMsg = selectedNodes.length === 1
-                            ? `'${selectedNodes[0].data.screen.name}' 화면을 삭제하시겠습니까?`
-                            : `${selectedNodes.length}개의 화면을 삭제하시겠습니까?`;
+                            ? `'${selectedNodes[0].data.screen.name}' 컴포넌트를 삭제하시겠습니까?`
+                            : `${selectedNodes.length}개의 컴포넌트를 삭제하시겠습니까?`;
 
                         if (window.confirm(confirmMsg)) {
                             selectedNodes.forEach(node => {
@@ -476,7 +486,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                 const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
                 const erdData = linkedErdProject?.data as { entities?: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] }[] } | undefined;
-
+                // Component project: no ERD linking - skip spec auto-populate from ERD
                 if (tableNames.length > 0 && erdData?.entities) {
                     const existingSpecs = specScreen.specs || [];
                     const existingControlNames = new Set(existingSpecs.map(s => s.controlName));
@@ -653,8 +663,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
     }, []);
 
     const handleAddScreenConfirm = useCallback((pageSize: PageSizeOption, pageOrientation: PageOrientation) => {
-        const baseName = '새 화면';
-        const existingNames = new Set(screens.map(s => s.name));
+        const baseName = '새 컴포넌트';
+        const existingNames = new Set(components.map(s => s.name));
         let newName = baseName;
         if (existingNames.has(baseName)) {
             let counter = 1;
@@ -662,12 +672,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
             newName = `${baseName}(${counter})`;
         }
 
-        const existingIds = screens.map(s => {
-            const match = s.screenId.match(/SCR-(\d+)/);
+        const existingIds = components.map(s => {
+            const match = s.screenId.match(/CMP-(\d+)/);
             return match ? parseInt(match[1]) : 0;
         });
         const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
-        const screenId = `SCR-${String(nextNum).padStart(3, '0')}`;
+        const screenId = `CMP-${String(nextNum).padStart(3, '0')}`;
         const today = new Date().toISOString().split('T')[0];
         const preset = PAGE_SIZE_PRESETS[pageSize];
         const orientation = pageOrientation || 'portrait';
@@ -695,7 +705,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             imageWidth,
             imageHeight,
         };
-        addScreen(newScreen);
+        addComponent(newScreen);
 
         sendOperation({
             type: 'SCREEN_CREATE',
@@ -704,15 +714,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
             userName: user?.name || 'Anonymous',
             payload: newScreen as unknown as Record<string, unknown>
         });
-    }, [screens, addScreen, currentProject, user, sendOperation]);
+    }, [components, addComponent, currentProject, user, sendOperation]);
 
     const handleAddSpecClick = useCallback(() => {
         setIsAddSpecModalOpen(true);
     }, []);
 
     const handleAddSpecConfirm = useCallback((pageSize: PageSizeOption, pageOrientation: PageOrientation) => {
-        const baseName = '새 기능명세';
-        const existingNames = new Set(screens.map(s => s.name));
+        const baseName = '새 컴포넌트 명세';
+        const existingNames = new Set(components.map(s => s.name));
         let newName = baseName;
         if (existingNames.has(baseName)) {
             let counter = 1;
@@ -720,12 +730,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
             newName = `${baseName}(${counter})`;
         }
 
-        const existingIds = screens.map(s => {
-            const match = s.screenId.match(/SCR-(\d+)/);
+        const existingIds = components.map(s => {
+            const match = s.screenId.match(/CMP-(\d+)/);
             return match ? parseInt(match[1]) : 0;
         });
         const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
-        const screenId = `SCR-${String(nextNum).padStart(3, '0')}`;
+        const screenId = `CMP-${String(nextNum).padStart(3, '0')}`;
         const today = new Date().toISOString().split('T')[0];
         const preset = PAGE_SIZE_PRESETS[pageSize];
         const orientation = pageOrientation || 'portrait';
@@ -755,7 +765,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             imageWidth,
             imageHeight,
         };
-        addScreen(newScreen);
+        addComponent(newScreen);
 
         sendOperation({
             type: 'SCREEN_CREATE',
@@ -764,7 +774,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             userName: user?.name || 'Anonymous',
             payload: newScreen as unknown as Record<string, unknown>
         });
-    }, [screens, addScreen, currentProject, user, sendOperation]);
+    }, [components, addComponent, currentProject, user, sendOperation]);
 
     const onNodeDragStop = useCallback((_: React.MouseEvent, node: RFNode) => {
         updateScreen(node.id, { position: node.position });
@@ -851,7 +861,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                 const download = (dataUrl: string) => {
                     const link = document.createElement('a');
-                    link.download = `screen-design-${Date.now()}.png`;
+                    link.download = `component-design-${Date.now()}.png`;
                     link.href = dataUrl;
                     link.click();
                 };
@@ -876,6 +886,17 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [fitView]);
 
+    const storeValue = useMemo(() => ({
+        screens: components,
+        updateScreen: updateComponent,
+        deleteScreen: deleteComponent,
+        canvasClipboard,
+        setCanvasClipboard,
+        lastInteractedScreenId,
+        setLastInteractedScreenId,
+        getScreenById: (id: string) => useComponentStore.getState().components.find((c) => c.id === id),
+    }), [components, updateComponent, deleteComponent, canvasClipboard, setCanvasClipboard, lastInteractedScreenId, setLastInteractedScreenId]);
+
     // 서버 프로젝트: state_sync 도착 전 편집 시 이미지 등이 덮어쓰여 사라지는 것 방지
     if (currentProjectId && !currentProjectId.startsWith('local_') && !isSynced) {
         return (
@@ -887,6 +908,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
     }
 
     return (
+        <CanvasOnlyModeContext.Provider value={true}>
+        <ScreenCanvasStoreProvider value={storeValue}>
         <ScreenDesignUndoRedoProvider>
         <ExportModeContext.Provider value={isExporting}>
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
@@ -895,7 +918,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
                 >
                     <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
-                        <ScreenSidebar />
+                        <ComponentSidebar />
                     </div>
                 </div>
 
@@ -943,10 +966,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                     <button
                         onClick={handleAddScreenClick}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
                     >
                         <Plus size={16} className="shrink-0" />
-                        <span className="whitespace-nowrap">화면 추가</span>
+                        <span className="whitespace-nowrap">컴포넌트 추가</span>
                     </button>
 
                     <button
@@ -1050,7 +1073,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     <UserCursorsLayer />
                     <Controls />
                     <MiniMap
-                        nodeColor={() => '#8b5cf6'}
+                        nodeColor={() => '#0d9488'}
                         className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
                     />
                     <Background
@@ -1066,7 +1089,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                 {isExportModalOpen && (
                     <ScreenExportModal
-                        screens={screens}
+                        screens={components}
                         onExport={handleExportImage}
                         onClose={() => setIsExportModalOpen(false)}
                     />
@@ -1074,6 +1097,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                 {isAddScreenModalOpen && (
                     <AddScreenModal
+                        variant="component"
                         onConfirm={handleAddScreenConfirm}
                         onClose={() => setIsAddScreenModalOpen(false)}
                     />
@@ -1242,15 +1266,17 @@ const ScreenDesignCanvasContent: React.FC = () => {
         </div>
         </ExportModeContext.Provider>
         </ScreenDesignUndoRedoProvider>
+        </ScreenCanvasStoreProvider>
+        </CanvasOnlyModeContext.Provider>
     );
 };
 
-const ScreenDesignCanvas: React.FC = () => {
+const ComponentCanvas: React.FC = () => {
     return (
         <ReactFlowProvider>
-            <ScreenDesignCanvasContent />
+            <ComponentCanvasContent />
         </ReactFlowProvider>
     );
 };
 
-export default ScreenDesignCanvas;
+export default ComponentCanvas;

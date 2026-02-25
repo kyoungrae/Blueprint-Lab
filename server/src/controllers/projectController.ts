@@ -101,7 +101,7 @@ export const deleteProject = async (req: AuthRequest, res: Response) => {
 export const updateProject = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { name, description, data, linkedErdProjectId } = req.body;
+        const { name, description, data, linkedErdProjectId, linkedComponentProjectId } = req.body;
         const userId = req.user?.id;
 
         if (!userId) {
@@ -126,12 +126,29 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         if (name) project.name = name;
         if (description !== undefined) project.description = description;
         if (linkedErdProjectId !== undefined) project.linkedErdProjectId = linkedErdProjectId;
+        if (linkedComponentProjectId !== undefined) project.linkedComponentProjectId = linkedComponentProjectId;
         if (data) {
-            project.currentSnapshot = {
-                ...data,
-                version: (project.currentSnapshot?.version || 0) + 1,
-                savedAt: new Date()
-            };
+            if (project.projectType === 'COMPONENT' && (data.components !== undefined || data.flows !== undefined)) {
+                project.componentSnapshot = {
+                    version: (project.componentSnapshot?.version || 0) + 1,
+                    components: data.components ?? project.componentSnapshot?.components ?? [],
+                    flows: data.flows ?? project.componentSnapshot?.flows ?? [],
+                    savedAt: new Date()
+                };
+            } else if (project.projectType === 'SCREEN_DESIGN' && (data.screens !== undefined || data.flows !== undefined)) {
+                project.screenSnapshot = {
+                    version: (project.screenSnapshot?.version || 0) + 1,
+                    screens: data.screens ?? project.screenSnapshot?.screens ?? [],
+                    flows: data.flows ?? project.screenSnapshot?.flows ?? [],
+                    savedAt: new Date()
+                };
+            } else {
+                project.currentSnapshot = {
+                    ...data,
+                    version: (project.currentSnapshot?.version || 0) + 1,
+                    savedAt: new Date()
+                };
+            }
         }
 
         // Only OWNER can modify members

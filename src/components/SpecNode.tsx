@@ -4,7 +4,7 @@ import { ExportModeContext } from '../contexts/ExportModeContext';
 import type { Screen, ScreenSpecItem } from '../types/screenDesign';
 import { SCREEN_FIELD_TYPES, SCREEN_TYPES, PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../types/screenDesign';
 import { Plus, Trash2, Lock, Unlock, X, ChevronDown, GripVertical, FileText, SlidersHorizontal, RectangleVertical, RectangleHorizontal } from 'lucide-react';
-import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
@@ -377,7 +377,7 @@ const makeSpecSnapshot = (screen: Screen): SpecHistorySnapshot => ({
 const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const { screen } = data;
     const isExporting = useContext(ExportModeContext);
-    const { updateScreen, deleteScreen } = useScreenDesignStore();
+    const { updateScreen, deleteScreen, getScreenById } = useScreenNodeStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
@@ -435,16 +435,14 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         const onMove = (e: MouseEvent) => {
             const dx = e.clientX - clientX;
             const nextWidth = Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, startWidth + dx));
-            const store = useScreenDesignStore.getState();
-            const currentScreen = store.screens.find((s) => s.id === screen.id);
+            const currentScreen = getScreenById(screen.id);
             const currentWidths = currentScreen?.specColumnWidths || colWidths;
             const next = [...currentWidths];
             next[colIdx] = nextWidth;
-            store.updateScreen(screen.id, { specColumnWidths: next });
+            updateScreen(screen.id, { specColumnWidths: next });
         };
         const onUp = () => {
-            const store = useScreenDesignStore.getState();
-            const currentScreen = store.screens.find((s) => s.id === screen.id);
+            const currentScreen = getScreenById(screen.id);
             if (currentScreen?.specColumnWidths) {
                 syncUpdate({ specColumnWidths: currentScreen.specColumnWidths });
             }
@@ -453,7 +451,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         };
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
-    }, [colWidths, screen.id, syncUpdate]);
+    }, [colWidths, screen.id, syncUpdate, getScreenById, updateScreen]);
 
     // 용지 옵션 패널 외부 클릭 시 닫기
     React.useEffect(() => {
@@ -654,16 +652,14 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         const onMove = (e: MouseEvent) => {
             const dx = e.clientX - clientX;
             const nextWidth = Math.max(48, Math.min(400, startWidth + dx));
-            const store = useScreenDesignStore.getState();
-            const currentScreen = store.screens.find((s) => s.id === screen.id);
+            const currentScreen = getScreenById(screen.id);
             const currentWidths = currentScreen?.specMetaColumnWidths || metaColWidths;
             const next = [...currentWidths];
             next[colIdx] = nextWidth;
-            store.updateScreen(screen.id, { specMetaColumnWidths: next });
+            updateScreen(screen.id, { specMetaColumnWidths: next });
         };
         const onUp = () => {
-            const store = useScreenDesignStore.getState();
-            const currentScreen = store.screens.find((s) => s.id === screen.id);
+            const currentScreen = getScreenById(screen.id);
             if (currentScreen?.specMetaColumnWidths) {
                 syncUpdate({ specMetaColumnWidths: currentScreen.specMetaColumnWidths });
             }
@@ -672,7 +668,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         };
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
-    }, [metaColWidths, screen.id, syncUpdate]);
+    }, [metaColWidths, screen.id, syncUpdate, getScreenById, updateScreen]);
 
     // Entity dimensions from page size/orientation (ScreenNode과 동일 로직)
     const MIN_CANVAS_WIDTH = 794;

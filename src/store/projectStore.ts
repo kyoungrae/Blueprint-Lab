@@ -38,20 +38,34 @@ export const useProjectStore = create<ProjectStore>()(
                     if (response.ok) {
                         const data = await response.json();
                         // Map Mongo _id to id
-                        const projects = data.map((p: any) => ({
-                            ...p,
-                            id: p._id,
-                            projectType: p.projectType || 'ERD',
-                            linkedErdProjectId: p.linkedErdProjectId,
-                            members: p.members?.map((m: any) => ({
-                                id: m.userId?._id || m.userId,
-                                name: m.userId?.name || 'Unknown',
-                                email: m.userId?.email || '',
-                                picture: m.userId?.picture,
-                                role: m.role || 'MEMBER'
-                            })),
-                            data: p.data || (p.currentSnapshot?.entities ? p.currentSnapshot : { entities: [], relationships: [] })
-                        }));
+                        const projects = data.map((p: any) => {
+                            const pt = p.projectType || 'ERD';
+                            let projData = p.data;
+                            if (!projData) {
+                                if (pt === 'COMPONENT' && p.componentSnapshot) {
+                                    projData = { components: p.componentSnapshot.components || [], flows: p.componentSnapshot.flows || [] };
+                                } else if (pt === 'SCREEN_DESIGN' && p.screenSnapshot) {
+                                    projData = { screens: p.screenSnapshot.screens || [], flows: p.screenSnapshot.flows || [] };
+                                } else {
+                                    projData = p.currentSnapshot?.entities ? p.currentSnapshot : { entities: [], relationships: [] };
+                                }
+                            }
+                            return {
+                                ...p,
+                                id: p._id,
+                                projectType: pt,
+                                linkedErdProjectId: p.linkedErdProjectId,
+                                linkedComponentProjectId: p.linkedComponentProjectId,
+                                members: p.members?.map((m: any) => ({
+                                    id: m.userId?._id || m.userId,
+                                    name: m.userId?.name || 'Unknown',
+                                    email: m.userId?.email || '',
+                                    picture: m.userId?.picture,
+                                    role: m.role || 'MEMBER'
+                                })),
+                                data: projData
+                            };
+                        });
                         set({ projects });
                     }
                 } catch (error) {
@@ -71,7 +85,11 @@ export const useProjectStore = create<ProjectStore>()(
                         dbType,
                         description: description || '',
                         members: [],
-                        data: { entities: [], relationships: [] },
+                        data: projectType === 'COMPONENT'
+                            ? { components: [], flows: [] }
+                            : projectType === 'SCREEN_DESIGN'
+                                ? { screens: [], flows: [] }
+                                : { entities: [], relationships: [] },
                         updatedAt: new Date().toISOString()
                     };
 
