@@ -257,6 +257,33 @@ interface EditableCellProps {
 }
 
 const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlur, isLocked, placeholder, className = '', isSelect, options, mono }) => {
+    // IME 조합 중(한글 등) 자음/모음 분리 방지
+    const [composing, setComposing] = React.useState<string | null>(null);
+    const displayValue = composing !== null ? composing : value;
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            setComposing(v);
+            return;
+        }
+        setComposing(null);
+        onChange(v);
+    };
+
+    const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+        const v = (e.target as HTMLInputElement).value;
+        setComposing(null);
+        onChange(v);
+    };
+
+    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        setComposing(null);
+        onChange(v);
+        onBlur?.(v);
+    };
+
     if (isSelect && options) {
         return (
             <div className="relative w-full h-full flex items-center">
@@ -277,9 +304,10 @@ const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlu
     return (
         <input
             type="text"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onBlur={(e) => onBlur?.(e.target.value)}
+            value={displayValue}
+            onChange={handleChange}
+            onCompositionEnd={handleCompositionEnd}
+            onBlur={handleBlur}
             onMouseDown={(e) => !isLocked && e.stopPropagation()}
             disabled={isLocked}
             className={`w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'} ${mono ? 'font-mono' : ''} ${className}`}
@@ -845,7 +873,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                             <tr>
                                 <td className={labelCell}>화면설명</td>
                                 <td className={`${valueCell} border-r-0`} colSpan={5}>
-                                    <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} onBlur={(v) => syncUpdate({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" className="text-center" />
+                                    <EditableCell value={screen.screenDescription} onChange={(v) => update({ screenDescription: v })} onBlur={(v) => syncUpdate({ screenDescription: v })} isLocked={isLocked} placeholder="화면에 대한 구체적인 설명을 입력하세요" className="text-left" />
                                 </td>
                             </tr>
                         </tbody>
