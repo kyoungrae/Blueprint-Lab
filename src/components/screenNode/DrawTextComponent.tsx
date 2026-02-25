@@ -21,6 +21,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     className
 }) => {
     const divRef = useRef<HTMLDivElement>(null);
+    const blurFromToolbarRef = useRef(false);
 
     // Sync content with element.text (using innerHTML for rich text support)
     useEffect(() => {
@@ -41,6 +42,16 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             sel?.addRange(range);
         }
     }, [autoFocus]);
+
+    useEffect(() => {
+        const handleMouseDownCapture = (e: MouseEvent) => {
+            const target = e.target;
+            blurFromToolbarRef.current = target instanceof Element
+                && !!target.closest('[data-text-style-toolbar], [data-style-panel]');
+        };
+        document.addEventListener('mousedown', handleMouseDownCapture, true);
+        return () => document.removeEventListener('mousedown', handleMouseDownCapture, true);
+    }, []);
 
     const handleInput = (e?: React.FormEvent) => {
         if (divRef.current) {
@@ -80,7 +91,18 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             onKeyUp={handleSelect}
             onBlur={() => {
                 handleInput();
-                onSelectionChange(null);
+                // 포커스가 텍스트 스타일 툴바(글자 크기 등)로 이동한 경우 툴바가 사라지지 않도록
+                // 한 프레임 뒤 activeElement 확인 (blur 시점에는 아직 갱신 안 됨)
+                requestAnimationFrame(() => {
+                    if (blurFromToolbarRef.current) {
+                        return;
+                    }
+                    const active = document.activeElement;
+                    if (active instanceof Element && active.closest('[data-text-style-toolbar], [data-style-panel]')) {
+                        return;
+                    }
+                    onSelectionChange(null);
+                });
             }}
             onMouseDown={(e) => {
                 if (isSelected && !isLocked) {

@@ -2386,7 +2386,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         return (
                                             <>
                                                 <div className="w-px h-6 bg-gray-200 mx-1" />
-                                                <div className="nodrag nopan flex items-center gap-2 bg-gray-50/80 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => e.stopPropagation()}>
+                                                <div data-text-style-toolbar className="nodrag nopan flex items-center gap-2 bg-gray-50/80 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => e.stopPropagation()}>
                                                     <div className="flex items-center gap-1.5 px-1 border-r border-gray-200 pr-2">
                                                         <Type size={12} className="text-gray-400" />
                                                         <input
