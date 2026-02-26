@@ -49,3 +49,13 @@ body {
     stroke-dashoffset: -20;
   }
 }
+
+/* ERD: 빛이 연결선을 따라 이동하는 흐름 애니메이션 */
+@keyframes erd-flow-light {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: 0.1;
+  }
+}

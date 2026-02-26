@@ -7,6 +7,19 @@ import type { RelationshipEndType } from '../types/erd';
 
 const STROKE_W = 1.5;
 
+/** hex 색상을 흰색과 블렌드해 더 밝은 톤으로 (선 색과 비슷하지만 구분되게) */
+function lightenColor(hex: string, amount = 0.45): string {
+    const h = hex.replace('#', '');
+    if (h.length !== 6) return hex;
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    const rr = Math.round(r * (1 - amount) + 255 * amount);
+    const gg = Math.round(g * (1 - amount) + 255 * amount);
+    const bb = Math.round(b * (1 - amount) + 255 * amount);
+    return `rgb(${rr},${gg},${bb})`;
+}
+
 /** type에서 sourceEnd/targetEnd 유도 */
 function getEndsFromType(type: string): { sourceEnd: RelationshipEndType; targetEnd: RelationshipEndType } {
     switch (type) {
@@ -139,6 +152,22 @@ const ERDEdge = ({
                     className="react-flow__edge-path"
                     markerStart={`url(#${markerStartId})`}
                     markerEnd={`url(#${markerEndId})`}
+                />
+                {/* 빛이 시작점→끝점으로 이동하는 흐름 애니메이션 */}
+                <path
+                    d={edgePath}
+                    pathLength={1}
+                    fill="none"
+                    stroke={lightenColor(edgeColor)}
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray="0.02 0.08"
+                    style={{
+                        opacity: 0.9,
+                        animation: 'erd-flow-light 2s linear infinite',
+                    }}
+                    className="pointer-events-none"
                 />
                 {interactionWidth != null && interactionWidth > 0 && (
                     <path
