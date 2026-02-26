@@ -82,7 +82,7 @@ function MarkerManyOptional({ color }: { color: string }) {
     );
 }
 
-const MARKER_GAP = 3;
+const MARKER_GAP = 5;
 
 function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndType; color: string; id: string; isStart?: boolean }) {
     const content = {
