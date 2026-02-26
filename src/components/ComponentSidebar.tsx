@@ -122,6 +122,21 @@ const ComponentSidebar: React.FC = () => {
                                             <div>작성자: <span className="text-gray-600">{screen.author || '-'}</span></div>
                                             <div>작성일: <span className="text-gray-600 font-mono">{screen.createdDate || '-'}</span></div>
                                         </div>
+                                        {screen.subComponents && screen.subComponents.length > 0 && (
+                                            <div className="pt-1 border-t border-gray-100 space-y-1">
+                                                <div className="text-[9px] font-bold text-gray-400 uppercase">하위 컴포넌트 ({screen.subComponents.length})</div>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {screen.subComponents.map((sub) => (
+                                                        <span
+                                                            key={sub.id}
+                                                            className="px-2 py-0.5 bg-violet-50 text-violet-700 text-[10px] font-bold rounded-md"
+                                                        >
+                                                            {sub.name}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                         {screen.fields.length > 0 && (
                                             <div className="pt-1 border-t border-gray-100 space-y-1">
                                                 <div className="text-[9px] font-bold text-gray-400 uppercase">기능 항목 ({screen.fields.length})</div>

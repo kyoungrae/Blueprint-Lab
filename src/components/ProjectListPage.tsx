@@ -5,6 +5,8 @@ import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
 import { type DBType, type ProjectType, type ProjectMember } from '../types/erd';
 
+const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2 };
+
 const ProjectListPage: React.FC = () => {
     const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, updateProjectMembers, updateProjectMetadata, inviteMember, joinWithCode } = useProjectStore();
     const { user, logout } = useAuthStore();
@@ -99,13 +101,20 @@ const ProjectListPage: React.FC = () => {
         };
     }, []);
 
+    const sortedProjects = useMemo(
+        () => [...projects].sort((a, b) => PROJECT_TYPE_ORDER[a.projectType] - PROJECT_TYPE_ORDER[b.projectType]),
+        [projects]
+    );
+
     const projectConnections = useMemo(() => {
-        return projects
-            .filter(p => p.projectType === 'SCREEN_DESIGN' && p.linkedErdProjectId)
-            .map(p => ({
-                fromId: p.id,
-                toId: p.linkedErdProjectId!
-            }));
+        const connections: { fromId: string; toId: string }[] = [];
+        projects.forEach((p) => {
+            if (p.projectType === 'SCREEN_DESIGN') {
+                if (p.linkedErdProjectId) connections.push({ fromId: p.id, toId: p.linkedErdProjectId });
+                if (p.linkedComponentProjectId) connections.push({ fromId: p.id, toId: p.linkedComponentProjectId });
+            }
+        });
+        return connections;
     }, [projects]);
 
 
@@ -414,7 +423,7 @@ const ProjectListPage: React.FC = () => {
                             })}
                         </svg>
 
-                        {projects.map((project) => {
+                        {sortedProjects.map((project) => {
                             const isLocal = project.id.startsWith('local_');
                             const projectOwner = project.members?.find((m) => m.role === 'OWNER');
                             const isOwner = isLocal || user?.id === projectOwner?.id;

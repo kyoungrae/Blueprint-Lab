@@ -4,7 +4,7 @@ import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
 import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
 
-import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2 } from 'lucide-react';
+import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX } from 'lucide-react';
 import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -19,6 +19,7 @@ import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext
 import DrawTextComponent from './screenNode/DrawTextComponent';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
+import RightPane from './screenNode/RightPane';
 import StylePanel from './screenNode/StylePanel';
 import LayerPanel from './screenNode/LayerPanel';
 import ImageElement from './screenNode/ImageElement';
@@ -31,6 +32,7 @@ import { getSmartGuidesAndSnap, type AlignmentGuides, type SnapState } from './s
 import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
+import ComponentPickerButton from './screenNode/ComponentPickerButton';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
@@ -103,12 +105,27 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
     const isLocalLocked = screen.isLocked ?? true;
     const isLocked = isLocalLocked || isLockedByOther;
+    const [isTableListOpen, setIsTableListOpen] = React.useState(false);
+    const [tableListPanelPos, setTableListPanelPos] = React.useState<{ x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
+    const tableListRef = useRef<HTMLDivElement>(null);
     const screenOptionsRef = useRef<HTMLDivElement>(null);
+    const rightPaneRef = useRef<HTMLDivElement>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
 
-    // Linked ERD Project Data
-    const { currentProjectId } = useProjectStore();
+    const { projects, currentProjectId } = useProjectStore();
+    const currentProject = projects.find(p => p.id === currentProjectId);
+    const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
+    const linkedComponentProject = projects.find(p => p.id === currentProject?.linkedComponentProjectId);
+    const erdTables = React.useMemo(() => {
+        const data = linkedErdProject?.data as { entities?: { name: string }[] } | undefined;
+        if (!data?.entities) return [];
+        return data.entities.map((e: { name: string }) => e.name).sort();
+    }, [linkedErdProject]);
+    const componentList = React.useMemo(() => {
+        const data = linkedComponentProject?.data as { components?: Screen[] } | undefined;
+        return (data?.components ?? []).filter((c) => c.screenId?.startsWith('CMP-'));
+    }, [linkedComponentProject]);
 
 
     const update = (updates: Partial<Screen>) => {
@@ -169,8 +186,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [showTablePicker, setShowTablePicker] = useState(false);
     const [tablePickerHover, setTablePickerHover] = useState<{ r: number, c: number } | null>(null);
     const [tablePickerPos, setTablePickerPos] = useState({ x: 0, y: 0 });
+    const [showComponentPicker, setShowComponentPicker] = useState(false);
+    const [componentPickerPos, setComponentPickerPos] = useState({ x: 0, y: 0 });
     const isDraggingTablePickerRef = useRef(false);
+    const isDraggingComponentPickerRef = useRef(false);
     const tablePickerRef = useRef<HTMLDivElement>(null);
+    const componentPickerRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
 
     const handleTablePickerHeaderMouseDown = useCallback((e: React.MouseEvent) => {
@@ -223,11 +244,17 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
             const el = getClickTargetElement(e.target);
+            if (tableListRef.current && !tableListRef.current.contains(target) && !el?.closest('[data-table-list-portal]')) {
+                setIsTableListOpen(false);
+            }
             if (screenOptionsRef.current && !screenOptionsRef.current.contains(target)) {
                 setShowScreenOptionsPanel(false);
             }
             if (showTablePicker && !isDraggingTablePickerRef.current && tablePickerRef.current && !tablePickerRef.current.contains(target) && !el?.closest('[data-table-picker-portal]')) {
                 setShowTablePicker(false);
+            }
+            if (showComponentPicker && !isDraggingComponentPickerRef.current && componentPickerRef.current && !componentPickerRef.current.contains(target) && !el?.closest('[data-component-picker-portal]')) {
+                setShowComponentPicker(false);
             }
             if (showGridPanel && gridPanelAnchorRef.current && !gridPanelAnchorRef.current.contains(target) && !el?.closest('[data-grid-panel]')) {
                 setShowGridPanel(false);
@@ -238,7 +265,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         };
         document.addEventListener('mousedown', handleClickOutside, true);
         return () => document.removeEventListener('mousedown', handleClickOutside, true);
-    }, [showTablePicker, showGridPanel]);
+    }, [showTablePicker, showComponentPicker, showGridPanel]);
 
     // 이미지 스타일 패널이 닫히면 크롭 모드도 항상 해제
     useEffect(() => {
@@ -247,6 +274,24 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         }
     }, [showImageStylePanel, imageCropMode]);
 
+    React.useLayoutEffect(() => {
+        if (!isTableListOpen || !tableListRef.current || !rightPaneRef.current) {
+            setTableListPanelPos(null);
+            return;
+        }
+        const rect = tableListRef.current.getBoundingClientRect();
+        const paneRect = rightPaneRef.current.getBoundingClientRect();
+        const DROPDOWN_W = 192;
+        const PAD = 8;
+        const spaceBelow = window.innerHeight - rect.bottom - PAD;
+        const spaceAbove = rect.top - PAD;
+        const openUpward = false;
+        const anchorScreenX = Math.max(paneRect.left + PAD, Math.min(rect.left, paneRect.right - DROPDOWN_W - PAD));
+        const anchorScreenY = rect.bottom + 4;
+        const flowPos = screenToFlowPosition({ x: anchorScreenX, y: anchorScreenY });
+        setTableListPanelPos({ x: flowPos.x, y: flowPos.y, openUpward, spaceBelow, spaceAbove });
+    }, [isTableListOpen]);
+
     const tableRowResizeRef = useRef<{ elId: string, rowIdx: number, startY: number, startHeights: number[] } | null>(null);
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
@@ -254,6 +299,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     type HistorySnapshot = {
         drawElements: DrawElement[];
         position: { x: number; y: number };
+        subComponents?: Array<{ id: string; name: string; elementIds: string[] }>;
     };
 
     // Undo/Redo History State (요소 + 엔티티 위치)
@@ -264,10 +310,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const MAX_HISTORY = 50;
     const restoringHistoryRef = useRef(false);
 
-    const saveHistory = (elements: DrawElement[], position = screen.position) => {
+    const saveHistory = (elements: DrawElement[], position = screen.position, subComponents?: Screen['subComponents']) => {
         const snapshot: HistorySnapshot = {
             drawElements: elements,
             position: { x: position.x, y: position.y },
+            subComponents: subComponents ?? screen.subComponents,
         };
         setHistory(prev => {
             // If the last state is the same as current, don't save
@@ -294,8 +341,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
             restoringHistoryRef.current = true;
             // undo/redo는 잠금 여부와 관계없이 실행 (의도적인 복원 동작)
-            updateScreen(screen.id, { drawElements: previous.drawElements, position: previous.position });
-            syncUpdate({ drawElements: previous.drawElements, position: previous.position });
+            const undoPayload: Partial<Screen> = { drawElements: previous.drawElements, position: previous.position };
+            if (previous.subComponents !== undefined) undoPayload.subComponents = previous.subComponents;
+            updateScreen(screen.id, undoPayload);
+            syncUpdate(undoPayload);
             requestAnimationFrame(() => {
                 restoringHistoryRef.current = false;
             });
@@ -318,8 +367,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
             restoringHistoryRef.current = true;
             // undo/redo는 잠금 여부와 관계없이 실행 (의도적인 복원 동작)
-            updateScreen(screen.id, { drawElements: next.drawElements, position: next.position });
-            syncUpdate({ drawElements: next.drawElements, position: next.position });
+            const redoPayload: Partial<Screen> = { drawElements: next.drawElements, position: next.position };
+            if (next.subComponents !== undefined) redoPayload.subComponents = next.subComponents;
+            updateScreen(screen.id, redoPayload);
+            syncUpdate(redoPayload);
             requestAnimationFrame(() => {
                 restoringHistoryRef.current = false;
             });
@@ -331,6 +382,116 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         });
     };
 
+    const handlePartialComponentize = useCallback(() => {
+        if (selectedElementIds.length === 0 || isLocked) return;
+        const existing = screen.subComponents ?? [];
+        const alreadyRegisteredIds = new Set(existing.flatMap((s) => s.elementIds));
+        const availableIds = selectedElementIds.filter((id) => !alreadyRegisteredIds.has(id));
+        if (availableIds.length === 0) {
+            alert('선택한 객체는 이미 하위 컴포넌트로 등록되어 있습니다. 객체 하나당 하나의 하위 컴포넌트만 등록할 수 있습니다.');
+            return;
+        }
+        if (availableIds.length < selectedElementIds.length) {
+            const count = selectedElementIds.length - availableIds.length;
+            if (!window.confirm(`${count}개 객체는 이미 등록되어 있어 제외됩니다. 나머지 ${availableIds.length}개만 등록할까요?`)) return;
+        }
+        const defaultName = `하위 ${existing.length + 1}`;
+        const name = window.prompt('하위 컴포넌트 이름', defaultName)?.trim() || defaultName;
+        const newSub: { id: string; name: string; elementIds: string[] } = {
+            id: `sub_${Date.now()}`,
+            name,
+            elementIds: availableIds,
+        };
+        const nextSubComponents = [...existing, newSub];
+        update({ subComponents: nextSubComponents });
+        syncUpdate({ subComponents: nextSubComponents });
+        saveHistory(screen.drawElements || [], screen.position, nextSubComponents);
+    }, [selectedElementIds, isLocked, screen.subComponents, screen.position, screen.drawElements, update, syncUpdate, saveHistory]);
+
+    const handleUnregisterPartialComponent = useCallback(() => {
+        if (selectedElementIds.length === 0 || isLocked) return;
+        const existing = screen.subComponents ?? [];
+        const nextSubComponents = existing
+            .map((s) => ({ ...s, elementIds: s.elementIds.filter((id) => !selectedElementIds.includes(id)) }))
+            .filter((s) => s.elementIds.length > 0);
+        update({ subComponents: nextSubComponents });
+        syncUpdate({ subComponents: nextSubComponents });
+        saveHistory(screen.drawElements || [], screen.position, nextSubComponents);
+    }, [selectedElementIds, isLocked, screen.subComponents, screen.position, screen.drawElements, update, syncUpdate, saveHistory]);
+
+    const selectionBounds = React.useMemo(() => {
+        if (selectedElementIds.length === 0) return null;
+        const elements = screen.drawElements || [];
+        const selected = elements.filter((el) => selectedElementIds.includes(el.id));
+        if (selected.length === 0) return null;
+        const getPos = (el: DrawElement) => {
+            const preview = dragPreviewPositions?.[el.id];
+            return preview ? { x: preview.x, y: preview.y } : { x: el.x, y: el.y };
+        };
+        const minX = Math.min(...selected.map((el) => getPos(el).x));
+        const minY = Math.min(...selected.map((el) => getPos(el).y));
+        const maxX = Math.max(...selected.map((el) => getPos(el).x + el.width));
+        const maxY = Math.max(...selected.map((el) => getPos(el).y + el.height));
+        return { minX, minY, maxX, maxY, centerX: (minX + maxX) / 2, topY: minY };
+    }, [selectedElementIds, screen.drawElements, dragPreviewPositions]);
+
+    const insertComponent = useCallback((component: Screen, subComponentId?: string) => {
+        let elements: DrawElement[];
+        if (subComponentId) {
+            const sub = component.subComponents?.find((s) => s.id === subComponentId);
+            if (!sub) return;
+            const all = component.drawElements ?? [];
+            const idSet = new Set(sub.elementIds);
+            elements = all.filter((el) => idSet.has(el.id));
+        } else {
+            elements = component.drawElements ?? [];
+        }
+        const cw = canvasRef.current?.clientWidth ?? 0;
+        const ch = canvasRef.current?.clientHeight ?? 0;
+        let offsetX: number;
+        let offsetY: number;
+        if (subComponentId && elements.length > 0) {
+            const minX = Math.min(...elements.map((e) => e.x));
+            const minY = Math.min(...elements.map((e) => e.y));
+            const compW = Math.max(...elements.map((e) => e.x + e.width)) - minX;
+            const compH = Math.max(...elements.map((e) => e.y + e.height)) - minY;
+            offsetX = Math.max(10, cw ? cw / 2 - minX - compW / 2 : 50);
+            offsetY = Math.max(10, ch ? ch / 2 - minY - compH / 2 : 50);
+        } else {
+            const compW = component.imageWidth ?? 400;
+            const compH = component.imageHeight ?? 300;
+            offsetX = Math.max(10, cw ? cw / 2 - compW / 2 : 50);
+            offsetY = Math.max(10, ch ? ch / 2 - compH / 2 : 50);
+        }
+
+        const idMap = new Map<string, string>();
+        const newElements: DrawElement[] = elements.map((el, i) => {
+            const newId = `draw_${Date.now()}_${i}`;
+            idMap.set(el.id, newId);
+            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY };
+        });
+        newElements.forEach((el) => {
+            if (el.groupId && idMap.has(el.groupId)) {
+                el.groupId = idMap.get(el.groupId)!;
+            }
+        });
+
+        if (newElements.length === 0) return;
+
+        const existing = screen.drawElements || [];
+        const maxZ = Math.max(0, ...existing.map((e: DrawElement) => e.zIndex ?? 1));
+        newElements.forEach((e, i) => {
+            e.zIndex = maxZ + i + 1;
+        });
+
+        const nextElements = [...existing, ...newElements];
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
+        setSelectedElementIds(newElements.map((e) => e.id));
+        setShowComponentPicker(false);
+    }, [screen.drawElements, update, syncUpdate, saveHistory]);
+
     // Initial history save
     useEffect(() => {
         if (history.past.length === 0 && screen.drawElements) {
@@ -338,6 +499,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 past: [{
                     drawElements: screen.drawElements,
                     position: { x: screen.position.x, y: screen.position.y },
+                    subComponents: screen.subComponents,
                 }],
                 future: []
             });
@@ -1671,10 +1833,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     {/* Drawing Toolbar - Full width (100%) */}
                     {!canvasOnlyMode && !isLocked && (
                         <div
-                            className="nodrag w-full flex items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar"
+                            className="nodrag w-full flex flex-nowrap items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar"
                             onMouseDown={(e) => e.stopPropagation()}
                         >
-                                    <div className="flex items-center gap-1 flex-1 min-w-max px-1">
+                                    <div className="flex flex-nowrap items-center gap-1 flex-1 min-w-max px-1">
                                             {/* Undo/Redo Controls */}
                                             <div className="flex items-center gap-0.5 border-l border-gray-200 ml-1">
                                                 <PremiumTooltip label="되돌리기 (Ctrl+Z)">
@@ -1697,8 +1859,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 </PremiumTooltip>
                                             </div>
 
-                                            <div className="flex items-center gap-1 animate-in slide-in-from-left-1 duration-200">
-                                                <div className="flex items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
+                                            <div className="flex flex-nowrap items-center gap-1 animate-in slide-in-from-left-1 duration-200">
+                                                <div className="flex flex-nowrap items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
                                                     <PremiumTooltip label="선택" dotColor="#3b82f6">
                                                         <button
                                                             onClick={() => setActiveTool('select')}
@@ -1708,8 +1870,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         </button>
                                                     </PremiumTooltip>
                                                 </div>
-                                                <div className="flex items-center gap-0.5">
-                                                    <div className="relative" ref={tablePickerRef}>
+                                                <div className="flex flex-nowrap items-center gap-0.5 shrink-0">
+                                                    <div className="nodrag nopan relative flex items-center justify-center" ref={tablePickerRef}>
                                                         <PremiumTooltip label="표 삽입">
                                                             <button
                                                                 onClick={(e) => {
@@ -1816,6 +1978,22 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             getPanelPortalRoot()
                                                         );
                                                         })()}
+                                                        {!screen.screenId?.startsWith('CMP-') && (
+                                                            <ComponentPickerButton
+                                                                show={showComponentPicker}
+                                                                onShowChange={setShowComponentPicker}
+                                                                position={componentPickerPos}
+                                                                onPositionChange={setComponentPickerPos}
+                                                                zoom={zoom}
+                                                                flowToScreenPosition={flowToScreenPosition}
+                                                                screenToFlowPosition={screenToFlowPosition}
+                                                                componentList={componentList}
+                                                                linkedComponentProject={linkedComponentProject}
+                                                                onInsert={insertComponent}
+                                                                buttonRef={componentPickerRef}
+                                                                isDraggingRef={isDraggingComponentPickerRef}
+                                                            />
+                                                        )}
                                                         {showImageStylePanel && (() => {
                                                             const imgEl = drawElements.find(el => selectedElementIds.includes(el.id) && el.type === 'image');
                                                             if (!imgEl || imgEl.type !== 'image') return null;
@@ -2424,8 +2602,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                     {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
                     <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
-                    {/* [LEFT PANE 100%] - Drawing Canvas (RightPane 초기화면설정/기능상세/관련테이블 제거) */}
-                    <div className="w-full flex-shrink-0 min-w-0 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px] rounded-br-[13px]">
+                    {/* [LEFT PANE 70% or 100%] - Drawing Canvas (컴포넌트일 때 RightPane 숨김) */}
+                    <div className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-br-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 min-w-0 flex flex-col bg-gray-50/10 overflow-hidden`}>
 
                         {/* Drawing Canvas Area (canvas only) */}
                         <div className="flex-1 min-h-0 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
@@ -3040,6 +3218,56 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         );
                                     })}
 
+                                    {/* 부분 컴포넌트화 버튼 (컴포넌트 캔버스, 선택 시 상단 - 등록/해제 모드 토글) */}
+                                    {screen.screenId?.startsWith('CMP-') && selectionBounds && selectedElementIds.length >= 1 && !isLocked && (() => {
+                                        const alreadyRegistered = new Set((screen.subComponents ?? []).flatMap((s) => s.elementIds));
+                                        const hasUnregistered = selectedElementIds.some((id) => !alreadyRegistered.has(id));
+                                        const hasRegistered = selectedElementIds.some((id) => alreadyRegistered.has(id));
+                                        const showButton = hasUnregistered || hasRegistered;
+                                        const isUnregisterMode = hasRegistered;
+                                        if (!showButton) return null;
+                                        return (
+                                            <div
+                                                className="absolute nodrag nopan z-[120]"
+                                                style={{
+                                                    left: selectionBounds.centerX,
+                                                    top: selectionBounds.topY - 40,
+                                                    transform: 'translateX(-50%)',
+                                                }}
+                                            >
+                                                {isUnregisterMode ? (
+                                                    <PremiumTooltip label="부분 컴포넌트화 해제">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleUnregisterPartialComponent();
+                                                            }}
+                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                            className="px-2 py-1 bg-gray-400 text-white text-[10px] font-bold rounded-md shadow-md hover:bg-gray-500 flex items-center gap-1"
+                                                        >
+                                                            <PackageX size={12} />
+                                                            부분 컴포넌트화 해제
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                ) : (
+                                                    <PremiumTooltip label="부분 컴포넌트화">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handlePartialComponentize();
+                                                            }}
+                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                            className="px-2 py-1 bg-violet-500 text-white text-[10px] font-bold rounded-md shadow-md hover:bg-violet-600 flex items-center gap-1"
+                                                        >
+                                                            <Package size={12} />
+                                                            부분 컴포넌트화
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+
                                     {/* Render Temporary Drawing Element */}
                                     {tempElement && (
                                         <div
@@ -3200,6 +3428,25 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             </div>
                     </div>
 
+                    {/* [RIGHT PANE 30%] - 초기화면설정/기능상세/관련테이블 (화면 설계에만 표시, 컴포넌트 캔버스에서는 숨김) */}
+                    {!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') && (
+                    <RightPane
+                        screen={screen}
+                        isLocked={isLocked}
+                        update={update}
+                        syncUpdate={syncUpdate}
+                        rightPaneRef={rightPaneRef}
+                        tableListRef={tableListRef}
+                        isTableListOpen={isTableListOpen}
+                        setIsTableListOpen={setIsTableListOpen}
+                        linkedErdProject={linkedErdProject}
+                        erdTables={erdTables}
+                        drawElements={drawElements}
+                        zoom={zoom}
+                        tableListPanelPos={tableListPanelPos}
+                        flowToScreenPosition={flowToScreenPosition}
+                    />
+                    )}
                     </div>
                 </div> {/* End Body Split Layout */}
 

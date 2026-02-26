@@ -82,6 +82,12 @@ export interface Screen {
     };
     /** 격자 보조선 표시 여부 (기본 true) */
     guideLinesVisible?: boolean;
+    /** 하위 컴포넌트 (부분 컴포넌트화) - 화면 설계에서 개별 추가 가능 */
+    subComponents?: Array<{
+        id: string;
+        name: string;
+        elementIds: string[];  // drawElements 중 포함할 ID 목록
+    }>;
 }
 
 /** 테이블 셀 데이터 (엑셀형 고도화) */

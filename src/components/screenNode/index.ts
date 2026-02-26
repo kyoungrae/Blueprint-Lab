@@ -9,6 +9,7 @@ export { default as ImageContent } from './ImageContent';
 export { default as RightPane } from './RightPane';
 export { default as StylePanel } from './StylePanel';
 export { default as LayerPanel } from './LayerPanel';
+export { default as ComponentPickerButton } from './ComponentPickerButton';
 
 // ── Shared Types & Utilities ──────────────────────────────
 export {
