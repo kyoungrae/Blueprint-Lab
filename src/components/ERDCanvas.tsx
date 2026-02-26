@@ -707,8 +707,8 @@ const ERDCanvasContent: React.FC = () => {
                 </button>
             </div>
 
-            {/* Main Canvas Area */}
-            <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
+            {/* Main Canvas Area - select-none prevents browser text selection on Shift+drag */}
+            <div className="flex-1 min-w-0 h-full relative select-none" ref={flowWrapper}>
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
                     <button
