@@ -187,6 +187,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [tablePickerHover, setTablePickerHover] = useState<{ r: number, c: number } | null>(null);
     const [tablePickerPos, setTablePickerPos] = useState({ x: 0, y: 0 });
     const [showComponentPicker, setShowComponentPicker] = useState(false);
+    const [subComponentNameComposing, setSubComponentNameComposing] = useState<{ subId: string; value: string } | null>(null);
+    useEffect(() => {
+        setSubComponentNameComposing(null);
+    }, [selectedElementIds]);
     const [componentPickerPos, setComponentPickerPos] = useState({ x: 0, y: 0 });
     const isDraggingTablePickerRef = useRef(false);
     const isDraggingComponentPickerRef = useRef(false);
@@ -418,6 +422,17 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         syncUpdate({ subComponents: nextSubComponents });
         saveHistory(screen.drawElements || [], screen.position, nextSubComponents);
     }, [selectedElementIds, isLocked, screen.subComponents, screen.position, screen.drawElements, update, syncUpdate, saveHistory]);
+
+    const handleUpdateSubComponentName = useCallback((subId: string, newName: string) => {
+        if (isLocked || !newName.trim()) return;
+        const existing = screen.subComponents ?? [];
+        const nextSubComponents = existing.map((s) =>
+            s.id === subId ? { ...s, name: newName.trim() } : s
+        );
+        update({ subComponents: nextSubComponents });
+        syncUpdate({ subComponents: nextSubComponents });
+        saveHistory(screen.drawElements || [], screen.position, nextSubComponents);
+    }, [isLocked, screen.subComponents, screen.position, screen.drawElements, update, syncUpdate, saveHistory]);
 
     const selectionBounds = React.useMemo(() => {
         if (selectedElementIds.length === 0) return null;
@@ -3236,19 +3251,69 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 }}
                                             >
                                                 {isUnregisterMode ? (
-                                                    <PremiumTooltip label="부분 컴포넌트화 해제">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleUnregisterPartialComponent();
-                                                            }}
-                                                            onMouseDown={(e) => e.stopPropagation()}
-                                                            className="px-2 py-1 bg-gray-400 text-white text-[10px] font-bold rounded-md shadow-md hover:bg-gray-500 flex items-center gap-1"
-                                                        >
-                                                            <PackageX size={12} />
-                                                            부분 컴포넌트화 해제
-                                                        </button>
-                                                    </PremiumTooltip>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <PremiumTooltip label="부분 컴포넌트화 해제">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleUnregisterPartialComponent();
+                                                                }}
+                                                                onMouseDown={(e) => e.stopPropagation()}
+                                                                className="px-2 py-1 bg-gray-400 text-white text-[10px] font-bold rounded-md shadow-md hover:bg-gray-500 flex items-center gap-1"
+                                                            >
+                                                                <PackageX size={12} />
+                                                                부분 컴포넌트화 해제
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        {(() => {
+                                                            const sub = (screen.subComponents ?? []).find((s) =>
+                                                                selectedElementIds.some((id) => s.elementIds.includes(id))
+                                                            );
+                                                            if (!sub) return null;
+                                                            const displayValue = subComponentNameComposing?.subId === sub.id
+                                                                ? subComponentNameComposing.value
+                                                                : sub.name;
+                                                            return (
+                                                                <input
+                                                                    type="text"
+                                                                    value={displayValue}
+                                                                    onChange={(e) => {
+                                                                        const v = e.target.value;
+                                                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                                            setSubComponentNameComposing({ subId: sub.id, value: v });
+                                                                            return;
+                                                                        }
+                                                                        setSubComponentNameComposing(null);
+                                                                        const next = (screen.subComponents ?? []).map((x) =>
+                                                                            x.id === sub.id ? { ...x, name: v } : x
+                                                                        );
+                                                                        update({ subComponents: next });
+                                                                        syncUpdate({ subComponents: next });
+                                                                    }}
+                                                                    onCompositionEnd={(e) => {
+                                                                        const v = (e.target as HTMLInputElement).value;
+                                                                        setSubComponentNameComposing(null);
+                                                                        const next = (screen.subComponents ?? []).map((x) =>
+                                                                            x.id === sub.id ? { ...x, name: v } : x
+                                                                        );
+                                                                        update({ subComponents: next });
+                                                                        syncUpdate({ subComponents: next });
+                                                                    }}
+                                                                    onBlur={(e) => {
+                                                                        const v = e.target.value.trim();
+                                                                        setSubComponentNameComposing(null);
+                                                                        if (v && v !== sub.name) {
+                                                                            handleUpdateSubComponentName(sub.id, v);
+                                                                        }
+                                                                    }}
+                                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="w-24 px-2 py-1 text-[10px] font-medium border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+                                                                    placeholder="하위 컴포넌트명"
+                                                                />
+                                                            );
+                                                        })()}
+                                                    </div>
                                                 ) : (
                                                     <PremiumTooltip label="부분 컴포넌트화">
                                                         <button
