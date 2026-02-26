@@ -5,8 +5,7 @@ import {
 } from 'reactflow';
 import type { RelationshipEndType } from '../types/erd';
 
-const MARKER_SIZE = 14;
-const STROKE_W = 2;
+const STROKE_W = 1.5;
 
 /** type에서 sourceEnd/targetEnd 유도 */
 function getEndsFromType(type: string): { sourceEnd: RelationshipEndType; targetEnd: RelationshipEndType } {
@@ -18,31 +17,33 @@ function getEndsFromType(type: string): { sourceEnd: RelationshipEndType; target
     }
 }
 
-/** 일 필수 (1): 두 개의 수직선 */
+/** 일 필수 (1): 두 개의 수직선 - 경로에 수직 */
 function MarkerOneRequired({ color }: { color: string }) {
-    const h = 4;
+    const h = 5;
+    const gap = 3;
     return (
         <g stroke={color} strokeWidth={STROKE_W} strokeLinecap="round">
             <line x1={0} y1={-h} x2={0} y2={h} />
-            <line x1={3} y1={-h} x2={3} y2={h} />
+            <line x1={gap} y1={-h} x2={gap} y2={h} />
         </g>
     );
 }
 
 /** 일 선택 (0 또는 1): 원 + 수직선 */
 function MarkerOneOptional({ color }: { color: string }) {
-    const h = 3;
+    const r = 2.5;
+    const h = 4;
     return (
         <g stroke={color} strokeWidth={STROKE_W} fill="none" strokeLinecap="round">
-            <circle cx={2} cy={0} r={2} />
-            <line x1={6} y1={-h} x2={6} y2={h} />
+            <circle cx={r + 1} cy={0} r={r} />
+            <line x1={r * 2 + 4} y1={-h} x2={r * 2 + 4} y2={h} />
         </g>
     );
 }
 
-/** 다 필수 (1 이상): 까마귀발 - 세 줄이 퍼져 나감 */
+/** 다 필수 (1 이상): 까마귀발 */
 function MarkerManyRequired({ color }: { color: string }) {
-    const h = 5;
+    const h = 6;
     const s = 3;
     return (
         <g stroke={color} strokeWidth={STROKE_W} strokeLinecap="round">
@@ -55,17 +56,20 @@ function MarkerManyRequired({ color }: { color: string }) {
 
 /** 다 선택 (0 이상): 원 + 까마귀발 */
 function MarkerManyOptional({ color }: { color: string }) {
-    const h = 4;
+    const r = 2.5;
+    const h = 5;
     const s = 2.5;
     return (
         <g stroke={color} strokeWidth={STROKE_W} fill="none" strokeLinecap="round">
-            <circle cx={2} cy={0} r={2} />
-            <line x1={6} y1={0} x2={10} y2={-s} />
-            <line x1={6} y1={0} x2={10} y2={0} />
-            <line x1={6} y1={0} x2={10} y2={s} />
+            <circle cx={r + 1} cy={0} r={r} />
+            <line x1={r * 2 + 4} y1={0} x2={r * 2 + 4 + h} y2={-s} />
+            <line x1={r * 2 + 4} y1={0} x2={r * 2 + 4 + h} y2={0} />
+            <line x1={r * 2 + 4} y1={0} x2={r * 2 + 4 + h} y2={s} />
         </g>
     );
 }
+
+const MARKER_GAP = 3;
 
 function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndType; color: string; id: string; isStart?: boolean }) {
     const content = {
@@ -78,9 +82,10 @@ function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndTy
     return (
         <marker
             id={id}
-            markerWidth={MARKER_SIZE}
-            markerHeight={MARKER_SIZE}
-            refX={0}
+            markerWidth={48}
+            markerHeight={48}
+            viewBox="-12 -12 24 24"
+            refX={isStart ? MARKER_GAP : +MARKER_GAP+3}
             refY={0}
             orient={isStart ? 'auto-start-reverse' : 'auto'}
             markerUnits="userSpaceOnUse"
@@ -130,7 +135,7 @@ const ERDEdge = ({
                 <path
                     id={id}
                     d={edgePath}
-                    style={{ ...style, fill: 'none' }}
+                    style={{ ...style, fill: 'none', strokeLinecap: 'butt', strokeLinejoin: 'round' }}
                     className="react-flow__edge-path"
                     markerStart={`url(#${markerStartId})`}
                     markerEnd={`url(#${markerEndId})`}

@@ -320,11 +320,11 @@ const ERDCanvasContent: React.FC = () => {
             targetHandle: rel.targetHandle,
             type: 'erd',
             label: rel.type,
-            animated: true,
+            animated: false,
             reconnectable: true,
             hidden: rel.id === reconnectingEdgeId,
             interactionWidth: 40,
-            style: { stroke: getRelColor(rel.type), strokeWidth: 2 },
+            style: { stroke: getRelColor(rel.type), strokeWidth: 2, strokeDasharray: 'none' },
             data: {
                 color: getRelColor(rel.type),
                 type: rel.type,
