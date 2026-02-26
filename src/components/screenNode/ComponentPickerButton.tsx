@@ -5,6 +5,7 @@ import type { Screen } from '../../types/screenDesign';
 import type { Project } from '../../types/erd';
 import { getImageDisplayUrl } from '../../utils/imageUrl';
 import PremiumTooltip from './PremiumTooltip';
+import DrawElementsPreview from './DrawElementsPreview';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
@@ -129,6 +130,13 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                             <div className="w-full h-20 rounded-md overflow-hidden bg-gray-50 border border-gray-100 mb-2 flex items-center justify-center">
                                                 {c.imageUrl ? (
                                                     <img src={getImageDisplayUrl(c.imageUrl)} className="w-full h-full object-cover" alt="" />
+                                                ) : c.drawElements && c.drawElements.length > 0 ? (
+                                                    <DrawElementsPreview
+                                                        elements={c.drawElements}
+                                                        width={176}
+                                                        height={80}
+                                                        className="rounded-md"
+                                                    />
                                                 ) : (
                                                     <div className="text-gray-300">
                                                         <Box size={28} />
