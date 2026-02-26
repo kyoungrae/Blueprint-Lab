@@ -19,7 +19,6 @@ import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext
 import DrawTextComponent from './screenNode/DrawTextComponent';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
-import RightPane from './screenNode/RightPane';
 import StylePanel from './screenNode/StylePanel';
 import LayerPanel from './screenNode/LayerPanel';
 import ImageElement from './screenNode/ImageElement';
@@ -104,25 +103,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
     const isLocalLocked = screen.isLocked ?? true;
     const isLocked = isLocalLocked || isLockedByOther;
-    const [isTableListOpen, setIsTableListOpen] = React.useState(false);
-    const [tableListPanelPos, setTableListPanelPos] = React.useState<{ x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
-    const tableListRef = useRef<HTMLDivElement>(null);
     const screenOptionsRef = useRef<HTMLDivElement>(null);
-    const rightPaneRef = useRef<HTMLDivElement>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
 
     // Linked ERD Project Data
-    const { projects, currentProjectId } = useProjectStore();
-    const currentProject = projects.find(p => p.id === currentProjectId);
-    const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
-    // Extract table names safely
-    const erdTables = React.useMemo(() => {
-        const data = linkedErdProject?.data as { entities?: { name: string }[] } | undefined;
-        if (!data?.entities) return [];
-        return data.entities.map((e: { name: string }) => e.name).sort();
-    }, [linkedErdProject]);
-
+    const { currentProjectId } = useProjectStore();
 
 
     const update = (updates: Partial<Screen>) => {
@@ -237,9 +223,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
             const el = getClickTargetElement(e.target);
-            if (tableListRef.current && !tableListRef.current.contains(target) && !el?.closest('[data-table-list-portal]')) {
-                setIsTableListOpen(false);
-            }
             if (screenOptionsRef.current && !screenOptionsRef.current.contains(target)) {
                 setShowScreenOptionsPanel(false);
             }
@@ -263,27 +246,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             setImageCropMode(false);
         }
     }, [showImageStylePanel, imageCropMode]);
-
-    // 테이블 추가 패널: 생성 위치는 항상 "추가" 버튼 바로 아래로 고정
-    React.useLayoutEffect(() => {
-        if (!isTableListOpen || !tableListRef.current || !rightPaneRef.current) {
-            setTableListPanelPos(null);
-            return;
-        }
-        const rect = tableListRef.current.getBoundingClientRect();
-        const paneRect = rightPaneRef.current.getBoundingClientRect();
-        const DROPDOWN_W = 192;
-        const PAD = 8;
-        const spaceBelow = window.innerHeight - rect.bottom - PAD;
-        const spaceAbove = rect.top - PAD;
-        const openUpward = false;
-        const anchorScreenX = Math.max(paneRect.left + PAD, Math.min(rect.left, paneRect.right - DROPDOWN_W - PAD));
-        const anchorScreenY = rect.bottom + 4;
-        const flowPos = screenToFlowPosition({ x: anchorScreenX, y: anchorScreenY });
-        setTableListPanelPos({ x: flowPos.x, y: flowPos.y, openUpward, spaceBelow, spaceAbove });
-    // 스타일 패널과 동일 패턴: 열릴 때 앵커를 저장하고 줌 시 재계산하지 않음
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isTableListOpen]);
 
     const tableRowResizeRef = useRef<{ elId: string, rowIdx: number, startY: number, startHeights: number[] } | null>(null);
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
@@ -1698,8 +1660,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 />
                 )}
 
-                {/* ── 2. Meta Info Table (Extracted) ── */}
-                {!canvasOnlyMode && (
+                {/* ── 2. Meta Info Table (화면 설계용, 컴포넌트일 때 숨김) ── */}
+                {!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') && (
                 <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
                 )}
 
@@ -2462,8 +2424,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                     {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
                     <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
-                    {/* [LEFT PANE 70% or 100% when canvasOnly] - Drawing Canvas */}
-                    <div className={`${canvasOnlyMode ? 'w-full' : 'w-[70%]'} flex-shrink-0 min-w-0 border-r border-gray-200 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px]`}>
+                    {/* [LEFT PANE 100%] - Drawing Canvas (RightPane 초기화면설정/기능상세/관련테이블 제거) */}
+                    <div className="w-full flex-shrink-0 min-w-0 flex flex-col bg-gray-50/10 overflow-hidden rounded-bl-[13px] rounded-br-[13px]">
 
                         {/* Drawing Canvas Area (canvas only) */}
                         <div className="flex-1 min-h-0 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
@@ -3238,25 +3200,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             </div>
                     </div>
 
-                    {/* [RIGHT PANE 30%] - Details & Settings (Extracted) */}
-                    {!canvasOnlyMode && (
-                    <RightPane
-                        screen={screen}
-                        isLocked={isLocked}
-                        update={update}
-                        syncUpdate={syncUpdate}
-                        rightPaneRef={rightPaneRef}
-                        tableListRef={tableListRef}
-                        isTableListOpen={isTableListOpen}
-                        setIsTableListOpen={setIsTableListOpen}
-                        linkedErdProject={linkedErdProject}
-                        erdTables={erdTables}
-                        drawElements={drawElements}
-                        zoom={zoom}
-                        tableListPanelPos={tableListPanelPos}
-                        flowToScreenPosition={flowToScreenPosition}
-                    />
-                    )}
                     </div>
                 </div> {/* End Body Split Layout */}
 

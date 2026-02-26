@@ -22,7 +22,6 @@ import ScreenNode from './ScreenNode';
 import SpecNode from './SpecNode';
 import ScreenEdge from './ScreenEdge';
 import ComponentSidebar from './ComponentSidebar';
-import ScreenExportModal from './ScreenExportModal';
 import AddScreenModal from './AddScreenModal';
 import { useComponentStore } from '../store/componentStore';
 import { ScreenCanvasStoreProvider } from '../contexts/ScreenCanvasStoreContext';
@@ -32,12 +31,11 @@ import { useProjectStore } from '../store/projectStore';
 import type { Screen, PageSizeOption, PageOrientation } from '../types/screenDesign';
 import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
 import {
-    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2
+    Plus, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, X, ArrowLeft, Undo2, Redo2
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { copyToClipboard } from '../utils/clipboard';
 import { OnlineUsers, UserCursors } from './collaboration';
-import { toPng } from 'html-to-image';
 import { useSyncStore } from '../store/syncStore';
 
 const nodeTypes: NodeTypes = {
@@ -120,12 +118,9 @@ const ComponentCanvasContent: React.FC = () => {
     const { projects, currentProjectId, setCurrentProject, updateProjectData } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
-    const [isAddSpecModalOpen, setIsAddSpecModalOpen] = useState(false);
-    const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
-    const { getNodes, fitView, screenToFlowPosition, getViewport, setViewport } = useReactFlow();
+    const { getNodes, screenToFlowPosition, getViewport, setViewport } = useReactFlow();
 
     // Broadcast cursor position (ERD와 동일)
     const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
@@ -716,66 +711,6 @@ const ComponentCanvasContent: React.FC = () => {
         });
     }, [components, addComponent, currentProject, user, sendOperation]);
 
-    const handleAddSpecClick = useCallback(() => {
-        setIsAddSpecModalOpen(true);
-    }, []);
-
-    const handleAddSpecConfirm = useCallback((pageSize: PageSizeOption, pageOrientation: PageOrientation) => {
-        const baseName = '새 컴포넌트 명세';
-        const existingNames = new Set(components.map(s => s.name));
-        let newName = baseName;
-        if (existingNames.has(baseName)) {
-            let counter = 1;
-            while (existingNames.has(`${baseName}(${counter})`)) counter++;
-            newName = `${baseName}(${counter})`;
-        }
-
-        const existingIds = components.map(s => {
-            const match = s.screenId.match(/CMP-(\d+)/);
-            return match ? parseInt(match[1]) : 0;
-        });
-        const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
-        const screenId = `CMP-${String(nextNum).padStart(3, '0')}`;
-        const today = new Date().toISOString().split('T')[0];
-        const preset = PAGE_SIZE_PRESETS[pageSize];
-        const orientation = pageOrientation || 'portrait';
-        const imageWidth = orientation === 'landscape' ? preset.height : preset.width;
-        const imageHeight = orientation === 'landscape' ? preset.width : preset.height;
-
-        const newScreen: Screen = {
-            id: `spec_${Date.now()}`,
-            systemName: currentProject?.name || '',
-            screenId,
-            name: newName,
-            author: user?.name || '',
-            createdDate: today,
-            screenType: '기타',
-            page: '1/1',
-            screenDescription: '',
-            initialSettings: '',
-            functionDetails: '',
-            relatedTables: '',
-            position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
-            fields: [],
-            variant: 'SPEC',
-            specs: [],
-            isLocked: true,
-            pageSize,
-            pageOrientation,
-            imageWidth,
-            imageHeight,
-        };
-        addComponent(newScreen);
-
-        sendOperation({
-            type: 'SCREEN_CREATE',
-            targetId: newScreen.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: newScreen as unknown as Record<string, unknown>
-        });
-    }, [components, addComponent, currentProject, user, sendOperation]);
-
     const onNodeDragStop = useCallback((_: React.MouseEvent, node: RFNode) => {
         updateScreen(node.id, { position: node.position });
 
@@ -787,104 +722,6 @@ const ComponentCanvasContent: React.FC = () => {
             payload: { position: node.position }
         });
     }, [updateScreen, sendOperation, user]);
-
-    const handleExportImage = useCallback((selectedIds: string[]) => {
-        setIsExportModalOpen(false);
-
-        const element = document.querySelector('.react-flow') as HTMLElement;
-        if (!element) {
-            alert('캔버스를 찾을 수 없습니다.');
-            return;
-        }
-
-        const selectedSet = new Set(selectedIds);
-
-        // 선택된 노드만 보이도록 뷰 맞춤
-        try {
-            fitView({
-                nodes: selectedIds.map(id => ({ id })),
-                padding: 0.15,
-                duration: 0,
-                includeHiddenNodes: false,
-            });
-        } catch (_) {
-            // fitView 실패 시 무시 (전체 뷰로 캡처)
-        }
-
-        const baseOptions = {
-            backgroundColor: '#ffffff',
-            quality: 1,
-            pixelRatio: 1.5,
-            cacheBust: true,
-            imagePlaceholder: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f3f4f6" width="100" height="100"/%3E%3Ctext x="50" y="55" fill="%239ca3af" font-size="12" text-anchor="middle"%3E?%3C/text%3E%3C/svg%3E',
-        };
-
-        const doCapture = (opts: { filter?: (node: HTMLElement) => boolean }) =>
-            toPng(element, { ...baseOptions, ...opts });
-
-        setIsExporting(true);
-
-        // 뷰 업데이트 및 export 모드 적용 후 캡처
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                setTimeout(() => {
-                const filterWithSelection = (node: HTMLElement) => {
-                    const excludeSelectors = [
-                        '.react-flow__controls',
-                        '.react-flow__minimap',
-                        '.react-flow__background',
-                        '.react-flow__panel',
-                        '.react-flow__edges',
-                        '.react-flow__edgelabel-renderer',
-                        '.react-flow__handle',
-                    ];
-                    if (excludeSelectors.some(sel => node.closest?.(sel))) return false;
-                    if (node.classList?.contains('react-flow__node')) {
-                        const id = node.getAttribute?.('data-id');
-                        return id ? selectedSet.has(id) : false;
-                    }
-                    return true;
-                };
-
-                const fallbackFilter = (node: HTMLElement) => {
-                    const excludeSelectors = [
-                        '.react-flow__controls',
-                        '.react-flow__minimap',
-                        '.react-flow__background',
-                        '.react-flow__panel',
-                        '.react-flow__edges',
-                        '.react-flow__edgelabel-renderer',
-                        '.react-flow__handle',
-                    ];
-                    return !excludeSelectors.some(sel => node.closest?.(sel));
-                };
-
-                const download = (dataUrl: string) => {
-                    const link = document.createElement('a');
-                    link.download = `component-design-${Date.now()}.png`;
-                    link.href = dataUrl;
-                    link.click();
-                };
-
-                doCapture({ filter: filterWithSelection })
-                    .then(download)
-                    .catch(() =>
-                        doCapture({ filter: fallbackFilter })
-                            .then(download)
-                            .catch(() =>
-                                doCapture({})
-                                    .then(download)
-                                    .catch((err: unknown) => {
-                                        console.error('Export failed:', err);
-                                        alert('이미지 내보내기에 실패했습니다.');
-                                    })
-                            )
-                    )
-                    .finally(() => setIsExporting(false));
-                });
-            });
-        });
-    }, [fitView]);
 
     const storeValue = useMemo(() => ({
         screens: components,
@@ -908,10 +745,10 @@ const ComponentCanvasContent: React.FC = () => {
     }
 
     return (
-        <CanvasOnlyModeContext.Provider value={true}>
+        <CanvasOnlyModeContext.Provider value={false}>
         <ScreenCanvasStoreProvider value={storeValue}>
         <ScreenDesignUndoRedoProvider>
-        <ExportModeContext.Provider value={isExporting}>
+        <ExportModeContext.Provider value={false}>
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
             <div className="relative flex h-full min-w-0">
                 <div
@@ -972,36 +809,9 @@ const ComponentCanvasContent: React.FC = () => {
                         <span className="whitespace-nowrap">컴포넌트 추가</span>
                     </button>
 
-                    <button
-                        onClick={handleAddSpecClick}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                    >
-                        <FileText size={16} className="shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">명세 추가</span>
-                    </button>
-
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <ToolbarUndoRedo />
-
-                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                    <button
-                        onClick={() => setIsExportModalOpen(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                    >
-                        <Upload size={16} className="text-green-500 shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
-                    </button>
-
-                    <button
-                        disabled
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-400 border border-gray-200 rounded-lg text-sm font-bold shadow-sm cursor-not-allowed opacity-60 shrink-0"
-                        title="가져오기 기능 준비중"
-                    >
-                        <Download size={16} className="text-gray-400 shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
-                    </button>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
@@ -1087,27 +897,11 @@ const ComponentCanvasContent: React.FC = () => {
                 {/* 그리기 도구 팝업 포털 - 상단 메뉴바/사이드바(z-10001) 아래에 렌더링 */}
                 <div id="panel-portal-root" className="fixed inset-0 z-[9000] pointer-events-none [&>*]:pointer-events-auto" aria-hidden="true" />
 
-                {isExportModalOpen && (
-                    <ScreenExportModal
-                        screens={components}
-                        onExport={handleExportImage}
-                        onClose={() => setIsExportModalOpen(false)}
-                    />
-                )}
-
                 {isAddScreenModalOpen && (
                     <AddScreenModal
                         variant="component"
                         onConfirm={handleAddScreenConfirm}
                         onClose={() => setIsAddScreenModalOpen(false)}
-                    />
-                )}
-
-                {isAddSpecModalOpen && (
-                    <AddScreenModal
-                        variant="spec"
-                        onConfirm={handleAddSpecConfirm}
-                        onClose={() => setIsAddSpecModalOpen(false)}
                     />
                 )}
 
