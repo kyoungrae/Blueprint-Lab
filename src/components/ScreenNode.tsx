@@ -483,7 +483,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const newElements: DrawElement[] = elements.map((el, i) => {
             const newId = `draw_${Date.now()}_${i}`;
             idMap.set(el.id, newId);
-            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY };
+            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id };
         });
         newElements.forEach((el) => {
             if (el.groupId && idMap.has(el.groupId)) {
@@ -2663,7 +2663,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 style={commonStyle}
                                                 onMouseDown={(e) => handleElementMouseDown(el.id, e)}
                                                 onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
-                                                className={`group-canvas-element ${isSelected ? 'ring-2 ring-offset-2' : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
+                                                className={`group-canvas-element ${isSelected ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
                                                 data-element-id={el.id}
                                             >
                                                 {el.type === 'rect' && (

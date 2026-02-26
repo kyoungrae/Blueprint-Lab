@@ -134,6 +134,8 @@ export interface DrawElement {
     verticalAlign?: 'top' | 'middle' | 'bottom';
     zIndex: number;
     groupId?: string;
+    /** 컴포넌트로 추가된 경우 원본 컴포넌트 ID (선택 시 보라색 링 표시) */
+    fromComponentId?: string;
     // Table-specific properties
     tableRows?: number;
     tableCols?: number;

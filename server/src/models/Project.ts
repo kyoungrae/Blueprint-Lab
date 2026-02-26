@@ -88,6 +88,8 @@ export interface IScreen {
     drawElements?: Record<string, unknown>[];  // 직접 그리기 요소 (이미지 포함)
     pageSize?: string;
     pageOrientation?: string;
+    /** 하위 컴포넌트 (부분 컴포넌트화) */
+    subComponents?: Array<{ id: string; name: string; elementIds: string[] }>;
 }
 
 // Screen Flow Interface
@@ -227,6 +229,7 @@ const ScreenSchema = new Schema<IScreen>({
     drawElements: { type: [Schema.Types.Mixed], default: [] },
     pageSize: { type: String },
     pageOrientation: { type: String },
+    subComponents: { type: [Schema.Types.Mixed], default: [] },
 }, { _id: false });
 
 const ScreenFlowSchema = new Schema<IScreenFlow>({
