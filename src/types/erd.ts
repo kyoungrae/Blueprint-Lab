@@ -19,6 +19,9 @@ export interface Entity {
     comment?: string;
 }
 
+/** 관계선 끝 기호: 일 필수(1), 일 선택(0또는1), 다 필수(1이상), 다 선택(0이상) */
+export type RelationshipEndType = '1' | '1o' | 'N' | 'No';
+
 export interface Relationship {
     id: string;
     source: string;
@@ -26,6 +29,10 @@ export interface Relationship {
     sourceHandle?: string;
     targetHandle?: string;
     type: '1:1' | '1:N' | 'N:M';
+    /** 소스 쪽 끝 기호 (미지정 시 type에서 유도) */
+    sourceEnd?: RelationshipEndType;
+    /** 타겟 쪽 끝 기호 (미지정 시 type에서 유도) */
+    targetEnd?: RelationshipEndType;
 }
 
 export type DBType = 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';

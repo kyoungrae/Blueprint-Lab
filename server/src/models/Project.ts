@@ -31,6 +31,8 @@ export interface IRelationship {
     sourceHandle?: string;
     targetHandle?: string;
     type: '1:1' | '1:N' | 'N:M';
+    sourceEnd?: string;
+    targetEnd?: string;
 }
 
 // Project Member Interface
@@ -173,6 +175,8 @@ const RelationshipSchema = new Schema<IRelationship>({
     sourceHandle: { type: String },
     targetHandle: { type: String },
     type: { type: String, enum: ['1:1', '1:N', 'N:M'], required: true },
+    sourceEnd: { type: String },
+    targetEnd: { type: String },
 }, { _id: false });
 
 const ProjectMemberSchema = new Schema<IProjectMember>({

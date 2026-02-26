@@ -1,6 +1,22 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
-import type { Relationship } from '../types/erd';
+import type { Relationship, RelationshipEndType } from '../types/erd';
+
+const END_OPTIONS: { value: RelationshipEndType; label: string }[] = [
+    { value: '1', label: '일 필수 (1)' },
+    { value: '1o', label: '일 선택 (0 또는 1)' },
+    { value: 'N', label: '다 필수 (1 이상)' },
+    { value: 'No', label: '다 선택 (0 이상)' },
+];
+
+function getDefaultEnds(type: string): { sourceEnd: RelationshipEndType; targetEnd: RelationshipEndType } {
+    switch (type) {
+        case '1:1': return { sourceEnd: '1', targetEnd: '1' };
+        case '1:N': return { sourceEnd: '1', targetEnd: 'N' };
+        case 'N:M': return { sourceEnd: 'N', targetEnd: 'N' };
+        default: return { sourceEnd: '1', targetEnd: 'N' };
+    }
+}
 
 interface EdgeEditModalProps {
     relationship: Relationship;
@@ -19,12 +35,24 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
     onDelete,
     onClose,
 }) => {
+    const defaults = getDefaultEnds(relationship.type);
     const [type, setType] = useState<'1:1' | '1:N' | 'N:M'>(relationship.type);
+    const [sourceEnd, setSourceEnd] = useState<RelationshipEndType>(relationship.sourceEnd ?? defaults.sourceEnd);
+    const [targetEnd, setTargetEnd] = useState<RelationshipEndType>(relationship.targetEnd ?? defaults.targetEnd);
+
+    const handleTypeChange = (newType: '1:1' | '1:N' | 'N:M') => {
+        setType(newType);
+        const d = getDefaultEnds(newType);
+        setSourceEnd(d.sourceEnd);
+        setTargetEnd(d.targetEnd);
+    };
 
     const handleSave = () => {
         onSave({
             ...relationship,
             type,
+            sourceEnd,
+            targetEnd,
         });
         onClose();
     };
@@ -70,19 +98,47 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                                         name="relationship-type"
                                         value={relType}
                                         checked={type === relType}
-                                        onChange={(e) => setType(e.target.value as '1:1' | '1:N' | 'N:M')}
+                                        onChange={() => handleTypeChange(relType)}
                                         className="w-4 h-4 text-blue-500"
                                     />
-                                    <span className="ml-3 font-medium text-gray-800">
-                                        {relType}
-                                    </span>
+                                    <span className="ml-3 font-medium text-gray-800">{relType}</span>
                                     <span className="ml-auto text-xs text-gray-400 font-medium">
-                                        {relType === '1:1' && '일대일 (1:1)'}
-                                        {relType === '1:N' && '일대다 (1:N)'}
-                                        {relType === 'N:M' && '다대다 (N:M)'}
+                                        {relType === '1:1' && '일대일'}
+                                        {relType === '1:N' && '일대다'}
+                                        {relType === 'N:M' && '다대다'}
                                     </span>
                                 </label>
                             ))}
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                                {sourceEntityName} 쪽
+                            </label>
+                            <select
+                                value={sourceEnd}
+                                onChange={(e) => setSourceEnd(e.target.value as RelationshipEndType)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium"
+                            >
+                                {END_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                                {targetEntityName} 쪽
+                            </label>
+                            <select
+                                value={targetEnd}
+                                onChange={(e) => setTargetEnd(e.target.value as RelationshipEndType)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium"
+                            >
+                                {END_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
                 </div>

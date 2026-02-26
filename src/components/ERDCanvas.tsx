@@ -322,10 +322,15 @@ const ERDCanvasContent: React.FC = () => {
             label: rel.type,
             animated: true,
             reconnectable: true,
-            hidden: rel.id === reconnectingEdgeId, // Hide while being "moved"
+            hidden: rel.id === reconnectingEdgeId,
             interactionWidth: 40,
             style: { stroke: getRelColor(rel.type), strokeWidth: 2 },
-            data: { color: getRelColor(rel.type) }
+            data: {
+                color: getRelColor(rel.type),
+                type: rel.type,
+                sourceEnd: rel.sourceEnd,
+                targetEnd: rel.targetEnd,
+            },
         }));
         setEdges(flowEdges);
     }, [relationships, setEdges, reconnectingEdgeId]);
@@ -707,8 +712,8 @@ const ERDCanvasContent: React.FC = () => {
                 </button>
             </div>
 
-            {/* Main Canvas Area - select-none prevents browser text selection on Shift+drag */}
-            <div className="flex-1 min-w-0 h-full relative select-none" ref={flowWrapper}>
+            {/* Main Canvas Area - pr-4 pt-4 prevents edge/handle clipping at boundaries */}
+            <div className="flex-1 min-w-0 h-full relative select-none pr-4 pt-4 pb-4 pl-4" ref={flowWrapper}>
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
                     <button
@@ -950,6 +955,7 @@ const ERDCanvasContent: React.FC = () => {
                     minZoom={0.05}
                     maxZoom={4}
                     fitView
+                    fitViewOptions={{ padding: 0.25 }}
                     multiSelectionKeyCode="Shift"
                     selectionKeyCode="Shift"
                     deleteKeyCode={null}

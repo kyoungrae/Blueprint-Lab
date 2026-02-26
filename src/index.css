@@ -15,6 +15,16 @@
   transition: stroke-width 0.2s;
 }
 
+/* ERD: prevent edge/connector clipping at viewport boundaries */
+.react-flow,
+.react-flow__container,
+.react-flow__viewport,
+.react-flow__renderer,
+.react-flow__edges,
+.react-flow__nodes {
+  overflow: visible !important;
+}
+
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: #2563eb !important;
   stroke-width: 4px !important;
