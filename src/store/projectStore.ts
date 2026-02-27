@@ -22,7 +22,7 @@ interface ProjectStore {
 
 export const useProjectStore = create<ProjectStore>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             projects: [],
             currentProjectId: null,
 
@@ -37,6 +37,7 @@ export const useProjectStore = create<ProjectStore>()(
                     });
                     if (response.ok) {
                         const data = await response.json();
+                        const prevProjects = get().projects;
                         // Map Mongo _id to id
                         const projects = data.map((p: any) => {
                             const pt = p.projectType || 'ERD';
@@ -50,6 +51,12 @@ export const useProjectStore = create<ProjectStore>()(
                                     projData = p.currentSnapshot?.entities ? p.currentSnapshot : { entities: [], relationships: [] };
                                 }
                             }
+                            const serverUpdatedAt = (p.updatedAt ? new Date(p.updatedAt).getTime() : 0) || 0;
+                            const local = prevProjects.find((lp: Project) => lp.id === p._id);
+                            const localUpdatedAt = local?.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+                            // Keep local data if newer, or if saved recently (save-on-unmount), or server has no timestamp
+                            const recentlySaved = local?.data && localUpdatedAt > 0 && (Date.now() - localUpdatedAt < 15000);
+                            const useLocalData = local?.data && (localUpdatedAt > serverUpdatedAt || recentlySaved);
                             return {
                                 ...p,
                                 id: p._id,
@@ -63,7 +70,8 @@ export const useProjectStore = create<ProjectStore>()(
                                     picture: m.userId?.picture,
                                     role: m.role || 'MEMBER'
                                 })),
-                                data: projData
+                                data: useLocalData ? local!.data : projData,
+                                updatedAt: useLocalData ? local!.updatedAt : p.updatedAt
                             };
                         });
                         set({ projects });

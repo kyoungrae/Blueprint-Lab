@@ -182,6 +182,11 @@ const ComponentCanvasContent: React.FC = () => {
                 ? currentProject.data
                 : (currentProject as any).componentData;
             if (data?.components || data?.flows) {
+                // #region agent log
+                const firstTable = (data.components || []).find((c: any) => c.drawElements?.some((e: any) => e.type === 'table'));
+                const sampleCell = firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellDataV2?.[0]?.content ?? firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellData?.[0];
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',location:'ComponentCanvas.tsx:importData',message:'importData called on load',data:{currentProjectId,componentCount:(data.components||[]).length,sampleTableCellContent:sampleCell},hypothesisId:'H2',timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
                 importData({ components: data.components || [], flows: data.flows || [] });
             }
         }
@@ -190,15 +195,44 @@ const ComponentCanvasContent: React.FC = () => {
     // Auto-save to ProjectStore (local and server)
     useEffect(() => {
         if (currentProjectId) {
+            let saved = false;
             const timer = setTimeout(() => {
+                saved = true;
+                // #region agent log
+                const firstTable = components.find((c: any) => c.drawElements?.some((e: any) => e.type === 'table'));
+                const sampleCell = firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellDataV2?.[0]?.content ?? firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellData?.[0];
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',location:'ComponentCanvas.tsx:autoSave',message:'updateProjectData executed',data:{currentProjectId,sampleTableCellContent:sampleCell},hypothesisId:'H1',runId:'post-fix',timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
                 updateProjectData(currentProjectId, {
                     components,
                     flows,
                 });
             }, 1000);
-            return () => clearTimeout(timer);
+            return () => {
+                // #region agent log
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',location:'ComponentCanvas.tsx:autoSaveCleanup',message:'auto-save effect cleanup',data:{currentProjectId,saveWasExecuted:saved},hypothesisId:'H1',runId:'post-fix',timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                clearTimeout(timer);
+            };
         }
     }, [components, flows, currentProjectId, updateProjectData]);
+
+    // Save on unmount: flush pending edits when leaving Component project (prevents loss when switching before debounce)
+    useEffect(() => {
+        const projectId = currentProjectId;
+        return () => {
+            if (projectId) {
+                const { components: comps, flows: flws } = useComponentStore.getState();
+                const { updateProjectData: save } = useProjectStore.getState();
+                // #region agent log
+                const firstTable = comps.find((c: any) => c.drawElements?.some((e: any) => e.type === 'table'));
+                const sampleCell = firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellDataV2?.[0]?.content ?? firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellData?.[0];
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',location:'ComponentCanvas.tsx:saveOnUnmount',message:'save on unmount executed',data:{projectId,sampleTableCellContent:sampleCell},hypothesisId:'H1',runId:'post-fix',timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                save(projectId, { components: comps, flows: flws });
+            }
+        };
+    }, [currentProjectId]);
 
     // Sync screens → ReactFlow nodes (캔버스 70% 반영하여 entity 크기 계산)
     const computeNodeStyle = (screen: Screen): React.CSSProperties | undefined => {
