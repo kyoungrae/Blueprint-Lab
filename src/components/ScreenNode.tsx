@@ -487,7 +487,19 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const newElements: DrawElement[] = elements.map((el, i) => {
             const newId = `draw_${Date.now()}_${i}`;
             idMap.set(el.id, newId);
-            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id };
+            let tableCellLockedIndices: number[] | undefined;
+            if (el.type === 'table' && (el.tableCellData || el.tableCellDataV2)) {
+                const rows = el.tableRows || 3;
+                const cols = el.tableCols || 3;
+                const total = rows * cols;
+                tableCellLockedIndices = [];
+                for (let ci = 0; ci < total; ci++) {
+                    const c = (el.tableCellDataV2?.[ci]?.content ?? el.tableCellData?.[ci] ?? '').trim();
+                    if (c.length > 0) tableCellLockedIndices.push(ci);
+                }
+                if (tableCellLockedIndices.length === 0) tableCellLockedIndices = undefined;
+            }
+            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, tableCellLockedIndices };
         });
         newElements.forEach((el) => {
             if (el.groupId && idMap.has(el.groupId)) {
@@ -2790,7 +2802,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     const cellColor = el.tableCellColors?.[cellIndex];
                                                                     const cellStyle = el.tableCellStyles?.[cellIndex] || {};
                                                                     const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
-                                                                    const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
+                                                                    const hasComponentText = (el.tableCellLockedIndices?.includes(cellIndex)) ?? false;
+                                                                    const isCellEditing = !hasComponentText && editingTableId === el.id && editingCellIndex === cellIndex;
                                                                     const isHeaderRow = r === 0;
 
 
@@ -2854,7 +2867,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 borderRight,
                                                                                 outline: isCellSelected ? '2px solid #3b82f6' : 'none',
                                                                                 outlineOffset: '-1px',
-                                                                                cursor: editingTableId === el.id ? 'crosshair' : 'default',
+                                                                                cursor: editingTableId === el.id ? (hasComponentText ? 'default' : 'crosshair') : 'default',
                                                                                 textAlign: cellStyle.textAlign || el.textAlign || 'center',
                                                                                 verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
                                                                                 overflow: 'hidden',
@@ -2901,6 +2914,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             onDoubleClick={(e) => {
                                                                                 if (isLocked) return;
                                                                                 if (editingTableId !== el.id) return;
+                                                                                if (el.tableCellLockedIndices?.includes(cellIndex)) return;
                                                                                 e.stopPropagation();
                                                                                 setEditingCellIndex(cellIndex);
                                                                             }}
