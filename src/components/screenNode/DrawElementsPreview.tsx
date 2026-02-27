@@ -18,6 +18,9 @@ interface DrawElementsPreviewProps {
     width: number;
     height: number;
     className?: string;
+    /** 캔버스 전체 크기 (지정 시 캔버스 전체를 축소하여 표시) */
+    canvasWidth?: number;
+    canvasHeight?: number;
 }
 
 /** 컴포넌트 drawElements를 축소 미리보기로 렌더링 */
@@ -26,6 +29,8 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
     width,
     height,
     className = '',
+    canvasWidth,
+    canvasHeight,
 }) => {
     if (!elements?.length) return null;
 
@@ -34,9 +39,15 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
     const minY = Math.min(...sorted.map((e) => e.y));
     const maxX = Math.max(...sorted.map((e) => e.x + e.width));
     const maxY = Math.max(...sorted.map((e) => e.y + e.height));
-    const boundsW = Math.max(1, maxX - minX);
-    const boundsH = Math.max(1, maxY - minY);
-    const scale = Math.min(width / boundsW, height / boundsH);
+    const elemBoundsW = Math.max(1, maxX - minX);
+    const elemBoundsH = Math.max(1, maxY - minY);
+    // canvasWidth/Height가 있으면 캔버스 전체 기준, 없으면 요소 bounds 기준
+    const boundsW = canvasWidth ?? elemBoundsW;
+    const boundsH = canvasHeight ?? elemBoundsH;
+    const offsetX = canvasWidth != null ? 0 : minX;
+    const offsetY = canvasHeight != null ? 0 : minY;
+    // 전체가 보이도록 축소 (stroke 등으로 인한 클리핑 방지)
+    const scale = Math.min(width / boundsW, height / boundsH) * 0.95;
 
     return (
         <div
@@ -44,8 +55,8 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
             style={{ width, height }}
         >
             {sorted.map((el) => {
-                const left = (el.x - minX) * scale;
-                const top = (el.y - minY) * scale;
+                const left = (el.x - offsetX) * scale;
+                const top = (el.y - offsetY) * scale;
                 const w = el.width * scale;
                 const h = el.height * scale;
                 const baseStyle: React.CSSProperties = {

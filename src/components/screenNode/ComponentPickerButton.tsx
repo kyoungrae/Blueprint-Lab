@@ -3,10 +3,20 @@ import { createPortal } from 'react-dom';
 import { Box, Crown, GripVertical } from 'lucide-react';
 import type { Screen } from '../../types/screenDesign';
 import type { Project } from '../../types/erd';
+import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../../types/screenDesign';
 import { getImageDisplayUrl } from '../../utils/imageUrl';
 import PremiumTooltip from './PremiumTooltip';
 import DrawElementsPreview from './DrawElementsPreview';
 import { useAuthStore } from '../../store/authStore';
+
+const getCanvasSize = (c: Screen): { w: number; h: number } => {
+    const sizeKey = c.pageSize && PAGE_SIZE_OPTIONS.includes(c.pageSize as any) ? c.pageSize! : 'A4';
+    const preset = PAGE_SIZE_PRESETS[sizeKey];
+    const orientation = c.pageOrientation || 'portrait';
+    return orientation === 'landscape'
+        ? { w: preset.height, h: preset.width }
+        : { w: preset.width, h: preset.height };
+};
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
@@ -146,15 +156,17 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                             onMouseDown={(e) => e.stopPropagation()}
                                             className="w-full bg-white p-2 rounded-lg shadow-sm hover:shadow-md transition-colors text-left border border-gray-100"
                                         >
-                                            <div className="w-full h-20 rounded-md overflow-hidden bg-gray-50 border border-gray-100 mb-2 flex items-center justify-center">
+                                            <div className="w-full h-24 rounded-md overflow-hidden bg-gray-50 border border-gray-100 mb-2 flex items-center justify-center">
                                                 {c.imageUrl ? (
                                                     <img src={getImageDisplayUrl(c.imageUrl)} className="w-full h-full object-cover" alt="" />
                                                 ) : c.drawElements && c.drawElements.length > 0 ? (
                                                     <DrawElementsPreview
                                                         elements={c.drawElements}
                                                         width={176}
-                                                        height={80}
+                                                        height={96}
                                                         className="rounded-md"
+                                                        canvasWidth={getCanvasSize(c).w}
+                                                        canvasHeight={getCanvasSize(c).h}
                                                     />
                                                 ) : (
                                                     <div className="text-gray-300">
