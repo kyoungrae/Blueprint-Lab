@@ -422,7 +422,8 @@ const ComponentCanvasContent: React.FC = () => {
                 const localItems = useComponentStore.getState().components || [];
                 const localNonEmpty = countNonEmptyTableCells(localItems);
                 const syncNonEmpty = countNonEmptyTableCells(items || []);
-                const shouldSkipStaleSync = localItems.length > 0 && localNonEmpty > 0 && syncNonEmpty === 0;
+                // Skip when sync would regress: (1) sync has fewer filled cells, or (2) same count but we have content (prefer local edits)
+                const shouldSkipStaleSync = localItems.length > 0 && (localNonEmpty > syncNonEmpty || (localNonEmpty === syncNonEmpty && localNonEmpty > 0));
                 // #region agent log
                 const syncTable = (items || []).find((c: any) => c.drawElements?.some((de: any) => de.type === 'table'));
                 const syncCell = syncTable?.drawElements?.find((de: any) => de.type === 'table')?.tableCellDataV2?.[0]?.content ?? syncTable?.drawElements?.find((de: any) => de.type === 'table')?.tableCellData?.[0];
