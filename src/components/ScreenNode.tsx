@@ -1216,10 +1216,20 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
     const deleteElements = (ids: string[]) => {
-        const nextElements = drawElements.filter(el => !ids.includes(el.id));
-        update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
-        saveHistory(nextElements);
+        const idsSet = new Set(ids);
+        const nextElements = drawElements.filter(el => !idsSet.has(el.id));
+
+        // subComponents에서 삭제된 element 참조 제거, elementIds가 비면 하위 컴포넌트 제거
+        const nextSubComponents = (screen.subComponents ?? [])
+            .map((sub) => ({
+                ...sub,
+                elementIds: sub.elementIds.filter((eid) => !idsSet.has(eid)),
+            }))
+            .filter((sub) => sub.elementIds.length > 0);
+
+        update({ drawElements: nextElements, subComponents: nextSubComponents });
+        syncUpdate({ drawElements: nextElements, subComponents: nextSubComponents });
+        saveHistory(nextElements, screen.position, nextSubComponents);
         setSelectedElementIds([]);
     };
 
