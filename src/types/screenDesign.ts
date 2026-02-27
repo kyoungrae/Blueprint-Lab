@@ -217,6 +217,19 @@ export const PAGE_SIZE_DIMENSIONS_MM: Record<string, { w: number; h: number }> =
 export const PAGE_SIZE_OPTIONS = ['A4', 'B4', 'A3', 'Letter'] as const;
 export type PageSizeOption = (typeof PAGE_SIZE_OPTIONS)[number];
 
+/** 화면의 드로잉 캔버스 크기 (imageWidth/imageHeight 우선, 없으면 pageSize+orientation으로 계산) */
+export function getCanvasDimensions(screen: Screen): { width: number; height: number } {
+    if (screen.imageWidth != null && screen.imageHeight != null) {
+        return { width: screen.imageWidth, height: screen.imageHeight };
+    }
+    const sizeKey = screen.pageSize && PAGE_SIZE_OPTIONS.includes(screen.pageSize as PageSizeOption) ? screen.pageSize! : 'A4';
+    const preset = PAGE_SIZE_PRESETS[sizeKey];
+    const orientation = (screen.pageOrientation || 'portrait') as PageOrientation;
+    const width = orientation === 'landscape' ? preset.height : preset.width;
+    const height = orientation === 'landscape' ? preset.width : preset.height;
+    return { width, height };
+}
+
 /** 용지 방향 */
 export type PageOrientation = 'portrait' | 'landscape';
 

@@ -2,7 +2,7 @@ import React, { memo, useState, useRef, useEffect, useContext, useCallback } fro
 import { createPortal } from 'react-dom';
 import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
-import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
+import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS, getCanvasDimensions } from '../types/screenDesign';
 
 import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX } from 'lucide-react';
 import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
@@ -480,8 +480,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         } else {
             const compW = component.imageWidth ?? 400;
             const compH = component.imageHeight ?? 300;
-            offsetX = Math.max(10, cw ? cw / 2 - compW / 2 : 50);
-            offsetY = Math.max(10, ch ? ch / 2 - compH / 2 : 50);
+            const sameSize = cw === compW && ch === compH;
+            offsetX = sameSize ? 0 : Math.max(10, cw ? cw / 2 - compW / 2 : 50);
+            offsetY = sameSize ? 0 : Math.max(10, ch ? ch / 2 - compH / 2 : 50);
         }
 
         const idMap = new Map<string, string>();
@@ -2694,17 +2695,24 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     {/* [LEFT PANE 70% or 100%] - Drawing Canvas (컴포넌트일 때 RightPane 숨김) */}
                     <div className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-br-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 min-w-0 flex flex-col bg-gray-50/10 overflow-hidden`}>
 
-                        {/* Drawing Canvas Area (canvas only) */}
-                        <div className="flex-1 min-h-0 overflow-hidden relative flex flex-col bg-white border-b border-gray-200"
+                        {/* Drawing Canvas Area (canvas only) - fixed size from pageSize for component/screen design sync */}
+                        {(() => {
+                            const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+                            return (
+                        <div className="flex-1 min-h-0 overflow-auto relative flex flex-col bg-white border-b border-gray-200"
                             style={{
                                 backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
                                 backgroundSize: '20px 20px'
                             }}
                         >
-                            {/* Canvas Viewboard */}
+                            {/* Canvas Viewboard - fixed dimensions for consistent coordinate system */}
+                            <div
+                                style={{ width: canvasW, height: canvasH, minWidth: canvasW, minHeight: canvasH }}
+                                className="nodrag shrink-0"
+                            >
                             <div
                                 ref={canvasRef}
-                                className="nodrag flex-1 relative overflow-visible outline-none cursor-crosshair h-full"
+                                className="nodrag w-full h-full relative overflow-visible outline-none cursor-crosshair"
                                 onMouseDown={handleCanvasMouseDown}
                                 onMouseMove={handleCanvasMouseMove}
                                 onMouseUp={handleCanvasMouseUp}
@@ -3558,6 +3566,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     {alignmentGuides && <AlignmentGuidesOverlay guides={alignmentGuides} />}
                                 </div>
                             </div>
+                        </div>
+                            );
+                        })()}
                     </div>
 
                     {/* [RIGHT PANE 30%] - 초기화면설정/기능상세/관련테이블 (화면 설계에만 표시, 컴포넌트 캔버스에서는 숨김) */}
