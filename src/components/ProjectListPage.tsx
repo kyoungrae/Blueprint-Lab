@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield } from 'lucide-react';
 import './ProjectListPage.css';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
 import { type DBType, type ProjectType, type ProjectMember } from '../types/erd';
+import AdminPage from './AdminPage';
 
 const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2 };
 
@@ -18,6 +19,7 @@ const ProjectListPage: React.FC = () => {
     const [editingMembersProject, setEditingMembersProject] = useState<string | null>(null);
     const [linkingProjectId, setLinkingProjectId] = useState<string | null>(null);
     const [linkingMode, setLinkingMode] = useState<'erd' | 'component' | null>(null);
+    const [showAdminPage, setShowAdminPage] = useState(false);
 
     // Form States
     const [selectedProjectType, setSelectedProjectType] = useState<ProjectType>('ERD');
@@ -274,6 +276,10 @@ const ProjectListPage: React.FC = () => {
 
     const targetProject = projects.find(p => p.id === editingMembersProject);
 
+    if (showAdminPage) {
+        return <AdminPage onBack={() => setShowAdminPage(false)} />;
+    }
+
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col relative">
             {/* Full Screen Loading Overlay */}
@@ -307,6 +313,13 @@ const ProjectListPage: React.FC = () => {
                             <img src={user?.picture} alt="" className="w-8 h-8 rounded-full border-2 border-white shadow-sm" />
                             <span className="text-sm font-bold text-gray-700 hidden sm:block">{user?.name}</span>
                         </div>
+                        <button
+                            onClick={() => setShowAdminPage(true)}
+                            className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all active:scale-95"
+                            title="관리자 페이지"
+                        >
+                            <Shield size={20} />
+                        </button>
                         <button
                             onClick={() => {
                                 if (window.confirm('로그아웃 하시겠습니까?')) {

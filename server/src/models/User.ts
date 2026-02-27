@@ -1,5 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export type UserTier = 'FREE' | 'PRO' | 'MASTER';
+
 // User Document Interface
 export interface IUser extends Document {
     email: string;
@@ -7,6 +9,7 @@ export interface IUser extends Document {
     password?: string;
     picture?: string;
     googleId?: string;
+    tier: UserTier;
     createdAt: Date;
     lastLoginAt: Date;
 }
@@ -17,6 +20,7 @@ const UserSchema = new Schema<IUser>({
     password: { type: String },
     picture: { type: String },
     googleId: { type: String, unique: true, sparse: true },
+    tier: { type: String, enum: ['FREE', 'PRO', 'MASTER'], default: 'FREE' },
     createdAt: { type: Date, default: Date.now },
     lastLoginAt: { type: Date, default: Date.now },
 });

@@ -3,12 +3,31 @@ import { LogIn, Database, ShieldCheck, Zap, Share2, UserPlus, Mail, Lock, User, 
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 
+const SAVED_EMAIL_COOKIE = 'saved_email';
+const SAVE_EMAIL_DAYS = 365;
+
+function getSavedEmail(): string {
+    const match = document.cookie.match(new RegExp('(^| )' + SAVED_EMAIL_COOKIE + '=([^;]+)'));
+    return match ? decodeURIComponent(match[2]) : '';
+}
+
+function setSavedEmail(value: string) {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + SAVE_EMAIL_DAYS * 24 * 60 * 60 * 1000);
+    document.cookie = `${SAVED_EMAIL_COOKIE}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/`;
+}
+
+function clearSavedEmail() {
+    document.cookie = `${SAVED_EMAIL_COOKIE}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+}
+
 const LoginPage: React.FC = () => {
     const { login } = useAuthStore();
     const { setCurrentProject } = useProjectStore();
     const [isSignup, setIsSignup] = useState(false);
     const [isCodeSent, setIsCodeSent] = useState(false);
     const [email, setEmail] = useState('');
+    const [saveEmail, setSaveEmail] = useState(false);
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [name, setName] = useState('');
@@ -20,6 +39,14 @@ const LoginPage: React.FC = () => {
         composing?.field === field ? composing.value : propValue;
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+    React.useEffect(() => {
+        const saved = getSavedEmail();
+        if (saved) {
+            setEmail(saved);
+            setSaveEmail(true);
+        }
+    }, []);
 
     React.useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -120,6 +147,12 @@ const LoginPage: React.FC = () => {
 
             localStorage.setItem('auth-token', data.token);
             login(data.user, data.token);
+
+            if (saveEmail) {
+                setSavedEmail(email);
+            } else {
+                clearSavedEmail();
+            }
 
             // If there's an invitation code, store it for ProjectListPage to handle
             if (invitationCode.trim()) {
@@ -271,6 +304,17 @@ const LoginPage: React.FC = () => {
                                             placeholder="example@email.com"
                                             className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
                                         />
+                                        {!isSignup && (
+                                            <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={saveEmail}
+                                                    onChange={(e) => setSaveEmail(e.target.checked)}
+                                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <span className="text-sm text-gray-600">이메일 저장</span>
+                                            </label>
+                                        )}
                                     </div>
                                     <div className="space-y-1.5">
                                         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 ml-1">

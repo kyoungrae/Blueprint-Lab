@@ -11,6 +11,7 @@ import { initializeSocketServer } from './websocket/SocketServer';
 import authRoutes from './routes/authRoutes';
 import projectRoutes from './routes/projectRoutes';
 import imageRoutes from './routes/imageRoutes';
+import adminRoutes from './routes/adminRoutes';
 import logger from './utils/logger';
 
 const app = express();
@@ -57,6 +58,7 @@ app.get('/health', (req, res) => {
 
 // Routes (이미지 라우트를 먼저 등록 - /:id/images/:imageId가 /:id보다 먼저 매칭되도록)
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/projects', imageRoutes);
 app.use('/api/projects', projectRoutes);
 
