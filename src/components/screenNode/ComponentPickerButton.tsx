@@ -171,9 +171,14 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                         </PremiumTooltip>
                                         <div className="flex flex-col gap-1 pt-1 border-t border-gray-100">
                                             <div className="text-[9px] font-bold text-gray-400 uppercase">하위 컴포넌트</div>
-                                            {c.subComponents && c.subComponents.length > 0 ? (
+                                            {(() => {
+                                                const drawIds = new Set((c.drawElements ?? []).map((e) => e.id));
+                                                const validSubs = (c.subComponents ?? []).filter((sub) =>
+                                                    sub.elementIds?.length > 0 && sub.elementIds.every((eid) => drawIds.has(eid))
+                                                );
+                                                return validSubs.length > 0 ? (
                                                 <div className="flex flex-wrap gap-1">
-                                                    {c.subComponents.map((sub) => (
+                                                    {validSubs.map((sub) => (
                                                         <PremiumTooltip key={sub.id} label={`${sub.name} 삽입`} dotColor="#7c3aed">
                                                         <button
                                                             onClick={(e) => {
@@ -188,11 +193,12 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                                         </PremiumTooltip>
                                                     ))}
                                                 </div>
-                                            ) : (
+                                                ) : (
                                                 <div className="text-[10px] text-gray-400 py-0.5">
                                                     없음 (컴포넌트 캔버스에서 부분 컴포넌트화로 등록)
                                                 </div>
-                                            )}
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 ))
