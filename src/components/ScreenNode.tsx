@@ -2970,7 +2970,21 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                         setEditingCellIndex(null);
                                                                                     }}
                                                                                     onKeyDown={(e) => {
-                                                                                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingCellIndex(null); syncUpdate({ drawElements }); }
+                                                                                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingCellIndex(null); syncUpdate({ drawElements }); return; }
+                                                                                        if (e.key === 'Tab') {
+                                                                                            e.preventDefault();
+                                                                                            syncUpdate({ drawElements });
+                                                                                            const locked = el.tableCellLockedIndices ?? [];
+                                                                                            const findNext = (start: number, dir: 1 | -1) => {
+                                                                                                for (let k = 1; k <= totalCells; k++) {
+                                                                                                    const i = (start + k * dir + totalCells) % totalCells;
+                                                                                                    if (!locked.includes(i)) return i;
+                                                                                                }
+                                                                                                return cellIndex;
+                                                                                            };
+                                                                                            const next = e.shiftKey ? findNext(cellIndex, -1) : findNext(cellIndex, 1);
+                                                                                            if (next !== cellIndex) { setEditingCellIndex(next); setSelectedCellIndices([next]); }
+                                                                                        }
                                                                                     }}
                                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                                 />
