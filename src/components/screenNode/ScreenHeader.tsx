@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Screen } from '../../types/screenDesign';
-import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM } from '../../types/screenDesign';
+import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM, getCanvasDimensions } from '../../types/screenDesign';
 import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal } from 'lucide-react';
 
 interface ScreenHeaderProps {
@@ -58,15 +58,15 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
 
     return (
         <div
-            className="nodrag nopan border-b border-gray-200 rounded-t-[13px] overflow-hidden"
+            className="nodrag nopan border-b border-gray-200 rounded-t-[13px] overflow-visible"
             onMouseDown={(e) => e.stopPropagation()}
         >
             {isComponent ? (
                 /* 컴포넌트: MetaInfoTable 스타일 1행 (컴포넌트명 | [input] | 생성자 | [author] | [버튼]) */
-                <table className="nodrag w-full border-collapse table-fixed">
+                <table className="nodrag w-full table-fixed border-separate border-spacing-0">
                     <tbody>
                         <tr>
-                            <td className={labelCell} style={{ width: '12%' }}>컴포넌트명</td>
+                            <td className={`${labelCell} rounded-tl-[13px]`} style={{ width: '12%' }}>컴포넌트명</td>
                             <td className={valueCell} style={{ width: '38%' }}>
                                 <input
                                     type="text"
@@ -87,8 +87,8 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                             </td>
                             <td className={labelCell} style={{ width: '12%' }}>생성자</td>
                             <td className={`${valueCell} text-center font-medium`} style={{ width: '28%' }}>{screen.author || '-'}</td>
-                            <td className="bg-[#2c3e7c] px-2 py-1 border-r-0 align-middle" style={{ width: '10%' }}>
-                                <div className={`flex items-center justify-end gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
+                            <td className="bg-[#2c3e7c] px-2 py-1 border-r-0 align-middle rounded-tr-[13px]" style={{ width: '10%' }}>
+                                <div className={`flex items-center justify-end gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto' : ''}`}>
                                     <div className="relative" ref={screenOptionsRef}>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); setShowScreenOptionsPanel((v) => !v); }}
@@ -114,7 +114,11 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                                             <button
                                                                 key={s}
                                                                 type="button"
-                                                                onClick={() => { update({ pageSize: s }); syncUpdate({ pageSize: s }); }}
+                                                                onClick={() => {
+                                                                    const { width, height } = getCanvasDimensions({ pageSize: s, pageOrientation: screen.pageOrientation || 'portrait' } as Screen);
+                                                                    const u = { pageSize: s, imageWidth: width, imageHeight: height };
+                                                                    update(u); syncUpdate(u);
+                                                                }}
                                                                 className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${(screen.pageSize || 'A4') === s ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                                                             >
                                                                 <span className="block">{s}</span>
@@ -125,11 +129,19 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                                 </div>
                                                 <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">방향</div>
                                                 <div className="flex gap-1">
-                                                    <button type="button" onClick={() => { update({ pageOrientation: 'portrait' }); syncUpdate({ pageOrientation: 'portrait' }); }}
+                                                    <button type="button" onClick={() => {
+                                                        const { width, height } = getCanvasDimensions({ pageSize: screen.pageSize || 'A4', pageOrientation: 'portrait' } as Screen);
+                                                        const u = { pageOrientation: 'portrait' as const, imageWidth: width, imageHeight: height };
+                                                        update(u); syncUpdate(u);
+                                                    }}
                                                         className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${(screen.pageOrientation || 'portrait') === 'portrait' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                                                         <RectangleVertical size={12} /> 세로
                                                     </button>
-                                                    <button type="button" onClick={() => { update({ pageOrientation: 'landscape' }); syncUpdate({ pageOrientation: 'landscape' }); }}
+                                                    <button type="button" onClick={() => {
+                                                        const { width, height } = getCanvasDimensions({ pageSize: screen.pageSize || 'A4', pageOrientation: 'landscape' } as Screen);
+                                                        const u = { pageOrientation: 'landscape' as const, imageWidth: width, imageHeight: height };
+                                                        update(u); syncUpdate(u);
+                                                    }}
                                                         className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${screen.pageOrientation === 'landscape' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                                                         <RectangleHorizontal size={12} /> 가로
                                                     </button>
@@ -211,8 +223,9 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                             key={s}
                                             type="button"
                                             onClick={() => {
-                                                update({ pageSize: s });
-                                                syncUpdate({ pageSize: s });
+                                                const { width, height } = getCanvasDimensions({ pageSize: s, pageOrientation: screen.pageOrientation || 'portrait' } as Screen);
+                                                const u = { pageSize: s, imageWidth: width, imageHeight: height };
+                                                update(u); syncUpdate(u);
                                             }}
                                             className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                                                 (screen.pageSize || 'A4') === s ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -231,8 +244,9 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        update({ pageOrientation: 'portrait' });
-                                        syncUpdate({ pageOrientation: 'portrait' });
+                                        const { width, height } = getCanvasDimensions({ pageSize: screen.pageSize || 'A4', pageOrientation: 'portrait' } as Screen);
+                                        const u = { pageOrientation: 'portrait' as const, imageWidth: width, imageHeight: height };
+                                        update(u); syncUpdate(u);
                                     }}
                                     className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                                         (screen.pageOrientation || 'portrait') === 'portrait' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -243,8 +257,9 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        update({ pageOrientation: 'landscape' });
-                                        syncUpdate({ pageOrientation: 'landscape' });
+                                        const { width, height } = getCanvasDimensions({ pageSize: screen.pageSize || 'A4', pageOrientation: 'landscape' } as Screen);
+                                        const u = { pageOrientation: 'landscape' as const, imageWidth: width, imageHeight: height };
+                                        update(u); syncUpdate(u);
                                     }}
                                     className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                                         screen.pageOrientation === 'landscape' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
