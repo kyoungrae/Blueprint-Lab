@@ -2939,7 +2939,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         isLocked={isLocked}
                                                         isSelected={isSelected}
                                                         onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                onSelectionChange={handleElementTextSelectionChange}
+                                                        onSelectionChange={handleElementTextSelectionChange}
+                                                        autoFocus={editingTextId === el.id}
                                                     />
                                                 )}
                                                 {el.type === 'image' && (

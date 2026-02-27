@@ -12,13 +12,37 @@ function randomId(): string {
 
 function parseNum(val: string | null, fallback: number): number {
     if (val == null || val === '') return fallback;
-    const n = parseFloat(val);
+    const n = parseFloat(String(val).replace(/[a-zA-Z%]+$/, ''));
     return isNaN(n) ? fallback : n;
 }
 
 function parseColor(val: string | null): string | undefined {
     if (!val || val === 'none') return undefined;
     return val;
+}
+
+/** SVG text/tspan에서 텍스트 추출 (tspan, line break 포함) */
+function getTextFromSvgText(el: Element): string {
+    const parts: string[] = [];
+    const walk = (node: Element) => {
+        for (const child of node.childNodes) {
+            if (child.nodeType === Node.TEXT_NODE) {
+                const t = child.textContent?.trim();
+                if (t) parts.push(t);
+            } else if (child instanceof Element) {
+                const tag = child.tagName.toLowerCase();
+                if (tag === 'tspan') {
+                    const dy = child.getAttribute('dy');
+                    if (dy && parseFloat(dy) > 0) parts.push('\n');
+                    walk(child);
+                } else if (tag === 'text') {
+                    walk(child);
+                }
+            }
+        }
+    };
+    walk(el);
+    return parts.join('').replace(/[ \t]+/g, ' ').trim() || el.textContent?.trim() || '';
 }
 
 /** SVG 요소에서 스타일 추출 */
@@ -124,12 +148,16 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                     groupId: groupId,
                 });
             } else if (tag === 'text') {
-                const text = el.textContent?.trim() || '';
+                const text = getTextFromSvgText(el);
                 const fontSize = parseNum(
                     el.getAttribute('font-size') ?? el.getAttribute('style')?.match(/font-size:\s*([^;]+)/)?.[1]?.trim() ?? '',
                     14
                 );
                 const fontWeight = el.getAttribute('font-weight') ?? el.getAttribute('style')?.match(/font-weight:\s*([^;]+)/)?.[1]?.trim();
+                const textAnchor = el.getAttribute('text-anchor') ?? el.getAttribute('style')?.match(/text-anchor:\s*([^;]+)/)?.[1]?.trim();
+                const textAlign = textAnchor === 'middle' ? 'center' as const : textAnchor === 'end' ? 'right' as const : 'left';
+                const dominantBaseline = el.getAttribute('dominant-baseline') ?? el.getAttribute('style')?.match(/dominant-baseline:\s*([^;]+)/)?.[1]?.trim();
+                const verticalAlign = dominantBaseline === 'middle' ? 'middle' as const : dominantBaseline === 'hanging' ? 'top' as const : dominantBaseline === 'alphabetic' || dominantBaseline === 'baseline' ? 'bottom' as const : 'middle';
                 elements.push({
                     id,
                     type: 'text',
@@ -137,7 +165,7 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                     y: bbox.y,
                     width: Math.max(bbox.width, 20),
                     height: Math.max(bbox.height, 14),
-                    text,
+                    text: text || '',
                     fontSize,
                     fontWeight: fontWeight || undefined,
                     color: style.stroke ?? style.fill ?? '#000000',
@@ -145,6 +173,8 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                     stroke: style.stroke,
                     strokeWidth: style.strokeWidth,
                     opacity: style.opacity,
+                    textAlign,
+                    verticalAlign,
                     zIndex: zIndex++,
                     groupId: groupId,
                 });
