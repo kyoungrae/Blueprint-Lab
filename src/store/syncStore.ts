@@ -201,6 +201,19 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             window.dispatchEvent(new CustomEvent('erd:remote_operation', { detail: operation }));
         });
 
+        // Operation rejected by server (e.g. tier restriction)
+        socket.on('operation_rejected', (data: { reason?: string; message?: string }) => {
+            const msg = data?.message || '작업이 거부되었습니다.';
+            alert(msg);
+            window.dispatchEvent(new CustomEvent('erd:operation_rejected', { detail: data }));
+            // Refetch projects to sync state with server (revert optimistic update)
+            if (data?.reason === 'tier') {
+                import('./projectStore').then(({ useProjectStore }) => {
+                    useProjectStore.getState().fetchProjects();
+                });
+            }
+        });
+
         // Cursor updates
         socket.on('cursor_update', (data: any) => {
             get()._setCursor(data.clientId, data);

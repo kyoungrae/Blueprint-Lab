@@ -132,6 +132,23 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ message: '수정 권한이 없습니다.' });
         }
 
+        // Pro tier required for adding components in screen design (fromComponentId)
+        if (data && project.projectType === 'SCREEN_DESIGN' && project.linkedComponentProjectId && data.screens) {
+            const countComponentRefs = (screens: { drawElements?: Array<{ fromComponentId?: string }> }[]) =>
+                screens.reduce((n, s) => n + (s.drawElements || []).filter((e: { fromComponentId?: string }) => e.fromComponentId).length, 0);
+            const prevCount = countComponentRefs(project.screenSnapshot?.screens ?? []);
+            const newCount = countComponentRefs(data.screens);
+            if (newCount > prevCount) {
+                const userDoc = await User.findById(userId).select('tier').lean();
+                const tier = userDoc?.tier || 'FREE';
+                if (tier !== 'PRO' && tier !== 'MASTER') {
+                    return res.status(403).json({
+                        message: '컴포넌트 추가 기능은 Pro tier 이상부터 사용할 수 있습니다.'
+                    });
+                }
+            }
+        }
+
         if (name) project.name = name;
         if (description !== undefined) project.description = description;
         if (linkedErdProjectId !== undefined) project.linkedErdProjectId = linkedErdProjectId;

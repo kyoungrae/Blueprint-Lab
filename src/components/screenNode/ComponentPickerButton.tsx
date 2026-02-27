@@ -1,11 +1,12 @@
 import React, { useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Box, GripVertical } from 'lucide-react';
+import { Box, Crown, GripVertical } from 'lucide-react';
 import type { Screen } from '../../types/screenDesign';
 import type { Project } from '../../types/erd';
 import { getImageDisplayUrl } from '../../utils/imageUrl';
 import PremiumTooltip from './PremiumTooltip';
 import DrawElementsPreview from './DrawElementsPreview';
+import { useAuthStore } from '../../store/authStore';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
@@ -38,6 +39,10 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
     buttonRef,
     isDraggingRef,
 }) => {
+    const { user } = useAuthStore();
+    const tier = user?.tier || 'FREE';
+    const canUseComponentPicker = tier === 'PRO' || tier === 'MASTER';
+
     const handleHeaderMouseDown = useCallback(
         (e: React.MouseEvent) => {
             e.stopPropagation();
@@ -65,21 +70,35 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
 
     return (
         <div className="nodrag nopan relative flex items-center justify-center" ref={buttonRef}>
-            <PremiumTooltip label="컴포넌트 추가">
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        if (!show) {
-                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                            const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
-                            onPositionChange({ x: flowPos.x, y: flowPos.y });
-                        }
-                        onShowChange(!show);
-                    }}
-                    className={`p-2 rounded-lg transition-colors ${show ? 'bg-teal-100 text-teal-600' : 'hover:bg-gray-100 text-gray-500'}`}
-                >
-                    <Box size={18} />
-                </button>
+            <PremiumTooltip
+                label={canUseComponentPicker
+                    ? '컴포넌트 추가'
+                    : '컴포넌트 추가는 Pro tier 이상부터 사용 가능합니다. 관리자에게 문의해 주세요.'}
+                dotColor={canUseComponentPicker ? '#14b8a6' : undefined}
+            >
+                <div className="relative">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (!canUseComponentPicker) return;
+                            if (!show) {
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                onPositionChange({ x: flowPos.x, y: flowPos.y });
+                            }
+                            onShowChange(!show);
+                        }}
+                        className={`p-2 rounded-lg transition-colors ${!canUseComponentPicker ? 'cursor-not-allowed opacity-75' : ''} ${show ? 'bg-teal-100 text-teal-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                    >
+                        <Box size={18} />
+                    </button>
+                    {!canUseComponentPicker && (
+                        <div className="absolute flex items-center gap-0.5 px-1 py-px rounded bg-amber-100 text-amber-700 border border-amber-200/80 whitespace-nowrap" style={{ top: '-3.7px' }}>
+                            <Crown size={8} className="text-amber-600 shrink-0" />
+                            <span className="text-[7px] font-semibold leading-none">Pro</span>
+                        </div>
+                    )}
+                </div>
             </PremiumTooltip>
             {show &&
                 (() => {

@@ -5,7 +5,7 @@ import { config } from '../config';
 import { syncEngine, type CRDTOperation, type ERDState } from '../services/SyncEngine';
 import { lockManager } from '../services/LockManager';
 import { presenceManager, projectStateManager } from '../services/PresenceManager';
-import { Project, History } from '../models';
+import { Project, History, User } from '../models';
 
 interface UserInfo {
     id: string;
@@ -214,6 +214,31 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
 
             // Enqueue operation used queue to serialize requests
             await queue.enqueue(async () => {
+                // Pro tier required for adding components (fromComponentId) in screen design
+                if (operation.type === 'SCREEN_UPDATE') {
+                    const payload = operation.payload as Record<string, unknown>;
+                    const drawElements = payload?.drawElements as Array<{ fromComponentId?: string }> | undefined;
+                    const hasComponentRefs = Array.isArray(drawElements) && drawElements.some(e => e?.fromComponentId);
+
+                    if (hasComponentRefs && Types.ObjectId.isValid(projectId)) {
+                        const project = await Project.findById(projectId).select('linkedComponentProjectId projectType').lean();
+                        if (project?.linkedComponentProjectId && project?.projectType === 'SCREEN_DESIGN') {
+                            const userId = operation.userId || socketData.user.id;
+                            if (userId && userId !== 'anonymous') {
+                                const userDoc = await User.findById(userId).select('tier').lean();
+                                const tier = userDoc?.tier || 'FREE';
+                                if (tier !== 'PRO' && tier !== 'MASTER') {
+                                    socket.emit('operation_rejected', {
+                                        reason: 'tier',
+                                        message: '컴포넌트 추가 기능은 Pro tier 이상부터 사용할 수 있습니다.'
+                                    });
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Update Lamport clock
                 syncEngine.updateClock(projectId, operation.lamportClock);
 
