@@ -69,7 +69,10 @@ function applyStyleFromSource(target: DrawElement, source: DrawElement): DrawEle
     let updated = { ...target };
     let changed = false;
     for (const key of STYLE_KEYS) {
-        if (key === 'text' && !target.hasComponentText) continue;
+        if (key === 'text') {
+            if (target.hasComponentText === false) continue;
+            if (target.hasComponentText === undefined && target.fromComponentId && !(source.text || '').trim().length) continue;
+        }
         const srcVal = source[key];
         if (srcVal === undefined) continue;
         const tgtVal = target[key];
