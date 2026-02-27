@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
+import { AuthRequest } from '../middleware/authMiddleware';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { config } from '../config';
@@ -70,6 +71,8 @@ export const signup = async (req: Request, res: Response) => {
                 id: user._id,
                 email: user.email,
                 name: user.name,
+                picture: user.picture,
+                tier: user.tier || 'FREE',
             },
         });
     } catch (error) {
@@ -106,11 +109,37 @@ export const login = async (req: Request, res: Response) => {
                 email: user.email,
                 name: user.name,
                 picture: user.picture,
+                tier: user.tier || 'FREE',
             },
         });
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ message: '로그인 중 오류가 발생했습니다.' });
+    }
+};
+
+export const getMe = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: '인증이 필요합니다.' });
+        }
+
+        const user = await User.findById(userId).select('name email picture tier').lean();
+        if (!user) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        res.json({
+            id: user._id,
+            email: user.email,
+            name: user.name,
+            picture: user.picture,
+            tier: user.tier || 'FREE',
+        });
+    } catch (error) {
+        console.error('Get me error:', error);
+        res.status(500).json({ message: '사용자 정보를 가져오는 중 오류가 발생했습니다.' });
     }
 };
 

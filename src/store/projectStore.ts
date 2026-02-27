@@ -106,7 +106,10 @@ export const useProjectStore = create<ProjectStore>()(
                         body: JSON.stringify({ name, dbType, description, projectType }),
                     });
 
-                    if (!response.ok) throw new Error('Failed to create project');
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.message || '프로젝트 생성에 실패했습니다.');
+                    }
 
                     const p = await response.json();
                     const newProject: Project = {

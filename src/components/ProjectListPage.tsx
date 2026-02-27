@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown } from 'lucide-react';
 import './ProjectListPage.css';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
 import { type DBType, type ProjectType, type ProjectMember } from '../types/erd';
 import AdminPage from './AdminPage';
+import PremiumTooltip from './screenNode/PremiumTooltip';
 
 const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2 };
 
@@ -688,13 +689,37 @@ const ProjectListPage: React.FC = () => {
                                     <h4 className="text-lg font-black text-gray-900 mb-2">화면 설계서</h4>
                                     <p className="text-xs text-gray-500 text-center font-medium">UI/UX 화면 구조를 설계하고 관리합니다</p>
                                 </button>
-                                <button onClick={() => handleSelectProjectType('COMPONENT')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-teal-400 hover:bg-teal-50/80 transition-all duration-300 active:scale-[0.97]">
-                                    <div className="w-16 h-16 rounded-2xl bg-teal-100 text-teal-600 flex items-center justify-center mb-5 group-hover:bg-teal-600 group-hover:text-white transition-all">
-                                        <Box size={28} />
+                                <PremiumTooltip
+                                    label={(user?.tier === 'PRO' || user?.tier === 'MASTER')
+                                        ? '컴포넌트 프로젝트 생성'
+                                        : 'Pro tier 이상부터 사용 가능합니다. 관리자에게 문의해 주세요.'}
+                                    dotColor={(user?.tier === 'PRO' || user?.tier === 'MASTER') ? '#14b8a6' : undefined}
+                                >
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => {
+                                                const tier = user?.tier || 'FREE';
+                                                if (tier !== 'PRO' && tier !== 'MASTER') return;
+                                                handleSelectProjectType('COMPONENT');
+                                            }}
+                                            className={`group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 transition-all duration-300 w-full ${(user?.tier === 'PRO' || user?.tier === 'MASTER')
+                                                ? 'bg-gray-50/50 hover:border-teal-400 hover:bg-teal-50/80 active:scale-[0.97]'
+                                                : 'cursor-not-allowed opacity-75'}`}
+                                        >
+                                            {(user?.tier !== 'PRO' && user?.tier !== 'MASTER') && (
+                                                <div className="absolute top-1 left-4 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                                                    <Crown size={14} className="text-amber-600" />
+                                                    <span className="text-xs font-bold">Pro tier</span>
+                                                </div>
+                                            )}
+                                            <div className="w-16 h-16 rounded-2xl bg-teal-100 text-teal-600 flex items-center justify-center mb-5 group-hover:bg-teal-600 group-hover:text-white transition-all">
+                                                <Box size={28} />
+                                            </div>
+                                            <h4 className="text-lg font-black text-gray-900 mb-2">컴포넌트 프로젝트</h4>
+                                            <p className="text-xs text-gray-500 text-center font-medium">재사용 가능한 UI 컴포넌트를 설계하고 관리합니다</p>
+                                        </button>
                                     </div>
-                                    <h4 className="text-lg font-black text-gray-900 mb-2">컴포넌트 프로젝트</h4>
-                                    <p className="text-xs text-gray-500 text-center font-medium">재사용 가능한 UI 컴포넌트를 설계하고 관리합니다</p>
-                                </button>
+                                </PremiumTooltip>
                             </div>
                         </div>
                     </div>

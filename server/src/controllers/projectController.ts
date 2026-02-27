@@ -16,9 +16,18 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             return res.status(401).json({ message: '사용자 인증이 필요합니다.' });
         }
 
+        const pt = projectType || 'ERD';
+        if (pt === 'COMPONENT') {
+            const user = await User.findById(userId).select('tier').lean();
+            const tier = user?.tier || 'FREE';
+            if (tier !== 'PRO' && tier !== 'MASTER') {
+                return res.status(403).json({ message: '컴포넌트 프로젝트는 Pro tier 이상부터 생성할 수 있습니다.' });
+            }
+        }
+
         const project = new Project({
             name,
-            projectType: projectType || 'ERD',
+            projectType: pt,
             dbType,
             description,
             members: [{

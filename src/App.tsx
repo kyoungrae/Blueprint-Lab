@@ -7,9 +7,12 @@ import { useAuthStore } from './store/authStore';
 import { useProjectStore } from './store/projectStore';
 import { useSyncStore } from './store/syncStore';
 import { useEffect } from 'react';
+import { fetchWithAuth } from './utils/fetchWithAuth';
+
+const AUTH_API = import.meta.env.VITE_AUTH_API_URL || 'http://localhost:3001/api/auth';
 
 function App() {
-  const { isAuthenticated, user, logout } = useAuthStore();
+  const { isAuthenticated, user, logout, updateUser } = useAuthStore();
   const { currentProjectId, projects } = useProjectStore();
   const { isConnected, isAuthenticatedOnSocket, connect, disconnect, authenticate, joinProject, leaveProject } = useSyncStore();
 
@@ -21,6 +24,19 @@ function App() {
     window.addEventListener('auth:unauthorized', handleUnauthorized);
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, [logout]);
+
+  // Fetch current user (tier 등) when authenticated with token
+  useEffect(() => {
+    if (!isAuthenticated || !localStorage.getItem('auth-token')) return;
+    if (user?.email === 'guest@test.com' || user?.id?.startsWith?.('guest_')) return;
+
+    fetchWithAuth(`${AUTH_API}/me`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.tier) updateUser({ tier: data.tier });
+      })
+      .catch(() => {});
+  }, [isAuthenticated]);
 
   // Guest Session Cleanup: Logout guest if browser was closed (sessionStorage cleared)
   useEffect(() => {
