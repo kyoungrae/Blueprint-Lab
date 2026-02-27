@@ -8,6 +8,7 @@ import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
 import type { DBType } from '../types/erd';
 import { EntityLockBadge, useEntityLock } from './collaboration';
+import PremiumTooltip from './screenNode/PremiumTooltip';
 
 const DATA_TYPES: Record<DBType, string[]> = {
     MySQL: ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'DATETIME', 'DATE', 'DECIMAL', 'ENUM', 'JSON', 'BOOLEAN', 'TINYINT', 'BLOB'],
@@ -85,7 +86,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
         <div className={`flex items-center gap-1 py-1 px-2 rounded group/attr transition-colors relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'}`}>
             {/* PK Icon/Toggle */}
             <div className="w-8 flex-shrink-0 flex justify-center">
-                <div className="relative group/tooltip">
+                <PremiumTooltip label={attr.isPK ? "기본 키 (클릭 해제)" : "기본 키 (클릭 설정)"} dotColor="#eab308">
                     <button
                         onClick={() => onUpdate({ isPK: !attr.isPK })}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
@@ -94,7 +95,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
                     >
                         <Key size={14} />
                     </button>
-                </div>
+                </PremiumTooltip>
             </div>
 
             {/* Name Input - Local state buffering */}
@@ -148,13 +149,15 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
 
                 {/* NN Toggle */}
                 <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
-                    <button
-                        onClick={() => onUpdate({ isNullable: !attr.isNullable })}
-                        disabled={isLocked}
-                        className={`relative w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
-                    >
-                        <div className={`w-2.5 h-2.5 bg-white rounded-full transition-transform shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
-                    </button>
+                    <PremiumTooltip label={attr.isNullable ? "NULL 허용 (클릭 시 NOT NULL)" : "NOT NULL (클릭 시 NULL 허용)"} dotColor={!attr.isNullable ? '#ef4444' : undefined}>
+                        <button
+                            onClick={() => onUpdate({ isNullable: !attr.isNullable })}
+                            disabled={isLocked}
+                            className={`relative w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
+                        >
+                            <div className={`w-2.5 h-2.5 bg-white rounded-full transition-transform shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                        </button>
+                    </PremiumTooltip>
                     <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                 </div>
 
@@ -177,25 +180,29 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
 
                 {/* FK Toggle */}
                 <div className="w-8 flex-shrink-0 flex justify-center">
-                    <button
-                        onClick={() => onUpdate({ isFK: !attr.isFK })}
-                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                        disabled={isLocked}
-                        className={`${!isLocked ? 'nodrag' : 'pointer-events-auto cursor-grab'} p-1 rounded transition-colors ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}
-                    >
-                        <Link size={14} />
-                    </button>
+                    <PremiumTooltip label={attr.isFK ? "외래 키 (클릭 해제)" : "외래 키 (클릭 설정)"} dotColor="#a855f7">
+                        <button
+                            onClick={() => onUpdate({ isFK: !attr.isFK })}
+                            onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                            disabled={isLocked}
+                            className={`${!isLocked ? 'nodrag' : 'pointer-events-auto cursor-grab'} p-1 rounded transition-colors ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}
+                        >
+                            <Link size={14} />
+                        </button>
+                    </PremiumTooltip>
                 </div>
 
                 {/* Delete Column */}
                 {!isLocked && (
-                    <button
-                        onClick={onDelete}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="nodrag opacity-0 group-hover/attr:opacity-100 transition-opacity p-1 text-red-300 hover:text-red-500"
-                    >
-                        <Trash2 size={12} />
-                    </button>
+                    <PremiumTooltip label="컬럼 삭제" dotColor="#ef4444">
+                        <button
+                            onClick={onDelete}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="nodrag opacity-0 group-hover/attr:opacity-100 transition-opacity p-1 text-red-300 hover:text-red-500"
+                        >
+                            <Trash2 size={12} />
+                        </button>
+                    </PremiumTooltip>
                 )}
             </div>
         </div>
@@ -399,13 +406,17 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => 
                     spellCheck={false}
                 />
                 <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
-                    <button onClick={handleToggleLock} onMouseDown={(e) => e.stopPropagation()} className="nodrag p-1 hover:bg-white/20 rounded-md transition-colors text-white pointer-events-auto">
-                        {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
-                    </button>
-                    {!isLocked && (
-                        <button onClick={handleDeleteEntity} onMouseDown={(e) => e.stopPropagation()} className="nodrag opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-500 rounded text-white">
-                            <X size={16} />
+                    <PremiumTooltip label={isLocked ? "잠금 해제" : "잠금"}>
+                        <button onClick={handleToggleLock} onMouseDown={(e) => e.stopPropagation()} className="nodrag p-1 hover:bg-white/20 rounded-md transition-colors text-white pointer-events-auto">
+                            {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
                         </button>
+                    </PremiumTooltip>
+                    {!isLocked && (
+                        <PremiumTooltip label="테이블 삭제" dotColor="#ef4444">
+                            <button onClick={handleDeleteEntity} onMouseDown={(e) => e.stopPropagation()} className="nodrag opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-500 rounded text-white">
+                                <X size={16} />
+                            </button>
+                        </PremiumTooltip>
                     )}
                 </div>
             </div>
@@ -454,14 +465,16 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => 
 
             {!isLocked && (
                 <div className="px-2 pb-2">
-                    <button
-                        onClick={handleAddAttribute}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="nodrag w-full flex items-center justify-center gap-2 py-1.5 border-2 border-dashed border-gray-200 rounded text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition-all text-xs font-medium"
-                    >
-                        <Plus size={14} />
-                        컬럼 추가
-                    </button>
+                    <PremiumTooltip label="컬럼 추가">
+                        <button
+                            onClick={handleAddAttribute}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="nodrag w-full flex items-center justify-center gap-2 py-1.5 border-2 border-dashed border-gray-200 rounded text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition-all text-xs font-medium"
+                        >
+                            <Plus size={14} />
+                            컬럼 추가
+                        </button>
+                    </PremiumTooltip>
                 </div>
             )}
 

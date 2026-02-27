@@ -31,6 +31,7 @@ import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { OnlineUsers, UserCursors } from './collaboration';
+import PremiumTooltip from './screenNode/PremiumTooltip';
 import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Zap, Undo2, Redo2, History } from 'lucide-react';
 import { getLayoutedElements } from '../utils/layout';
 import { getForceLayoutedElements } from '../utils/forceLayout';
@@ -702,70 +703,78 @@ const ERDCanvasContent: React.FC = () => {
                 </div>
 
                 {/* Attached Toggle Button */}
-                <button
-                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-blue-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'
-                        }`}
-                    title={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
-                >
-                    {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-                </button>
+                <PremiumTooltip label={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}>
+                    <button
+                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                        className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-blue-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'
+                            }`}
+                    >
+                        {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                </PremiumTooltip>
             </div>
 
             {/* Main Canvas Area - pr-4 pt-4 prevents edge/handle clipping at boundaries */}
             <div className="flex-1 min-w-0 h-full relative select-none pr-4 pt-4 pb-4 pl-4" ref={flowWrapper}>
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
-                    <button
-                        onClick={() => setCurrentProject(null)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                        title="프로젝트 목록으로 돌아가기"
-                    >
-                        <Home size={16} className="text-blue-500 shrink-0" />
-                    </button>
-
-                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                    <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
+                    <PremiumTooltip label="프로젝트 목록으로 돌아가기">
                         <button
-                            onClick={async () => {
-                                if (currentProject?.id) {
-                                    const success = await copyToClipboard(currentProject.id);
-                                    if (success) {
-                                        alert('프로젝트 ID가 복사되었습니다: ' + currentProject.id);
-                                    } else {
-                                        alert('복사에 실패했습니다. 직접 복사해주세요: ' + currentProject.id);
-                                    }
-                                }
-                            }}
-                            className="text-xs font-mono font-bold text-gray-700 hover:text-blue-600 transition-colors text-left truncate max-w-[140px] sm:max-w-[180px]"
+                            onClick={() => setCurrentProject(null)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                         >
-                            {currentProject?.id}
+                            <Home size={16} className="text-blue-500 shrink-0" />
                         </button>
-                    </div>
+                    </PremiumTooltip>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <button
-                        onClick={handleAddEntity}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                    >
-                        <Plus size={16} className="shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">테이블 추가</span>
-                    </button>
+                    <PremiumTooltip label="클릭하여 ID 복사">
+                        <div className="flex flex-col justify-center min-w-0 shrink">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
+                            <button
+                                onClick={async () => {
+                                    if (currentProject?.id) {
+                                        const success = await copyToClipboard(currentProject.id);
+                                        if (success) {
+                                            alert('프로젝트 ID가 복사되었습니다: ' + currentProject.id);
+                                        } else {
+                                            alert('복사에 실패했습니다. 직접 복사해주세요: ' + currentProject.id);
+                                        }
+                                    }
+                                }}
+                                className="text-xs font-mono font-bold text-gray-700 hover:text-blue-600 transition-colors text-left truncate max-w-[140px] sm:max-w-[180px]"
+                            >
+                                {currentProject?.id}
+                            </button>
+                        </div>
+                    </PremiumTooltip>
+
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                    <PremiumTooltip label="테이블 추가">
+                        <button
+                            onClick={handleAddEntity}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                        >
+                            <Plus size={16} className="shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">테이블 추가</span>
+                        </button>
+                    </PremiumTooltip>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="relative shrink-0">
-                        <button
-                            onClick={() => setIsLayoutMenuOpen(!isLayoutMenuOpen)}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
-                        >
-                            <Layout size={16} className="text-orange-500 shrink-0" />
-                            <span className="whitespace-nowrap hidden sm:inline">정렬</span>
-                            <ChevronDown size={14} className={`text-gray-400 transition-transform shrink-0 ${isLayoutMenuOpen ? 'rotate-180' : ''}`} />
-                        </button>
+                        <PremiumTooltip label="노드 정렬">
+                            <button
+                                onClick={() => setIsLayoutMenuOpen(!isLayoutMenuOpen)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                            >
+                                <Layout size={16} className="text-orange-500 shrink-0" />
+                                <span className="whitespace-nowrap hidden sm:inline">정렬</span>
+                                <ChevronDown size={14} className={`text-gray-400 transition-transform shrink-0 ${isLayoutMenuOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                        </PremiumTooltip>
 
                         {isLayoutMenuOpen && (
                             <div className="absolute top-full lg:left-0 right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-200">
@@ -813,46 +822,51 @@ const ERDCanvasContent: React.FC = () => {
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="flex bg-gray-50/50 rounded-lg border border-gray-100 p-0.5 shrink-0">
-                        <button
-                            onClick={undo}
-                            disabled={!canUndo}
-                            className={`p-2 rounded-md transition-all ${canUndo ? 'text-gray-700 hover:bg-white hover:shadow-sm active:scale-95' : 'text-gray-200 cursor-not-allowed'}`}
-                            title="Undo (Cmd+Z)"
-                        >
-                            <Undo2 size={18} />
-                        </button>
+                        <PremiumTooltip label="Undo (Cmd+Z)">
+                            <button
+                                onClick={undo}
+                                disabled={!canUndo}
+                                className={`p-2 rounded-md transition-all ${canUndo ? 'text-gray-700 hover:bg-white hover:shadow-sm active:scale-95' : 'text-gray-200 cursor-not-allowed'}`}
+                            >
+                                <Undo2 size={18} />
+                            </button>
+                        </PremiumTooltip>
                         <div className="w-[1px] h-4 bg-gray-200 self-center mx-0.5" />
-                        <button
-                            onClick={redo}
-                            disabled={!canRedo}
-                            className={`p-2 rounded-md transition-all ${canRedo ? 'text-gray-700 hover:bg-white hover:shadow-sm active:scale-95' : 'text-gray-200 cursor-not-allowed'}`}
-                            title="Redo (Cmd+Shift+Z)"
-                        >
-                            <Redo2 size={18} />
-                        </button>
+                        <PremiumTooltip label="Redo (Cmd+Shift+Z)">
+                            <button
+                                onClick={redo}
+                                disabled={!canRedo}
+                                className={`p-2 rounded-md transition-all ${canRedo ? 'text-gray-700 hover:bg-white hover:shadow-sm active:scale-95' : 'text-gray-200 cursor-not-allowed'}`}
+                            >
+                                <Redo2 size={18} />
+                            </button>
+                        </PremiumTooltip>
                     </div>
 
                     {/* 5. 툴바의 Undo/Redo 버튼 옆에 히스토리 버튼 배치 */}
-                    <button
-                        onClick={() => setIsHistoryModalOpen(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                        title="변경 이력 보기"
-                    >
-                        <History size={16} className="text-blue-500 shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">히스토리</span>
-                    </button>
+                    <PremiumTooltip label="변경 이력 보기">
+                        <button
+                            onClick={() => setIsHistoryModalOpen(true)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                        >
+                            <History size={16} className="text-blue-500 shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">히스토리</span>
+                        </button>
+                    </PremiumTooltip>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="relative shrink-0">
-                        <button
-                            onClick={handleExport}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
-                        >
-                            <Upload size={16} className="text-green-500 shrink-0" />
-                            <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
-                            <ChevronDown size={14} className={`text-gray-400 transition-transform shrink-0 ${isExportMenuOpen ? 'rotate-180' : ''}`} />
-                        </button>
+                        <PremiumTooltip label="JSON/SQL 내보내기">
+                            <button
+                                onClick={handleExport}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
+                            >
+                                <Upload size={16} className="text-green-500 shrink-0" />
+                                <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
+                                <ChevronDown size={14} className={`text-gray-400 transition-transform shrink-0 ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                        </PremiumTooltip>
 
                         {isExportMenuOpen && (
                             <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-200">
@@ -884,13 +898,15 @@ const ERDCanvasContent: React.FC = () => {
                         )}
                     </div>
 
-                    <button
-                        onClick={() => setIsImportModalOpen(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                    >
-                        <Download size={16} className="text-purple-500 shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
-                    </button>
+                    <PremiumTooltip label="JSON 가져오기">
+                        <button
+                            onClick={() => setIsImportModalOpen(true)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                        >
+                            <Download size={16} className="text-purple-500 shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
+                        </button>
+                    </PremiumTooltip>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
@@ -913,18 +929,19 @@ const ERDCanvasContent: React.FC = () => {
                             )}
                             <span className="text-sm font-bold text-gray-700">{user?.name}</span>
                         </div>
-                        <button
-                            onClick={() => {
-                                if (window.confirm('로그아웃 하시겠습니까?')) {
-                                    setCurrentProject(null);
-                                    logout();
-                                }
-                            }}
-                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95"
-                            title="로그아웃"
-                        >
-                            <LogOut size={18} />
-                        </button>
+                        <PremiumTooltip label="로그아웃">
+                            <button
+                                onClick={() => {
+                                    if (window.confirm('로그아웃 하시겠습니까?')) {
+                                        setCurrentProject(null);
+                                        logout();
+                                    }
+                                }}
+                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95"
+                            >
+                                <LogOut size={18} />
+                            </button>
+                        </PremiumTooltip>
                     </div>
                 </div> {/* This closes the toolbar div from line 481 */}
 
