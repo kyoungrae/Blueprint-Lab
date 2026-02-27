@@ -179,7 +179,7 @@ const ERDEdge = ({
                     markerStart={`url(#${markerStartId})`}
                     markerEnd={`url(#${markerEndId})`}
                 />
-                {/* 빛이 시작점→끝점으로 이동하는 흐름 애니메이션 */}
+                {/* 빛이 시작점→끝점으로 이동하는 흐름 애니메이션 (2개) */}
                 <path
                     d={edgePath}
                     pathLength={1}
@@ -192,6 +192,22 @@ const ERDEdge = ({
                     style={{
                         opacity: 0.9,
                         animation: 'erd-flow-light 2s linear infinite',
+                    }}
+                    className="pointer-events-none"
+                />
+                <path
+                    d={edgePath}
+                    pathLength={1}
+                    fill="none"
+                    stroke={lightenColor(edgeColor)}
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray="0.02 0.08"
+                    style={{
+                        opacity: 0.9,
+                        animation: 'erd-flow-light 2s linear infinite',
+                        animationDelay: '1s',
                     }}
                     className="pointer-events-none"
                 />
