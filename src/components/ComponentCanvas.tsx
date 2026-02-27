@@ -182,11 +182,6 @@ const ComponentCanvasContent: React.FC = () => {
                 ? currentProject.data
                 : (currentProject as any).componentData;
             if (data?.components || data?.flows) {
-                // #region agent log
-                const firstTable = (data.components || []).find((c: any) => c.drawElements?.some((e: any) => e.type === 'table'));
-                const sampleCell = firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellDataV2?.[0]?.content ?? firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellData?.[0];
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',location:'ComponentCanvas.tsx:importData',message:'importData called on load',data:{currentProjectId,componentCount:(data.components||[]).length,sampleTableCellContent:sampleCell},hypothesisId:'H2',timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 importData({ components: data.components || [], flows: data.flows || [] });
             }
         }
@@ -195,23 +190,13 @@ const ComponentCanvasContent: React.FC = () => {
     // Auto-save to ProjectStore (local and server)
     useEffect(() => {
         if (currentProjectId) {
-            let saved = false;
             const timer = setTimeout(() => {
-                saved = true;
-                // #region agent log
-                const firstTable = components.find((c: any) => c.drawElements?.some((e: any) => e.type === 'table'));
-                const sampleCell = firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellDataV2?.[0]?.content ?? firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellData?.[0];
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',location:'ComponentCanvas.tsx:autoSave',message:'updateProjectData executed',data:{currentProjectId,sampleTableCellContent:sampleCell},hypothesisId:'H1',runId:'post-fix',timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 updateProjectData(currentProjectId, {
                     components,
                     flows,
                 });
             }, 1000);
             return () => {
-                // #region agent log
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',location:'ComponentCanvas.tsx:autoSaveCleanup',message:'auto-save effect cleanup',data:{currentProjectId,saveWasExecuted:saved},hypothesisId:'H1',runId:'post-fix',timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 clearTimeout(timer);
             };
         }
@@ -220,15 +205,7 @@ const ComponentCanvasContent: React.FC = () => {
     const flushAndLeaveProject = useCallback(async () => {
         if (currentProjectId) {
             const { components: comps, flows: flws } = useComponentStore.getState();
-            // #region agent log
-            const firstTable = comps.find((c: any) => c.drawElements?.some((e: any) => e.type === 'table'));
-            const sampleCell = firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellDataV2?.[0]?.content ?? firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellData?.[0];
-            fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',runId:'run3',hypothesisId:'H5',location:'ComponentCanvas.tsx:flushAndLeaveProject:start',message:'flush save before leaving project',data:{currentProjectId,sampleTableCellContent:sampleCell},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
             await updateProjectData(currentProjectId, { components: comps, flows: flws });
-            // #region agent log
-            fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',runId:'run3',hypothesisId:'H5',location:'ComponentCanvas.tsx:flushAndLeaveProject:end',message:'flush save finished before leaving',data:{currentProjectId},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
         }
         setCurrentProject(null);
     }, [currentProjectId, updateProjectData, setCurrentProject]);
@@ -240,11 +217,6 @@ const ComponentCanvasContent: React.FC = () => {
             if (projectId) {
                 const { components: comps, flows: flws } = useComponentStore.getState();
                 const { updateProjectData: save } = useProjectStore.getState();
-                // #region agent log
-                const firstTable = comps.find((c: any) => c.drawElements?.some((e: any) => e.type === 'table'));
-                const sampleCell = firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellDataV2?.[0]?.content ?? firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellData?.[0];
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',location:'ComponentCanvas.tsx:saveOnUnmount',message:'save on unmount executed',data:{projectId,sampleTableCellContent:sampleCell},hypothesisId:'H1',runId:'post-fix',timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 save(projectId, { components: comps, flows: flws });
             }
         };
@@ -424,11 +396,6 @@ const ComponentCanvasContent: React.FC = () => {
                 const syncNonEmpty = countNonEmptyTableCells(items || []);
                 // Skip when sync would regress: (1) sync has fewer filled cells, or (2) same count but we have content (prefer local edits)
                 const shouldSkipStaleSync = localItems.length > 0 && (localNonEmpty > syncNonEmpty || (localNonEmpty === syncNonEmpty && localNonEmpty > 0));
-                // #region agent log
-                const syncTable = (items || []).find((c: any) => c.drawElements?.some((de: any) => de.type === 'table'));
-                const syncCell = syncTable?.drawElements?.find((de: any) => de.type === 'table')?.tableCellDataV2?.[0]?.content ?? syncTable?.drawElements?.find((de: any) => de.type === 'table')?.tableCellData?.[0];
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',runId:'run4',hypothesisId:'H6',location:'ComponentCanvas.tsx:handleSync',message:'state_sync decision',data:{currentProjectId,syncedComponentsCount:(items||[]).length,sampleTableCellContent:syncCell,localNonEmptyTableCells:localNonEmpty,syncNonEmptyTableCells:syncNonEmpty,skipped:shouldSkipStaleSync},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 if (shouldSkipStaleSync) return;
                 importData({ components: items || [], flows: flws || [] });
             }
@@ -443,11 +410,6 @@ const ComponentCanvasContent: React.FC = () => {
             if (user && op.userId === user.id) return;
 
             if (op.type.startsWith('SCREEN_')) {
-                // #region agent log
-                const opCell = op?.payload?.drawElements?.find?.((de: any) => de.type === 'table')?.tableCellDataV2?.[0]?.content
-                    ?? op?.payload?.drawElements?.find?.((de: any) => de.type === 'table')?.tableCellData?.[0];
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',runId:'run2',hypothesisId:'H4',location:'ComponentCanvas.tsx:handleRemoteOp',message:'remote SCREEN operation applied',data:{currentProjectId,opType:op.type,targetId:op.targetId,sampleOpCellContent:opCell},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 if (op.type === 'SCREEN_CREATE') addComponent(op.payload as any);
                 else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateComponent(op.targetId, op.payload as any);
                 else if (op.type === 'SCREEN_DELETE') deleteComponent(op.targetId);
