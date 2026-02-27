@@ -46,14 +46,23 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
     const boundsH = canvasHeight ?? elemBoundsH;
     const offsetX = canvasWidth != null ? 0 : minX;
     const offsetY = canvasHeight != null ? 0 : minY;
-    // 전체가 보이도록 축소 (stroke 등으로 인한 클리핑 방지)
-    const scale = Math.min(width / boundsW, height / boundsH) * 0.95;
+    // 전체가 보이도록 축소 (여유 4px)
+    const padding = 4;
+    const scale = Math.min((width - padding) / boundsW, (height - padding) / boundsH);
+    const scaledW = boundsW * scale;
+    const scaledH = boundsH * scale;
+    const centerX = (width - scaledW) / 2;
+    const centerY = (height - scaledH) / 2;
 
     return (
         <div
             className={`relative overflow-hidden bg-white ${className}`}
             style={{ width, height }}
         >
+            <div
+                className="relative"
+                style={{ width: scaledW, height: scaledH, minWidth: scaledW, minHeight: scaledH, left: centerX, top: centerY, position: 'absolute' }}
+            >
             {sorted.map((el) => {
                 const left = (el.x - offsetX) * scale;
                 const top = (el.y - offsetY) * scale;
@@ -104,7 +113,7 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
                             <img
                                 src={getImageDisplayUrl(el.imageUrl)}
                                 alt=""
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-contain"
                             />
                         </div>
                     );
@@ -115,6 +124,30 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
                     const cols = el.tableCols ?? 3;
                     const v2Cells = getV2Cells(el);
                     const totalCells = rows * cols;
+                    const cellElements: React.ReactNode[] = [];
+                    for (let i = 0; i < totalCells; i++) {
+                        const v2 = v2Cells[i];
+                        if (v2?.isMerged) continue;
+                        const cellContent = v2?.content ?? el.tableCellData?.[i] ?? '';
+                        const cellRowSpan = v2?.rowSpan ?? 1;
+                        const cellColSpan = v2?.colSpan ?? 1;
+                        cellElements.push(
+                            <div
+                                key={i}
+                                className="border border-gray-400 flex items-center justify-center min-w-[2px] min-h-[2px]"
+                                style={{
+                                    fontSize: Math.max(5, (baseStyle.fontSize as number) * 0.6),
+                                    backgroundColor: el.tableCellColors?.[i] || 'transparent',
+                                    borderWidth: 1,
+                                    boxSizing: 'border-box',
+                                    gridColumn: cellColSpan > 1 ? `span ${cellColSpan}` : undefined,
+                                    gridRow: cellRowSpan > 1 ? `span ${cellRowSpan}` : undefined,
+                                }}
+                            >
+                                {cellContent}
+                            </div>
+                        );
+                    }
                     return (
                         <div
                             key={el.id}
@@ -125,21 +158,7 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
                                 gridTemplateRows: `repeat(${rows}, 1fr)`,
                             }}
                         >
-                            {Array.from({ length: totalCells }).map((_, i) => {
-                                const cellContent = v2Cells[i]?.content ?? el.tableCellData?.[i] ?? '';
-                                return (
-                                    <div
-                                        key={i}
-                                        className="border border-gray-200 flex items-center justify-center"
-                                        style={{
-                                            fontSize: Math.max(5, (baseStyle.fontSize as number) * 0.6),
-                                            backgroundColor: el.tableCellColors?.[i] || 'transparent',
-                                        }}
-                                    >
-                                        {cellContent}
-                                    </div>
-                                );
-                            })}
+                            {cellElements}
                         </div>
                     );
                 }
@@ -162,6 +181,7 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
                     </div>
                 );
             })}
+            </div>
         </div>
     );
 };

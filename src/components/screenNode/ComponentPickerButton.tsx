@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Box, Crown, GripVertical } from 'lucide-react';
 import type { Screen } from '../../types/screenDesign';
@@ -52,6 +52,7 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
     const { user } = useAuthStore();
     const tier = user?.tier || 'FREE';
     const canUseComponentPicker = tier === 'PRO' || tier === 'MASTER';
+    const [hoveredSub, setHoveredSub] = useState<{ componentId: string; subId: string } | null>(null);
 
     const handleHeaderMouseDown = useCallback(
         (e: React.MouseEvent) => {
@@ -145,7 +146,21 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                     컴포넌트가 없습니다
                                 </div>
                             ) : (
-                                componentList.map((c) => (
+                                componentList.map((c) => {
+                                    const drawIds = new Set((c.drawElements ?? []).map((e) => e.id));
+                                    const validSubs = (c.subComponents ?? []).filter((sub) =>
+                                        sub.elementIds?.length > 0 && sub.elementIds.every((eid) => drawIds.has(eid))
+                                    );
+                                    const isHoveringSub = hoveredSub?.componentId === c.id;
+                                    const hoveredSubData = isHoveringSub && hoveredSub
+                                        ? validSubs.find((s) => s.id === hoveredSub.subId)
+                                        : null;
+                                    const previewElements = hoveredSubData
+                                        ? (c.drawElements ?? []).filter((e) => hoveredSubData.elementIds.includes(e.id))
+                                        : c.drawElements ?? [];
+                                    const showSubPreview = hoveredSubData && previewElements.length > 0;
+
+                                    return (
                                     <div key={c.id} className="flex-none w-44 flex flex-col gap-2">
                                         <PremiumTooltip label="전체 추가" dotColor="#14b8a6">
                                         <button
@@ -154,19 +169,20 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                                 onInsert(c);
                                             }}
                                             onMouseDown={(e) => e.stopPropagation()}
+                                            onMouseEnter={() => setHoveredSub(null)}
                                             className="w-full bg-white p-2 rounded-lg shadow-sm hover:shadow-md transition-colors text-left border border-gray-100"
                                         >
                                             <div className="w-full h-24 rounded-md overflow-hidden bg-gray-50 border border-gray-100 mb-2 flex items-center justify-center">
-                                                {c.imageUrl ? (
+                                                {c.imageUrl && !showSubPreview ? (
                                                     <img src={getImageDisplayUrl(c.imageUrl)} className="w-full h-full object-cover" alt="" />
-                                                ) : c.drawElements && c.drawElements.length > 0 ? (
+                                                ) : previewElements.length > 0 ? (
                                                     <DrawElementsPreview
-                                                        elements={c.drawElements}
+                                                        elements={previewElements}
                                                         width={176}
                                                         height={96}
                                                         className="rounded-md"
-                                                        canvasWidth={getCanvasSize(c).w}
-                                                        canvasHeight={getCanvasSize(c).h}
+                                                        canvasWidth={showSubPreview ? undefined : getCanvasSize(c).w}
+                                                        canvasHeight={showSubPreview ? undefined : getCanvasSize(c).h}
                                                     />
                                                 ) : (
                                                     <div className="text-gray-300">
@@ -183,12 +199,7 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                         </PremiumTooltip>
                                         <div className="flex flex-col gap-1 pt-1 border-t border-gray-100">
                                             <div className="text-[9px] font-bold text-gray-400 uppercase">하위 컴포넌트</div>
-                                            {(() => {
-                                                const drawIds = new Set((c.drawElements ?? []).map((e) => e.id));
-                                                const validSubs = (c.subComponents ?? []).filter((sub) =>
-                                                    sub.elementIds?.length > 0 && sub.elementIds.every((eid) => drawIds.has(eid))
-                                                );
-                                                return validSubs.length > 0 ? (
+                                            {validSubs.length > 0 ? (
                                                 <div className="flex flex-wrap gap-1">
                                                     {validSubs.map((sub) => (
                                                         <PremiumTooltip key={sub.id} label={`${sub.name} 삽입`} dotColor="#7c3aed">
@@ -198,6 +209,8 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                                                 onInsert(c, sub.id);
                                                             }}
                                                             onMouseDown={(e) => e.stopPropagation()}
+                                                            onMouseEnter={() => setHoveredSub({ componentId: c.id, subId: sub.id })}
+                                                            onMouseLeave={() => setHoveredSub(null)}
                                                             className="px-2 py-1 bg-violet-50 text-violet-700 text-[10px] font-bold rounded-md hover:bg-violet-100 transition-colors truncate max-w-full"
                                                         >
                                                             {sub.name}
@@ -205,15 +218,15 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                                         </PremiumTooltip>
                                                     ))}
                                                 </div>
-                                                ) : (
+                                            ) : (
                                                 <div className="text-[10px] text-gray-400 py-0.5">
                                                     없음 (컴포넌트 캔버스에서 부분 컴포넌트화로 등록)
                                                 </div>
-                                                );
-                                            })()}
+                                            )}
                                         </div>
                                     </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
                     </div>,
