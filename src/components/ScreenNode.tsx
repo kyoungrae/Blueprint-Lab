@@ -1,4 +1,4 @@
-import React, { memo, useState, useRef, useEffect, useContext, useCallback } from 'react';
+import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
@@ -171,6 +171,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const canvasAreaRef = useRef<HTMLDivElement>(null);
+    const [canvasScale, setCanvasScale] = useState(1);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawStartPos, setDrawStartPos] = useState({ x: 0, y: 0 });
     const [tempElement, setTempElement] = useState<DrawElement | null>(null);
@@ -282,6 +284,28 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             setImageCropMode(false);
         }
     }, [showImageStylePanel, imageCropMode]);
+
+    // Canvas scale to fit (object-fit: contain) - 화면 설계만, 컴포넌트는 minWidth/minHeight로 처리
+    useLayoutEffect(() => {
+        const el = canvasAreaRef.current;
+        if (!el || screen.screenId?.startsWith('CMP-')) return;
+        const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+        const ro = new ResizeObserver(() => {
+            const w = el.clientWidth;
+            const h = el.clientHeight;
+            if (w <= 0 || h <= 0) return;
+            const s = Math.min(1, w / canvasW, h / canvasH);
+            setCanvasScale(s);
+        });
+        ro.observe(el);
+        const w = el.clientWidth;
+        const h = el.clientHeight;
+        if (w > 0 && h > 0) {
+            const s = Math.min(1, w / canvasW, h / canvasH);
+            setCanvasScale(s);
+        }
+        return () => ro.disconnect();
+    }, [screen.id, screen.imageWidth, screen.imageHeight, screen.pageSize, screen.pageOrientation]);
 
     React.useLayoutEffect(() => {
         if (!isTableListOpen || !tableListRef.current || !rightPaneRef.current) {
@@ -2695,16 +2719,24 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
                             const isComponent = screen.screenId?.startsWith('CMP-');
                             return (
-                        <div className="flex-1 min-h-0 overflow-auto relative flex flex-col bg-white border-b border-gray-200"
+                        <div
+                            ref={canvasAreaRef}
+                            className={`flex-1 min-h-0 overflow-hidden relative flex flex-col bg-white border-b border-gray-200 ${!isComponent ? 'flex items-center justify-center' : ''}`}
                             style={{
                                 backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
                                 backgroundSize: '20px 20px',
                                 ...(isComponent ? { minWidth: canvasW, minHeight: canvasH } : {}),
                             }}
                         >
-                            {/* Canvas Viewboard - fixed dimensions for consistent coordinate system */}
+                            {/* Canvas Viewboard - fixed dimensions, 화면 설계는 scale로 fit */}
                             <div
-                                style={{ width: canvasW, height: canvasH, minWidth: canvasW, minHeight: canvasH }}
+                                style={{
+                                    width: canvasW,
+                                    height: canvasH,
+                                    minWidth: canvasW,
+                                    minHeight: canvasH,
+                                    ...(!isComponent ? { transform: `scale(${canvasScale})`, transformOrigin: 'center center' } : {}),
+                                }}
                                 className="nodrag shrink-0"
                             >
                             <div
