@@ -499,7 +499,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 }
                 if (tableCellLockedIndices.length === 0) tableCellLockedIndices = undefined;
             }
-            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, tableCellLockedIndices };
+            const hasComponentText = (el.type === 'rect' || el.type === 'circle' || el.type === 'text') && (el.text || '').trim().length > 0;
+            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, hasComponentText: hasComponentText || undefined, tableCellLockedIndices };
         });
         newElements.forEach((el) => {
             if (el.groupId && idMap.has(el.groupId)) {
@@ -1005,7 +1006,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         e.stopPropagation();
         const el = drawElements.find(item => item.id === id);
         if (el && (el.type === 'rect' || el.type === 'circle' || el.type === 'text')) {
-            const hasComponentText = el.fromComponentId && (el.text || '').trim();
+            const hasComponentText = el.hasComponentText;
             if (!hasComponentText) setEditingTextId(id);
         }
         // Table double-click is handled at the cell level

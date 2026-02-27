@@ -138,6 +138,8 @@ export interface DrawElement {
     fromComponentId?: string;
     /** 컴포넌트로 추가된 경우 원본 drawElement ID (스타일 동기화용) */
     fromElementId?: string;
+    /** 텍스트/rect/circle: 컴포넌트에 작성된 텍스트가 있으면 true (삽입 시점 기준, 수정 불가) */
+    hasComponentText?: boolean;
     /** 테이블: 컴포넌트에 작성된 텍스트가 있는 셀 인덱스 (해당 셀만 수정 불가) */
     tableCellLockedIndices?: number[];
     // Table-specific properties
