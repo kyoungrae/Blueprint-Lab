@@ -54,15 +54,18 @@ function MarkerOneOptional({ color }: { color: string }) {
     );
 }
 
-/** 다 필수 (1 이상): 까마귀발 */
+/** 다 필수 (1 이상): 선 + 까마귀발 */
 function MarkerManyRequired({ color }: { color: string }) {
+    const lineH = 5;
+    const gap = 3;
     const h = 6;
     const s = 3.5;
     return (
         <g stroke={color} strokeWidth={STROKE_W} strokeLinecap="round">
-            <line x1={0} y1={0} x2={h} y2={-s} />
-            <line x1={0} y1={0} x2={h} y2={0} />
-            <line x1={0} y1={0} x2={h} y2={s} />
+            <line x1={0} y1={-lineH} x2={0} y2={lineH} />
+            <line x1={gap} y1={0} x2={gap + h} y2={-s} />
+            <line x1={gap} y1={0} x2={gap + h} y2={0} />
+            <line x1={gap} y1={0} x2={gap + h} y2={s} />
         </g>
     );
 }

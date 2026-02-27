@@ -992,9 +992,25 @@ const ERDCanvasContent: React.FC = () => {
                         relationship={editingRelationship}
                         sourceEntityName={entities.find(e => e.id === editingRelationship.source)?.name || 'Unknown'}
                         targetEntityName={entities.find(e => e.id === editingRelationship.target)?.name || 'Unknown'}
-                        onSave={(updated) => updateRelationship(updated.id, updated, user)}
+                        onSave={(updated) => {
+                            updateRelationship(updated.id, updated, user);
+                            sendOperation({
+                                type: 'RELATIONSHIP_UPDATE',
+                                targetId: updated.id,
+                                userId: user?.id || 'anonymous',
+                                userName: user?.name || 'Anonymous',
+                                payload: updated as unknown as Record<string, unknown>,
+                            });
+                        }}
                         onDelete={() => {
                             deleteRelationship(editingRelationship.id, user);
+                            sendOperation({
+                                type: 'RELATIONSHIP_DELETE',
+                                targetId: editingRelationship.id,
+                                userId: user?.id || 'anonymous',
+                                userName: user?.name || 'Anonymous',
+                                payload: {},
+                            });
                             setEditingRelationship(null);
                         }}
                         onClose={() => setEditingRelationship(null)}
