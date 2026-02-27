@@ -217,6 +217,22 @@ const ComponentCanvasContent: React.FC = () => {
         }
     }, [components, flows, currentProjectId, updateProjectData]);
 
+    const flushAndLeaveProject = useCallback(async () => {
+        if (currentProjectId) {
+            const { components: comps, flows: flws } = useComponentStore.getState();
+            // #region agent log
+            const firstTable = comps.find((c: any) => c.drawElements?.some((e: any) => e.type === 'table'));
+            const sampleCell = firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellDataV2?.[0]?.content ?? firstTable?.drawElements?.find((e: any) => e.type === 'table')?.tableCellData?.[0];
+            fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',runId:'run3',hypothesisId:'H5',location:'ComponentCanvas.tsx:flushAndLeaveProject:start',message:'flush save before leaving project',data:{currentProjectId,sampleTableCellContent:sampleCell},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+            await updateProjectData(currentProjectId, { components: comps, flows: flws });
+            // #region agent log
+            fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',runId:'run3',hypothesisId:'H5',location:'ComponentCanvas.tsx:flushAndLeaveProject:end',message:'flush save finished before leaving',data:{currentProjectId},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+        }
+        setCurrentProject(null);
+    }, [currentProjectId, updateProjectData, setCurrentProject]);
+
     // Save on unmount: flush pending edits when leaving Component project (prevents loss when switching before debounce)
     useEffect(() => {
         const projectId = currentProjectId;
@@ -384,10 +400,35 @@ const ComponentCanvasContent: React.FC = () => {
 
     // Listen for initial Sync from Server
     useEffect(() => {
+        const countNonEmptyTableCells = (items: any[]) => {
+            return (items || []).reduce((acc: number, comp: any) => {
+                const tables = (comp?.drawElements || []).filter((de: any) => de.type === 'table');
+                const tableCount = tables.reduce((tAcc: number, t: any) => {
+                    const v2 = t.tableCellDataV2 || [];
+                    if (v2.length > 0) {
+                        return tAcc + v2.reduce((n: number, c: any) => n + (((c?.content || '').trim().length > 0) ? 1 : 0), 0);
+                    }
+                    const legacy = t.tableCellData || [];
+                    return tAcc + legacy.reduce((n: number, c: any) => n + (((c || '').trim().length > 0) ? 1 : 0), 0);
+                }, 0);
+                return acc + tableCount;
+            }, 0);
+        };
+
         const handleSync = (e: CustomEvent) => {
             const { components: comps, screens, flows: flws } = e.detail;
             const items = comps || screens;
             if (items || flws) {
+                const localItems = useComponentStore.getState().components || [];
+                const localNonEmpty = countNonEmptyTableCells(localItems);
+                const syncNonEmpty = countNonEmptyTableCells(items || []);
+                const shouldSkipStaleSync = localItems.length > 0 && localNonEmpty > 0 && syncNonEmpty === 0;
+                // #region agent log
+                const syncTable = (items || []).find((c: any) => c.drawElements?.some((de: any) => de.type === 'table'));
+                const syncCell = syncTable?.drawElements?.find((de: any) => de.type === 'table')?.tableCellDataV2?.[0]?.content ?? syncTable?.drawElements?.find((de: any) => de.type === 'table')?.tableCellData?.[0];
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',runId:'run4',hypothesisId:'H6',location:'ComponentCanvas.tsx:handleSync',message:'state_sync decision',data:{currentProjectId,syncedComponentsCount:(items||[]).length,sampleTableCellContent:syncCell,localNonEmptyTableCells:localNonEmpty,syncNonEmptyTableCells:syncNonEmpty,skipped:shouldSkipStaleSync},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                if (shouldSkipStaleSync) return;
                 importData({ components: items || [], flows: flws || [] });
             }
         };
@@ -401,6 +442,11 @@ const ComponentCanvasContent: React.FC = () => {
             if (user && op.userId === user.id) return;
 
             if (op.type.startsWith('SCREEN_')) {
+                // #region agent log
+                const opCell = op?.payload?.drawElements?.find?.((de: any) => de.type === 'table')?.tableCellDataV2?.[0]?.content
+                    ?? op?.payload?.drawElements?.find?.((de: any) => de.type === 'table')?.tableCellData?.[0];
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bb5533'},body:JSON.stringify({sessionId:'bb5533',runId:'run2',hypothesisId:'H4',location:'ComponentCanvas.tsx:handleRemoteOp',message:'remote SCREEN operation applied',data:{currentProjectId,opType:op.type,targetId:op.targetId,sampleOpCellContent:opCell},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
                 if (op.type === 'SCREEN_CREATE') addComponent(op.payload as any);
                 else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateComponent(op.targetId, op.payload as any);
                 else if (op.type === 'SCREEN_DELETE') deleteComponent(op.targetId);
@@ -805,7 +851,7 @@ const ComponentCanvasContent: React.FC = () => {
             <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
                     <button
-                        onClick={() => setCurrentProject(null)}
+                        onClick={() => { void flushAndLeaveProject(); }}
                         className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                         title="프로젝트 목록으로 돌아가기"
                     >
@@ -869,8 +915,10 @@ const ComponentCanvasContent: React.FC = () => {
                         <button
                             onClick={() => {
                                 if (window.confirm('로그아웃 하시겠습니까?')) {
-                                    setCurrentProject(null);
-                                    logout();
+                                    void (async () => {
+                                        await flushAndLeaveProject();
+                                        logout();
+                                    })();
                                 }
                             }}
                             className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
