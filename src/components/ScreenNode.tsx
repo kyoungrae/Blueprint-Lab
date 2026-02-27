@@ -17,6 +17,7 @@ import { ExportModeContext } from '../contexts/ExportModeContext';
 import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import DrawTextComponent from './screenNode/DrawTextComponent';
+import EditableTableCell from './screenNode/EditableTableCell';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
 import RightPane from './screenNode/RightPane';
@@ -586,6 +587,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const isDraggingLayerPanelRef = useRef(false);
 
     const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
+    const [textSelectionFromTable, setTextSelectionFromTable] = useState<{ tableId: string; cellIndex: number } | null>(null);
+    const [textStyleToolbarRefresh, setTextStyleToolbarRefresh] = useState(0);
+
+    const handleElementTextSelectionChange = useCallback((rect: DOMRect | null) => {
+        setTextSelectionRect(rect);
+        setTextSelectionFromTable(null);
+    }, []);
 
     // Marquee drag-selection state
     const [isDragSelecting, setIsDragSelecting] = useState(false);
@@ -610,6 +618,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             setEditingTextId(null);
             setSelectedCellIndices([]);
             setEditingCellIndex(null);
+            setTextSelectionRect(null);
+            setTextSelectionFromTable(null);
         };
 
         // Use capture phase so this fires before ReactFlow can stop propagation
@@ -2560,20 +2570,84 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 </PremiumTooltip>
                                             </div>
 
-                                    {/* Text Style Settings - same line as tools when text is selected */}
-                                    {textSelectionRect && selectedElementIds.length > 0 && (() => {
-                                        const el = drawElements.find(it => it.id === selectedElementIds[0]);
+                                    {/* Text Style Settings - same line as tools when text is selected (element or table cell) */}
+                                    {textSelectionRect && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
+                                        const fromTable = textSelectionFromTable != null;
+                                        const el = fromTable
+                                            ? drawElements.find(it => it.id === textSelectionFromTable!.tableId)
+                                            : drawElements.find(it => it.id === selectedElementIds[0]);
                                         if (!el) return null;
+                                        const defaultColor = el.color || '#333333';
+                                        const defaultFontSize = el.fontSize || 14;
+                                        const getFontSizeFromSelection = (): number | null => {
+                                            const sel = window.getSelection();
+                                            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+                                            const range = sel.getRangeAt(0);
+                                            const node = range.startContainer.nodeType === Node.TEXT_NODE
+                                                ? range.startContainer.parentElement
+                                                : range.startContainer as Element;
+                                            if (!node) return null;
+                                            const computed = window.getComputedStyle(node as Element);
+                                            const px = parseFloat(computed.fontSize);
+                                            return isNaN(px) ? null : Math.round(px);
+                                        };
+                                        const displayFontSize = getFontSizeFromSelection() ?? defaultFontSize;
+                                        const applyToSelection = (fn: () => void): boolean => {
+                                            const sel = window.getSelection();
+                                            if (sel && !sel.isCollapsed) {
+                                                fn();
+                                                const active = document.activeElement as HTMLElement;
+                                                if (active?.contentEditable === 'true') {
+                                                    active.dispatchEvent(new Event('input', { bubbles: true }));
+                                                }
+                                                return false;
+                                            }
+                                            return !fromTable;
+                                        };
+                                        const applyFontSizePx = (px: number): boolean => {
+                                            const sel = window.getSelection();
+                                            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+                                            const editable = document.activeElement as HTMLElement;
+                                            if (!editable?.contentEditable) return false;
+                                            document.execCommand('fontSize', false, '7');
+                                            let node: Element | null = sel.anchorNode?.nodeType === Node.TEXT_NODE
+                                                ? (sel.anchorNode as Text).parentElement
+                                                : sel.anchorNode as Element;
+                                            while (node && node !== document.body) {
+                                                if (node.tagName === 'FONT' && node.getAttribute('size') === '7') {
+                                                    node.removeAttribute('size');
+                                                    (node as HTMLElement).style.fontSize = px + 'px';
+                                                    editable.dispatchEvent(new Event('input', { bubbles: true }));
+                                                    return true;
+                                                }
+                                                const span = node as HTMLElement;
+                                                if (node.tagName === 'SPAN' && span.style?.fontSize) {
+                                                    span.style.fontSize = px + 'px';
+                                                    editable.dispatchEvent(new Event('input', { bubbles: true }));
+                                                    return true;
+                                                }
+                                                node = node.parentElement;
+                                            }
+                                            return false;
+                                        };
                                         return (
                                             <>
                                                 <div className="w-px h-6 bg-gray-200 mx-1" />
-                                                <div data-text-style-toolbar className="nodrag nopan flex items-center gap-2 bg-gray-50/80 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => e.stopPropagation()}>
+                                                <div data-text-style-toolbar data-refresh={textStyleToolbarRefresh} className="nodrag nopan flex items-center gap-2 bg-gray-50/80 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => e.stopPropagation()}>
                                                     <div className="flex items-center gap-1.5 px-1 border-r border-gray-200 pr-2">
                                                         <Type size={12} className="text-gray-400" />
                                                         <input
                                                             type="number"
-                                                            value={el.fontSize || 14}
-                                                            onChange={(e) => updateElement(el.id, { fontSize: parseInt(e.target.value) || 12 })}
+                                                            value={displayFontSize}
+                                                            step={1}
+                                                            min={8}
+                                                            max={72}
+                                                            onChange={(e) => {
+                                                                const px = Math.min(72, Math.max(8, parseInt(e.target.value) || 12));
+                                                                const applied = applyFontSizePx(px);
+                                                                if (!applied && !fromTable) updateElement(el!.id, { fontSize: px });
+                                                                setTextStyleToolbarRefresh((r) => r + 1);
+                                                            }}
                                                             className="w-10 bg-transparent text-[11px] font-bold text-gray-700 outline-none"
                                                         />
                                                         <span className="text-[10px] text-gray-400">px</span>
@@ -2582,24 +2656,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm">
                                                             <input
                                                                 type="color"
-                                                                value={el.color || '#333333'}
+                                                                value={defaultColor}
                                                                 onChange={(e) => {
                                                                     const color = e.target.value;
-                                                                    const selection = window.getSelection();
-                                                                    if (selection && !selection.isCollapsed) {
-                                                                        document.execCommand('foreColor', false, color);
-                                                                        const activeEl = document.activeElement as HTMLElement;
-                                                                        if (activeEl && activeEl.contentEditable === 'true') {
-                                                                            const evt = new Event('input', { bubbles: true });
-                                                                            activeEl.dispatchEvent(evt);
-                                                                        }
-                                                                    } else {
-                                                                        updateElement(el.id, { color });
-                                                                    }
+                                                                    const needFallback = applyToSelection(() => document.execCommand('foreColor', false, color));
+                                                                    if (needFallback) updateElement(el!.id, { color });
                                                                 }}
                                                                 className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
                                                             />
-                                                            <div className="w-full h-full" style={{ backgroundColor: el.color || '#333333' }} />
+                                                            <div className="w-full h-full" style={{ backgroundColor: defaultColor }} />
                                                         </div>
                                                         <div className="flex gap-1">
                                                             {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
@@ -2607,17 +2672,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     key={c}
                                                                     onMouseDown={(e) => {
                                                                         e.preventDefault();
-                                                                        const selection = window.getSelection();
-                                                                        if (selection && !selection.isCollapsed) {
-                                                                            document.execCommand('foreColor', false, c);
-                                                                            const activeEl = document.activeElement as HTMLElement;
-                                                                            if (activeEl && activeEl.contentEditable === 'true') {
-                                                                                const evt = new Event('input', { bubbles: true });
-                                                                                activeEl.dispatchEvent(evt);
-                                                                            }
-                                                                        } else {
-                                                                            updateElement(el.id, { color: c });
-                                                                        }
+                                                                        const needFallback = applyToSelection(() => document.execCommand('foreColor', false, c));
+                                                                        if (needFallback) updateElement(el!.id, { color: c });
                                                                     }}
                                                                     className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
                                                                     style={{ backgroundColor: c }}
@@ -2694,7 +2750,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 isLocked={isLocked}
                                                                 isSelected={isSelected}
                                                                 onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                onSelectionChange={setTextSelectionRect}
+                                                                onSelectionChange={handleElementTextSelectionChange}
                                                                 autoFocus={editingTextId === el.id}
                                                                 className="px-2"
                                                             />
@@ -2711,7 +2767,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 isLocked={isLocked}
                                                                 isSelected={isSelected}
                                                                 onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                onSelectionChange={setTextSelectionRect}
+                                                                onSelectionChange={handleElementTextSelectionChange}
                                                                 autoFocus={editingTextId === el.id}
                                                                 className="px-4"
                                                             />
@@ -2724,7 +2780,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         isLocked={isLocked}
                                                         isSelected={isSelected}
                                                         onUpdate={(updates) => updateElement(el.id, updates)}
-                                                        onSelectionChange={setTextSelectionRect}
+                                                                onSelectionChange={handleElementTextSelectionChange}
                                                     />
                                                 )}
                                                 {el.type === 'image' && (
@@ -2921,53 +2977,29 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             }}
                                                                         >
                                                                             {isCellEditing ? (
-                                                                                <textarea
+                                                                                <EditableTableCell
+                                                                                    value={cellData}
+                                                                                    cellIndex={cellIndex}
+                                                                                    isLocked={hasComponentText}
                                                                                     autoFocus
-                                                                                    className="w-full h-full bg-white border-none outline-none resize-none p-1 text-[10px] absolute inset-0 z-[20]"
-                                                                                    value={tableCellComposing?.cellIndex === cellIndex ? tableCellComposing.value : cellData}
-                                                                                    onChange={(e) => {
-                                                                                        const val = e.target.value;
-                                                                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-                                                                                            setTableCellComposing({ cellIndex, value: val });
-                                                                                            return;
-                                                                                        }
-                                                                                        setTableCellComposing(null);
-                                                                                        // V2 업데이트
+                                                                                    isComposing={tableCellComposing?.cellIndex === cellIndex}
+                                                                                    composingValue={tableCellComposing?.cellIndex === cellIndex ? tableCellComposing.value : null}
+                                                                                    onComposingChange={(v) => setTableCellComposing(v != null ? { cellIndex, value: v } : null)}
+                                                                                    onValueChange={(html) => {
                                                                                         const newV2 = deepCopyCells(getV2Cells(el));
-                                                                                        if (newV2[cellIndex]) {
-                                                                                            newV2[cellIndex] = { ...newV2[cellIndex], content: val };
-                                                                                        }
-                                                                                        // Legacy도 동시 업데이트
+                                                                                        if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: html };
                                                                                         const newData = [...(el.tableCellData || [])];
-                                                                                        newData[cellIndex] = val;
+                                                                                        newData[cellIndex] = html;
                                                                                         const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
                                                                                         update({ drawElements: nextElements });
                                                                                     }}
-                                                                                    onCompositionEnd={(e) => {
-                                                                                        const val = (e.target as HTMLTextAreaElement).value;
-                                                                                        setTableCellComposing(null);
-                                                                                        const newV2 = deepCopyCells(getV2Cells(el));
-                                                                                        if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: val };
-                                                                                        const newData = [...(el.tableCellData || [])];
-                                                                                        newData[cellIndex] = val;
-                                                                                        const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
-                                                                                        update({ drawElements: nextElements });
+                                                                                    onSelectionChange={(rect) => {
+                                                                                        setTextSelectionRect(rect);
+                                                                                        setTextSelectionFromTable(rect ? { tableId: el.id, cellIndex } : null);
                                                                                     }}
                                                                                     onBlur={() => {
-                                                                                        if (tableCellComposing?.cellIndex === cellIndex) {
-                                                                                            const val = tableCellComposing.value;
-                                                                                            setTableCellComposing(null);
-                                                                                            const newV2 = deepCopyCells(getV2Cells(el));
-                                                                                            if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: val };
-                                                                                            const newData = [...(el.tableCellData || [])];
-                                                                                            newData[cellIndex] = val;
-                                                                                            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
-                                                                                            update({ drawElements: nextElements });
-                                                                                            syncUpdate({ drawElements: nextElements });
-                                                                                        } else {
-                                                                                            syncUpdate({ drawElements });
-                                                                                        }
                                                                                         setEditingCellIndex(null);
+                                                                                        syncUpdate({ drawElements });
                                                                                     }}
                                                                                     onKeyDown={(e) => {
                                                                                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingCellIndex(null); syncUpdate({ drawElements }); return; }
@@ -2987,6 +3019,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                         }
                                                                                     }}
                                                                                     onMouseDown={(e) => e.stopPropagation()}
+                                                                                    className="w-full h-full bg-white border-none outline-none p-1 text-[10px] absolute inset-0 z-[20] nodrag nopan"
+                                                                                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                                                                                 />
                                                                             ) : (
                                                                                 <div
@@ -2995,9 +3029,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                         alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
                                                                                         justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
                                                                                     }}
-                                                                                >
-                                                                                    {cellData}
-                                                                                </div>
+                                                                                    dangerouslySetInnerHTML={{ __html: cellData || '' }}
+                                                                                />
                                                                             )}
 
                                                                         </div>
