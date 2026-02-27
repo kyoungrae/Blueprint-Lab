@@ -66,8 +66,8 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                 <table className="nodrag w-full table-fixed border-separate border-spacing-0">
                     <tbody>
                         <tr>
-                            <td className={`${labelCell} rounded-tl-[13px]`} style={{ width: '12%' }}>컴포넌트명</td>
-                            <td className={valueCell} style={{ width: '38%' }}>
+                            <td className={`${labelCell} rounded-tl-[13px]`} style={{ width: '10%' }}>컴포넌트명</td>
+                            <td className={valueCell} style={{ width: '35%' }}>
                                 <input
                                     type="text"
                                     value={displayValue}
@@ -85,15 +85,15 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                     spellCheck={false}
                                 />
                             </td>
-                            <td className={labelCell} style={{ width: '12%' }}>생성자</td>
-                            <td className={`${valueCell} text-center font-medium`} style={{ width: '28%' }}>{screen.author || '-'}</td>
-                            <td className="bg-[#2c3e7c] px-2 py-1 border-r-0 align-middle rounded-tr-[13px]" style={{ width: '10%' }}>
-                                <div className={`flex items-center justify-end gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto' : ''}`}>
+                            <td className={labelCell} style={{ width: '10%' }}>생성자</td>
+                            <td className={`${valueCell} text-center font-medium`} style={{ width: '25%' }}>{screen.author || '-'}</td>
+                            <td className="bg-[#2c3e7c] px-2 py-1 border-r-0 align-middle rounded-tr-[13px] whitespace-nowrap" style={{ width: '13%', minWidth: '120px' }}>
+                                <div className={`flex items-center justify-end gap-1 shrink-0 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto' : ''}`}>
                                     <div className="relative" ref={screenOptionsRef}>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); setShowScreenOptionsPanel((v) => !v); }}
                                             onMouseDown={(e) => e.stopPropagation()}
-                                            className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90"
+                                            className="nodrag shrink-0 p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90"
                                             title="용지 설정"
                                         >
                                             <SlidersHorizontal size={16} />
@@ -153,7 +153,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                         onClick={onToggleLock}
                                         onMouseDown={(e) => e.stopPropagation()}
                                         disabled={isLockedByOther}
-                                        className={`nodrag p-1.5 rounded-md transition-colors ${isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'}`}
+                                        className={`nodrag shrink-0 p-1.5 rounded-md transition-colors ${isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'}`}
                                         title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? '잠금 해제' : '잠금'}
                                     >
                                         {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
@@ -162,7 +162,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                         <button
                                             onClick={onDelete}
                                             onMouseDown={(e) => e.stopPropagation()}
-                                            className="nodrag p-1.5 hover:bg-red-500 rounded-md text-white/90"
+                                            className="nodrag shrink-0 p-1.5 hover:bg-red-500 rounded-md text-white/90"
                                             title="삭제"
                                         >
                                             <X size={16} />
