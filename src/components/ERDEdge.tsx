@@ -57,7 +57,7 @@ function MarkerOneOptional({ color }: { color: string }) {
 /** 다 필수 (1 이상): 까마귀발 */
 function MarkerManyRequired({ color }: { color: string }) {
     const h = 6;
-    const s = 3;
+    const s = 3.5;
     return (
         <g stroke={color} strokeWidth={STROKE_W} strokeLinecap="round">
             <line x1={0} y1={0} x2={h} y2={-s} />
@@ -67,17 +67,19 @@ function MarkerManyRequired({ color }: { color: string }) {
     );
 }
 
-/** 다 선택 (0 이상): 원 + 까마귀발 */
+/** 다 선택 (0 이상): 원 + 까마귀발 - 표준 ERD: 원 바로 옆에 세발 */
 function MarkerManyOptional({ color }: { color: string }) {
     const r = 2.5;
-    const h = 5;
-    const s = 2.5;
+    const cx = r + 1;
+    const cfStart = cx + r + 2;
+    const h = 4;
+    const s = 3.5;
     return (
         <g stroke={color} strokeWidth={STROKE_W} fill="none" strokeLinecap="round">
-            <circle cx={r + 1} cy={0} r={r} />
-            <line x1={r * 2 + 4} y1={0} x2={r * 2 + 4 + h} y2={-s} />
-            <line x1={r * 2 + 4} y1={0} x2={r * 2 + 4 + h} y2={0} />
-            <line x1={r * 2 + 4} y1={0} x2={r * 2 + 4 + h} y2={s} />
+            <circle cx={cx} cy={0} r={r} />
+            <line x1={cfStart} y1={0} x2={cfStart + h} y2={-s} />
+            <line x1={cfStart} y1={0} x2={cfStart + h} y2={0} />
+            <line x1={cfStart} y1={0} x2={cfStart + h} y2={s} />
         </g>
     );
 }
@@ -100,7 +102,7 @@ function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndTy
             markerWidth={48}
             markerHeight={48}
             viewBox="-12 -12 24 24"
-            refX={isStart ? MARKER_GAP : +MARKER_GAP}
+            refX={isStart ? MARKER_GAP : MARKER_GAP + 1}
             refY={0}
             orient={isStart ? 'auto-start-reverse' : 'auto'}
             markerUnits="userSpaceOnUse"
