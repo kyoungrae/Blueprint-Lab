@@ -83,7 +83,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     return (
         <div
             ref={divRef}
-            contentEditable={!isLocked && isSelected}
+            contentEditable={!isLocked && isSelected && (!element.fromComponentId || !(element.text || '').trim())}
             onInput={handleInput}
             onCompositionEnd={handleCompositionEnd}
             onSelect={handleSelect}
@@ -116,7 +116,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                 fontWeight: element.fontWeight || 'normal',
                 lineHeight: '1.4',
                 whiteSpace: 'pre-wrap',
-                cursor: isSelected ? 'text' : 'default'
+                cursor: isSelected && (!element.fromComponentId || !(element.text || '').trim()) ? 'text' : 'default'
             }}
         />
     );

@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { copyToClipboard } from '../utils/clipboard';
+import { syncComponentStyles } from '../utils/componentStyleSync';
 import { OnlineUsers, UserCursors } from './collaboration';
 import { toPng } from 'html-to-image';
 import { useSyncStore } from '../store/syncStore';
@@ -108,7 +109,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         if (!editingFlowId) setFlowLabelComposing(null);
     }, [editingFlowId]);
 
-    const { projects, currentProjectId, setCurrentProject, updateProjectData } = useProjectStore();
+    const { projects, currentProjectId, setCurrentProject, updateProjectData, fetchProjects } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -181,6 +182,45 @@ const ScreenDesignCanvasContent: React.FC = () => {
             }
         }
     }, [currentProjectId]);
+
+    // 연결된 컴포넌트 프로젝트 최신 데이터 확보 (스타일 동기화용)
+    useEffect(() => {
+        const linkedId = currentProject?.linkedComponentProjectId;
+        if (!linkedId) return;
+        fetchProjects();
+        const onFocus = () => fetchProjects();
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, [currentProject?.linkedComponentProjectId, fetchProjects]);
+
+    // 컴포넌트 스타일 동기화: 연결된 컴포넌트 프로젝트의 스타일 변경을 화면 설계에 반영
+    useEffect(() => {
+        const linkedId = currentProject?.linkedComponentProjectId;
+        if (!linkedId || !screens.length) return;
+
+        const linkedProject = projects.find((p) => p.id === linkedId);
+        const compData = linkedProject?.data as { components?: Screen[] } | undefined;
+        const components = compData?.components ?? [];
+        const hasRefs = screens.some((s) =>
+            (s.drawElements ?? []).some((e) => e.fromComponentId && e.fromElementId)
+        );
+        if (!components.length) return;
+        if (!hasRefs) return;
+
+        const updates = syncComponentStyles(screens, components);
+        if (updates.size === 0) return;
+
+        updates.forEach((drawElements, screenId) => {
+            updateScreen(screenId, { drawElements });
+            sendOperation({
+                type: 'SCREEN_UPDATE',
+                targetId: screenId,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { drawElements },
+            });
+        });
+    }, [screens, projects, currentProject, updateScreen, sendOperation, user]);
 
     // Auto-save to ProjectStore for LOCAL projects
     useEffect(() => {

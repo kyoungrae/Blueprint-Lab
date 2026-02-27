@@ -487,7 +487,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const newElements: DrawElement[] = elements.map((el, i) => {
             const newId = `draw_${Date.now()}_${i}`;
             idMap.set(el.id, newId);
-            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id };
+            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id };
         });
         newElements.forEach((el) => {
             if (el.groupId && idMap.has(el.groupId)) {
@@ -993,7 +993,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         e.stopPropagation();
         const el = drawElements.find(item => item.id === id);
         if (el && (el.type === 'rect' || el.type === 'circle' || el.type === 'text')) {
-            setEditingTextId(id);
+            const hasComponentText = el.fromComponentId && (el.text || '').trim();
+            if (!hasComponentText) setEditingTextId(id);
         }
         // Table double-click is handled at the cell level
     };
