@@ -123,8 +123,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         return data.entities.map((e: { name: string }) => e.name).sort();
     }, [linkedErdProject]);
     const componentList = React.useMemo(() => {
-        const data = linkedComponentProject?.data as { components?: Screen[] } | undefined;
-        return (data?.components ?? []).filter((c) => c.screenId?.startsWith('CMP-'));
+        // 연결된 프로젝트가 COMPONENT 타입일 때만 컴포넌트 목록 사용 (화면 설계 프로젝트의 screens와 혼동 방지)
+        if (linkedComponentProject?.projectType !== 'COMPONENT') return [];
+        const data = linkedComponentProject.data as { components?: Screen[] } | undefined;
+        return (data?.components ?? [])
+            .filter((c) => c.screenId?.startsWith('CMP-'))
+            .filter((c) => (c.drawElements?.length ?? 0) > 0); // drawElements가 있는 컴포넌트만 표시 (캔버스에 그린 내용이 없으면 제외)
     }, [linkedComponentProject]);
 
 

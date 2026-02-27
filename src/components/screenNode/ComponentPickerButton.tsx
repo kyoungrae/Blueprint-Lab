@@ -115,7 +115,7 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                         >
                         <PremiumTooltip label="드래그하여 이동">
                         <div
-                            className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2 cursor-grab active:cursor-grabbing group/header"
+                            className="w-full flex items-center justify-start -mx-3 px-3 border-b border-gray-100 pb-2 mb-2 cursor-grab active:cursor-grabbing group/header"
                             onMouseDown={handleHeaderMouseDown}
                         >
                             <div className="flex items-center gap-2">

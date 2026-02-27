@@ -36,7 +36,22 @@ function App() {
         if (data?.tier) updateUser({ tier: data.tier });
       })
       .catch(() => {});
-  }, [isAuthenticated]);
+  }, [isAuthenticated, updateUser]);
+
+  // Refetch tier when tab regains focus (e.g. after admin changed tier in another tab)
+  useEffect(() => {
+    const onFocus = () => {
+      if (!localStorage.getItem('auth-token')) return;
+      fetchWithAuth(`${AUTH_API}/me`)
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => {
+          if (data?.tier) updateUser({ tier: data.tier });
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [updateUser]);
 
   // Guest Session Cleanup: Logout guest if browser was closed (sessionStorage cleared)
   useEffect(() => {

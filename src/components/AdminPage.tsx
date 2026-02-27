@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2 } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { useAuthStore } from '../store/authStore';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
 
@@ -35,6 +36,7 @@ interface AdminProject {
 type AdminTab = 'members' | 'projects';
 
 const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+    const { user, updateUser } = useAuthStore();
     const [activeTab, setActiveTab] = useState<AdminTab>('members');
     const [users, setUsers] = useState<AdminUser[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -116,6 +118,9 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 throw new Error(data.message || '티어 변경에 실패했습니다.');
             }
             setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, tier } : u)));
+            if (userId === user?.id) {
+                updateUser({ tier });
+            }
         } catch (err: any) {
             setError(err.message || '오류가 발생했습니다.');
         }
