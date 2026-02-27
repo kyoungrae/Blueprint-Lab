@@ -82,7 +82,9 @@ function MarkerManyOptional({ color }: { color: string }) {
     );
 }
 
-const MARKER_GAP = 5;
+const MARKER_GAP = 0;
+/** ERDCanvas edgeUpdaterRadius와 동일 - 선이 edge updater 끝에서 시작/종료 */
+const EDGE_UPDATER_RADIUS = 20;
 
 function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndType; color: string; id: string; isStart?: boolean }) {
     const content = {
@@ -98,7 +100,7 @@ function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndTy
             markerWidth={48}
             markerHeight={48}
             viewBox="-12 -12 24 24"
-            refX={isStart ? MARKER_GAP : +MARKER_GAP+3}
+            refX={isStart ? MARKER_GAP : +MARKER_GAP}
             refY={0}
             orient={isStart ? 'auto-start-reverse' : 'auto'}
             markerUnits="userSpaceOnUse"
@@ -126,12 +128,31 @@ const ERDEdge = ({
     const sourceEnd = (data?.sourceEnd ?? getEndsFromType(relType).sourceEnd) as RelationshipEndType;
     const targetEnd = (data?.targetEnd ?? getEndsFromType(relType).targetEnd) as RelationshipEndType;
 
+    const [sx, sy] = (() => {
+        switch (sourcePosition) {
+            case 'left': return [sourceX - EDGE_UPDATER_RADIUS, sourceY];
+            case 'right': return [sourceX + EDGE_UPDATER_RADIUS, sourceY];
+            case 'top': return [sourceX, sourceY - EDGE_UPDATER_RADIUS];
+            case 'bottom': return [sourceX, sourceY + EDGE_UPDATER_RADIUS];
+            default: return [sourceX, sourceY];
+        }
+    })();
+    const [tx, ty] = (() => {
+        switch (targetPosition) {
+            case 'left': return [targetX - EDGE_UPDATER_RADIUS, targetY];
+            case 'right': return [targetX + EDGE_UPDATER_RADIUS, targetY];
+            case 'top': return [targetX, targetY - EDGE_UPDATER_RADIUS];
+            case 'bottom': return [targetX, targetY + EDGE_UPDATER_RADIUS];
+            default: return [targetX, targetY];
+        }
+    })();
+
     const [edgePath, labelX, labelY] = getSmoothStepPath({
-        sourceX,
-        sourceY,
+        sourceX: sx,
+        sourceY: sy,
         sourcePosition,
-        targetX,
-        targetY,
+        targetX: tx,
+        targetY: ty,
         targetPosition,
     });
 
