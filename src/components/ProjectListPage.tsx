@@ -896,7 +896,7 @@ const ProjectListPage: React.FC = () => {
                         <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
                             <button
                                 onClick={async () => {
-                                    await updateProjectMetadata(linkingProjectId, linkingMode === 'erd' ? { linkedErdProjectId: null } : { linkedComponentProjectId: null });
+                                    await updateProjectMetadata(linkingProjectId, linkingMode === 'erd' ? { linkedErdProjectId: undefined } : { linkedComponentProjectId: undefined });
                                     setLinkingProjectId(null);
                                     setLinkingMode(null);
                                 }}
