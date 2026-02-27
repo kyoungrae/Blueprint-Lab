@@ -34,6 +34,7 @@ import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
+import SvgImportButton from './screenNode/SvgImportButton';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
@@ -1384,35 +1385,116 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const active = document.activeElement as HTMLElement | null;
             const isInput = active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || active?.isContentEditable || editingTextId != null || (editingTableId != null && editingCellIndex != null);
 
-            // Ctrl+C (Copy) - 전역 클립보드에 저장 (다른 엔티티에서 붙여넣기 가능)
+            // Ctrl+C (Copy) - 메모리 + 시스템 클립보드에 저장 (탭/세션 넘어서 붙여넣기 가능)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
                 if (isInput || selectedElementIds.length === 0) return;
                 e.preventDefault();
                 const toCopy = drawElements.filter(el => selectedElementIds.includes(el.id));
-                setCanvasClipboard(JSON.parse(JSON.stringify(toCopy)));
+                const copied = JSON.parse(JSON.stringify(toCopy));
+                setCanvasClipboard(copied);
+                if (navigator.clipboard?.writeText && window.isSecureContext) {
+                    navigator.clipboard.writeText(JSON.stringify(toCopy)).catch(() => {});
+                }
                 return;
             }
 
-            // Ctrl+V (Paste) - 이 노드가 마지막 상호작용 대상일 때만 붙여넣기
+            // Ctrl+V (Paste) - 이 노드가 마지막 상호작용 대상일 때만 붙여넣기 (메모리 → 시스템 클립보드 순)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-                if (isInput || canvasClipboard.length === 0) return;
+                if (isInput) return;
                 if (lastInteractedScreenId !== screen.id) return; // 다른 엔티티에 포커스된 경우 스킵
                 e.preventDefault();
 
-                const newElements = canvasClipboard.map((el, idx) => ({
-                    ...el,
-                    id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
-                    x: el.x + 20,
-                    y: el.y + 20
-                }));
+                const doPaste = (toPaste: DrawElement[]) => {
+                    const newElements = toPaste.map((el, idx) => ({
+                        ...el,
+                        id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+                        x: el.x + 20,
+                        y: el.y + 20
+                    }));
+                    const current = getScreenById(screen.id);
+                    const currentElements = current?.drawElements ?? drawElements;
+                    const nextElements = [...currentElements, ...newElements];
+                    update({ drawElements: nextElements });
+                    syncUpdate({ drawElements: nextElements });
+                    saveHistory(nextElements);
+                    setSelectedElementIds(newElements.map(el => el.id));
+                    setCanvasClipboard(newElements);
+                };
 
-                const nextElements = [...drawElements, ...newElements];
-                update({ drawElements: nextElements });
-                syncUpdate({ drawElements: nextElements });
-                saveHistory(nextElements);
+                if (canvasClipboard.length > 0) {
+                    doPaste(canvasClipboard);
+                    return;
+                }
 
-                setSelectedElementIds(newElements.map(el => el.id));
-                setCanvasClipboard(newElements);
+                // 시스템 클립보드에서 읽기 (1. JSON → 2. 이미지 PNG/JPEG)
+                const tryPasteFromClipboard = async () => {
+                    if (navigator.clipboard?.readText && window.isSecureContext) {
+                        try {
+                            const text = await navigator.clipboard.readText();
+                            const parsed = JSON.parse(text);
+                            const isValid = Array.isArray(parsed) && parsed.length > 0 &&
+                                parsed.every((el: unknown) => el && typeof (el as DrawElement).id === 'string' &&
+                                    (el as DrawElement).type && typeof (el as DrawElement).x === 'number' &&
+                                    typeof (el as DrawElement).y === 'number' && typeof (el as DrawElement).width === 'number' &&
+                                    typeof (el as DrawElement).height === 'number' && (el as DrawElement).zIndex != null);
+                            if (isValid) {
+                                doPaste(parsed as DrawElement[]);
+                                return;
+                            }
+                        } catch { /* not our JSON */ }
+                    }
+
+                    // PPT 등에서 복사한 이미지 붙여넣기
+                    if (navigator.clipboard?.read && window.isSecureContext) {
+                        try {
+                            const items = await navigator.clipboard.read();
+                            for (const item of items) {
+                                const imageTypes = ['image/png', 'image/jpeg', 'image/webp'];
+                                for (const type of imageTypes) {
+                                    if (item.types.includes(type)) {
+                                        const blob = await item.getType(type);
+                                        const file = new File([blob], `paste-${Date.now()}.${type.split('/')[1]}`, { type });
+                                        let imageUrl: string;
+                                        try {
+                                            imageUrl = await uploadImage(file);
+                                        } catch {
+                                            imageUrl = await new Promise<string>((resolve, reject) => {
+                                                const reader = new FileReader();
+                                                reader.onload = () => resolve(reader.result as string);
+                                                reader.onerror = reject;
+                                                reader.readAsDataURL(blob);
+                                            });
+                                        }
+                                        const cw = canvasRef.current?.clientWidth ?? 400;
+                                        const ch = canvasRef.current?.clientHeight ?? 300;
+                                        const w = 200;
+                                        const h = 150;
+                                        const newId = `el_${Date.now()}_0_${Math.random().toString(36).substr(2, 5)}`;
+                                        const imgEl: DrawElement = {
+                                            id: newId,
+                                            type: 'image',
+                                            x: Math.max(10, cw / 2 - w / 2),
+                                            y: Math.max(10, ch / 2 - h / 2),
+                                            width: w,
+                                            height: h,
+                                            zIndex: (getScreenById(screen.id)?.drawElements?.length ?? drawElements.length) + 1,
+                                            imageUrl,
+                                        };
+                                        const current = getScreenById(screen.id);
+                                        const currentElements = current?.drawElements ?? drawElements;
+                                        const nextElements = [...currentElements, imgEl];
+                                        update({ drawElements: nextElements });
+                                        syncUpdate({ drawElements: nextElements });
+                                        saveHistory(nextElements);
+                                        setSelectedElementIds([newId]);
+                                        return;
+                                    }
+                                }
+                            }
+                        } catch { /* clipboard read denied or no image */ }
+                    }
+                };
+                tryPasteFromClipboard();
                 return;
             }
 
@@ -1450,7 +1532,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         };
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard]);
+    }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, update, syncUpdate, saveHistory, setSelectedElementIds, uploadImage]);
 
 
     // ── Table V2 Utilities (flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells, gcd imported from ./screenNode/types) ──────────────────────────────────
@@ -2182,6 +2264,35 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             <ImageIcon size={18} />
                                                         </button>
                                                     </PremiumTooltip>
+                                                    <SvgImportButton
+                                                        disabled={isLocked}
+                                                        onImport={(elements) => {
+                                                            if (elements.length === 0) return;
+                                                            const cw = canvasRef.current?.clientWidth ?? 400;
+                                                            const ch = canvasRef.current?.clientHeight ?? 300;
+                                                            const minX = Math.min(...elements.map((el) => el.x));
+                                                            const minY = Math.min(...elements.map((el) => el.y));
+                                                            const maxRight = Math.max(...elements.map((el) => el.x + el.width));
+                                                            const maxBottom = Math.max(...elements.map((el) => el.y + el.height));
+                                                            const groupW = maxRight - minX;
+                                                            const groupH = maxBottom - minY;
+                                                            const offsetX = Math.max(20, cw / 2 - groupW / 2 - minX);
+                                                            const offsetY = Math.max(20, ch / 2 - groupH / 2 - minY);
+                                                            const baseZ = drawElements.length + 1;
+                                                            const newElements = elements.map((el, idx) => ({
+                                                                ...el,
+                                                                id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+                                                                x: el.x + offsetX,
+                                                                y: el.y + offsetY,
+                                                                zIndex: baseZ + idx,
+                                                            }));
+                                                            const nextElements = [...drawElements, ...newElements];
+                                                            update({ drawElements: nextElements });
+                                                            syncUpdate({ drawElements: nextElements });
+                                                            saveHistory(nextElements);
+                                                            setSelectedElementIds(newElements.map((el) => el.id));
+                                                        }}
+                                                    />
                                                     <input
                                                         ref={imageInputRef}
                                                         type="file"
