@@ -28,7 +28,7 @@ import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import type { Screen, PageSizeOption, PageOrientation } from '../types/screenDesign';
-import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS } from '../types/screenDesign';
+import { getCanvasDimensions } from '../types/screenDesign';
 import {
     Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2
 } from 'lucide-react';
@@ -235,17 +235,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
         }
     }, [screens, flows, currentProjectId, updateProjectData]);
 
-    // Sync screens → ReactFlow nodes (캔버스 70% 반영하여 entity 크기 계산)
+    // Sync screens → ReactFlow nodes (캔버스 70% 반영하여 entity 크기 계산, getCanvasDimensions 단일 소스)
     const computeNodeStyle = (screen: Screen): React.CSSProperties | undefined => {
         const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
         const CANVAS_WIDTH_RATIO = 0.7;
         const FIXED_TOP_HEIGHT = 180;
-        const sizeKey: (typeof PAGE_SIZE_OPTIONS)[number] =
-            screen.pageSize && PAGE_SIZE_OPTIONS.includes(screen.pageSize as any) ? screen.pageSize! : 'A4';
-        const preset = PAGE_SIZE_PRESETS[sizeKey];
-        const orientation = screen.pageOrientation || 'portrait';
-        let canvasW = orientation === 'landscape' ? preset.height : preset.width;
-        let canvasH = orientation === 'landscape' ? preset.width : preset.height;
+        let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
         if (canvasW < MIN_CANVAS_WIDTH) {
             const scale = MIN_CANVAS_WIDTH / canvasW;
             canvasW = MIN_CANVAS_WIDTH;
@@ -709,10 +704,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
         const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
         const screenId = `SCR-${String(nextNum).padStart(3, '0')}`;
         const today = new Date().toISOString().split('T')[0];
-        const preset = PAGE_SIZE_PRESETS[pageSize];
-        const orientation = pageOrientation || 'portrait';
-        const imageWidth = orientation === 'landscape' ? preset.height : preset.width;
-        const imageHeight = orientation === 'landscape' ? preset.width : preset.height;
+        const { width: imageWidth, height: imageHeight } = getCanvasDimensions({
+            pageSize,
+            pageOrientation: pageOrientation || 'portrait',
+        } as Screen);
 
         const newScreen: Screen = {
             id: `screen_${Date.now()}`,
@@ -767,10 +762,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
         const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
         const screenId = `SCR-${String(nextNum).padStart(3, '0')}`;
         const today = new Date().toISOString().split('T')[0];
-        const preset = PAGE_SIZE_PRESETS[pageSize];
-        const orientation = pageOrientation || 'portrait';
-        const imageWidth = orientation === 'landscape' ? preset.height : preset.width;
-        const imageHeight = orientation === 'landscape' ? preset.width : preset.height;
+        const { width: imageWidth, height: imageHeight } = getCanvasDimensions({
+            pageSize,
+            pageOrientation: pageOrientation || 'portrait',
+        } as Screen);
 
         const newScreen: Screen = {
             id: `spec_${Date.now()}`,

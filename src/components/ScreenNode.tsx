@@ -2,7 +2,7 @@ import React, { memo, useState, useRef, useEffect, useContext, useCallback } fro
 import { createPortal } from 'react-dom';
 import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData } from '../types/screenDesign';
-import { PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS, getCanvasDimensions } from '../types/screenDesign';
+import { getCanvasDimensions } from '../types/screenDesign';
 
 import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX } from 'lucide-react';
 import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
@@ -466,8 +466,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         } else {
             elements = component.drawElements ?? [];
         }
-        const cw = canvasRef.current?.clientWidth ?? 0;
-        const ch = canvasRef.current?.clientHeight ?? 0;
+        const { width: targetW, height: targetH } = getCanvasDimensions(screen);
         let offsetX: number;
         let offsetY: number;
         if (subComponentId && elements.length > 0) {
@@ -475,14 +474,14 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const minY = Math.min(...elements.map((e) => e.y));
             const compW = Math.max(...elements.map((e) => e.x + e.width)) - minX;
             const compH = Math.max(...elements.map((e) => e.y + e.height)) - minY;
-            offsetX = Math.max(10, cw ? cw / 2 - minX - compW / 2 : 50);
-            offsetY = Math.max(10, ch ? ch / 2 - minY - compH / 2 : 50);
+            offsetX = Math.max(10, targetW ? targetW / 2 - minX - compW / 2 : 50);
+            offsetY = Math.max(10, targetH ? targetH / 2 - minY - compH / 2 : 50);
         } else {
             const compW = component.imageWidth ?? 400;
             const compH = component.imageHeight ?? 300;
-            const sameSize = cw === compW && ch === compH;
-            offsetX = sameSize ? 0 : Math.max(10, cw ? cw / 2 - compW / 2 : 50);
-            offsetY = sameSize ? 0 : Math.max(10, ch ? ch / 2 - compH / 2 : 50);
+            const sameSize = targetW === compW && targetH === compH;
+            offsetX = sameSize ? 0 : Math.max(10, targetW ? targetW / 2 - compW / 2 : 50);
+            offsetY = sameSize ? 0 : Math.max(10, targetH ? targetH / 2 - compH / 2 : 50);
         }
 
         const idMap = new Map<string, string>();
@@ -1808,22 +1807,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
 
 
-    // Entity dimensions from page size/orientation (캔버스가 70%이므로 entityWidth = canvasWidth/0.7)
-    const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일 (B4/A3 등 실제 크기 유지)
-    const CANVAS_WIDTH_RATIO = 0.7; // 왼쪽 캔버스가 entity의 70%
+    // Entity dimensions from getCanvasDimensions (컴포넌트는 용지=캔버스, 화면 설계는 70% 비율)
+    const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
+    const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
     const FIXED_TOP_HEIGHT = 180; // 헤더+메타+툴바 등 상단 고정 영역
-    const sizeKey: (typeof PAGE_SIZE_OPTIONS)[number] =
-        screen.pageSize && PAGE_SIZE_OPTIONS.includes(screen.pageSize as any) ? screen.pageSize! : 'A4';
-    const preset = PAGE_SIZE_PRESETS[sizeKey];
-    const orientation = screen.pageOrientation || 'portrait';
-    let canvasW = orientation === 'landscape' ? preset.height : preset.width;
-    let canvasH = orientation === 'landscape' ? preset.width : preset.height;
+    let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
         const scale = MIN_CANVAS_WIDTH / canvasW;
         canvasW = MIN_CANVAS_WIDTH;
         canvasH = Math.round(canvasH * scale);
     }
-    const entityWidth = Math.ceil(canvasW / CANVAS_WIDTH_RATIO);
+    const isComponent = screen.screenId?.startsWith('CMP-');
+    const entityWidth = isComponent ? canvasW : Math.ceil(canvasW / CANVAS_WIDTH_RATIO);
     const entityHeight = canvasH + FIXED_TOP_HEIGHT;
 
     return (
@@ -2698,11 +2693,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         {/* Drawing Canvas Area (canvas only) - fixed size from pageSize for component/screen design sync */}
                         {(() => {
                             const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+                            const isComponent = screen.screenId?.startsWith('CMP-');
                             return (
                         <div className="flex-1 min-h-0 overflow-auto relative flex flex-col bg-white border-b border-gray-200"
                             style={{
                                 backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
-                                backgroundSize: '20px 20px'
+                                backgroundSize: '20px 20px',
+                                ...(isComponent ? { minWidth: canvasW, minHeight: canvasH } : {}),
                             }}
                         >
                             {/* Canvas Viewboard - fixed dimensions for consistent coordinate system */}
