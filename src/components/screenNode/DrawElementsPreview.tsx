@@ -46,9 +46,9 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
     const boundsH = canvasHeight ?? elemBoundsH;
     const offsetX = canvasWidth != null ? 0 : minX;
     const offsetY = canvasHeight != null ? 0 : minY;
-    // 전체가 보이도록 축소 (여유 4px)
+    // 전체가 보이도록 축소, 최대 1 (미리보기보다 커지지 않게)
     const padding = 4;
-    const scale = Math.min((width - padding) / boundsW, (height - padding) / boundsH);
+    const scale = Math.min(1, (width - padding) / boundsW, (height - padding) / boundsH);
     const scaledW = boundsW * scale;
     const scaledH = boundsH * scale;
     const centerX = (width - scaledW) / 2;
