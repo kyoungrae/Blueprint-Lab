@@ -1834,7 +1834,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // Entity dimensions from getCanvasDimensions (컴포넌트는 용지=캔버스, 화면 설계는 70% 비율)
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
-    const FIXED_TOP_HEIGHT = 180; // 헤더+메타+툴바 등 상단 고정 영역
+    const FIXED_TOP_HEIGHT = 180; // 화면 설계: 헤더+메타+툴바 등
+    const FIXED_TOP_HEIGHT_COMPONENT = 52; // 컴포넌트: 헤더 1행만
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
         const scale = MIN_CANVAS_WIDTH / canvasW;
@@ -1843,7 +1844,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     }
     const isComponent = screen.screenId?.startsWith('CMP-');
     const entityWidth = isComponent ? canvasW : Math.ceil(canvasW / CANVAS_WIDTH_RATIO);
-    const entityHeight = canvasH + FIXED_TOP_HEIGHT;
+    const entityHeight = canvasH + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
 
     return (
         <div

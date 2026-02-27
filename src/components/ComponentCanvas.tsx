@@ -226,7 +226,7 @@ const ComponentCanvasContent: React.FC = () => {
     const computeNodeStyle = (screen: Screen): React.CSSProperties | undefined => {
         const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
         const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
-        const FIXED_TOP_HEIGHT = 180;
+        const FIXED_TOP_HEIGHT_COMPONENT = 52; // 컴포넌트: 헤더 1행만
         let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
         if (canvasW < MIN_CANVAS_WIDTH) {
             const scale = MIN_CANVAS_WIDTH / canvasW;
@@ -235,7 +235,7 @@ const ComponentCanvasContent: React.FC = () => {
         }
         const isComponent = screen.screenId?.startsWith('CMP-');
         const width = isComponent ? canvasW : Math.ceil(canvasW / CANVAS_WIDTH_RATIO);
-        const height = canvasH + FIXED_TOP_HEIGHT;
+        const height = canvasH + FIXED_TOP_HEIGHT_COMPONENT; // ComponentCanvas는 항상 컴포넌트
         return { width, height };
     };
 
