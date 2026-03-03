@@ -1990,6 +1990,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         : Math.ceil((canvasW + ENTITY_CANVAS_GAP * 2) / CANVAS_WIDTH_RATIO);
     const entityHeight =
         canvasH + ENTITY_CANVAS_GAP * 2 + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
+    // 눈금자 ON + 잠금 해제일 때만 inset(여백), OFF면 0으로 캔버스가 영역 꽉 채움
+    const canvasInset = !isLocked && screen.guideLinesVisible !== false ? CANVAS_INSET : 0;
 
     return (
         <div
@@ -2898,11 +2900,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             padding: ENTITY_CANVAS_GAP,
                         }}
                     >
-                        {/* Canvas + Rulers - 패딩으로 상하좌우 균일, 중앙 정렬 제거로 영역 정확히 맞춤 */}
+                        {/* Canvas + Rulers - 패딩으로 상하좌우 균일, 중앙 정렬 제거로 영역 정확히 맞춤
+                            - 눈금자 ON: inset = CANVAS_INSET (눈금자 + 여백)
+                            - 눈금자 OFF 또는 잠금: inset = 0 (여백 없이 캔버스가 영역 꽉 채움) */}
                         <CanvasRulers
-                            canvasWidth={canvasW - CANVAS_INSET * 2}
-                            canvasHeight={canvasH - CANVAS_INSET * 2}
-                            inset={CANVAS_INSET}
+                            canvasWidth={canvasW - canvasInset * 2}
+                            canvasHeight={canvasH - canvasInset * 2}
+                            inset={canvasInset}
                             visible={!isLocked && screen.guideLinesVisible !== false}
                         >
                         {/* Drawing Canvas Area - 캔버스와 감싸는 영역 크기를 동일하게 (스크롤/잘림 없음) */}
@@ -2912,21 +2916,26 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             ref={canvasAreaRef}
                             className={`relative flex flex-col bg-white shrink-0 overflow-hidden`}
                             style={{
-                                width: canvasW - CANVAS_INSET * 2,
-                                height: canvasH - CANVAS_INSET * 2,
+                                width: canvasW - canvasInset * 2,
+                                height: canvasH - canvasInset * 2,
                                 backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
                                 backgroundSize: '20px 20px',
                             }}
                         >
-                            {/* Canvas Viewboard - 용지 좌표계 유지, 스케일로 여백 확보 */}
+                            {/* Canvas Viewboard - flex로 캔버스 높이만큼 채움, 스케일 div가 줄어들어 canvasRef가 전체 높이 사용 */}
                             <div
-                                className="nodrag w-full h-full origin-top-left"
-                                style={{
-                                    width: canvasW,
-                                    height: canvasH,
-                                    transform: `scale(${(canvasW - CANVAS_INSET * 2) / canvasW}, ${(canvasH - CANVAS_INSET * 2) / canvasH})`,
-                                }}
+                                className="nodrag flex-1 min-h-0 w-full flex flex-col origin-top-left"
+                                style={{ minHeight: 0 }}
                             >
+                                <div
+                                    className="nodrag flex-1 min-h-0 w-full overflow-hidden origin-top-left"
+                                    style={{
+                                        minHeight: 0,
+                                        width: canvasW,
+                                        height: canvasH,
+                                        transform: `scale(${(canvasW - canvasInset * 2) / canvasW}, ${(canvasH - canvasInset * 2) / canvasH})`,
+                                    }}
+                                >
                             <div
                                 ref={canvasRef}
                                 className="nodrag w-full h-full relative overflow-visible outline-none cursor-crosshair"
@@ -3800,6 +3809,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     {alignmentGuides && <AlignmentGuidesOverlay guides={alignmentGuides} />}
                                 </div>
                             </div>
+                        </div>
                         </div>
                             );
                         })()}
