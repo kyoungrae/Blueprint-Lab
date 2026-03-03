@@ -2883,7 +2883,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
                     <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
                     {/* [LEFT PANE 70% or 100%] - Drawing Canvas (컴포넌트일 때 RightPane 숨김) */}
-                    <div className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 min-w-0 flex flex-col items-center justify-center bg-gray-50/10 overflow-hidden`}>
+                    <div
+                        className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 flex flex-col items-center justify-center bg-gray-50/10 overflow-visible`}
+                        style={!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') ? { minWidth: canvasW } : undefined}
+                    >
 
                         {/* Drawing Canvas Area - 캔버스와 감싸는 영역 크기를 동일하게 (스크롤/잘림 없음) */}
                         {(() => {
