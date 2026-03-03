@@ -1974,8 +1974,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // Entity dimensions from getCanvasDimensions (컴포넌트는 용지=캔버스, 화면 설계는 70% 비율)
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
-    const FIXED_TOP_HEIGHT = 185; // 화면 설계: 헤더+메타+툴바 (하단 여백 맞추기 위해 실제 콘텐츠 높이에 맞춤)
-    const FIXED_TOP_HEIGHT_COMPONENT = 100; // 컴포넌트: 헤더 + 툴바 2행
+    const FIXED_TOP_HEIGHT = 162; // 화면 설계: 헤더+메타+툴바 (하단 여백 제거용)
+    const FIXED_TOP_HEIGHT_COMPONENT = 88; // 컴포넌트: 헤더 + 툴바 2행
     const CANVAS_INSET = 14; // 캔버스 여백 (눈금자 숫자 표시 공간 확보)
     const ENTITY_CANVAS_GAP = 0; // 캔버스와 엔티티 테두리 사이 간격 (0=영역 딱 맞춤)
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
