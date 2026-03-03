@@ -1975,6 +1975,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
     const FIXED_TOP_HEIGHT = 220; // 화면 설계: 헤더+메타+툴바 등
     const FIXED_TOP_HEIGHT_COMPONENT = 120; // 컴포넌트: 헤더 + 툴바 2행
+    const CANVAS_INSET = 8; // 캔버스 여백 (선택 핸들·보더 여유)
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
         const scale = MIN_CANVAS_WIDTH / canvasW;
@@ -2893,18 +2894,22 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             return (
                         <div
                             ref={canvasAreaRef}
-                            className={`relative flex flex-col bg-white shrink-0`}
+                            className={`relative flex flex-col bg-white shrink-0 overflow-hidden`}
                             style={{
-                                width: canvasW,
-                                height: canvasH,
+                                width: canvasW - CANVAS_INSET * 2,
+                                height: canvasH - CANVAS_INSET * 2,
                                 backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
                                 backgroundSize: '20px 20px',
                             }}
                         >
-                            {/* Canvas Viewboard - 용지 크기 그대로, 스케일 없음 */}
+                            {/* Canvas Viewboard - 용지 좌표계 유지, 스케일로 여백 확보 */}
                             <div
-                                style={{ width: canvasW, height: canvasH }}
-                                className="nodrag w-full h-full"
+                                className="nodrag w-full h-full origin-top-left"
+                                style={{
+                                    width: canvasW,
+                                    height: canvasH,
+                                    transform: `scale(${(canvasW - CANVAS_INSET * 2) / canvasW}, ${(canvasH - CANVAS_INSET * 2) / canvasH})`,
+                                }}
                             >
                             <div
                                 ref={canvasRef}
