@@ -3532,7 +3532,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 className="absolute nodrag nopan z-[120]"
                                                 style={{
                                                     left: selectionBounds.centerX,
-                                                    top: selectionBounds.topY - 40,
+                                                    top: Math.max(8, selectionBounds.topY - 56),
                                                     transform: 'translateX(-50%)',
                                                 }}
                                             >
