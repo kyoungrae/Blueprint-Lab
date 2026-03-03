@@ -111,7 +111,7 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                                 style={{
                                     left: x,
                                     width: level === 'major' ? 1.5 : 1,
-                                    height,
+                                    height: level === 'major' ? 3.5 : 6,
                                     backgroundColor: color,
                                     transform: 'translateX(-50%)',
                                 }}
@@ -164,7 +164,7 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                                 style={{
                                     top: y,
                                     height: level === 'major' ? 1.5 : 1,
-                                    width,
+                                    width: level === 'major' ? 3.5 : 6,
                                     backgroundColor: color,
                                     transform: 'translateY(-50%)',
                                 }}

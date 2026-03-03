@@ -2903,7 +2903,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             canvasWidth={canvasW - CANVAS_INSET * 2}
                             canvasHeight={canvasH - CANVAS_INSET * 2}
                             inset={CANVAS_INSET}
-                            visible={screen.guideLinesVisible !== false}
+                            visible={!isLocked && screen.guideLinesVisible !== false}
                         >
                         {/* Drawing Canvas Area - 캔버스와 감싸는 영역 크기를 동일하게 (스크롤/잘림 없음) */}
                         {(() => {
