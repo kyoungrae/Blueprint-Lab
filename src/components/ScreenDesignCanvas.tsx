@@ -37,7 +37,9 @@ import { copyToClipboard } from '../utils/clipboard';
 import { syncComponentStyles } from '../utils/componentStyleSync';
 import { OnlineUsers, UserCursors } from './collaboration';
 import { toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 import { useSyncStore } from '../store/syncStore';
+import type { ExportFormat } from './ScreenExportModal';
 
 const nodeTypes: NodeTypes = {
     screen: ScreenNode,
@@ -813,7 +815,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [updateScreen, sendOperation, user]);
 
-    const handleExportImage = useCallback((selectedIds: string[]) => {
+    const handleExportImage = useCallback((selectedIds: string[], format: ExportFormat) => {
         setIsExportModalOpen(false);
 
         const element = document.querySelector('.react-flow') as HTMLElement;
@@ -824,20 +826,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
         const selectedSet = new Set(selectedIds);
 
-        // 선택된 노드만 보이도록 뷰 맞춤
-        try {
-            fitView({
-                nodes: selectedIds.map(id => ({ id })),
-                padding: 0.15,
-                duration: 0,
-                includeHiddenNodes: false,
-            });
-        } catch (_) {
-            // fitView 실패 시 무시 (전체 뷰로 캡처)
-        }
-
         const baseOptions = {
-            backgroundColor: '#ffffff',
+            backgroundColor: 'transparent',
             quality: 1,
             pixelRatio: 1.5,
             cacheBust: true,
@@ -847,68 +837,172 @@ const ScreenDesignCanvasContent: React.FC = () => {
         const doCapture = (opts: { filter?: (node: HTMLElement) => boolean }) =>
             toPng(element, { ...baseOptions, ...opts });
 
+        const filterWithSelection = (filterSet: Set<string>) => (node: HTMLElement) => {
+            const excludeSelectors = [
+                '.react-flow__controls',
+                '.react-flow__minimap',
+                '.react-flow__background',
+                '.react-flow__panel',
+                '.react-flow__edges',
+                '.react-flow__edgelabel-renderer',
+                '.react-flow__handle',
+            ];
+            if (excludeSelectors.some(sel => node.closest?.(sel))) return false;
+            if (node.classList?.contains('react-flow__node')) {
+                const id = node.getAttribute?.('data-id');
+                return id ? filterSet.has(id) : false;
+            }
+            return true;
+        };
+
+        const fallbackFilter = (node: HTMLElement) => {
+            const excludeSelectors = [
+                '.react-flow__controls',
+                '.react-flow__minimap',
+                '.react-flow__background',
+                '.react-flow__panel',
+                '.react-flow__edges',
+                '.react-flow__edgelabel-renderer',
+                '.react-flow__handle',
+            ];
+            return !excludeSelectors.some(sel => node.closest?.(sel));
+        };
+
         setIsExporting(true);
 
-        // 뷰 업데이트 및 export 모드 적용 후 캡처
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                setTimeout(() => {
-                const filterWithSelection = (node: HTMLElement) => {
-                    const excludeSelectors = [
-                        '.react-flow__controls',
-                        '.react-flow__minimap',
-                        '.react-flow__background',
-                        '.react-flow__panel',
-                        '.react-flow__edges',
-                        '.react-flow__edgelabel-renderer',
-                        '.react-flow__handle',
-                    ];
-                    if (excludeSelectors.some(sel => node.closest?.(sel))) return false;
-                    if (node.classList?.contains('react-flow__node')) {
-                        const id = node.getAttribute?.('data-id');
-                        return id ? selectedSet.has(id) : false;
+        const runExport = () => {
+            if (format === 'pdf') {
+                // PDF: 각 화면을 별도 페이지로
+                const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+                const pageW = 210;
+                const pageH = 297;
+                const margin = 10;
+                const usableW = pageW - margin * 2;
+                const usableH = pageH - margin * 2;
+
+                const captureNext = (index: number): Promise<void> => {
+                    if (index >= selectedIds.length) {
+                        doc.save(`screen-design-${Date.now()}.pdf`);
+                        setIsExporting(false);
+                        return Promise.resolve();
                     }
-                    return true;
+                    const id = selectedIds[index];
+                    try {
+                        fitView({
+                            nodes: [{ id }],
+                            padding: 0.15,
+                            duration: 0,
+                            includeHiddenNodes: false,
+                        });
+                    } catch (_) { /* ignore */ }
+
+                    return new Promise<void>((resolve, reject) => {
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                setTimeout(() => {
+                                    const singleSet = new Set([id]);
+                                    doCapture({ filter: filterWithSelection(singleSet) })
+                                        .then((dataUrl) => {
+                                            const img = new Image();
+                                            img.onload = () => {
+                                                const imgW = img.naturalWidth;
+                                                const imgH = img.naturalHeight;
+                                                const ratio = imgW / imgH;
+                                                let w = usableW;
+                                                let h = usableW / ratio;
+                                                if (h > usableH) {
+                                                    h = usableH;
+                                                    w = usableH * ratio;
+                                                }
+                                                const x = margin + (usableW - w) / 2;
+                                                const y = margin + (usableH - h) / 2;
+                                                if (index > 0) doc.addPage();
+                                                doc.addImage(dataUrl, 'PNG', x, y, w, h);
+                                                captureNext(index + 1).then(resolve).catch(reject);
+                                            };
+                                            img.onerror = () => reject(new Error('Image load failed'));
+                                            img.src = dataUrl;
+                                        })
+                                        .catch(() =>
+                                            doCapture({ filter: fallbackFilter })
+                                                .then((dataUrl) => {
+                                                    const img = new Image();
+                                                    img.onload = () => {
+                                                        const imgW = img.naturalWidth;
+                                                        const imgH = img.naturalHeight;
+                                                        const ratio = imgW / imgH;
+                                                        let w = usableW;
+                                                        let h = usableW / ratio;
+                                                        if (h > usableH) {
+                                                            h = usableH;
+                                                            w = usableH * ratio;
+                                                        }
+                                                        const x = margin + (usableW - w) / 2;
+                                                        const y = margin + (usableH - h) / 2;
+                                                        if (index > 0) doc.addPage();
+                                                        doc.addImage(dataUrl, 'PNG', x, y, w, h);
+                                                        captureNext(index + 1).then(resolve).catch(reject);
+                                                    };
+                                                    img.onerror = () => reject(new Error('Image load failed'));
+                                                    img.src = dataUrl;
+                                                })
+                                                .catch(reject)
+                                        );
+                                }, 100);
+                            });
+                        });
+                    });
                 };
 
-                const fallbackFilter = (node: HTMLElement) => {
-                    const excludeSelectors = [
-                        '.react-flow__controls',
-                        '.react-flow__minimap',
-                        '.react-flow__background',
-                        '.react-flow__panel',
-                        '.react-flow__edges',
-                        '.react-flow__edgelabel-renderer',
-                        '.react-flow__handle',
-                    ];
-                    return !excludeSelectors.some(sel => node.closest?.(sel));
-                };
+                captureNext(0).catch((err: unknown) => {
+                    console.error('PDF export failed:', err);
+                    alert('PDF 내보내기에 실패했습니다.');
+                    setIsExporting(false);
+                });
+                return;
+            }
 
-                const download = (dataUrl: string) => {
-                    const link = document.createElement('a');
-                    link.download = `screen-design-${Date.now()}.png`;
-                    link.href = dataUrl;
-                    link.click();
-                };
+            // PNG: 선택된 노드만 보이도록 뷰 맞춤 후 단일 이미지
+            try {
+                fitView({
+                    nodes: selectedIds.map(id => ({ id })),
+                    padding: 0.15,
+                    duration: 0,
+                    includeHiddenNodes: false,
+                });
+            } catch (_) { /* ignore */ }
 
-                doCapture({ filter: filterWithSelection })
-                    .then(download)
-                    .catch(() =>
-                        doCapture({ filter: fallbackFilter })
-                            .then(download)
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    setTimeout(() => {
+                        const downloadPng = (dataUrl: string) => {
+                            const link = document.createElement('a');
+                            link.download = `screen-design-${Date.now()}.png`;
+                            link.href = dataUrl;
+                            link.click();
+                        };
+
+                        doCapture({ filter: filterWithSelection(selectedSet) })
+                            .then(downloadPng)
                             .catch(() =>
-                                doCapture({})
-                                    .then(download)
-                                    .catch((err: unknown) => {
-                                        console.error('Export failed:', err);
-                                        alert('이미지 내보내기에 실패했습니다.');
-                                    })
+                                doCapture({ filter: fallbackFilter })
+                                    .then(downloadPng)
+                                    .catch(() =>
+                                        doCapture({})
+                                            .then(downloadPng)
+                                            .catch((err: unknown) => {
+                                                console.error('Export failed:', err);
+                                                alert('이미지 내보내기에 실패했습니다.');
+                                            })
+                                    )
                             )
-                    )
-                    .finally(() => setIsExporting(false));
+                            .finally(() => setIsExporting(false));
+                    }, 100);
                 });
             });
-        });
+        };
+
+        runExport();
     }, [fitView]);
 
     // 서버 프로젝트: state_sync 도착 전 편집 시 이미지 등이 덮어쓰여 사라지는 것 방지

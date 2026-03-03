@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { X, Download, Monitor, CheckSquare, Square } from 'lucide-react';
+import { X, Download, Monitor, CheckSquare, Square, FileText, Image } from 'lucide-react';
 import type { Screen } from '../types/screenDesign';
+
+export type ExportFormat = 'png' | 'pdf';
 
 interface ScreenExportModalProps {
     screens: Screen[];
-    onExport: (selectedIds: string[]) => void;
+    onExport: (selectedIds: string[], format: ExportFormat) => void;
     onClose: () => void;
 }
 
 const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport, onClose }) => {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(screens.map(s => s.id)));
+    const [format, setFormat] = useState<ExportFormat>('png');
 
     const toggleItem = (id: string) => {
         const next = new Set(selectedIds);
@@ -29,12 +32,12 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
         }
     };
 
-    const handleExport = () => {
+    const handleExport = (exportFormat?: ExportFormat) => {
         if (selectedIds.size === 0) {
             alert('내보낼 화면을 선택해주세요.');
             return;
         }
-        onExport(Array.from(selectedIds));
+        onExport(Array.from(selectedIds), exportFormat ?? format);
     };
 
     return (
@@ -47,8 +50,8 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
                             <Download size={20} />
                         </div>
                         <div>
-                            <h2 className="text-lg font-black text-gray-900">이미지로 내보내기</h2>
-                            <p className="text-xs text-gray-500">내보낼 화면을 선택하세요</p>
+                            <h2 className="text-lg font-black text-gray-900">내보내기</h2>
+                            <p className="text-xs text-gray-500">내보낼 화면과 형식을 선택하세요</p>
                         </div>
                     </div>
                     <button
@@ -108,6 +111,24 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
                     )}
                 </div>
 
+                {/* Format Selection */}
+                <div className="px-6 py-3 border-t border-gray-100 flex gap-2">
+                    <button
+                        onClick={() => setFormat('png')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${format === 'png' ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-300' : 'bg-gray-50 text-gray-600 border-2 border-transparent hover:bg-gray-100'}`}
+                    >
+                        <Image size={18} />
+                        PNG
+                    </button>
+                    <button
+                        onClick={() => setFormat('pdf')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${format === 'pdf' ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-300' : 'bg-gray-50 text-gray-600 border-2 border-transparent hover:bg-gray-100'}`}
+                    >
+                        <FileText size={18} />
+                        PDF
+                    </button>
+                </div>
+
                 {/* Footer */}
                 <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
                     <button
@@ -117,13 +138,13 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
                         취소
                     </button>
                     <button
-                        onClick={handleExport}
+                        onClick={() => handleExport()}
                         disabled={selectedIds.size === 0}
                         className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-200"
                     >
                         <div className="flex items-center gap-2">
                             <Download size={16} />
-                            이미지 내보내기 ({selectedIds.size})
+                            {format === 'png' ? 'PNG 내보내기' : 'PDF 내보내기'} ({selectedIds.size})
                         </div>
                     </button>
                 </div>
