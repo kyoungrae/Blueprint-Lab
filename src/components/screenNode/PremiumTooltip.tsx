@@ -5,12 +5,13 @@ interface PremiumTooltipProps {
     label: string;
     children: React.ReactNode;
     dotColor?: string;
+    placement?: 'top' | 'bottom';
 }
 
 const TOOLTIP_OFFSET = 8;
 const MIN_SPACE_ABOVE = 48;
 
-const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor }) => {
+const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement }) => {
     const [visible, setVisible] = useState(false);
     const [pos, setPos] = useState({ top: 0, left: 0, placement: 'top' as 'top' | 'bottom' });
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -22,13 +23,13 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
         const centerX = rect.left + rect.width / 2;
         const spaceAbove = rect.top;
         const spaceBelow = window.innerHeight - rect.bottom;
-        const placement = spaceAbove >= MIN_SPACE_ABOVE || spaceAbove >= spaceBelow ? 'top' : 'bottom';
+        const autoPlacement = spaceAbove >= MIN_SPACE_ABOVE && spaceAbove >= spaceBelow ? 'top' : 'bottom';
         setPos({
             left: centerX,
             top: rect.top,
-            placement,
+            placement: placement ?? autoPlacement,
         });
-    }, []);
+    }, [placement]);
 
     const handleMouseEnter = useCallback(() => {
         updatePosition();
@@ -41,7 +42,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
 
     const tooltipStyle: React.CSSProperties = pos.placement === 'top'
         ? { left: pos.left, top: pos.top - TOOLTIP_OFFSET, transform: 'translate(-50%, -100%)' }
-        : { left: pos.left, top: pos.top + TOOLTIP_OFFSET, transform: 'translate(-50%, 0)' };
+        : { left: pos.left, top: pos.top + TOOLTIP_OFFSET + 30, transform: 'translate(-50%, 0)' };
 
     return (
         <div
@@ -54,7 +55,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
             {children}
             {visible && createPortal(
                 <div
-                    className="fixed px-2.5 py-1.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] font-medium rounded-lg shadow-2xl border border-slate-700/50 whitespace-nowrap z-[9999] flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150"
+                    className="fixed px-2.5 py-1.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] font-medium rounded-lg shadow-2xl border border-slate-700/50 whitespace-nowrap z-[12000] flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150"
                     style={tooltipStyle}
                 >
                     {dotColor && <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />}

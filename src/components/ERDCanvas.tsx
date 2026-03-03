@@ -703,7 +703,7 @@ const ERDCanvasContent: React.FC = () => {
                 </div>
 
                 {/* Attached Toggle Button */}
-                <PremiumTooltip label={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}>
+                <PremiumTooltip placement="bottom" label={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}>
                     <button
                         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                         className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-blue-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'
@@ -718,7 +718,7 @@ const ERDCanvasContent: React.FC = () => {
             <div className="flex-1 min-w-0 h-full relative select-none pr-4 pt-4 pb-4 pl-4" ref={flowWrapper}>
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
-                    <PremiumTooltip label="프로젝트 목록으로 돌아가기">
+                    <PremiumTooltip placement="bottom" label="프로젝트 목록으로 돌아가기">
                         <button
                             onClick={() => setCurrentProject(null)}
                             className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
@@ -729,7 +729,7 @@ const ERDCanvasContent: React.FC = () => {
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <PremiumTooltip label="클릭하여 ID 복사">
+                    <PremiumTooltip placement="bottom" label="클릭하여 ID 복사">
                         <div className="flex flex-col justify-center min-w-0 shrink">
                             <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
                             <button
@@ -752,7 +752,7 @@ const ERDCanvasContent: React.FC = () => {
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <PremiumTooltip label="테이블 추가">
+                    <PremiumTooltip placement="bottom" label="테이블 추가">
                         <button
                             onClick={handleAddEntity}
                             className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
@@ -765,7 +765,7 @@ const ERDCanvasContent: React.FC = () => {
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="relative shrink-0">
-                        <PremiumTooltip label="노드 정렬">
+                        <PremiumTooltip placement="bottom" label="노드 정렬">
                             <button
                                 onClick={() => setIsLayoutMenuOpen(!isLayoutMenuOpen)}
                                 className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
@@ -822,7 +822,7 @@ const ERDCanvasContent: React.FC = () => {
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="flex bg-gray-50/50 rounded-lg border border-gray-100 p-0.5 shrink-0">
-                        <PremiumTooltip label="Undo (Cmd+Z)">
+                        <PremiumTooltip placement="bottom" label="Undo (Cmd+Z)">
                             <button
                                 onClick={undo}
                                 disabled={!canUndo}
@@ -832,7 +832,7 @@ const ERDCanvasContent: React.FC = () => {
                             </button>
                         </PremiumTooltip>
                         <div className="w-[1px] h-4 bg-gray-200 self-center mx-0.5" />
-                        <PremiumTooltip label="Redo (Cmd+Shift+Z)">
+                        <PremiumTooltip placement="bottom" label="Redo (Cmd+Shift+Z)">
                             <button
                                 onClick={redo}
                                 disabled={!canRedo}
@@ -844,7 +844,7 @@ const ERDCanvasContent: React.FC = () => {
                     </div>
 
                     {/* 5. 툴바의 Undo/Redo 버튼 옆에 히스토리 버튼 배치 */}
-                    <PremiumTooltip label="변경 이력 보기">
+                    <PremiumTooltip placement="bottom" label="변경 이력 보기">
                         <button
                             onClick={() => setIsHistoryModalOpen(true)}
                             className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
@@ -857,7 +857,7 @@ const ERDCanvasContent: React.FC = () => {
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="relative shrink-0">
-                        <PremiumTooltip label="JSON/SQL 내보내기">
+                        <PremiumTooltip placement="bottom" label="JSON/SQL 내보내기">
                             <button
                                 onClick={handleExport}
                                 className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95"
@@ -898,7 +898,7 @@ const ERDCanvasContent: React.FC = () => {
                         )}
                     </div>
 
-                    <PremiumTooltip label="JSON 가져오기">
+                    <PremiumTooltip placement="bottom" label="JSON 가져오기">
                         <button
                             onClick={() => setIsImportModalOpen(true)}
                             className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
@@ -929,7 +929,7 @@ const ERDCanvasContent: React.FC = () => {
                             )}
                             <span className="text-sm font-bold text-gray-700">{user?.name}</span>
                         </div>
-                        <PremiumTooltip label="로그아웃">
+                        <PremiumTooltip placement="bottom" label="로그아웃">
                             <button
                                 onClick={() => {
                                     if (window.confirm('로그아웃 하시겠습니까?')) {
