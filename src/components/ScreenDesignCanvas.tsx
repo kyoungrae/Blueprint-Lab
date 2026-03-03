@@ -141,7 +141,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             }
 
             const isOverPopup = (e.target as Element)?.closest?.(
-                '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-grid-panel], [data-component-picker-portal], [data-text-style-toolbar], .floating-panel'
+                '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-grid-panel], [data-component-picker-portal], [data-text-style-toolbar], [data-font-style-panel], .floating-panel'
             );
             if (!isOverPopup) return;
 

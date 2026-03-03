@@ -60,7 +60,7 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
         const handleMouseDownCapture = (e: MouseEvent) => {
             const target = e.target;
             blurFromToolbarRef.current = target instanceof Element
-                && !!target.closest('[data-text-style-toolbar], [data-style-panel]');
+                && !!target.closest('[data-text-style-toolbar], [data-style-panel], [data-font-style-panel], [data-font-style-trigger]');
         };
         document.addEventListener('mousedown', handleMouseDownCapture, true);
         return () => document.removeEventListener('mousedown', handleMouseDownCapture, true);
@@ -108,7 +108,7 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
                 requestAnimationFrame(() => {
                     if (blurFromToolbarRef.current) return;
                     const active = document.activeElement;
-                    if (active instanceof Element && active.closest('[data-text-style-toolbar], [data-style-panel]')) return;
+                    if (active instanceof Element && active.closest('[data-text-style-toolbar], [data-style-panel], [data-font-style-panel], [data-font-style-trigger]')) return;
                     onSelectionChange(null);
                 });
                 onBlur();

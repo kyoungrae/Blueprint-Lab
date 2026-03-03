@@ -618,6 +618,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
     const [textSelectionFromTable, setTextSelectionFromTable] = useState<{ tableId: string; cellIndex: number } | null>(null);
     const [textStyleToolbarRefresh, setTextStyleToolbarRefresh] = useState(0);
+    const [showFontStylePanel, setShowFontStylePanel] = useState(false);
+    const [fontStylePanelPos, setFontStylePanelPos] = useState({ x: 0, y: 0 });
 
     const handleElementTextSelectionChange = useCallback((rect: DOMRect | null) => {
         setTextSelectionRect(rect);
@@ -645,7 +647,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const sel = window.getSelection();
             if (!sel || !sel.isCollapsed) return;
             const active = document.activeElement;
-            if (active instanceof Element && active.closest('[data-text-style-toolbar], [data-style-panel]')) return;
+            if (active instanceof Element && active.closest('[data-text-style-toolbar], [data-style-panel], [data-font-style-panel], [data-font-style-trigger]')) return;
             setTextSelectionRect(null);
             setTextSelectionFromTable(null);
         };
@@ -685,6 +687,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             setEditingCellIndex(null);
             setTextSelectionRect(null);
             setTextSelectionFromTable(null);
+            setShowFontStylePanel(false);
         };
 
         // Use capture phase so this fires before ReactFlow can stop propagation
@@ -700,7 +703,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 return;
             }
             const el = getClickTargetElement(e.target);
-            if (el?.closest('[data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-style-panel], [data-layer-panel], [data-table-panel], [data-grid-panel]')) {
+            if (el?.closest('[data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-style-panel], [data-layer-panel], [data-table-panel], [data-grid-panel], [data-font-style-panel]')) {
                 setLastInteractedScreenId(screen.id);
                 return;
             }
@@ -2717,6 +2720,26 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 );
                                             })()}
 
+                                            {(textSelectionRect || textSelectionFromTable) && (
+                                                <div data-font-style-trigger className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
+                                                    <PremiumTooltip label="폰트 스타일">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                if (!showFontStylePanel) {
+                                                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                    const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                    setFontStylePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                }
+                                                                setShowFontStylePanel(!showFontStylePanel);
+                                                            }}
+                                                            className={`p-2 rounded-lg transition-colors ${showFontStylePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        >
+                                                            <Type size={18} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                </div>
+                                            )}
                                             <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
                                                 <PremiumTooltip label="색상 및 스타일">
                                                     <button
@@ -2754,93 +2777,117 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                                     </div>
                         </div>
-                        {/* Row 2: Text style toolbar - 고정 높이(h-[48px])로 레이아웃 시프트/흔들림 방지 */}
-                        <div className="h-[48px] flex items-center shrink-0 overflow-hidden">
-                        {textSelectionRect && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
-                                        const fromTable = textSelectionFromTable != null;
-                                        const el = fromTable
-                                            ? drawElements.find(it => it.id === textSelectionFromTable!.tableId)
-                                            : drawElements.find(it => it.id === selectedElementIds[0]);
-                                        if (!el) return null;
-                                        const defaultColor = el.color || '#333333';
-                                        const defaultFontSize = el.fontSize || 14;
-                                        const getFontSizeFromSelection = (): number | null => {
-                                            const sel = window.getSelection();
-                                            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
-                                            const range = sel.getRangeAt(0);
-                                            const node = range.startContainer.nodeType === Node.TEXT_NODE
-                                                ? range.startContainer.parentElement
-                                                : range.startContainer as Element;
-                                            if (!node) return null;
-                                            const computed = window.getComputedStyle(node as Element);
-                                            const px = parseFloat(computed.fontSize);
-                                            return isNaN(px) ? null : Math.round(px);
-                                        };
-                                        const displayFontSize = getFontSizeFromSelection() ?? defaultFontSize;
-                                        const applyToSelection = (fn: () => void): boolean => {
-                                            const sel = window.getSelection();
-                                            if (sel && !sel.isCollapsed) {
-                                                fn();
-                                                const active = document.activeElement as HTMLElement;
-                                                if (active?.contentEditable === 'true') {
-                                                    active.dispatchEvent(new Event('input', { bubbles: true }));
-                                                }
-                                                return false;
-                                            }
-                                            return !fromTable;
-                                        };
-                                        const applyFontSizePx = (px: number): boolean => {
-                                            const sel = window.getSelection();
-                                            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
-                                            const editable = document.activeElement as HTMLElement;
-                                            if (!editable?.contentEditable) return false;
-                                            document.execCommand('fontSize', false, '7');
-                                            let node: Element | null = sel.anchorNode?.nodeType === Node.TEXT_NODE
-                                                ? (sel.anchorNode as Text).parentElement
-                                                : sel.anchorNode as Element;
-                                            while (node && node !== document.body) {
-                                                if (node.tagName === 'FONT' && node.getAttribute('size') === '7') {
-                                                    node.removeAttribute('size');
-                                                    (node as HTMLElement).style.fontSize = px + 'px';
-                                                    editable.dispatchEvent(new Event('input', { bubbles: true }));
-                                                    return true;
-                                                }
-                                                const span = node as HTMLElement;
-                                                if (node.tagName === 'SPAN' && span.style?.fontSize) {
-                                                    span.style.fontSize = px + 'px';
-                                                    editable.dispatchEvent(new Event('input', { bubbles: true }));
-                                                    return true;
-                                                }
-                                                node = node.parentElement;
-                                            }
-                                            return false;
-                                        };
-                                        return (
-                                            <div className="flex items-center gap-1 p-1.5 bg-gray-50/90 w-full border-t border-gray-100 animate-in fade-in duration-150" onMouseDown={(e) => e.stopPropagation()}>
-                                                <TextStyleToolbar
-                                                    key={`toolbar-${textStyleToolbarRefresh}`}
-                                                    el={el}
-                                                    fromTable={fromTable}
-                                                    defaultColor={defaultColor}
-                                                    defaultFontSize={defaultFontSize}
-                                                    displayFontSize={displayFontSize}
-                                                    updateElement={updateElement}
-                                                    applyToSelection={applyToSelection}
-                                                    applyFontSizePx={applyFontSizePx}
-                                                    setTextStyleToolbarRefresh={setTextStyleToolbarRefresh}
-                                                    drawElements={drawElements}
-                                                    update={update}
-                                                    syncUpdate={syncUpdate}
-                                                    textSelectionFromTable={textSelectionFromTable}
-                                                    selectedCellIndices={selectedCellIndices}
-                                                    editingTableId={editingTableId}
-                                                />
-                                            </div>
-                                        );
-                                    })()}
-                        </div>
                         </div>
                     )}
+
+                    {/* 폰트 스타일 패널 - 드롭다운 방식 (텍스트 선택 시 버튼 클릭으로 표시) */}
+                    {showFontStylePanel && (textSelectionRect || textSelectionFromTable) && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
+                        const fromTable = textSelectionFromTable != null;
+                        const el = fromTable
+                            ? drawElements.find(it => it.id === textSelectionFromTable!.tableId)
+                            : drawElements.find(it => it.id === selectedElementIds[0]);
+                        if (!el) return null;
+                        const defaultColor = el.color || '#333333';
+                        const defaultFontSize = el.fontSize || 14;
+                        const getFontSizeFromSelection = (): number | null => {
+                            const sel = window.getSelection();
+                            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+                            const range = sel.getRangeAt(0);
+                            const node = range.startContainer.nodeType === Node.TEXT_NODE
+                                ? range.startContainer.parentElement
+                                : range.startContainer as Element;
+                            if (!node) return null;
+                            const computed = window.getComputedStyle(node as Element);
+                            const px = parseFloat(computed.fontSize);
+                            return isNaN(px) ? null : Math.round(px);
+                        };
+                        const displayFontSize = getFontSizeFromSelection() ?? defaultFontSize;
+                        const applyToSelection = (fn: () => void): boolean => {
+                            const sel = window.getSelection();
+                            if (sel && !sel.isCollapsed) {
+                                fn();
+                                const active = document.activeElement as HTMLElement;
+                                if (active?.contentEditable === 'true') {
+                                    active.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
+                                return false;
+                            }
+                            return !fromTable;
+                        };
+                        const applyFontSizePx = (px: number): boolean => {
+                            const sel = window.getSelection();
+                            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+                            const editable = document.activeElement as HTMLElement;
+                            if (!editable?.contentEditable) return false;
+                            document.execCommand('fontSize', false, '7');
+                            let node: Element | null = sel.anchorNode?.nodeType === Node.TEXT_NODE
+                                ? (sel.anchorNode as Text).parentElement
+                                : sel.anchorNode as Element;
+                            while (node && node !== document.body) {
+                                if (node.tagName === 'FONT' && node.getAttribute('size') === '7') {
+                                    node.removeAttribute('size');
+                                    (node as HTMLElement).style.fontSize = px + 'px';
+                                    editable.dispatchEvent(new Event('input', { bubbles: true }));
+                                    return true;
+                                }
+                                const span = node as HTMLElement;
+                                if (node.tagName === 'SPAN' && span.style?.fontSize) {
+                                    span.style.fontSize = px + 'px';
+                                    editable.dispatchEvent(new Event('input', { bubbles: true }));
+                                    return true;
+                                }
+                                node = node.parentElement;
+                            }
+                            return false;
+                        };
+                        const screenPos = flowToScreenPosition({ x: fontStylePanelPos.x, y: fontStylePanelPos.y });
+                        return createPortal(
+                            <div
+                                data-font-style-panel
+                                className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in-95 duration-150 origin-top-left"
+                                style={{
+                                    left: screenPos.x,
+                                    top: screenPos.y,
+                                    transform: `scale(${0.9 * zoom})`,
+                                    transformOrigin: 'top left',
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <Type size={14} className="text-[#2c3e7c]" />
+                                        <span className="text-[11px] font-bold text-gray-600">폰트 스타일</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowFontStylePanel(false)}
+                                        className="p-1 rounded hover:bg-gray-100 text-gray-500"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                                <TextStyleToolbar
+                                    key={`toolbar-${textStyleToolbarRefresh}`}
+                                    el={el}
+                                    fromTable={fromTable}
+                                    defaultColor={defaultColor}
+                                    defaultFontSize={defaultFontSize}
+                                    displayFontSize={displayFontSize}
+                                    updateElement={updateElement}
+                                    applyToSelection={applyToSelection}
+                                    applyFontSizePx={applyFontSizePx}
+                                    setTextStyleToolbarRefresh={setTextStyleToolbarRefresh}
+                                    drawElements={drawElements}
+                                    update={update}
+                                    syncUpdate={syncUpdate}
+                                    textSelectionFromTable={textSelectionFromTable}
+                                    selectedCellIndices={selectedCellIndices}
+                                    editingTableId={editingTableId}
+                                />
+                            </div>,
+                            getPanelPortalRoot()
+                        );
+                    })()}
 
                     {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
                     <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
