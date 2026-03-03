@@ -34,9 +34,7 @@ import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
-import SvgImportButton from './screenNode/SvgImportButton';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
-import { parseSvgToDrawElements } from '../utils/svgToDrawElements';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
@@ -1487,17 +1485,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
             const text = cd.getData('text/plain');
             if (text) {
-                // SVG 문자열 (PPT 등에서 SVG로 저장 후 복사)
-                if (text.trimStart().startsWith('<svg') && text.includes('</svg>')) {
-                    try {
-                        const svgElements = parseSvgToDrawElements(text);
-                        if (svgElements.length > 0) {
-                            e.preventDefault();
-                            doPaste(svgElements, true);
-                            return;
-                        }
-                    } catch { /* SVG 파싱 실패 */ }
-                }
                 try {
                     const parsed = JSON.parse(text);
                     const isValid = Array.isArray(parsed) && parsed.length > 0 &&
@@ -2306,25 +2293,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             <ImageIcon size={18} />
                                                         </button>
                                                     </PremiumTooltip>
-                                                    <SvgImportButton
-                                                        disabled={isLocked}
-                                                        onImport={(elements) => {
-                                                            if (elements.length === 0) return;
-                                                            const { width: cw, height: ch } = getCanvasDimensions(screen);
-                                                            const scaled = scaleElementsToFitCanvas(elements, cw, ch);
-                                                            const baseZ = drawElements.length + 1;
-                                                            const newElements = scaled.map((el, idx) => ({
-                                                                ...el,
-                                                                id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
-                                                                zIndex: baseZ + idx,
-                                                            }));
-                                                            const nextElements = [...drawElements, ...newElements];
-                                                            update({ drawElements: nextElements });
-                                                            syncUpdate({ drawElements: nextElements });
-                                                            saveHistory(nextElements);
-                                                            setSelectedElementIds(newElements.map((el) => el.id));
-                                                        }}
-                                                    />
                                                     <input
                                                         ref={imageInputRef}
                                                         type="file"
@@ -3216,10 +3184,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 />
                                                                             ) : (
                                                                                 <div
-                                                                                    className="whitespace-pre-wrap w-full h-full flex"
+                                                                                    className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0"
                                                                                     style={{
                                                                                         alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
                                                                                         justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
+                                                                                        wordBreak: 'break-word',
                                                                                     }}
                                                                                     dangerouslySetInnerHTML={{ __html: cellData || '' }}
                                                                                 />
