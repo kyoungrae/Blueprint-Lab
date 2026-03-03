@@ -1,10 +1,10 @@
-/** Smart Guides: 스냅 거리(px) - 이 거리 이내면 정렬선에 맞춤 */
-export const SNAP_THRESHOLD = 6;
+/** Smart Guides: 스냅 거리(px) - 이 거리 이내면 정렬선에 맞춤 (작을수록 자성 약함) */
+export const SNAP_THRESHOLD = 2;
 /** 스냅 해제 거리(px) - 진입보다 크게 두어 경계에서 떨림 방지 */
-export const SNAP_RELEASE_THRESHOLD = 12;
+export const SNAP_RELEASE_THRESHOLD = 1;
 
 /** 인접 거리(px) - 이 거리 이내의 객체만 고려 (멀리 있는 객체는 정렬 대상에서 제외) */
-const PROXIMITY_THRESHOLD = 150;
+const PROXIMITY_THRESHOLD = 90;
 /** 후보 객체 수 제한 - 가장 가까운 객체만 정렬 대상으로 사용 */
 const MAX_NEARBY_CANDIDATES = 1;
 
