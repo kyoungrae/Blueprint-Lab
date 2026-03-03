@@ -177,7 +177,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
-    const [canvasScale, setCanvasScale] = useState(1);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawStartPos, setDrawStartPos] = useState({ x: 0, y: 0 });
     const [tempElement, setTempElement] = useState<DrawElement | null>(null);
@@ -290,29 +289,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         }
     }, [showImageStylePanel, imageCropMode]);
 
-    // Canvas scale to fit (object-fit: contain) - 화면 설계만, 컴포넌트는 minWidth/minHeight로 처리
     useLayoutEffect(() => {
-        const el = canvasAreaRef.current;
-        if (!el || screen.screenId?.startsWith('CMP-')) return;
-        const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
-        const ro = new ResizeObserver(() => {
-            const w = el.clientWidth;
-            const h = el.clientHeight;
-            if (w <= 0 || h <= 0) return;
-            const s = Math.min(1, w / canvasW, h / canvasH);
-            setCanvasScale(s);
-        });
-        ro.observe(el);
-        const w = el.clientWidth;
-        const h = el.clientHeight;
-        if (w > 0 && h > 0) {
-            const s = Math.min(1, w / canvasW, h / canvasH);
-            setCanvasScale(s);
-        }
-        return () => ro.disconnect();
-    }, [screen.id, screen.imageWidth, screen.imageHeight, screen.pageSize, screen.pageOrientation]);
-
-    React.useLayoutEffect(() => {
         if (!isTableListOpen || !tableListRef.current || !rightPaneRef.current) {
             setTableListPanelPos(null);
             return;
@@ -1996,7 +1973,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // Entity dimensions from getCanvasDimensions (컴포넌트는 용지=캔버스, 화면 설계는 70% 비율)
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
-    const FIXED_TOP_HEIGHT = 180; // 화면 설계: 헤더+메타+툴바 등
+    const FIXED_TOP_HEIGHT = 360; // 화면 설계: 헤더+메타+툴바 등 (캔버스 잘림 방지)
     const FIXED_TOP_HEIGHT_COMPONENT = 52; // 컴포넌트: 헤더 1행만
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
@@ -2906,32 +2883,30 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
                     <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
                     {/* [LEFT PANE 70% or 100%] - Drawing Canvas (컴포넌트일 때 RightPane 숨김) */}
-                    <div className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 min-w-0 flex flex-col bg-gray-50/10 overflow-hidden`}>
+                    <div
+                        className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 flex flex-col items-center justify-center bg-gray-50/10 overflow-visible`}
+                        style={!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') ? { minWidth: canvasW } : undefined}
+                    >
 
-                        {/* Drawing Canvas Area (canvas only) - fixed size from pageSize for component/screen design sync */}
+                        {/* Drawing Canvas Area - 캔버스와 감싸는 영역 크기를 동일하게 (스크롤/잘림 없음) */}
                         {(() => {
-                            const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
-                            const isComponent = screen.screenId?.startsWith('CMP-');
                             return (
                         <div
                             ref={canvasAreaRef}
-                            className={`flex-1 min-h-0 overflow-hidden relative flex flex-col bg-white border-b border-gray-200 ${!isComponent ? 'flex items-center justify-center' : ''}`}
+                            className={`relative flex flex-col bg-white border-b border-gray-200 shrink-0 overflow-visible`}
                             style={{
+                                width: canvasW,
+                                height: canvasH,
+                                minWidth: canvasW,
+                                minHeight: canvasH,
                                 backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
                                 backgroundSize: '20px 20px',
-                                ...(isComponent ? { minWidth: canvasW, minHeight: canvasH } : {}),
                             }}
                         >
-                            {/* Canvas Viewboard - fixed dimensions, 화면 설계는 scale로 fit */}
+                            {/* Canvas Viewboard - 용지 크기 그대로, 스케일 없음 */}
                             <div
-                                style={{
-                                    width: canvasW,
-                                    height: canvasH,
-                                    minWidth: canvasW,
-                                    minHeight: canvasH,
-                                    ...(!isComponent ? { transform: `scale(${canvasScale})`, transformOrigin: 'center center' } : {}),
-                                }}
-                                className="nodrag shrink-0"
+                                style={{ width: canvasW, height: canvasH }}
+                                className="nodrag w-full h-full"
                             >
                             <div
                                 ref={canvasRef}
