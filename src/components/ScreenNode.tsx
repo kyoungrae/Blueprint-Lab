@@ -1130,10 +1130,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             return;
         }
 
-        // Moving Logic - keep objects within canvas bounds (preserve relative positions when dragging group)
+        // Moving Logic - keep objects within canvas bounds (논리 캔버스 크기 사용, FIXED_TOP 등과 무관하게 이동 영역 고정)
         if (draggingElementIds.length > 0) {
-            const cw = canvasRef.current.clientWidth;
-            const ch = canvasRef.current.clientHeight;
+            const cw = canvasW;
+            const ch = canvasH;
             const dragged = drawElements.filter(el => draggingElementIds.includes(el.id));
             const withOffsets = dragged.map(item => {
                 const offset = dragOffsets[item.id];
@@ -1974,8 +1974,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // Entity dimensions from getCanvasDimensions (컴포넌트는 용지=캔버스, 화면 설계는 70% 비율)
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
-    const FIXED_TOP_HEIGHT = 220; // 화면 설계: 헤더+메타+툴바 등
-    const FIXED_TOP_HEIGHT_COMPONENT = 120; // 컴포넌트: 헤더 + 툴바 2행
+    const FIXED_TOP_HEIGHT = 185; // 화면 설계: 헤더+메타+툴바 (하단 여백 맞추기 위해 실제 콘텐츠 높이에 맞춤)
+    const FIXED_TOP_HEIGHT_COMPONENT = 100; // 컴포넌트: 헤더 + 툴바 2행
     const CANVAS_INSET = 14; // 캔버스 여백 (눈금자 숫자 표시 공간 확보)
     const ENTITY_CANVAS_GAP = 0; // 캔버스와 엔티티 테두리 사이 간격 (0=영역 딱 맞춤)
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
@@ -2036,8 +2036,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 <MetaInfoTable screen={screen} isLocked={isLocked} update={update} syncUpdate={syncUpdate} />
                 )}
 
-                {/* ── 3. Body Content: Toolbar full width, then Split Layout ── */}
-                <div className="nodrag nopan flex-1 flex flex-col min-h-0 bg-white rounded-b-[15px]" onMouseDown={(e) => e.stopPropagation()}>
+                {/* ── 3. Body Content: Toolbar full width, then Split Layout (shrink-0으로 하단 여백 제거) ── */}
+                <div className="nodrag nopan flex flex-col shrink-0 bg-white rounded-b-[15px]" onMouseDown={(e) => e.stopPropagation()}>
 
                     {/* Drawing Toolbar - Full width (100%), 2 rows: main tools + text style (below) */}
                     {!canvasOnlyMode && !isLocked && (
@@ -2546,14 +2546,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             );
                                                                             update({ drawElements: nextElements });
                                                                             syncUpdate({ drawElements: nextElements });
-                                                                        } else if (canvasRef.current) {
-                                                                            const cw = canvasRef.current.clientWidth;
+                                                                        } else {
                                                                             const nextElements = drawElements.map(el => {
                                                                                 if (!selectedElementIds.includes(el.id)) return el;
                                                                                 let nx = el.x;
                                                                                 if (align === 'left') nx = 10;
-                                                                                else if (align === 'center') nx = (cw / 2) - (el.width / 2);
-                                                                                else if (align === 'right') nx = cw - el.width - 10;
+                                                                                else if (align === 'center') nx = (canvasW / 2) - (el.width / 2);
+                                                                                else if (align === 'right') nx = canvasW - el.width - 10;
                                                                                 return { ...el, x: nx };
                                                                             });
                                                                             update({ drawElements: nextElements });
@@ -2582,14 +2581,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             );
                                                                             update({ drawElements: nextElements });
                                                                             syncUpdate({ drawElements: nextElements });
-                                                                        } else if (canvasRef.current) {
-                                                                            const ch = canvasRef.current.clientHeight;
+                                                                        } else {
                                                                             const nextElements = drawElements.map(el => {
                                                                                 if (!selectedElementIds.includes(el.id)) return el;
                                                                                 let ny = el.y;
                                                                                 if (vAlign === 'top') ny = 10;
-                                                                                else if (vAlign === 'middle') ny = (ch / 2) - (el.height / 2);
-                                                                                else if (vAlign === 'bottom') ny = ch - el.height - 10;
+                                                                                else if (vAlign === 'middle') ny = (canvasH / 2) - (el.height / 2);
+                                                                                else if (vAlign === 'bottom') ny = canvasH - el.height - 10;
                                                                                 return { ...el, y: ny };
                                                                             });
                                                                             update({ drawElements: nextElements });
@@ -3828,8 +3826,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     />
                     )}
                     </div>
-                    {/* Row 아래 남는 공간 채움 (body flex-1 대응) */}
-                    <div className="flex-1 min-h-0" />
                 </div> {/* End Body Split Layout */}
 
 
