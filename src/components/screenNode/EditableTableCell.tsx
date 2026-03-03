@@ -17,7 +17,15 @@ interface EditableTableCellProps {
     style?: React.CSSProperties;
 }
 
-/** contentEditable table cell for rich text (font size, color, etc.) */
+/** Strip HTML tags to get plain text (avoids contentEditable BiDi reversal bug) */
+function stripHtml(html: string): string {
+    if (!html || typeof html !== 'string') return '';
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+}
+
+/** Table cell using textarea - avoids contentEditable BiDi reversal with Korean/IME */
 const EditableTableCell: React.FC<EditableTableCellProps> = ({
     value,
     cellIndex,
@@ -34,27 +42,17 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     className = '',
     style = {},
 }) => {
-    const divRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const blurFromToolbarRef = useRef(false);
 
-    useEffect(() => {
-        if (!divRef.current) return;
-        if (isComposing && composingValue != null) {
-            if (divRef.current.innerHTML !== composingValue) divRef.current.innerHTML = composingValue;
-        } else if (!isComposing && divRef.current.innerHTML !== (value || '')) {
-            divRef.current.innerHTML = value || '';
-        }
-    }, [value, isComposing, composingValue]);
+    const plainValue = stripHtml(value || '');
+    const displayValue = isComposing && composingValue != null ? stripHtml(composingValue) : plainValue;
 
     useEffect(() => {
-        if (autoFocus && divRef.current) {
-            divRef.current.focus();
-            const range = document.createRange();
-            const sel = window.getSelection();
-            range.selectNodeContents(divRef.current);
-            range.collapse(false);
-            sel?.removeAllRanges();
-            sel?.addRange(range);
+        if (autoFocus && textareaRef.current) {
+            textareaRef.current.focus();
+            const len = displayValue.length;
+            textareaRef.current.setSelectionRange(len, len);
         }
     }, [autoFocus]);
 
@@ -68,52 +66,45 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
         return () => document.removeEventListener('mousedown', handleMouseDownCapture, true);
     }, []);
 
-    const handleInput = (e?: React.FormEvent) => {
-        if (divRef.current && !isComposing) {
-            if (e?.nativeEvent && (e.nativeEvent as any).isComposing) return;
-            onValueChange(divRef.current.innerHTML);
+    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const v = e.target.value;
+        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            onComposingChange(v);
+            return;
         }
+        onComposingChange(null);
+        onValueChange(v);
     };
 
-    const handleCompositionEnd = () => {
-        if (divRef.current) {
-            onComposingChange(null);
-            onValueChange(divRef.current.innerHTML);
-        }
+    const handleCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+        const v = (e.target as HTMLTextAreaElement).value;
+        onComposingChange(null);
+        onValueChange(v);
     };
 
     const handleSelect = () => {
-        const selection = window.getSelection();
-        if (selection && selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0);
-            if (!range.collapsed) {
-                const rect = range.getBoundingClientRect();
-                onSelectionChange(rect);
-                return;
-            }
+        const el = textareaRef.current;
+        if (!el) return;
+        const { selectionStart, selectionEnd } = el;
+        if (selectionStart !== selectionEnd) {
+            const rect = el.getBoundingClientRect();
+            onSelectionChange(rect);
+            return;
         }
         onSelectionChange(null);
     };
 
     return (
-        <div
-            ref={divRef}
-            contentEditable={!isLocked}
-            suppressContentEditableWarning
-            onInput={(e) => {
-                if ((e.nativeEvent as any).isComposing) {
-                    onComposingChange((e.target as HTMLDivElement).innerHTML);
-                    return;
-                }
-                onComposingChange(null);
-                onValueChange((e.target as HTMLDivElement).innerHTML);
-            }}
+        <textarea
+            ref={textareaRef}
+            dir="ltr"
+            value={displayValue}
+            onChange={handleChange}
             onCompositionEnd={handleCompositionEnd}
             onSelect={handleSelect}
             onMouseUp={handleSelect}
             onKeyUp={handleSelect}
             onBlur={() => {
-                handleInput();
                 requestAnimationFrame(() => {
                     if (blurFromToolbarRef.current) return;
                     const active = document.activeElement;
@@ -124,9 +115,12 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
             }}
             onKeyDown={onKeyDown}
             onMouseDown={onMouseDown}
+            readOnly={isLocked}
+            disabled={isLocked}
             className={className}
-            style={style}
+            style={{ ...style, direction: 'ltr', resize: 'none', overflow: 'hidden' }}
             data-cell-index={cellIndex}
+            spellCheck={false}
         />
     );
 };

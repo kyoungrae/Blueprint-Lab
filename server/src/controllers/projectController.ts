@@ -155,6 +155,9 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         if (linkedComponentProjectId !== undefined) project.linkedComponentProjectId = linkedComponentProjectId;
         if (data) {
             if (project.projectType === 'COMPONENT' && (data.components !== undefined || data.flows !== undefined)) {
+                // #region agent log
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'projectController.updateProject',message:'COMPONENT_save',data:{projectId:id,compCount:(data.components||[]).length},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+                // #endregion
                 project.componentSnapshot = {
                     version: (project.componentSnapshot?.version || 0) + 1,
                     components: data.components ?? project.componentSnapshot?.components ?? [],

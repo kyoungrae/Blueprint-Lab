@@ -3184,11 +3184,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 />
                                                                             ) : (
                                                                                 <div
+                                                                                    dir="ltr"
                                                                                     className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0"
                                                                                     style={{
                                                                                         alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
                                                                                         justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
                                                                                         wordBreak: 'break-word',
+                                                                                        unicodeBidi: 'isolate',
                                                                                     }}
                                                                                     dangerouslySetInnerHTML={{ __html: cellData || '' }}
                                                                                 />
