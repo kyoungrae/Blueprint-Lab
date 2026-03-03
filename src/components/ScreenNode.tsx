@@ -2754,8 +2754,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                                     </div>
                         </div>
-                        {/* Row 2: Text style toolbar - 고정 높이로 레이아웃 시프트 방지 */}
-                        <div className="min-h-[44px] flex items-center shrink-0">
+                        {/* Row 2: Text style toolbar - 고정 높이(h-[48px])로 레이아웃 시프트/흔들림 방지 */}
+                        <div className="h-[48px] flex items-center shrink-0 overflow-hidden">
                         {textSelectionRect && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
                                         const fromTable = textSelectionFromTable != null;
                                         const el = fromTable
@@ -2816,7 +2816,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             return false;
                                         };
                                         return (
-                                            <div className="flex items-center gap-1 p-1.5 bg-gray-50/90 w-full border-t border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200" onMouseDown={(e) => e.stopPropagation()}>
+                                            <div className="flex items-center gap-1 p-1.5 bg-gray-50/90 w-full border-t border-gray-100 animate-in fade-in duration-150" onMouseDown={(e) => e.stopPropagation()}>
                                                 <TextStyleToolbar
                                                     key={`toolbar-${textStyleToolbarRefresh}`}
                                                     el={el}
