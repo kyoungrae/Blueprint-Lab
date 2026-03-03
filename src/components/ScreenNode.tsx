@@ -1150,8 +1150,21 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const centerY = (minNewY + maxBottom) / 2;
 
             // Smart Guides: 다른 요소와 정렬 시 스냅 + 가이드라인 표시
+            // - 드래그 중인 그룹을 완전히 감싸는 rect(컨테이너)는 정렬 후보에서 제외하여,
+            //   컨테이너 안의 자식들(예: table 2개)끼리도 스마트 그리드가 적용되도록 함.
+            const groupBox = { left: minNewX, right: maxRight, top: minNewY, bottom: maxBottom };
             const otherElements = drawElements
                 .filter(el => !draggingElementIds.includes(el.id))
+                .filter(el => {
+                    if (el.type !== 'rect') return true;
+                    const box = { left: el.x, right: el.x + el.width, top: el.y, bottom: el.y + el.height };
+                    const fullyContains =
+                        groupBox.left >= box.left &&
+                        groupBox.right <= box.right &&
+                        groupBox.top >= box.top &&
+                        groupBox.bottom <= box.bottom;
+                    return !fullyContains;
+                })
                 .map(el => ({ id: el.id, x: el.x, y: el.y, width: el.width, height: el.height }));
             const { deltaX, deltaY, guides, nextSnap } = getSmartGuidesAndSnap(
                 { left: minNewX, right: maxRight, centerX, top: minNewY, bottom: maxBottom, centerY },
@@ -2947,7 +2960,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         {/* Render Existing Elements */}
                                                         {drawElements.map((el) => {
                                                             const isSelected = selectedElementIds.includes(el.id);
-                                                            const isDraggingThis = draggingElementIds.includes(el.id);
                                                             const rot = el.type === 'image' ? (el.imageRotation ?? 0) : 0;
                                                             const previewPos = dragPreviewPositions?.[el.id];
                                                             const commonStyle: React.CSSProperties = {
@@ -2956,7 +2968,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 top: previewPos?.y ?? el.y,
                                                                 width: el.width,
                                                                 height: el.height,
-                                                                zIndex: isDraggingThis ? 9999 : (el.zIndex || 1),
+                                                                // 드래그 중에도 원래 zIndex 유지 → 아래 레이어를 옮겨도 위 객체 위로 튀어오르지 않음
+                                                                zIndex: el.zIndex ?? 1,
                                                                 transition: (isDrawing || isMoving) ? 'none' : 'all 0.1s ease',
                                                                 pointerEvents: isDrawing ? 'none' : 'auto',
                                                                 opacity: el.opacity !== undefined ? el.opacity : 1,
