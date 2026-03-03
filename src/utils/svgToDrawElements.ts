@@ -359,8 +359,8 @@ function tryDetectAndMergeTables(
 
 /** SVG 요소에서 스타일 추출 */
 function getStyle(el: Element): { fill?: string; stroke?: string; strokeWidth: number; opacity?: number } {
-    const fill = parseColor(el.getAttribute('fill')) ?? parseColor(el.getAttribute('style')?.match(/fill:\s*([^;]+)/)?.[1]?.trim());
-    const stroke = parseColor(el.getAttribute('stroke')) ?? parseColor(el.getAttribute('style')?.match(/stroke:\s*([^;]+)/)?.[1]?.trim());
+    const fill = parseColor(el.getAttribute('fill')) ?? parseColor(el.getAttribute('style')?.match(/fill:\s*([^;]+)/)?.[1]?.trim() ?? null);
+    const stroke = parseColor(el.getAttribute('stroke')) ?? parseColor(el.getAttribute('style')?.match(/stroke:\s*([^;]+)/)?.[1]?.trim() ?? null);
     const strokeWidth = parseNum(el.getAttribute('stroke-width'), 1);
     const opacity = parseNum(el.getAttribute('opacity'), 1);
     return { fill: fill ?? '#ffffff', stroke: stroke ?? '#000000', strokeWidth, opacity: opacity < 1 ? opacity : undefined };
