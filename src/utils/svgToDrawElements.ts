@@ -16,12 +16,43 @@ function parseNum(val: string | null, fallback: number): number {
     return isNaN(n) ? fallback : n;
 }
 
+/** getCTM으로 bbox를 SVG 루트 좌표계로 변환 (transform/그룹 중첩 모두 처리) */
+function bboxToRootCoords(
+    el: SVGGraphicsElement,
+    bbox: DOMRect,
+    svg: SVGSVGElement
+): { x: number; y: number; width: number; height: number } {
+    const ctm = el.getCTM();
+    if (!ctm) return { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height };
+    const pt = svg.createSVGPoint();
+    const corners = [
+        { x: bbox.x, y: bbox.y },
+        { x: bbox.x + bbox.width, y: bbox.y },
+        { x: bbox.x + bbox.width, y: bbox.y + bbox.height },
+        { x: bbox.x, y: bbox.y + bbox.height },
+    ];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const c of corners) {
+        pt.x = c.x;
+        pt.y = c.y;
+        const t = pt.matrixTransform(ctm);
+        minX = Math.min(minX, t.x);
+        minY = Math.min(minY, t.y);
+        maxX = Math.max(maxX, t.x);
+        maxY = Math.max(maxY, t.y);
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
 function parseColor(val: string | null): string | undefined {
     if (!val || val === 'none') return undefined;
     return val;
 }
 
-/** SVG text/tspan에서 텍스트 추출 (tspan, line break 포함) */
+/** SVG text/tspan에서 텍스트 추출 (단일 텍스트 블록용, tspan line break 포함) */
 function getTextFromSvgText(el: Element): string {
     const parts: string[] = [];
     const walk = (node: Element) => {
@@ -45,6 +76,17 @@ function getTextFromSvgText(el: Element): string {
     return parts.join('').replace(/[ \t]+/g, ' ').trim() || el.textContent?.trim() || '';
 }
 
+/** tspan이 x,y로 배치된 그리드형 텍스트인지 (테이블/표 구조) */
+function hasPositionedTspans(textEl: Element): boolean {
+    const tspans = textEl.querySelectorAll('tspan');
+    if (tspans.length < 2) return false;
+    let withPos = 0;
+    tspans.forEach((t) => {
+        if (t.getAttribute('x') != null || t.getAttribute('y') != null) withPos++;
+    });
+    return withPos >= 2;
+}
+
 /** SVG 요소에서 스타일 추출 */
 function getStyle(el: Element): { fill?: string; stroke?: string; strokeWidth: number; opacity?: number } {
     const fill = parseColor(el.getAttribute('fill')) ?? parseColor(el.getAttribute('style')?.match(/fill:\s*([^;]+)/)?.[1]?.trim());
@@ -62,7 +104,10 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
     if (!svg) return [];
 
     const container = document.createElement('div');
-    container.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;pointer-events:none';
+    const vb = svg.getAttribute('viewBox');
+    const [vw, vh] = vb ? vb.split(/\s+/).slice(2).map(Number) : [2000, 2000];
+    const size = Math.max(1000, vw || 2000, vh || 2000);
+    container.style.cssText = `position:absolute;left:-9999px;top:0;width:${size}px;height:${size}px;overflow:hidden;pointer-events:none`;
     container.appendChild(svg);
     document.body.appendChild(container);
 
@@ -88,20 +133,27 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
             } catch {
                 return;
             }
-            if (bbox.width < 0.5 || bbox.height < 0.5) return;
+            if (bbox.width < 0.5 && bbox.height < 0.5) return;
+
+            if (tag === 'path') {
+                const fill = el.getAttribute('fill') ?? el.getAttribute('style')?.match(/fill:\s*([^;]+)/)?.[1]?.trim();
+                const stroke = el.getAttribute('stroke') ?? el.getAttribute('style')?.match(/stroke:\s*([^;]+)/)?.[1]?.trim();
+                if ((!fill || fill === 'none') && (!stroke || stroke === 'none')) return;
+            }
 
             const style = getStyle(el);
             const id = `el_${baseId}_${idx}_${randomId()}`;
+            const root = bboxToRootCoords(graphicsEl, bbox, svg as SVGSVGElement);
 
             if (tag === 'rect') {
                 const rx = parseNum(el.getAttribute('rx'), 0);
                 elements.push({
                     id,
                     type: 'rect',
-                    x: bbox.x,
-                    y: bbox.y,
-                    width: bbox.width,
-                    height: bbox.height,
+                    x: root.x,
+                    y: root.y,
+                    width: root.width,
+                    height: root.height,
                     fill: style.fill,
                     stroke: style.stroke,
                     strokeWidth: style.strokeWidth,
@@ -112,15 +164,13 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                 });
             } else if (tag === 'circle') {
                 const r = parseNum(el.getAttribute('r'), Math.min(bbox.width, bbox.height) / 2);
-                const cx = parseNum(el.getAttribute('cx'), bbox.x + bbox.width / 2);
-                const cy = parseNum(el.getAttribute('cy'), bbox.y + bbox.height / 2);
                 elements.push({
                     id,
                     type: 'circle',
-                    x: cx - r,
-                    y: cy - r,
-                    width: r * 2,
-                    height: r * 2,
+                    x: root.x,
+                    y: root.y,
+                    width: root.width,
+                    height: root.height,
                     fill: style.fill,
                     stroke: style.stroke,
                     strokeWidth: style.strokeWidth,
@@ -129,17 +179,13 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                     groupId: groupId,
                 });
             } else if (tag === 'ellipse') {
-                const rx = parseNum(el.getAttribute('rx'), bbox.width / 2);
-                const ry = parseNum(el.getAttribute('ry'), bbox.height / 2);
-                const cx = parseNum(el.getAttribute('cx'), bbox.x + bbox.width / 2);
-                const cy = parseNum(el.getAttribute('cy'), bbox.y + bbox.height / 2);
                 elements.push({
                     id,
                     type: 'circle',
-                    x: cx - rx,
-                    y: cy - ry,
-                    width: rx * 2,
-                    height: ry * 2,
+                    x: root.x,
+                    y: root.y,
+                    width: root.width,
+                    height: root.height,
                     fill: style.fill,
                     stroke: style.stroke,
                     strokeWidth: style.strokeWidth,
@@ -148,8 +194,7 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                     groupId: groupId,
                 });
             } else if (tag === 'text') {
-                const text = getTextFromSvgText(el);
-                const fontSize = parseNum(
+                const baseFontSize = parseNum(
                     el.getAttribute('font-size') ?? el.getAttribute('style')?.match(/font-size:\s*([^;]+)/)?.[1]?.trim() ?? '',
                     14
                 );
@@ -158,35 +203,85 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                 const textAlign = textAnchor === 'middle' ? 'center' as const : textAnchor === 'end' ? 'right' as const : 'left';
                 const dominantBaseline = el.getAttribute('dominant-baseline') ?? el.getAttribute('style')?.match(/dominant-baseline:\s*([^;]+)/)?.[1]?.trim();
                 const verticalAlign = dominantBaseline === 'middle' ? 'middle' as const : dominantBaseline === 'hanging' ? 'top' as const : dominantBaseline === 'alphabetic' || dominantBaseline === 'baseline' ? 'bottom' as const : 'middle';
-                elements.push({
-                    id,
-                    type: 'text',
-                    x: bbox.x,
-                    y: bbox.y,
-                    width: Math.max(bbox.width, 20),
-                    height: Math.max(bbox.height, 14),
-                    text: text || '',
-                    fontSize,
-                    fontWeight: fontWeight || undefined,
-                    color: style.stroke ?? style.fill ?? '#000000',
-                    fill: style.fill,
-                    stroke: style.stroke,
-                    strokeWidth: style.strokeWidth,
-                    opacity: style.opacity,
-                    textAlign,
-                    verticalAlign,
-                    zIndex: zIndex++,
-                    groupId: groupId,
-                });
+
+                if (hasPositionedTspans(el)) {
+                    const tspans = el.querySelectorAll('tspan');
+                    tspans.forEach((tspan, ti) => {
+                        const t = tspan.textContent?.trim();
+                        if (!t) return;
+                        const tFontSize = parseNum(tspan.getAttribute('font-size'), baseFontSize);
+                        const cjkBonus = /[\u4e00-\u9fff\uac00-\ud7af\u3040-\u309f]/.test(t) ? 1.15 : 1;
+                        const minWidth = Math.max(t.length * tFontSize * cjkBonus, 16);
+                        const minHeight = tFontSize * 1.3;
+                        let tbox: DOMRect;
+                        try {
+                            tbox = (tspan as SVGGraphicsElement).getBBox();
+                        } catch {
+                            return;
+                        }
+                        const tRoot = bboxToRootCoords(tspan as SVGGraphicsElement, tbox, svg as SVGSVGElement);
+                        const w = Math.max(tRoot.width, minWidth);
+                        const h = Math.max(tRoot.height, minHeight);
+                        if (w < 0.5 || h < 0.5) return;
+                        elements.push({
+                            id: `el_${baseId}_${idx}_t${ti}_${randomId()}`,
+                            type: 'text',
+                            x: tRoot.x,
+                            y: tRoot.y,
+                            width: w,
+                            height: h,
+                            text: t,
+                            fontSize: tFontSize,
+                            fontWeight: fontWeight || undefined,
+                            color: style.stroke ?? style.fill ?? '#000000',
+                            fill: style.fill,
+                            stroke: style.stroke,
+                            strokeWidth: style.strokeWidth,
+                            opacity: style.opacity,
+                            textAlign,
+                            verticalAlign,
+                            zIndex: zIndex++,
+                            groupId: groupId,
+                        });
+                    });
+                } else {
+                    const text = getTextFromSvgText(el);
+                    const cjkBonus = /[\u4e00-\u9fff\uac00-\ud7af\u3040-\u309f]/.test(text) ? 1.15 : 1;
+                    const minW = Math.max(text.length * baseFontSize * cjkBonus, 20);
+                    elements.push({
+                        id,
+                        type: 'text',
+                        x: root.x,
+                        y: root.y,
+                        width: Math.max(root.width, minW),
+                        height: Math.max(root.height, 14),
+                        text: text || '',
+                        fontSize: baseFontSize,
+                        fontWeight: fontWeight || undefined,
+                        color: style.stroke ?? style.fill ?? '#000000',
+                        fill: style.fill,
+                        stroke: style.stroke,
+                        strokeWidth: style.strokeWidth,
+                        opacity: style.opacity,
+                        textAlign,
+                        verticalAlign,
+                        zIndex: zIndex++,
+                        groupId: groupId,
+                    });
+                }
             } else {
+                const pathFill = tag === 'path' && (el.getAttribute('fill') === 'none' || !el.getAttribute('fill')) ? 'transparent' : style.fill;
+                const minDim = Math.max(style.strokeWidth, 1);
+                const w = Math.max(root.width, minDim);
+                const h = Math.max(root.height, minDim);
                 elements.push({
                     id,
                     type: 'rect',
-                    x: bbox.x,
-                    y: bbox.y,
-                    width: bbox.width,
-                    height: bbox.height,
-                    fill: style.fill,
+                    x: root.x,
+                    y: root.y,
+                    width: w,
+                    height: h,
+                    fill: pathFill,
                     stroke: style.stroke,
                     strokeWidth: style.strokeWidth,
                     opacity: style.opacity,

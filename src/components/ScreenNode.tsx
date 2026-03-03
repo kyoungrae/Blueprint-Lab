@@ -35,6 +35,8 @@ import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
 import SvgImportButton from './screenNode/SvgImportButton';
+import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
+import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
@@ -69,6 +71,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         lastInteractedScreenId,
         setLastInteractedScreenId,
         getScreenById,
+        getPasteTargetScreenId,
     } = useScreenNodeStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
@@ -1398,104 +1401,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 return;
             }
 
-            // Ctrl+V (Paste) - 이 노드가 마지막 상호작용 대상일 때만 붙여넣기 (메모리 → 시스템 클립보드 순)
+            // Ctrl+V (Paste) - paste 이벤트에서 처리 (clipboardData 직접 접근, 권한 문제 회피)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
                 if (isInput) return;
-                if (lastInteractedScreenId !== screen.id) return; // 다른 엔티티에 포커스된 경우 스킵
-                e.preventDefault();
-
-                const doPaste = (toPaste: DrawElement[]) => {
-                    const newElements = toPaste.map((el, idx) => ({
-                        ...el,
-                        id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
-                        x: el.x + 20,
-                        y: el.y + 20
-                    }));
-                    const current = getScreenById(screen.id);
-                    const currentElements = current?.drawElements ?? drawElements;
-                    const nextElements = [...currentElements, ...newElements];
-                    update({ drawElements: nextElements });
-                    syncUpdate({ drawElements: nextElements });
-                    saveHistory(nextElements);
-                    setSelectedElementIds(newElements.map(el => el.id));
-                    setCanvasClipboard(newElements);
-                };
-
-                if (canvasClipboard.length > 0) {
-                    doPaste(canvasClipboard);
-                    return;
-                }
-
-                // 시스템 클립보드에서 읽기 (1. JSON → 2. 이미지 PNG/JPEG)
-                const tryPasteFromClipboard = async () => {
-                    if (navigator.clipboard?.readText && window.isSecureContext) {
-                        try {
-                            const text = await navigator.clipboard.readText();
-                            const parsed = JSON.parse(text);
-                            const isValid = Array.isArray(parsed) && parsed.length > 0 &&
-                                parsed.every((el: unknown) => el && typeof (el as DrawElement).id === 'string' &&
-                                    (el as DrawElement).type && typeof (el as DrawElement).x === 'number' &&
-                                    typeof (el as DrawElement).y === 'number' && typeof (el as DrawElement).width === 'number' &&
-                                    typeof (el as DrawElement).height === 'number' && (el as DrawElement).zIndex != null);
-                            if (isValid) {
-                                doPaste(parsed as DrawElement[]);
-                                return;
-                            }
-                        } catch { /* not our JSON */ }
-                    }
-
-                    // PPT 등에서 복사한 이미지 붙여넣기
-                    if (navigator.clipboard?.read && window.isSecureContext) {
-                        try {
-                            const items = await navigator.clipboard.read();
-                            for (const item of items) {
-                                const imageTypes = ['image/png', 'image/jpeg', 'image/webp'];
-                                for (const type of imageTypes) {
-                                    if (item.types.includes(type)) {
-                                        const blob = await item.getType(type);
-                                        const file = new File([blob], `paste-${Date.now()}.${type.split('/')[1]}`, { type });
-                                        let imageUrl: string;
-                                        try {
-                                            imageUrl = await uploadImage(file);
-                                        } catch {
-                                            imageUrl = await new Promise<string>((resolve, reject) => {
-                                                const reader = new FileReader();
-                                                reader.onload = () => resolve(reader.result as string);
-                                                reader.onerror = reject;
-                                                reader.readAsDataURL(blob);
-                                            });
-                                        }
-                                        const cw = canvasRef.current?.clientWidth ?? 400;
-                                        const ch = canvasRef.current?.clientHeight ?? 300;
-                                        const w = 200;
-                                        const h = 150;
-                                        const newId = `el_${Date.now()}_0_${Math.random().toString(36).substr(2, 5)}`;
-                                        const imgEl: DrawElement = {
-                                            id: newId,
-                                            type: 'image',
-                                            x: Math.max(10, cw / 2 - w / 2),
-                                            y: Math.max(10, ch / 2 - h / 2),
-                                            width: w,
-                                            height: h,
-                                            zIndex: (getScreenById(screen.id)?.drawElements?.length ?? drawElements.length) + 1,
-                                            imageUrl,
-                                        };
-                                        const current = getScreenById(screen.id);
-                                        const currentElements = current?.drawElements ?? drawElements;
-                                        const nextElements = [...currentElements, imgEl];
-                                        update({ drawElements: nextElements });
-                                        syncUpdate({ drawElements: nextElements });
-                                        saveHistory(nextElements);
-                                        setSelectedElementIds([newId]);
-                                        return;
-                                    }
-                                }
-                            }
-                        } catch { /* clipboard read denied or no image */ }
-                    }
-                };
-                tryPasteFromClipboard();
-                return;
+                const pasteTargetId = getPasteTargetScreenId?.() ?? lastInteractedScreenId;
+                if (pasteTargetId !== screen.id) return;
+                // keydown에서는 preventDefault 하지 않음 → paste 이벤트 발생 후 그곳에서 처리
             }
 
             // Ctrl+Z (Undo)
@@ -1532,7 +1443,126 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         };
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, update, syncUpdate, saveHistory, setSelectedElementIds, uploadImage]);
+    }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, update, syncUpdate, saveHistory, setSelectedElementIds, uploadImage, getPasteTargetScreenId]);
+
+    // Paste 이벤트: clipboardData 직접 접근 (navigator.clipboard.read 권한 불필요)
+    useEffect(() => {
+        const handlePaste = (e: ClipboardEvent) => {
+            const active = document.activeElement as HTMLElement | null;
+            const isInput = active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || active?.isContentEditable || editingTextId != null || (editingTableId != null && editingCellIndex != null);
+            if (isInput) return;
+
+            const pasteTargetId = getPasteTargetScreenId?.() ?? lastInteractedScreenId;
+            if (pasteTargetId !== screen.id) return;
+
+            const cd = e.clipboardData;
+            if (!cd) return;
+
+            const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+
+            const doPaste = (toPaste: DrawElement[], scaleToFit = false) => {
+                const processed = scaleToFit ? scaleElementsToFitCanvas(toPaste, canvasW, canvasH) : toPaste;
+                const newElements = processed.map((el, idx) => ({
+                    ...el,
+                    id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+                    x: el.x + (scaleToFit ? 0 : 20),
+                    y: el.y + (scaleToFit ? 0 : 20),
+                }));
+                const current = getScreenById(screen.id);
+                const currentElements = current?.drawElements ?? drawElements;
+                const nextElements = [...currentElements, ...newElements];
+                update({ drawElements: nextElements });
+                syncUpdate({ drawElements: nextElements });
+                saveHistory(nextElements);
+                setSelectedElementIds(newElements.map((el) => el.id));
+                setCanvasClipboard(newElements);
+            };
+
+            if (canvasClipboard.length > 0) {
+                e.preventDefault();
+                doPaste(canvasClipboard);
+                return;
+            }
+
+            const text = cd.getData('text/plain');
+            if (text) {
+                try {
+                    const parsed = JSON.parse(text);
+                    const isValid = Array.isArray(parsed) && parsed.length > 0 &&
+                        parsed.every((el: unknown) => el && typeof (el as DrawElement).id === 'string' &&
+                            (el as DrawElement).type && typeof (el as DrawElement).x === 'number' &&
+                            typeof (el as DrawElement).y === 'number' && typeof (el as DrawElement).width === 'number' &&
+                            typeof (el as DrawElement).height === 'number' && (el as DrawElement).zIndex != null);
+                    if (isValid) {
+                        e.preventDefault();
+                        doPaste(parsed as DrawElement[]);
+                        return;
+                    }
+                } catch { /* not JSON */ }
+            }
+
+            const htmlData = cd.getData('text/html');
+            if (htmlData) {
+                if (import.meta.env.DEV) {
+                    console.log('[Paste] text/html length:', htmlData.length);
+                    console.log('[Paste] text/html sample:', htmlData.slice(0, 500));
+                }
+                const pptElements = parsePptHtmlToElements(htmlData);
+                if (import.meta.env.DEV) {
+                    console.log('[Paste] pptElements:', pptElements);
+                }
+                if (pptElements.length > 0) {
+                    e.preventDefault();
+                    doPaste(pptElements, true);
+                    return;
+                }
+            }
+
+            for (const item of cd.items) {
+                if (item.kind !== 'file') continue;
+                const file = item.getAsFile();
+                if (!file || !file.type.startsWith('image/')) continue;
+                e.preventDefault();
+                (async () => {
+                    let imageUrl: string;
+                    try {
+                        imageUrl = await uploadImage(file);
+                    } catch {
+                        imageUrl = await new Promise<string>((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result as string);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(file);
+                        });
+                    }
+                    const cw = canvasRef.current?.clientWidth ?? 400;
+                    const ch = canvasRef.current?.clientHeight ?? 300;
+                    const newId = `el_${Date.now()}_0_${Math.random().toString(36).substr(2, 5)}`;
+                    const imgEl: DrawElement = {
+                        id: newId,
+                        type: 'image',
+                        x: Math.max(10, cw / 2 - 100),
+                        y: Math.max(10, ch / 2 - 75),
+                        width: 200,
+                        height: 150,
+                        zIndex: (getScreenById(screen.id)?.drawElements?.length ?? drawElements.length) + 1,
+                        imageUrl,
+                    };
+                    const current = getScreenById(screen.id);
+                    const currentElements = current?.drawElements ?? drawElements;
+                    const nextElements = [...currentElements, imgEl];
+                    update({ drawElements: nextElements });
+                    syncUpdate({ drawElements: nextElements });
+                    saveHistory(nextElements);
+                    setSelectedElementIds([newId]);
+                })();
+                return;
+            }
+        };
+
+        document.addEventListener('paste', handlePaste, true);
+        return () => document.removeEventListener('paste', handlePaste, true);
+    }, [drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, getPasteTargetScreenId, update, syncUpdate, saveHistory, setSelectedElementIds, uploadImage]);
 
 
     // ── Table V2 Utilities (flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells, gcd imported from ./screenNode/types) ──────────────────────────────────
@@ -2268,22 +2298,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         disabled={isLocked}
                                                         onImport={(elements) => {
                                                             if (elements.length === 0) return;
-                                                            const cw = canvasRef.current?.clientWidth ?? 400;
-                                                            const ch = canvasRef.current?.clientHeight ?? 300;
-                                                            const minX = Math.min(...elements.map((el) => el.x));
-                                                            const minY = Math.min(...elements.map((el) => el.y));
-                                                            const maxRight = Math.max(...elements.map((el) => el.x + el.width));
-                                                            const maxBottom = Math.max(...elements.map((el) => el.y + el.height));
-                                                            const groupW = maxRight - minX;
-                                                            const groupH = maxBottom - minY;
-                                                            const offsetX = Math.max(20, cw / 2 - groupW / 2 - minX);
-                                                            const offsetY = Math.max(20, ch / 2 - groupH / 2 - minY);
+                                                            const { width: cw, height: ch } = getCanvasDimensions(screen);
+                                                            const scaled = scaleElementsToFitCanvas(elements, cw, ch);
                                                             const baseZ = drawElements.length + 1;
-                                                            const newElements = elements.map((el, idx) => ({
+                                                            const newElements = scaled.map((el, idx) => ({
                                                                 ...el,
                                                                 id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
-                                                                x: el.x + offsetX,
-                                                                y: el.y + offsetY,
                                                                 zIndex: baseZ + idx,
                                                             }));
                                                             const nextElements = [...drawElements, ...newElements];

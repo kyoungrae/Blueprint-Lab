@@ -771,6 +771,10 @@ const ComponentCanvasContent: React.FC = () => {
         lastInteractedScreenId,
         setLastInteractedScreenId,
         getScreenById: (id: string) => useComponentStore.getState().components.find((c) => c.id === id),
+        getPasteTargetScreenId: () => {
+            const s = useComponentStore.getState();
+            return s.lastInteractedScreenId ?? (s.components.length === 1 ? s.components[0].id : null);
+        },
     }), [components, updateComponent, deleteComponent, canvasClipboard, setCanvasClipboard, lastInteractedScreenId, setLastInteractedScreenId]);
 
     // 서버 프로젝트: state_sync 도착 전 편집 시 이미지 등이 덮어쓰여 사라지는 것 방지
