@@ -35,6 +35,7 @@ import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
+import CanvasRulers from './screenNode/CanvasRulers';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 import { resolveFontFamilyCSS } from '../utils/fontFamily';
@@ -1975,7 +1976,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
     const FIXED_TOP_HEIGHT = 220; // 화면 설계: 헤더+메타+툴바 등
     const FIXED_TOP_HEIGHT_COMPONENT = 120; // 컴포넌트: 헤더 + 툴바 2행
-    const CANVAS_INSET = 8; // 캔버스 여백 (선택 핸들·보더 여유)
+    const CANVAS_INSET = 14; // 캔버스 여백 (눈금자 숫자 표시 공간 확보)
+    const ENTITY_CANVAS_GAP = 0; // 캔버스와 엔티티 테두리 사이 간격 (0=영역 딱 맞춤)
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
         const scale = MIN_CANVAS_WIDTH / canvasW;
@@ -1983,8 +1985,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         canvasH = Math.round(canvasH * scale);
     }
     const isComponent = screen.screenId?.startsWith('CMP-');
-    const entityWidth = isComponent ? canvasW : Math.ceil(canvasW / CANVAS_WIDTH_RATIO);
-    const entityHeight = canvasH + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
+    const entityWidth = isComponent
+        ? canvasW + ENTITY_CANVAS_GAP * 2
+        : Math.ceil((canvasW + ENTITY_CANVAS_GAP * 2) / CANVAS_WIDTH_RATIO);
+    const entityHeight =
+        canvasH + ENTITY_CANVAS_GAP * 2 + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
 
     return (
         <div
@@ -2881,14 +2886,27 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         );
                     })()}
 
-                    {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
-                    <div className="flex-1 flex min-h-0" style={{ minHeight: Math.max(500, canvasH) }}>
-                    {/* [LEFT PANE 70% or 100%] - Drawing Canvas (컴포넌트일 때 RightPane 숨김) */}
+                    {/* Left + Right pane row - 고정 크기로 영역 딱 맞게 (선택 박스 부자연스러움 해소) */}
                     <div
-                        className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[15px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[15px]'} flex-shrink-0 flex flex-col items-center justify-center bg-gray-50/10 overflow-visible`}
-                        style={!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') ? { minWidth: canvasW } : undefined}
+                        className="flex flex-shrink-0"
+                        style={{ height: canvasH + ENTITY_CANVAS_GAP * 2, minHeight: canvasH + ENTITY_CANVAS_GAP * 2 }}
                     >
-
+                    {/* [LEFT PANE] - Drawing Canvas, 콘텐츠 크기에 정확히 맞춤 (GAP=0으로 영역 딱 맞춤) */}
+                    <div
+                        className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'rounded-b-[15px]' : 'border-r border-gray-200 rounded-bl-[15px]'} flex-shrink-0 relative bg-gray-50/10 overflow-visible`}
+                        style={{
+                            width: canvasW + ENTITY_CANVAS_GAP * 2 + (!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') ? 1 : 0),
+                            height: canvasH + ENTITY_CANVAS_GAP * 2,
+                            padding: ENTITY_CANVAS_GAP,
+                        }}
+                    >
+                        {/* Canvas + Rulers - 패딩으로 상하좌우 균일, 중앙 정렬 제거로 영역 정확히 맞춤 */}
+                        <CanvasRulers
+                            canvasWidth={canvasW - CANVAS_INSET * 2}
+                            canvasHeight={canvasH - CANVAS_INSET * 2}
+                            inset={CANVAS_INSET}
+                            visible={screen.guideLinesVisible !== false}
+                        >
                         {/* Drawing Canvas Area - 캔버스와 감싸는 영역 크기를 동일하게 (스크롤/잘림 없음) */}
                         {(() => {
                             return (
@@ -3787,6 +3805,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         </div>
                             );
                         })()}
+                        </CanvasRulers>
                     </div>
 
                     {/* [RIGHT PANE 30%] - 초기화면설정/기능상세/관련테이블 (화면 설계에만 표시, 컴포넌트 캔버스에서는 숨김) */}
@@ -3809,6 +3828,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     />
                     )}
                     </div>
+                    {/* Row 아래 남는 공간 채움 (body flex-1 대응) */}
+                    <div className="flex-1 min-h-0" />
                 </div> {/* End Body Split Layout */}
 
 

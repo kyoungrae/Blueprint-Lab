@@ -1,6 +1,7 @@
 // ── ScreenNode Sub-Components ──────────────────────────────
 export { default as EditableCell } from './EditableCell';
 export { default as ScreenHandles } from './ScreenHandles';
+export { default as CanvasRulers } from './CanvasRulers';
 export { default as DrawTextComponent } from './DrawTextComponent';
 export { default as PremiumTooltip } from './PremiumTooltip';
 export { default as MetaInfoTable } from './MetaInfoTable';
