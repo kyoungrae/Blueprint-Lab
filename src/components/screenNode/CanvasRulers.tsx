@@ -111,7 +111,8 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                                 style={{
                                     left: x,
                                     width: level === 'major' ? 1.5 : 1,
-                                    height: level === 'major' ? 3.5 : 6,
+                                    // getTickStyle에서 계산한 높이 사용
+                                    height,
                                     backgroundColor: color,
                                     transform: 'translateX(-50%)',
                                 }}
@@ -156,6 +157,7 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                     {/* Tick marks - 우측 영역, 3단계 눈금 (숫자와 겹치지 않음) */}
                     {verticalTicks.map(({ y, level }) => {
                         const { color } = getTickStyle(level, tickBaseHeight);
+                        // 눈금 단계에 따라 길이가 달라지는 가로선
                         const width = level === 'major' ? verticalTickZone : level === 'medium' ? verticalTickZone * 0.7 : verticalTickZone * 0.45;
                         return (
                             <div
@@ -164,7 +166,7 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                                 style={{
                                     top: y,
                                     height: level === 'major' ? 1.5 : 1,
-                                    width: level === 'major' ? 3.5 : 6,
+                                    width,
                                     backgroundColor: color,
                                     transform: 'translateY(-50%)',
                                 }}
