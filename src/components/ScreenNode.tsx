@@ -1152,8 +1152,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             // Smart Guides: 다른 요소와 정렬 시 스냅 + 가이드라인 표시
             // - 드래그 중인 그룹을 완전히 감싸는 rect(컨테이너)는 정렬 후보에서 제외하여,
             //   컨테이너 안의 자식들(예: table 2개)끼리도 스마트 그리드가 적용되도록 함.
+            // - groupId 로 묶인 요소들은 하나의 바운딩 박스로만 스냅/정렬 대상으로 사용하여,
+            //   그룹 내부 개별 요소들이 각각 따로 스냅되지 않도록 함.
             const groupBox = { left: minNewX, right: maxRight, top: minNewY, bottom: maxBottom };
-            const otherElements = drawElements
+
+            // 드래그 중이 아닌 요소들만 대상으로 삼되, 컨테이너 rect는 기존 로직대로 제외
+            const staticElements = drawElements
                 .filter(el => !draggingElementIds.includes(el.id))
                 .filter(el => {
                     if (el.type !== 'rect') return true;
@@ -1164,8 +1168,41 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         groupBox.top >= box.top &&
                         groupBox.bottom <= box.bottom;
                     return !fullyContains;
-                })
-                .map(el => ({ id: el.id, x: el.x, y: el.y, width: el.width, height: el.height }));
+                });
+
+            // groupId 가 있는 요소들은 그룹 바운딩 박스로 합치고, 나머지는 단일 요소로 사용
+            const groupedById = new Map<string, typeof staticElements>();
+            const singles: typeof staticElements = [];
+
+            for (const el of staticElements) {
+                if (el.groupId) {
+                    if (!groupedById.has(el.groupId)) {
+                        groupedById.set(el.groupId, []);
+                    }
+                    groupedById.get(el.groupId)!.push(el);
+                } else {
+                    singles.push(el);
+                }
+            }
+
+            const groupBoxes = Array.from(groupedById.entries()).map(([groupId, els]) => {
+                const left = Math.min(...els.map(e => e.x));
+                const right = Math.max(...els.map(e => e.x + e.width));
+                const top = Math.min(...els.map(e => e.y));
+                const bottom = Math.max(...els.map(e => e.y + e.height));
+                return {
+                    id: groupId,
+                    x: left,
+                    y: top,
+                    width: right - left,
+                    height: bottom - top,
+                };
+            });
+
+            const otherElements = [
+                ...singles.map(el => ({ id: el.id, x: el.x, y: el.y, width: el.width, height: el.height })),
+                ...groupBoxes,
+            ];
             const { deltaX, deltaY, guides, nextSnap } = getSmartGuidesAndSnap(
                 { left: minNewX, right: maxRight, centerX, top: minNewY, bottom: maxBottom, centerY },
                 otherElements,
@@ -2562,14 +2599,57 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     update({ drawElements: nextElements });
                                                                     syncUpdate({ drawElements: nextElements });
                                                                 } else {
+                                                                    const selectedEls = drawElements.filter(el => selectedElementIds.includes(el.id));
+                                                                    if (selectedEls.length === 0) return;
+
+                                                                    // groupId 기준으로 논리 그룹 구성 (group 없는 요소는 단일 그룹으로 취급)
+                                                                    type ElGroup = { id: string; elements: typeof drawElements };
+                                                                    const groupMap = new Map<string, ElGroup>();
+                                                                    const groups: ElGroup[] = [];
+
+                                                                    for (const el of selectedEls) {
+                                                                        const gid = el.groupId ?? el.id;
+                                                                        let grp = groupMap.get(gid);
+                                                                        if (!grp) {
+                                                                            grp = { id: gid, elements: [] };
+                                                                            groupMap.set(gid, grp);
+                                                                            groups.push(grp);
+                                                                        }
+                                                                        grp.elements.push(el);
+                                                                    }
+
+                                                                    // 각 그룹에 대해 바운딩 박스 계산 후, 캔버스 기준 정렬 위치(targetX)로 이동량 dx 계산
+                                                                    const groupOffsets = new Map<string, number>();
+
+                                                                    for (const grp of groups) {
+                                                                        const left = Math.min(...grp.elements.map(e => e.x));
+                                                                        const right = Math.max(...grp.elements.map(e => e.x + e.width));
+                                                                        const groupCenter = (left + right) / 2;
+
+                                                                        let targetCenter = groupCenter;
+                                                                        let targetLeft = left;
+
+                                                                        if (align === 'left') {
+                                                                            targetLeft = 10;
+                                                                            targetCenter = targetLeft + (right - left) / 2;
+                                                                        } else if (align === 'center') {
+                                                                            targetCenter = canvasW / 2;
+                                                                        } else if (align === 'right') {
+                                                                            targetLeft = canvasW - (right - left) - 10;
+                                                                            targetCenter = targetLeft + (right - left) / 2;
+                                                                        }
+
+                                                                        const dx = targetCenter - groupCenter;
+                                                                        groupOffsets.set(grp.id, dx);
+                                                                    }
+
                                                                     const nextElements = drawElements.map(el => {
                                                                         if (!selectedElementIds.includes(el.id)) return el;
-                                                                        let nx = el.x;
-                                                                        if (align === 'left') nx = 10;
-                                                                        else if (align === 'center') nx = (canvasW / 2) - (el.width / 2);
-                                                                        else if (align === 'right') nx = canvasW - el.width - 10;
-                                                                        return { ...el, x: nx };
+                                                                        const gid = el.groupId ?? el.id;
+                                                                        const dx = groupOffsets.get(gid) ?? 0;
+                                                                        return { ...el, x: el.x + dx };
                                                                     });
+
                                                                     update({ drawElements: nextElements });
                                                                     syncUpdate({ drawElements: nextElements });
                                                                 }
