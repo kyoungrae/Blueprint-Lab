@@ -1973,7 +1973,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // Entity dimensions from getCanvasDimensions (컴포넌트는 용지=캔버스, 화면 설계는 70% 비율)
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
-    const FIXED_TOP_HEIGHT = 360; // 화면 설계: 헤더+메타+툴바 등 (캔버스 잘림 방지)
+    const FIXED_TOP_HEIGHT = 220; // 화면 설계: 헤더+메타+툴바 등
     const FIXED_TOP_HEIGHT_COMPONENT = 52; // 컴포넌트: 헤더 1행만
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
@@ -2883,22 +2883,17 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
                     <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
                     {/* [LEFT PANE 70% or 100%] - Drawing Canvas (컴포넌트일 때 RightPane 숨김) */}
-                    <div
-                        className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 flex flex-col items-center justify-center bg-gray-50/10 overflow-visible`}
-                        style={!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') ? { minWidth: canvasW } : undefined}
-                    >
+                    <div className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 min-w-0 flex flex-col items-center justify-center bg-gray-50/10 overflow-hidden`}>
 
                         {/* Drawing Canvas Area - 캔버스와 감싸는 영역 크기를 동일하게 (스크롤/잘림 없음) */}
                         {(() => {
                             return (
                         <div
                             ref={canvasAreaRef}
-                            className={`relative flex flex-col bg-white border-b border-gray-200 shrink-0 overflow-visible`}
+                            className={`relative flex flex-col bg-white border-b border-gray-200 shrink-0`}
                             style={{
                                 width: canvasW,
                                 height: canvasH,
-                                minWidth: canvasW,
-                                minHeight: canvasH,
                                 backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
                                 backgroundSize: '20px 20px',
                             }}
