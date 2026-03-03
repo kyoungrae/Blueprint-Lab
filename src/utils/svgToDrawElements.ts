@@ -2,9 +2,12 @@
  * SVG 파일을 파싱하여 DrawElement[]로 변환
  * PowerPoint 등에서 내보낸 SVG를 편집 가능한 객체로 가져오기
  */
-import type { DrawElement } from '../types/screenDesign';
+import type { DrawElement, TableCellData } from '../types/screenDesign';
 
 const SUPPORTED_TAGS = ['rect', 'circle', 'ellipse', 'text', 'path', 'line', 'polygon', 'polyline'];
+
+const ROW_Y_THRESHOLD = 12;
+const MIN_TABLE_CELLS = 4;
 
 function randomId(): string {
     return Math.random().toString(36).substr(2, 5);
@@ -85,6 +88,128 @@ function hasPositionedTspans(textEl: Element): boolean {
         if (t.getAttribute('x') != null || t.getAttribute('y') != null) withPos++;
     });
     return withPos >= 2;
+}
+
+/** 그리드형 텍스트/rect로 표 감지 후 단일 table 요소로 병합 */
+function tryDetectAndMergeTables(elements: DrawElement[], baseId: number, zIndexStart: number): DrawElement[] {
+    const byGroup = new Map<string, DrawElement[]>();
+    for (const el of elements) {
+        const gid = el.groupId ?? '';
+        const arr = byGroup.get(gid) ?? [];
+        arr.push(el);
+        byGroup.set(gid, arr);
+    }
+
+    const tables: DrawElement[] = [];
+    const mergedIds = new Set<string>();
+
+    const tryGroup = (group: DrawElement[]) => {
+        const texts = group.filter((e): e is DrawElement & { text: string } => e.type === 'text' && !!e.text);
+        const rects = group.filter((e) => e.type === 'rect' && e.fill !== 'transparent' && e.width > 8 && e.height > 8);
+
+        if (texts.length < MIN_TABLE_CELLS) return;
+
+        const sorted = [...texts].sort((a, b) => {
+            const dy = a.y - b.y;
+            if (Math.abs(dy) > ROW_Y_THRESHOLD) return dy;
+            return a.x - b.x;
+        });
+
+        const rows: DrawElement[][] = [];
+        let currentRow: DrawElement[] = [];
+        let lastY = -Infinity;
+
+        for (const t of sorted) {
+            const cy = t.y + t.height / 2;
+            if (currentRow.length > 0 && cy - lastY > ROW_Y_THRESHOLD) {
+                rows.push(currentRow);
+                currentRow = [];
+            }
+            currentRow.push(t);
+            lastY = cy;
+        }
+        if (currentRow.length > 0) rows.push(currentRow);
+
+        const cols = Math.max(...rows.map((r) => r.length), 1);
+        const rowsCount = rows.length;
+        if (rowsCount < 2 || cols < 2) return;
+
+        const cellData: string[] = [];
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+
+        for (let r = 0; r < rowsCount; r++) {
+            for (let c = 0; c < cols; c++) {
+                const cell = rows[r]?.[c];
+                cellData.push(cell?.text?.trim() ?? '');
+                if (cell) {
+                    minX = Math.min(minX, cell.x);
+                    minY = Math.min(minY, cell.y);
+                    maxX = Math.max(maxX, cell.x + cell.width);
+                    maxY = Math.max(maxY, cell.y + cell.height);
+                }
+            }
+        }
+
+        for (const r of rects) {
+            minX = Math.min(minX, r.x);
+            minY = Math.min(minY, r.y);
+            maxX = Math.max(maxX, r.x + r.width);
+            maxY = Math.max(maxY, r.y + r.height);
+        }
+
+        const tableW = Math.max(maxX - minX, 100);
+        const tableH = Math.max(maxY - minY, 40);
+
+        const v2Cells: TableCellData[] = cellData.map((content) => ({
+            content,
+            rowSpan: 1,
+            colSpan: 1,
+            isMerged: false,
+        }));
+
+        const tableEl: DrawElement = {
+            id: `el_${baseId}_table_${randomId()}`,
+            type: 'table',
+            x: minX,
+            y: minY,
+            width: tableW,
+            height: tableH,
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeWidth: 1,
+            tableRows: rowsCount,
+            tableCols: cols,
+            tableCellData: cellData,
+            tableCellDataV2: v2Cells,
+            tableBorderInsideH: '#000000',
+            tableBorderInsideHWidth: 1,
+            tableBorderInsideV: '#000000',
+            tableBorderInsideVWidth: 1,
+            zIndex: zIndexStart,
+        };
+
+        tables.push(tableEl);
+        for (const t of texts) mergedIds.add(t.id);
+        for (const r of rects) mergedIds.add(r.id);
+        const gridLines = group.filter((e) => e.type === 'rect' && e.fill === 'transparent' && e.stroke);
+        for (const g of gridLines) mergedIds.add(g.id);
+    };
+
+    for (const [gid, group] of byGroup) {
+        if (gid) tryGroup(group);
+    }
+
+    if (tables.length === 0) return elements;
+
+    const kept = elements.filter((e) => !mergedIds.has(e.id));
+    const maxZ = Math.max(...kept.map((e) => e.zIndex ?? 1), ...tables.map((t) => t.zIndex ?? 1));
+    tables.forEach((t, i) => {
+        t.zIndex = maxZ + 1 + i;
+    });
+    return [...kept, ...tables];
 }
 
 /** SVG 요소에서 스타일 추출 */
@@ -294,5 +419,6 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
 
     walk(svg);
     document.body.removeChild(container);
-    return elements;
+
+    return tryDetectAndMergeTables(elements, baseId, zIndex);
 }
