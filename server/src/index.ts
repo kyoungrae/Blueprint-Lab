@@ -11,6 +11,7 @@ import { initializeSocketServer } from './websocket/SocketServer';
 import authRoutes from './routes/authRoutes';
 import projectRoutes from './routes/projectRoutes';
 import imageRoutes from './routes/imageRoutes';
+import fontRoutes from './routes/fontRoutes';
 import adminRoutes from './routes/adminRoutes';
 import logger from './utils/logger';
 
@@ -59,6 +60,7 @@ app.get('/health', (req, res) => {
 // Routes (이미지 라우트를 먼저 등록 - /:id/images/:imageId가 /:id보다 먼저 매칭되도록)
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/fonts', fontRoutes);
 app.use('/api/projects', imageRoutes);
 app.use('/api/projects', projectRoutes);
 
@@ -87,9 +89,11 @@ async function start() {
         await redis.ping();
         logger.info('✅ Redis ping successful');
 
-        // 이미지 업로드 폴더 생성 (없으면 자동 생성)
+        // 이미지/폰트 업로드 폴더 생성 (없으면 자동 생성)
         const uploadDir = path.join(config.upload.dir, 'images');
+        const fontDir = path.join(config.upload.dir, 'font');
         fs.mkdirSync(uploadDir, { recursive: true });
+        fs.mkdirSync(fontDir, { recursive: true });
         logger.info(`✅ Upload directory ready: ${uploadDir}`);
 
         // Start HTTP server

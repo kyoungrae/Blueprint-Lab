@@ -22,6 +22,7 @@ import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
 import RightPane from './screenNode/RightPane';
 import StylePanel from './screenNode/StylePanel';
+import { TextStyleToolbar } from './screenNode/TextStyleToolbar';
 import LayerPanel from './screenNode/LayerPanel';
 import ImageElement from './screenNode/ImageElement';
 import { ImageStylePanel } from './screenNode/ImageStylePanel';
@@ -36,6 +37,7 @@ import { LockOverlay } from './screenNode/LockOverlay';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
+import { resolveFontFamilyCSS } from '../utils/fontFamily';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
@@ -636,6 +638,42 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         setStylePanelPos({ x: 200, y: 240 });
         setLayerPanelPos({ x: 200, y: 240 });
     }, [isLocked]);
+
+    // 텍스트 선택 해제 시 스타일 패널 숨김 (selectionchange + 선택 요소 변경 시)
+    useEffect(() => {
+        const handleSelectionChange = () => {
+            const sel = window.getSelection();
+            if (!sel || !sel.isCollapsed) return;
+            const active = document.activeElement;
+            if (active instanceof Element && active.closest('[data-text-style-toolbar], [data-style-panel]')) return;
+            setTextSelectionRect(null);
+            setTextSelectionFromTable(null);
+        };
+        document.addEventListener('selectionchange', handleSelectionChange);
+        return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    }, []);
+
+    useEffect(() => {
+        if (!textSelectionRect && !textSelectionFromTable) return;
+        const fromTable = textSelectionFromTable != null;
+        const elId = fromTable ? textSelectionFromTable.tableId : selectedElementIds[0];
+        if (!elId) {
+            setTextSelectionRect(null);
+            setTextSelectionFromTable(null);
+            return;
+        }
+        if (fromTable) {
+            if (editingTableId !== elId || !selectedElementIds.includes(elId)) {
+                setTextSelectionRect(null);
+                setTextSelectionFromTable(null);
+            }
+        } else {
+            if (!selectedElementIds.includes(elId)) {
+                setTextSelectionRect(null);
+                setTextSelectionFromTable(null);
+            }
+        }
+    }, [selectedElementIds, editingTableId, textSelectionRect, textSelectionFromTable]);
 
     // Clear selection when clicking outside the node (on the outer ReactFlow canvas)
     useEffect(() => {
@@ -2015,10 +2053,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 {/* ── 3. Body Content: Toolbar full width, then Split Layout ── */}
                 <div className="nodrag nopan flex-1 flex flex-col min-h-0 bg-white rounded-[15px]" onMouseDown={(e) => e.stopPropagation()}>
 
-                    {/* Drawing Toolbar - Full width (100%) */}
+                    {/* Drawing Toolbar - Full width (100%), 2 rows: main tools + text style (below) */}
                     {!canvasOnlyMode && !isLocked && (
+                        <div className="nodrag w-full flex flex-col border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px]">
+                        {/* Row 1: Main tools */}
                         <div
-                            className="nodrag w-full flex flex-nowrap items-center gap-1 p-1 bg-white/80 border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px] overflow-x-auto custom-scrollbar"
+                            className="flex flex-nowrap items-center gap-1 p-1 bg-white/80 overflow-x-auto custom-scrollbar"
                             onMouseDown={(e) => e.stopPropagation()}
                         >
                                     <div className="flex flex-nowrap items-center gap-1 flex-1 min-w-max px-1">
@@ -2712,8 +2752,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 </PremiumTooltip>
                                             </div>
 
-                                    {/* Text Style Settings - same line as tools when text is selected (element or table cell) */}
-                                    {textSelectionRect && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
+                                    </div>
+                        </div>
+                        {/* Row 2: Text style toolbar - 고정 높이로 레이아웃 시프트 방지 */}
+                        <div className="min-h-[44px] flex items-center shrink-0">
+                        {textSelectionRect && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
                                         const fromTable = textSelectionFromTable != null;
                                         const el = fromTable
                                             ? drawElements.find(it => it.id === textSelectionFromTable!.tableId)
@@ -2773,61 +2816,29 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             return false;
                                         };
                                         return (
-                                            <>
-                                                <div className="w-px h-6 bg-gray-200 mx-1" />
-                                                <div data-text-style-toolbar data-refresh={textStyleToolbarRefresh} className="nodrag nopan flex items-center gap-2 bg-gray-50/80 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => e.stopPropagation()}>
-                                                    <div className="flex items-center gap-1.5 px-1 border-r border-gray-200 pr-2">
-                                                        <Type size={12} className="text-gray-400" />
-                                                        <input
-                                                            type="number"
-                                                            value={displayFontSize}
-                                                            step={1}
-                                                            min={8}
-                                                            max={72}
-                                                            onChange={(e) => {
-                                                                const px = Math.min(72, Math.max(8, parseInt(e.target.value) || 12));
-                                                                const applied = applyFontSizePx(px);
-                                                                if (!applied && !fromTable) updateElement(el!.id, { fontSize: px });
-                                                                setTextStyleToolbarRefresh((r) => r + 1);
-                                                            }}
-                                                            className="w-10 bg-transparent text-[11px] font-bold text-gray-700 outline-none"
-                                                        />
-                                                        <span className="text-[10px] text-gray-400">px</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 pl-1">
-                                                        <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm">
-                                                            <input
-                                                                type="color"
-                                                                value={defaultColor}
-                                                                onChange={(e) => {
-                                                                    const color = e.target.value;
-                                                                    const needFallback = applyToSelection(() => document.execCommand('foreColor', false, color));
-                                                                    if (needFallback) updateElement(el!.id, { color });
-                                                                }}
-                                                                className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
-                                                            />
-                                                            <div className="w-full h-full" style={{ backgroundColor: defaultColor }} />
-                                                        </div>
-                                                        <div className="flex gap-1">
-                                                            {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
-                                                                <button
-                                                                    key={c}
-                                                                    onMouseDown={(e) => {
-                                                                        e.preventDefault();
-                                                                        const needFallback = applyToSelection(() => document.execCommand('foreColor', false, c));
-                                                                        if (needFallback) updateElement(el!.id, { color: c });
-                                                                    }}
-                                                                    className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
-                                                                    style={{ backgroundColor: c }}
-                                                                />
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </>
+                                            <div className="flex items-center gap-1 p-1.5 bg-gray-50/90 w-full border-t border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200" onMouseDown={(e) => e.stopPropagation()}>
+                                                <TextStyleToolbar
+                                                    key={`toolbar-${textStyleToolbarRefresh}`}
+                                                    el={el}
+                                                    fromTable={fromTable}
+                                                    defaultColor={defaultColor}
+                                                    defaultFontSize={defaultFontSize}
+                                                    displayFontSize={displayFontSize}
+                                                    updateElement={updateElement}
+                                                    applyToSelection={applyToSelection}
+                                                    applyFontSizePx={applyFontSizePx}
+                                                    setTextStyleToolbarRefresh={setTextStyleToolbarRefresh}
+                                                    drawElements={drawElements}
+                                                    update={update}
+                                                    syncUpdate={syncUpdate}
+                                                    textSelectionFromTable={textSelectionFromTable}
+                                                    selectedCellIndices={selectedCellIndices}
+                                                    editingTableId={editingTableId}
+                                                />
+                                            </div>
                                         );
                                     })()}
-                                    </div>
+                        </div>
                         </div>
                     )}
 
@@ -3180,7 +3191,14 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                     }}
                                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                                     className="w-full h-full bg-white border-none outline-none p-1 text-[10px] absolute inset-0 z-[20] nodrag nopan"
-                                                                                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                                                                                    style={{
+                                                                                        whiteSpace: 'pre-wrap',
+                                                                                        wordBreak: 'break-word',
+                                                                                        fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
+                                                                                        fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
+                                                                                        textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
+                                                                                        fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
+                                                                                    }}
                                                                                 />
                                                                             ) : (
                                                                                 <div
@@ -3191,6 +3209,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                         justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
                                                                                         wordBreak: 'break-word',
                                                                                         unicodeBidi: 'isolate',
+                                                                                        fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
+                                                                                        fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
+                                                                                        textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
+                                                                                        fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
                                                                                     }}
                                                                                     dangerouslySetInnerHTML={{ __html: cellData || '' }}
                                                                                 />

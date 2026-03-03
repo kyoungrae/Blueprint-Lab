@@ -1,6 +1,7 @@
 import React from 'react';
 import type { DrawElement } from '../../types/screenDesign';
 import { getImageDisplayUrl } from '../../utils/imageUrl';
+import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import { getV2Cells } from './types';
 
 const hexToRgba = (hex: string, alpha: number) => {
@@ -82,6 +83,9 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
                     fontSize: Math.max(6, (el.fontSize ?? 12) * scale),
                     color: el.color || '#374151',
                     fontWeight: el.fontWeight || 'normal',
+                    fontStyle: el.fontStyle || 'normal',
+                    textDecoration: el.textDecoration || 'none',
+                    fontFamily: resolveFontFamilyCSS(el.fontFamily),
                     display: 'flex',
                     alignItems: el.verticalAlign === 'top' ? 'flex-start' : el.verticalAlign === 'bottom' ? 'flex-end' : 'center',
                     justifyContent: el.textAlign === 'left' ? 'flex-start' : el.textAlign === 'right' ? 'flex-end' : 'center',

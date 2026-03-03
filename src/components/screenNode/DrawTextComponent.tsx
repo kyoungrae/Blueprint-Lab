@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import type { DrawElement } from '../../types/screenDesign';
+import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 
 interface DrawTextComponentProps {
     element: DrawElement;
@@ -114,6 +115,9 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                 fontSize: `${element.fontSize || 14}px`,
                 color: element.color || '#333333',
                 fontWeight: element.fontWeight || 'normal',
+                fontStyle: element.fontStyle || 'normal',
+                textDecoration: element.textDecoration || 'none',
+                fontFamily: resolveFontFamilyCSS(element.fontFamily),
                 lineHeight: '1.4',
                 whiteSpace: 'pre-wrap',
                 cursor: isSelected && !element.hasComponentText ? 'text' : 'default'

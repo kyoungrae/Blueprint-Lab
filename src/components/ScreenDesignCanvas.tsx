@@ -130,8 +130,18 @@ const ScreenDesignCanvasContent: React.FC = () => {
     // 그리기 도구 팝업 위 휠 입력을 캔버스 줌/팬으로 전달
     useEffect(() => {
         const handleWheel = (e: WheelEvent) => {
+            // 폰트 드롭다운: 캔버스 팬 방지하고 드롭다운만 스크롤 (팝업 여부와 무관)
+            const fontDropdown = (e.target as Element)?.closest?.('[data-font-dropdown]') as HTMLElement | null;
+            if (fontDropdown) {
+                e.preventDefault();
+                e.stopPropagation();
+                fontDropdown.scrollTop += e.deltaY;
+                fontDropdown.scrollLeft += e.deltaX;
+                return;
+            }
+
             const isOverPopup = (e.target as Element)?.closest?.(
-                '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-grid-panel], [data-component-picker-portal], .floating-panel'
+                '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-grid-panel], [data-component-picker-portal], [data-text-style-toolbar], .floating-panel'
             );
             if (!isOverPopup) return;
 

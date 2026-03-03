@@ -1,5 +1,7 @@
-import React, { useRef } from 'react';
-import { Palette, GripVertical, X } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Palette, GripVertical, X, Bold, Italic, Underline, ChevronDown, Plus } from 'lucide-react';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
+import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import type { DrawElement } from '../../types/screenDesign';
 
 interface StylePanelProps {
@@ -93,6 +95,36 @@ const StylePanel: React.FC<StylePanelProps> = ({
 
     const currentBgColor = getCurrentBgColor();
 
+    const isText = selectedEl?.type === 'text';
+    const [fonts, setFonts] = useState<{ name: string; filename: string; url: string }[]>([]);
+    const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
+    const fontInputRef = useRef<HTMLInputElement>(null);
+    const fontDropdownRef = useRef<HTMLDivElement>(null);
+    const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/api\/projects$/, '') || 'http://localhost:3001';
+    // 피피티 기본 폰트: 한글(바탕, 굴림 등) + 영문
+    const SYSTEM_FONTS = [
+        'Pretendard', '맑은 고딕', '굴림', '돋움', '바탕', '바탕체', '궁서', '궁서체', '새굴림',
+        'Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'Calibri', 'Cambria',
+    ];
+
+    const getPrimaryFontName = (fontFamily: string | undefined): string => {
+        if (!fontFamily || !fontFamily.trim()) return 'Pretendard';
+        const first = fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+        return first || 'Pretendard';
+    };
+
+    useEffect(() => {
+        fetch(`${API_BASE}/api/fonts`).then(res => res.json()).then((d: { fonts: any[] }) => setFonts(d.fonts || [])).catch(() => setFonts([]));
+    }, [API_BASE]);
+
+    useEffect(() => {
+        const h = (e: MouseEvent) => {
+            if (fontDropdownRef.current && !fontDropdownRef.current.contains(e.target as Node)) setFontDropdownOpen(false);
+        };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, []);
+
     const handleHeaderMouseDown = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -181,6 +213,117 @@ const StylePanel: React.FC<StylePanelProps> = ({
                     ))}
                 </div>
             </div>
+
+            {/* Text Style (굵기, 기울기, 밑줄, 폰트) - 텍스트 요소 선택 시 */}
+            {isText && selectedEl && (
+                <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                    <span className="text-[11px] text-gray-600 font-medium">텍스트 스타일</span>
+                    <div className="flex items-center gap-1">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontWeight: (el.fontWeight === 'bold' ? 'normal' : 'bold') as any } : el);
+                                update({ drawElements: next });
+                                syncUpdate({ drawElements: next });
+                            }}
+                            className={`p-2 rounded-lg border transition-colors ${selectedEl.fontWeight === 'bold' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
+                            title="굵게"
+                        >
+                            <Bold size={14} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontStyle: (el.fontStyle === 'italic' ? 'normal' : 'italic') as any } : el);
+                                update({ drawElements: next });
+                                syncUpdate({ drawElements: next });
+                            }}
+                            className={`p-2 rounded-lg border transition-colors ${selectedEl.fontStyle === 'italic' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
+                            title="기울임"
+                        >
+                            <Italic size={14} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, textDecoration: (el.textDecoration === 'underline' ? 'none' : 'underline') as any } : el);
+                                update({ drawElements: next });
+                                syncUpdate({ drawElements: next });
+                            }}
+                            className={`p-2 rounded-lg border transition-colors ${selectedEl.textDecoration === 'underline' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
+                            title="밑줄"
+                        >
+                            <Underline size={14} />
+                        </button>
+                    </div>
+                    <div className="relative" ref={fontDropdownRef}>
+                        <span className="text-[11px] text-gray-600 font-medium block mb-1">폰트</span>
+                        <button
+                            type="button"
+                            onClick={() => setFontDropdownOpen(v => !v)}
+                            className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-left text-[11px]"
+                        >
+                            <span style={{ fontFamily: resolveFontFamilyCSS(selectedEl.fontFamily) }}>{getPrimaryFontName(selectedEl.fontFamily)}</span>
+                            <ChevronDown size={12} className={`text-gray-400 ${fontDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {fontDropdownOpen && (() => {
+                            const currentFont = getPrimaryFontName(selectedEl.fontFamily);
+                            const baseFonts = [...SYSTEM_FONTS, ...fonts.map(f => f.name)];
+                            const allFonts = baseFonts.includes(currentFont) ? baseFonts : [currentFont, ...baseFonts];
+                            return (
+                            <div
+                                data-font-dropdown
+                                className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9100] max-h-40 overflow-y-auto overflow-x-hidden overscroll-contain"
+                                onWheel={(e) => e.stopPropagation()}
+                            >
+                                {allFonts.map(f => (
+                                    <button
+                                        key={f}
+                                        type="button"
+                                        onClick={() => {
+                                            const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontFamily: f } : el);
+                                            update({ drawElements: next });
+                                            syncUpdate({ drawElements: next });
+                                            setFontDropdownOpen(false);
+                                        }}
+                                        className={`w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 first:rounded-t-lg ${currentFont === f ? 'bg-blue-50 text-blue-700' : ''}`}
+                                        style={{ fontFamily: resolveFontFamilyCSS(f) }}
+                                    >
+                                        {f}
+                                    </button>
+                                ))}
+                                <div className="border-t border-gray-100 p-1">
+                                    <input ref={fontInputRef} type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const fd = new FormData();
+                                        fd.append('font', file);
+                                        try {
+                                            const res = await fetchWithAuth(`${API_BASE}/api/fonts`, { method: 'POST', body: fd });
+                                            if (!res.ok) throw new Error();
+                                            const data = await res.json();
+                                            setFonts(prev => [...prev, data]);
+                                            const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontFamily: data.name } : el);
+                                            update({ drawElements: next });
+                                            syncUpdate({ drawElements: next });
+                                        } catch (err) { console.error(err); }
+                                        e.target.value = '';
+                                    }} />
+                                    <button
+                                        type="button"
+                                        onClick={() => fontInputRef.current?.click()}
+                                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] text-blue-600 hover:bg-blue-50 rounded"
+                                    >
+                                        <Plus size={12} />
+                                        폰트 추가
+                                    </button>
+                                </div>
+                            </div>
+                            );
+                        })()}
+                    </div>
+                </div>
+            )}
 
             {/* Stroke Color */}
             <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">

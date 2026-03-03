@@ -3,7 +3,7 @@ import type { DrawElement, Screen } from '../types/screenDesign';
 /** 동기화할 스타일 속성 (위치/크기 제외). tableCellData/tableCellDataV2는 컴포넌트에 작성된 셀만 동기화 */
 const STYLE_KEYS: (keyof DrawElement)[] = [
     'fill', 'stroke', 'strokeWidth', 'strokeStyle', 'strokeOpacity',
-    'fillOpacity', 'fontSize', 'fontWeight', 'color', 'text', 'textAlign', 'verticalAlign',
+    'fillOpacity', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'fontFamily', 'color', 'text', 'textAlign', 'verticalAlign',
     'borderRadius', 'opacity', 'description',
     'imageUrl', 'imageCrop', 'imageRotation', 'imageFlipX', 'imageFlipY',
     'tableRows', 'tableCols', 'tableCellColors', 'tableCellStyles',

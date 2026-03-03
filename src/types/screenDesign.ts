@@ -115,6 +115,9 @@ export interface DrawElement {
     text?: string;
     fontSize?: number;
     fontWeight?: string;
+    fontStyle?: 'normal' | 'italic';
+    textDecoration?: 'none' | 'underline';
+    fontFamily?: string;
     color?: string;
     imageUrl?: string;
     /** 이미지 회전 (도, 0-360) */

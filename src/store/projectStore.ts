@@ -244,9 +244,6 @@ export const useProjectStore = create<ProjectStore>()(
                 if (!token || id.startsWith('local_')) return;
 
                 try {
-                    // #region agent log
-                    if (data?.components !== undefined || data?.flows !== undefined) fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'projectStore.updateProjectData',message:'REST_PATCH',data:{projectId:id,hasComponents:data?.components!==undefined,compCount:(data?.components||[]).length},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
-                    // #endregion
                     const response = await fetchWithAuth(`${API_URL}/${id}`, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
