@@ -2928,7 +2928,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                 style={{ minHeight: 0 }}
                             >
                                 <div
-                                    className="nodrag flex-1 min-h-0 w-full overflow-hidden origin-top-left"
+                                    className="nodrag flex-1 min-h-0 w-full overflow-visible origin-top-left"
                                     style={{
                                         minHeight: 0,
                                         width: canvasW,
