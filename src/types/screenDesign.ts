@@ -82,6 +82,8 @@ export interface Screen {
     };
     /** 격자 보조선 표시 여부 (기본 true) */
     guideLinesVisible?: boolean;
+    /** 격자 보조선 잠금 - 잠금 시 이동/선택 불가 */
+    guideLinesLocked?: boolean;
     /** 하위 컴포넌트 (부분 컴포넌트화) - 화면 설계에서 개별 추가 가능 */
     subComponents?: Array<{
         id: string;

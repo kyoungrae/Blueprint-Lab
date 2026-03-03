@@ -784,7 +784,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     };
 
     const handleGuideLineDragStart = useCallback((axis: 'vertical' | 'horizontal', value: number, e: React.MouseEvent) => {
-        if (isLocked || !canvasRef.current) return;
+        if (isLocked || screen.guideLinesLocked || !canvasRef.current) return;
         e.stopPropagation();
         e.preventDefault();
         guideLineDragRef.current = { axis, value };
@@ -822,7 +822,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         };
         window.addEventListener('mousemove', onMove, true);
         window.addEventListener('mouseup', onUp, true);
-    }, [isLocked, screen.id, syncUpdate]);
+    }, [isLocked, screen.id, screen.guideLinesLocked, syncUpdate]);
 
     // Drawing Element Resizing Logic
     const elementResizeStartRef = useRef<{
@@ -2499,6 +2499,20 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         {screen.guideLinesVisible !== false ? 'ON' : 'OFF'}
                                                                     </button>
                                                                 </div>
+                                                                <div className="flex items-center justify-between py-2 mb-2 border-b border-gray-100">
+                                                                    <span className="text-[11px] font-medium text-gray-600">격자 잠금</span>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            const next = !(screen.guideLinesLocked === true);
+                                                                            update({ guideLinesLocked: next });
+                                                                            syncUpdate({ guideLinesLocked: next });
+                                                                        }}
+                                                                        className={`px-3 py-1 text-[11px] rounded-lg font-medium transition-colors ${screen.guideLinesLocked === true ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}
+                                                                    >
+                                                                        {screen.guideLinesLocked === true ? 'ON' : 'OFF'}
+                                                                    </button>
+                                                                </div>
                                                                 <div className="flex flex-col gap-1">
                                                                     <span className="text-[10px] font-medium text-gray-500">격자 추가</span>
                                                                     <div className="flex items-center gap-1">
@@ -3678,7 +3692,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         />
                                     )}
 
-                                    {/* Canvas Grid Lines (보조선) - 잠금/비활성화 시 숨김, 드래그 이동, 선택 시 삭제 버튼 표시 */}
+                                    {/* Canvas Grid Lines (보조선) - 잠금/비활성화 시 숨김, 격자 잠금 시 이동/선택 불가 */}
                                     {!isLocked && screen.guideLinesVisible !== false && guideLines.vertical.map((vx) => (
                                         <div
                                             key={`grid-v-${vx}`}
@@ -3691,9 +3705,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 bottom: 0,
                                                 width: 24,
                                                 zIndex: 4500,
-                                                cursor: 'col-resize',
+                                                cursor: screen.guideLinesLocked ? 'default' : 'col-resize',
+                                                pointerEvents: screen.guideLinesLocked ? 'none' : 'auto',
                                             }}
-                                            onMouseDown={(e) => {
+                                            onMouseDown={screen.guideLinesLocked ? undefined : (e) => {
                                                 e.stopPropagation();
                                                 if (!(e.target as HTMLElement).closest('[data-guide-delete]')) {
                                                     handleGuideLineDragStart('vertical', vx, e);
@@ -3713,7 +3728,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             />
                                             <div
                                                 data-guide-delete
-                                                className={`transition-opacity absolute ${selectedGuideLine?.axis === 'vertical' && selectedGuideLine?.value === vx ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                                                className={`transition-opacity absolute ${!screen.guideLinesLocked && selectedGuideLine?.axis === 'vertical' && selectedGuideLine?.value === vx ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                                                 style={{ left: 0, top: 4 }}
                                                 onMouseDown={(e) => e.stopPropagation()}
                                             >
@@ -3744,9 +3759,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                 top: vy - 12,
                                                 height: 24,
                                                 zIndex: 4500,
-                                                cursor: 'row-resize',
+                                                cursor: screen.guideLinesLocked ? 'default' : 'row-resize',
+                                                pointerEvents: screen.guideLinesLocked ? 'none' : 'auto',
                                             }}
-                                            onMouseDown={(e) => {
+                                            onMouseDown={screen.guideLinesLocked ? undefined : (e) => {
                                                 e.stopPropagation();
                                                 if (!(e.target as HTMLElement).closest('[data-guide-delete]')) {
                                                     handleGuideLineDragStart('horizontal', vy, e);
@@ -3766,7 +3782,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             />
                                             <div
                                                 data-guide-delete
-                                                className={`transition-opacity absolute ${selectedGuideLine?.axis === 'horizontal' && selectedGuideLine?.value === vy ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                                                className={`transition-opacity absolute ${!screen.guideLinesLocked && selectedGuideLine?.axis === 'horizontal' && selectedGuideLine?.value === vy ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                                                 style={{ left: 4, top: 0 }}
                                                 onMouseDown={(e) => e.stopPropagation()}
                                             >
