@@ -58,7 +58,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
 
     return (
         <div
-            className="nodrag nopan border-b border-gray-200 rounded-t-[13px] overflow-visible"
+            className="nodrag nopan border-b border-gray-200 rounded-t-[15px] overflow-visible"
             onMouseDown={(e) => e.stopPropagation()}
         >
             {isComponent ? (
@@ -66,7 +66,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                 <table className="nodrag w-full table-fixed border-separate border-spacing-0">
                     <tbody>
                         <tr>
-                            <td className={`${labelCell} rounded-tl-[13px]`} style={{ width: '10%' }}>컴포넌트명</td>
+                            <td className={`${labelCell} rounded-tl-[15px]`} style={{ width: '10%' }}>컴포넌트명</td>
                             <td className={valueCell} style={{ width: '35%' }}>
                                 <input
                                     type="text"
@@ -87,7 +87,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                             </td>
                             <td className={labelCell} style={{ width: '10%' }}>생성자</td>
                             <td className={`${valueCell} text-center font-medium`} style={{ width: '25%' }}>{screen.author || '-'}</td>
-                            <td className="bg-[#2c3e7c] px-2 py-1 border-r-0 align-middle rounded-tr-[13px] whitespace-nowrap" style={{ width: '13%', minWidth: '120px' }}>
+                            <td className="bg-[#2c3e7c] px-2 py-1 border-r-0 align-middle rounded-tr-[15px] whitespace-nowrap" style={{ width: '13%', minWidth: '120px' }}>
                                 <div className={`flex items-center justify-end gap-1 shrink-0 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto' : ''}`}>
                                     <div className="relative" ref={screenOptionsRef}>
                                         <button
@@ -175,7 +175,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                 </table>
             ) : (
                 /* 화면 설계: 기존 네이비 헤더 스타일 */
-                <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[13px]">
+                <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[15px]">
                     <Monitor size={16} className="flex-shrink-0 text-white/90" />
                     <input
                         type="text"

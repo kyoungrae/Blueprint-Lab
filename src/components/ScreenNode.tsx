@@ -1974,7 +1974,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
     const FIXED_TOP_HEIGHT = 220; // 화면 설계: 헤더+메타+툴바 등
-    const FIXED_TOP_HEIGHT_COMPONENT = 52; // 컴포넌트: 헤더 1행만
+    const FIXED_TOP_HEIGHT_COMPONENT = 120; // 컴포넌트: 헤더 + 툴바 2행
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
         const scale = MIN_CANVAS_WIDTH / canvasW;
@@ -1994,7 +1994,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             <EntityLockBadge entityId={screen.id} />
             <div
                 ref={nodeRef}
-                className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-visible ${selected && !isExporting
+                className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected && !isExporting
                     ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                     : isLocked
                         ? 'border-gray-200 shadow-md'
@@ -2031,7 +2031,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 )}
 
                 {/* ── 3. Body Content: Toolbar full width, then Split Layout ── */}
-                <div className="nodrag nopan flex-1 flex flex-col min-h-0 bg-white rounded-[15px]" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="nodrag nopan flex-1 flex flex-col min-h-0 bg-white rounded-b-[15px]" onMouseDown={(e) => e.stopPropagation()}>
 
                     {/* Drawing Toolbar - Full width (100%), 2 rows: main tools + text style (below) */}
                     {!canvasOnlyMode && !isLocked && (
@@ -2881,10 +2881,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     })()}
 
                     {/* Left + Right pane row - flex-1 so canvas grows with entity size */}
-                    <div className="flex-1 flex min-h-0" style={{ minHeight: 500 }}>
+                    <div className="flex-1 flex min-h-0" style={{ minHeight: Math.max(500, canvasH) }}>
                     {/* [LEFT PANE 70% or 100%] - Drawing Canvas (컴포넌트일 때 RightPane 숨김) */}
                     <div
-                        className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[13px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[13px]'} flex-shrink-0 flex flex-col items-center justify-center bg-gray-50/10 overflow-visible`}
+                        className={`${canvasOnlyMode || screen.screenId?.startsWith('CMP-') ? 'w-full rounded-b-[15px]' : 'w-[70%] border-r border-gray-200 rounded-bl-[15px]'} flex-shrink-0 flex flex-col items-center justify-center bg-gray-50/10 overflow-visible`}
                         style={!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') ? { minWidth: canvasW } : undefined}
                     >
 
@@ -4657,9 +4657,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         </>
                     )
                 }
-
-                <ScreenHandles />
             </div >
+            <ScreenHandles />
         </div >
     );
 };

@@ -172,7 +172,7 @@ const RightPane: React.FC<RightPaneProps> = ({
     }, [ratios, update, syncUpdate]);
 
     return (
-        <div ref={rightPaneRef} className="nodrag w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[13px] overflow-hidden" style={{ minWidth: 250 }} onMouseDown={(e) => e.stopPropagation()}>
+        <div ref={rightPaneRef} className="nodrag w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[15px] overflow-hidden" style={{ minWidth: 250 }} onMouseDown={(e) => e.stopPropagation()}>
 
             {/* Panel: 초기화면설정 */}
             <div className="flex flex-col border-t border-gray-200 min-h-[50px] min-w-0 overflow-hidden" style={{ flex: `${ratios[0]} 1 0` }}>
@@ -263,7 +263,7 @@ const RightPane: React.FC<RightPaneProps> = ({
             )}
 
             {/* Panel: 관련테이블 - min-h로 입력창/빈상태 모두 표시 */}
-            <div className="flex flex-col border-t border-gray-200 rounded-br-[13px] min-h-[150px] min-w-0 overflow-hidden" style={{ flex: `${ratios[2]} 1 0` }}>
+            <div className="flex flex-col border-t border-gray-200 rounded-br-[15px] min-h-[150px] min-w-0 overflow-hidden" style={{ flex: `${ratios[2]} 1 0` }}>
                 <div className="bg-[#5e6b7c] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a5463] select-none shadow-sm flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 관련테이블
