@@ -2914,7 +2914,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             return (
                         <div
                             ref={canvasAreaRef}
-                            className={`relative flex flex-col bg-white shrink-0 overflow-hidden`}
+                            className={`relative flex flex-col bg-white shrink-0 overflow-visible`}
                             style={{
                                 width: canvasW - canvasInset * 2,
                                 height: canvasH - canvasInset * 2,
