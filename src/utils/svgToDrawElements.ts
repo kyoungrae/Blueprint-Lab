@@ -29,6 +29,38 @@ function parseNum(val: string | null, fallback: number): number {
     return isNaN(n) ? fallback : n;
 }
 
+/** 루트 g의 translate(-x -y) 오프셋 추출 (PPT SVG용) - SVG 이동 전에 호출 필요 */
+function getRootTranslateOffset(svgEl: SVGSVGElement): { offsetX: number; offsetY: number } {
+    const rootG = svgEl.querySelector('g[transform]');
+    if (!rootG) return { offsetX: 0, offsetY: 0 };
+    const transform = rootG.getAttribute('transform');
+    const match = transform?.match(/translate\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/);
+    if (!match) return { offsetX: 0, offsetY: 0 };
+    return { offsetX: parseFloat(match[1]), offsetY: parseFloat(match[2]) };
+}
+
+/** text 요소의 transform="matrix(1 0 0 1 x y)"에서 baseX, baseY 추출 (PPT SVG용) */
+function getTextBaseFromTransform(textEl: Element): { baseX: number; baseY: number } {
+    const transform = textEl.getAttribute('transform');
+    const match = transform?.match(/matrix\s*\(\s*1\s+0\s+0\s+1\s+([-\d.]+)\s+([-\d.]+)\s*\)/);
+    if (!match) return { baseX: 0, baseY: 0 };
+    return { baseX: parseFloat(match[1]), baseY: parseFloat(match[2]) };
+}
+
+/** path d에서 단순 사각형 좌표 추출 (M x y L x2 y2 L x3 y3 L x4 y4 Z 형태) */
+function parsePathRectCoords(d: string): { x: number; y: number; width: number; height: number } | null {
+    const coords = d.match(/[-\d.]+/g)?.map(Number) ?? [];
+    if (coords.length < 8) return null;
+    const xs = [coords[0], coords[2], coords[4], coords[6]];
+    const ys = [coords[1], coords[3], coords[5], coords[7]];
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    const width = Math.max(...xs) - x;
+    const height = Math.max(...ys) - y;
+    if (width < 1 || height < 1) return null;
+    return { x, y, width, height };
+}
+
 /** getCTM으로 bbox를 SVG 루트 좌표계로 변환 (transform/그룹 중첩 모두 처리) */
 function bboxToRootCoords(
     el: SVGGraphicsElement,
@@ -296,6 +328,24 @@ function tryDetectAndMergeTables(
             }
         }
 
+        // PPT SVG는 체크박스 열을 내보내지 않음 → No 다음에 빈 열 삽입 (8열일 때만, 데이터 밀림 방지)
+        const firstHeader = (cellData[0] ?? '').trim();
+        const hasNoColumn = /^No\.?$|^번호$/i.test(firstHeader);
+        let finalCellData = cellData;
+        let finalCols = cols;
+        if (hasNoColumn && rowsCount >= 2 && cols === 8) {
+            const inserted: string[] = [];
+            for (let r = 0; r < rowsCount; r++) {
+                inserted.push(cellData[r * cols + 0]); // No 또는 번호
+                inserted.push(''); // 체크박스 열 (비움)
+                for (let c = 1; c < cols; c++) {
+                    inserted.push(cellData[r * cols + c]);
+                }
+            }
+            finalCellData = inserted;
+            finalCols = cols + 1;
+        }
+
         // 배경 rect도 bounding box에 포함
         const cellRects = group.filter((e) => e.type === 'rect' && e.fill !== 'transparent' && e.width > 8 && e.height > 8);
         for (const r of cellRects) {
@@ -308,7 +358,7 @@ function tryDetectAndMergeTables(
         const tableW = Math.max(maxX - minX, 100);
         const tableH = Math.max(maxY - minY, 40);
 
-        const v2Cells: TableCellData[] = cellData.map((content) => ({
+        const v2Cells: TableCellData[] = finalCellData.map((content) => ({
             content,
             rowSpan: 1,
             colSpan: 1,
@@ -326,8 +376,8 @@ function tryDetectAndMergeTables(
             stroke: '#000000',
             strokeWidth: 1,
             tableRows: rowsCount,
-            tableCols: cols,
-            tableCellData: cellData,
+            tableCols: finalCols,
+            tableCellData: finalCellData,
             tableCellDataV2: v2Cells,
             tableBorderInsideH: '#000000',
             tableBorderInsideHWidth: 1,
@@ -378,6 +428,9 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
     const [vw, vh] = vb ? vb.split(/\s+/).slice(2).map(Number) : [2000, 2000];
     const thresholds = computeThresholds(vw || 2000, vh || 2000);
     const size = Math.max(1000, vw || 2000, vh || 2000);
+    // ✅ SVG를 container로 이동하기 전에 offset 추출 (이동 후엔 doc에서 찾을 수 없음)
+    const { offsetX, offsetY } = getRootTranslateOffset(svg as SVGSVGElement);
+
     container.style.cssText = `position:absolute;left:-9999px;top:0;width:${size}px;height:${size}px;overflow:hidden;pointer-events:none`;
     container.appendChild(svg);
     document.body.appendChild(container);
@@ -385,26 +438,6 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
     const elements: DrawElement[] = [];
     let zIndex = 1;
     const baseId = Date.now();
-
-    // ── [DEBUG] text 요소 구조 출력 (분석 후 삭제) ──────────────────────────
-    console.group('[SVG DEBUG] text 요소 분석');
-    console.log('viewBox:', vb, '| 계산 임계값:', thresholds);
-    svg.querySelectorAll('text').forEach((t, i) => {
-        const tspans = Array.from(t.querySelectorAll('tspan'));
-        const yVals = tspans.map((s) => s.getAttribute('y'));
-        const xVals = tspans.map((s) => s.getAttribute('x'));
-        const texts = tspans.map((s) => s.textContent?.trim());
-        const uniqueY = new Set(yVals.map((y) => (y !== null ? Math.round(parseFloat(y)) : 0)));
-        console.log(
-            `text[${i}] → isMultiRow: ${uniqueY.size >= 2} | uniqueY: [${[...uniqueY]}]`,
-            '\n  content:', t.textContent?.slice(0, 60),
-            '\n  tspan texts:', texts,
-            '\n  tspan x:', xVals,
-            '\n  tspan y:', yVals
-        );
-    });
-    console.groupEnd();
-    // ── [DEBUG END] ──────────────────────────────────────────────────────────
 
     const walk = (parent: Element, groupId?: string) => {
         const children = Array.from(parent.children);
@@ -506,6 +539,10 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                         return s.trim();
                     })();
 
+                    // PPT SVG: text transform에서 baseX, baseY 추출 (tspan x/y는 이 기준 상대)
+                    const { baseX, baseY } = getTextBaseFromTransform(el);
+                    const baselineCorrection = baseFontSize * 0.8; // SVG y는 baseline 기준
+
                     // ── 먼저 yGroupMap 계산 (directText Y 위치 참조용) ──────────────
                     const tspanEls = Array.from(el.querySelectorAll('tspan')) as SVGGraphicsElement[];
                     const yGroupMap = new Map<number, SVGGraphicsElement[]>();
@@ -518,30 +555,20 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                     }
                     const sortedYKeys = [...yGroupMap.keys()].sort((a, b) => a - b);
 
-                    // ── directText("No" 등) → 첫 번째 tspan 행의 실제 Y 좌표에 배치 ──
+                    // ── directText("No" 등) → baseX + offsetX, 첫 행 Y + offsetY - baseline ──
                     if (directText) {
-                        // 첫 번째 행의 tspan 중 가장 왼쪽 tspan의 getBBox로 Y 결정
                         const firstRowTspans = (yGroupMap.get(sortedYKeys[0]) ?? [])
                             .slice()
                             .sort((a, b) =>
                                 parseFloat((a as Element).getAttribute('x') ?? '0') -
                                 parseFloat((b as Element).getAttribute('x') ?? '0')
                             );
-                        let directY = 0;
-                        let directX = 0;
+                        let directY = baseY + offsetY - baselineCorrection;
+                        let directX = baseX + offsetX;
                         if (firstRowTspans.length > 0) {
-                            try {
-                                const tb = bboxToRootCoords(
-                                    firstRowTspans[0],
-                                    firstRowTspans[0].getBBox(),
-                                    svg as SVGSVGElement
-                                );
-                                directY = tb.y;       // 첫 번째 행의 실제 렌더 Y
-                                // directText는 첫 번째 tspan보다 왼쪽(x≈0 혹은 약간 앞)
-                                directX = Math.max(0, tb.x - tb.width * 2);
-                            } catch { /* 실패 시 0,0 유지 */ }
+                            const firstY = parseFloat((firstRowTspans[0] as Element).getAttribute('y') ?? '0');
+                            directY = baseY + firstY + offsetY - baselineCorrection;
                         }
-                        // X: getStartPositionOfChar로 더 정확하게 보정 시도
                         const textElSVG = el as SVGTextElement;
                         if (typeof textElSVG.getStartPositionOfChar === 'function') {
                             try {
@@ -552,9 +579,9 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                                 const ctm = (el as SVGGraphicsElement).getCTM();
                                 if (ctm) {
                                     const t = pt.matrixTransform(ctm);
-                                    directX = t.x; // X만 CTM에서 가져옴 (Y는 첫 tspan 행에서)
+                                    directX = t.x;
                                 }
-                            } catch { /* 실패 시 위 directX 유지 */ }
+                            } catch { /* 실패 시 baseX+offsetX 유지 */ }
                         }
                         const cjkBonus = /[\u4e00-\u9fff\uac00-\ud7af\u3040-\u309f]/.test(directText) ? 1.15 : 1;
                         const minW = Math.max(directText.length * baseFontSize * cjkBonus, 16);
@@ -582,11 +609,8 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                     }
 
                     // ── tspan을 Y그룹 → X클러스터로 묶어 셀 단위 DrawElement 생성 ──
-                    // (yGroupMap은 위에서 이미 계산됨)
-
-                    // 2단계: 각 행에서 X 좌표 + getBBox 폭으로 인접 tspan 클러스터링
+                    // PPT SVG: baseX + tspanX + offsetX, baseY + tspanY + offsetY - baselineCorrection
                     for (const rowTspans of yGroupMap.values()) {
-                        // X 순 정렬
                         rowTspans.sort((a, b) =>
                             parseFloat((a as Element).getAttribute('x') ?? '0') -
                             parseFloat((b as Element).getAttribute('x') ?? '0')
@@ -601,9 +625,9 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                             try { tsBox = ts.getBBox(); } catch { continue; }
                             if (tsBox.width < 0.5 && tsBox.height < 0.5) continue;
 
-                            const tsLeft = parseFloat((ts as Element).getAttribute('x') ?? String(tsBox.x));
+                            const tsX = parseFloat((ts as Element).getAttribute('x') ?? String(tsBox.x));
+                            const tsLeft = baseX + tsX; // text 좌표계 내 기준
                             const tsRight = tsLeft + tsBox.width;
-                            // 글자 높이의 80%를 간격 임계값으로 사용 (폰트 크기 비례)
                             const gapThreshold = Math.max(tsBox.height * 0.8, baseFontSize * 0.8);
 
                             if (currentCluster.length === 0 || tsLeft - clusterRightEdge > gapThreshold) {
@@ -616,7 +640,6 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                         }
                         if (currentCluster.length > 0) clusters.push(currentCluster);
 
-                        // 3단계: 클러스터당 DrawElement 1개 생성
                         for (const cluster of clusters) {
                             const clusterText = cluster
                                 .map((ts) => (ts as Element).textContent?.trim() ?? '')
@@ -624,15 +647,19 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
                                 .join('');
                             if (!clusterText) continue;
 
-                            // 클러스터 전체 bbox 계산
+                            // PPT SVG: baseX + tspanX + offset, baseY + tspanY + offset - baseline
                             let cMinX = Infinity, cMinY = Infinity, cMaxX = -Infinity, cMaxY = -Infinity;
                             for (const ts of cluster) {
                                 try {
-                                    const tb = bboxToRootCoords(ts, ts.getBBox(), svg as SVGSVGElement);
-                                    cMinX = Math.min(cMinX, tb.x);
-                                    cMinY = Math.min(cMinY, tb.y);
-                                    cMaxX = Math.max(cMaxX, tb.x + tb.width);
-                                    cMaxY = Math.max(cMaxY, tb.y + tb.height);
+                                    const tx = parseFloat((ts as Element).getAttribute('x') ?? '0');
+                                    const ty = parseFloat((ts as Element).getAttribute('y') ?? '0');
+                                    const tb = ts.getBBox();
+                                    const finalX = baseX + tx + offsetX;
+                                    const finalY = baseY + ty + offsetY - baselineCorrection;
+                                    cMinX = Math.min(cMinX, finalX);
+                                    cMinY = Math.min(cMinY, finalY);
+                                    cMaxX = Math.max(cMaxX, finalX + tb.width);
+                                    cMaxY = Math.max(cMaxY, finalY + tb.height);
                                 } catch { continue; }
                             }
                             if (!isFinite(cMinX)) continue;
@@ -694,13 +721,18 @@ export function parseSvgToDrawElements(svgString: string): DrawElement[] {
             } else {
                 const pathFill = tag === 'path' && (el.getAttribute('fill') === 'none' || !el.getAttribute('fill')) ? 'transparent' : style.fill;
                 const minDim = Math.max(style.strokeWidth, 1);
-                const w = Math.max(root.width, minDim);
-                const h = Math.max(root.height, minDim);
+                // PPT SVG: path d에서 직접 좌표 추출 (translate 오프셋 적용)
+                const pathRect = tag === 'path' ? parsePathRectCoords(el.getAttribute('d') ?? '') : null;
+                const usePathRect = pathRect && pathRect.width > 1 && pathRect.height > 1;
+                const x = usePathRect ? pathRect.x + offsetX : root.x;
+                const y = usePathRect ? pathRect.y + offsetY : root.y;
+                const w = usePathRect ? pathRect.width : Math.max(root.width, minDim);
+                const h = usePathRect ? pathRect.height : Math.max(root.height, minDim);
                 elements.push({
                     id,
                     type: 'rect',
-                    x: root.x,
-                    y: root.y,
+                    x,
+                    y,
                     width: w,
                     height: h,
                     fill: pathFill,

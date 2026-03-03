@@ -36,6 +36,7 @@ import { LockOverlay } from './screenNode/LockOverlay';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
 import SvgImportButton from './screenNode/SvgImportButton';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
+import { parseSvgToDrawElements } from '../utils/svgToDrawElements';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
@@ -1486,6 +1487,17 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
             const text = cd.getData('text/plain');
             if (text) {
+                // SVG 문자열 (PPT 등에서 SVG로 저장 후 복사)
+                if (text.trimStart().startsWith('<svg') && text.includes('</svg>')) {
+                    try {
+                        const svgElements = parseSvgToDrawElements(text);
+                        if (svgElements.length > 0) {
+                            e.preventDefault();
+                            doPaste(svgElements, true);
+                            return;
+                        }
+                    } catch { /* SVG 파싱 실패 */ }
+                }
                 try {
                     const parsed = JSON.parse(text);
                     const isValid = Array.isArray(parsed) && parsed.length > 0 &&
