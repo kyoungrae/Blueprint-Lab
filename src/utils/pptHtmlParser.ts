@@ -1,8 +1,9 @@
 /**
  * PowerPoint 클립보드 HTML을 DrawElement[]로 변환
- * text/html에 포함된 VML(v:rect, v:oval 등) 또는 SVG/HTML 도형을 파싱
+ * text/html에 포함된 VML(v:rect, v:oval 등), SVG/HTML 도형, HTML table 파싱
  */
-import type { DrawElement } from '../types/screenDesign';
+import type { DrawElement, TableCellData } from '../types/screenDesign';
+import { detectAndMergeTables } from './svgToDrawElements';
 
 const PT_TO_PX = 1.333; // 96dpi 기준 1pt ≈ 1.333px
 
@@ -125,6 +126,62 @@ export function parsePptHtmlToElements(html: string): DrawElement[] {
     const addElement = (el: DrawElement) => {
         elements.push({ ...el, id: `el_${baseId}_${elements.length}_${randomId()}`, zIndex: zIndex++ });
     };
+
+    // 0. HTML table (PPT가 테이블을 table/tr/td로 넣은 경우 - No, 체크박스 등 순서 유지)
+    const htmlTables = doc.querySelectorAll('table');
+    for (const tableEl of htmlTables) {
+        const rows = Array.from(tableEl.querySelectorAll('tr'));
+        if (rows.length < 2) continue;
+        const rowData: string[][] = [];
+        let maxCols = 0;
+        for (const tr of rows) {
+            const cells = tr.querySelectorAll('td, th');
+            const rowCells: string[] = [];
+            for (const cell of cells) {
+                const text = cell.textContent?.trim() ?? '';
+                const colspan = parseInt(cell.getAttribute('colspan') ?? '1', 10);
+                for (let i = 0; i < colspan; i++) rowCells.push(text);
+            }
+            maxCols = Math.max(maxCols, rowCells.length);
+            rowData.push(rowCells);
+        }
+        const cellData: string[] = [];
+        for (const row of rowData) {
+            while (row.length < maxCols) row.push('');
+            cellData.push(...row);
+        }
+        if (maxCols < 2) continue;
+        const v2Cells: TableCellData[] = cellData.map((content) => ({
+            content,
+            rowSpan: 1,
+            colSpan: 1,
+            isMerged: false,
+        }));
+        const style = parseStyle(tableEl.getAttribute('style'));
+        const left = (style.left as number) ?? (style['margin-left'] as number) ?? 0;
+        const top = (style.top as number) ?? (style['margin-top'] as number) ?? 0;
+        const w = (style.width as number) ?? Math.max(maxCols * 80, 400);
+        const h = (style.height as number) ?? Math.max(rows.length * 28, 80);
+        addElement({
+            type: 'table',
+            x: left,
+            y: top,
+            width: w,
+            height: h,
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeWidth: 1,
+            tableRows: rows.length,
+            tableCols: maxCols,
+            tableCellData: cellData,
+            tableCellDataV2: v2Cells,
+            tableBorderInsideH: '#000000',
+            tableBorderInsideHWidth: 1,
+            tableBorderInsideV: '#000000',
+            tableBorderInsideVWidth: 1,
+        } as DrawElement);
+    }
+    if (elements.length > 0) return elements;
 
     // 1. VML 요소 (PowerPoint/Word) - getElementsByTagName('*')로 전체 순회, tagName으로 판별 (네임스페이스 대응)
     const docRoot = doc.body ?? doc.documentElement ?? doc;
@@ -311,5 +368,5 @@ export function parsePptHtmlToElements(html: string): DrawElement[] {
         }
     });
 
-    return elements;
+    return detectAndMergeTables(elements);
 }
