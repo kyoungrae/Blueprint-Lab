@@ -194,6 +194,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [isMoving, setIsMoving] = useState(false);
     const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuides | null>(null);
     const snapStateRef = useRef<SnapState>({});
+    const resizeSnapStateRef = useRef<SnapState>({});
     const [dragPreviewPositions, setDragPreviewPositions] = useState<Record<string, { x: number; y: number }> | null>(null);
     const [showGridPanel, setShowGridPanel] = useState(false);
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
@@ -993,6 +994,66 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 nextH = 20;
             }
 
+            // Smart Guides 스냅: 다른 객체/보조선에 맞춰 리사이즈 엣지를 정렬
+            if (!isLocked && screen.guideLinesVisible !== false) {
+                const left = nextX;
+                const right = nextX + nextW;
+                const top = nextY;
+                const bottom = nextY + nextH;
+                const centerX = (left + right) / 2;
+                const centerY = (top + bottom) / 2;
+
+                const currentElements = getScreenById(screen.id)?.drawElements || [];
+                const otherElements = currentElements
+                    .filter(el => el.id !== targetId)
+                    .map(el => ({
+                        id: el.id,
+                        x: el.x,
+                        y: el.y,
+                        width: el.width,
+                        height: el.height,
+                    }));
+
+                const { deltaX, deltaY, guides, nextSnap } = getSmartGuidesAndSnap(
+                    { left, right, top, bottom, centerX, centerY },
+                    otherElements,
+                    resizeSnapStateRef.current,
+                    guideLines
+                );
+                resizeSnapStateRef.current = nextSnap;
+
+                // 방향에 따라 스냅 보정 적용
+                if (deltaX !== 0) {
+                    if (dir.includes('w')) {
+                        // 왼쪽 엣지를 스냅, 오른쪽은 시작 기준 유지
+                        const fixedRight = elX + w;
+                        const snappedLeft = left + deltaX;
+                        nextX = snappedLeft;
+                        nextW = Math.max(20, fixedRight - snappedLeft);
+                    } else if (dir.includes('e')) {
+                        // 오른쪽 엣지를 스냅, 왼쪽은 고정
+                        const snappedRight = right + deltaX;
+                        nextW = Math.max(20, snappedRight - nextX);
+                    }
+                }
+                if (deltaY !== 0) {
+                    if (dir.includes('n')) {
+                        const fixedBottom = elY + h;
+                        const snappedTop = top + deltaY;
+                        nextY = snappedTop;
+                        nextH = Math.max(20, fixedBottom - snappedTop);
+                    } else if (dir.includes('s')) {
+                        const snappedBottom = bottom + deltaY;
+                        nextH = Math.max(20, snappedBottom - nextY);
+                    }
+                }
+
+                setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
+            } else {
+                resizeSnapStateRef.current = {};
+                setAlignmentGuides(null);
+            }
+
             // Update in-place for smooth visual
             const currentElements = getScreenById(screen.id)?.drawElements || [];
             const updated = currentElements.map(item =>
@@ -1006,6 +1067,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 const currentElements = getScreenById(screen.id)?.drawElements || [];
                 syncUpdate({ drawElements: currentElements });
             }
+            resizeSnapStateRef.current = {};
+            setAlignmentGuides(null);
             elementResizeStartRef.current = null;
             window.removeEventListener('mousemove', handleWindowMouseMove);
             window.removeEventListener('mouseup', handleWindowMouseUp);
