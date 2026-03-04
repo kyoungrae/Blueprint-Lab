@@ -32,6 +32,7 @@ import { EntityLockBadge, useEntityLock } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
 import { getSmartGuidesAndSnap, type AlignmentGuides, type SnapState } from './screenNode/smartGuides';
 import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
+import { GRID_STEP } from '../constants/canvasGrid';
 import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
@@ -709,20 +710,41 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const dim = axis === 'vertical' ? cw : ch;
         const existing = axis === 'vertical' ? guideLines.vertical : guideLines.horizontal;
         const minGap = 20;
-        const candidates = [0.5, 0.25, 0.75, 1 / 6, 2 / 6, 4 / 6, 5 / 6, 1 / 8, 3 / 8, 5 / 8, 7 / 8, 1 / 10, 3 / 10, 5 / 10, 7 / 10, 9 / 10]
-            .map(r => Math.round(dim * r))
-            .filter(p => p >= minGap && p <= dim - minGap)
-            .sort((a, b) => {
-                const distA = Math.abs(a - dim / 2);
-                const distB = Math.abs(b - dim / 2);
-                return distA - distB;
-            });
+
+        const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+        const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
+        const outerW = canvasW - canvasInsetLocal * 2;
+        const outerH = canvasH - canvasInsetLocal * 2;
+        const innerStepX = outerW > 0 ? (GRID_STEP * canvasW) / outerW : GRID_STEP;
+        const innerStepY = outerH > 0 ? (GRID_STEP * canvasH) / outerH : GRID_STEP;
+        const centerXInner = canvasW / 2;
+        const centerYInner = canvasH / 2;
+
+        const candidates: number[] = [];
+        if (axis === 'vertical') {
+            for (let k = Math.ceil((minGap - centerXInner) / innerStepX); centerXInner + k * innerStepX <= cw - minGap; k++) {
+                const p = Math.round(centerXInner + k * innerStepX);
+                if (p >= minGap && p <= cw - minGap) candidates.push(p);
+            }
+        } else {
+            for (let k = Math.ceil((minGap - centerYInner) / innerStepY); centerYInner + k * innerStepY <= ch - minGap; k++) {
+                const p = Math.round(centerYInner + k * innerStepY);
+                if (p >= minGap && p <= ch - minGap) candidates.push(p);
+            }
+        }
+        candidates.sort((a, b) => {
+            const mid = dim / 2;
+            return Math.abs(a - mid) - Math.abs(b - mid);
+        });
+
         let nextValue = candidates.find(p => !existing.some(v => Math.abs(v - p) < minGap));
         if (nextValue == null) {
             const last = existing.length > 0 ? Math.max(...existing) : 0;
             nextValue = Math.min(dim - minGap, last + minGap);
             if (existing.some(v => Math.abs(v - nextValue!) < minGap)) {
-                nextValue = Math.round(dim / 2);
+                nextValue = axis === 'vertical'
+                    ? Math.round(centerXInner + Math.round((dim / 2 - centerXInner) / innerStepX) * innerStepX)
+                    : Math.round(centerYInner + Math.round((dim / 2 - centerYInner) / innerStepY) * innerStepY);
             }
         }
         const nextLines = {
@@ -735,11 +757,25 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         syncUpdate({ guideLines: nextLines });
     };
 
-    const moveGuideLine = (axis: 'vertical' | 'horizontal', oldValue: number, newValue: number) => {
+    const moveGuideLine = (axis: 'vertical' | 'horizontal', oldValue: number, newValue: number): number => {
         const cw = canvasRef.current?.clientWidth ?? 400;
         const ch = canvasRef.current?.clientHeight ?? 300;
         const max = axis === 'vertical' ? cw : ch;
-        const clamped = Math.max(2, Math.min(max - 2, newValue));
+        let clamped = Math.max(2, Math.min(max - 2, newValue));
+
+        const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+        const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
+        const outerW = canvasW - canvasInsetLocal * 2;
+        const outerH = canvasH - canvasInsetLocal * 2;
+        const innerStepX = outerW > 0 ? (GRID_STEP * canvasW) / outerW : GRID_STEP;
+        const innerStepY = outerH > 0 ? (GRID_STEP * canvasH) / outerH : GRID_STEP;
+        const centerXInner = canvasW / 2;
+        const centerYInner = canvasH / 2;
+        clamped = axis === 'vertical'
+            ? Math.round(centerXInner + Math.round((clamped - centerXInner) / innerStepX) * innerStepX)
+            : Math.round(centerYInner + Math.round((clamped - centerYInner) / innerStepY) * innerStepY);
+        clamped = Math.max(2, Math.min(max - 2, clamped));
+
         const current = getScreenById(screen.id)?.guideLines;
         const vert = current?.vertical ?? guideLines.vertical;
         const horz = current?.horizontal ?? guideLines.horizontal;
@@ -750,6 +786,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         nextLines.vertical.sort((a, b) => a - b);
         nextLines.horizontal.sort((a, b) => a - b);
         update({ guideLines: nextLines });
+        return clamped;
     };
 
     const removeGuideLine = (axis: 'vertical' | 'horizontal', value: number) => {
@@ -781,8 +818,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 ? Math.round((me.clientX - rect.left) * scaleX)
                 : Math.round((me.clientY - rect.top) * scaleY);
             const clamped = Math.max(2, Math.min((ax === 'vertical' ? cw : ch) - 2, newVal));
-            moveGuideLine(ax, oldVal, clamped);
-            guideLineDragRef.current.value = clamped;
+            const snapped = moveGuideLine(ax, oldVal, clamped);
+            guideLineDragRef.current.value = snapped;
         };
         const onUp = () => {
             if (guideLineDragRef.current) {
@@ -3011,8 +3048,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             style={{
                                                 width: canvasW - canvasInset * 2,
                                                 height: canvasH - canvasInset * 2,
-                                                backgroundImage: !isLocked ? 'radial-gradient(#d1d5db 1px, transparent 1px)' : 'none',
-                                                backgroundSize: '20px 20px',
+                                                backgroundImage: !isLocked ? 'radial-gradient(circle at 0 0, #d1d5db 1px, transparent 1px)' : 'none',
+                                                backgroundSize: `${GRID_STEP}px ${GRID_STEP}px`,
+                                                backgroundPosition: !isLocked
+                                                    ? `${((canvasW - canvasInset * 2) / 2) % GRID_STEP}px ${((canvasH - canvasInset * 2) / 2) % GRID_STEP}px`
+                                                    : undefined,
                                             }}
                                         >
                                             {/* Canvas Viewboard - flex로 캔버스 높이만큼 채움, 스케일 div가 줄어들어 canvasRef가 전체 높이 사용 */}

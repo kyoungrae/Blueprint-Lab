@@ -10,7 +10,7 @@ interface PremiumTooltipProps {
     offsetBottom?: number;
 }
 
-const TOOLTIP_OFFSET = 8;
+const TOOLTIP_OFFSET = 40;
 const MIN_SPACE_ABOVE = 48;
 
 const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement, offsetBottom }) => {
@@ -41,7 +41,6 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
     const handleMouseLeave = useCallback(() => {
         setVisible(false);
     }, []);
-
     const bottomOffset = offsetBottom ?? TOOLTIP_OFFSET;
     const tooltipStyle: React.CSSProperties = pos.placement === 'top'
         ? { left: pos.left, top: pos.top - TOOLTIP_OFFSET, transform: 'translate(-50%, -100%)' }

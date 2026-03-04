@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { GRID_STEP } from '../../constants/canvasGrid';
 
 interface CanvasRulersProps {
     canvasWidth: number;
@@ -9,8 +10,8 @@ interface CanvasRulersProps {
 }
 
 const TICK_INTERVAL_MAJOR = 100;
-const TICK_INTERVAL_MEDIUM = 50; // 0.5 단위
-const TICK_INTERVAL_MINOR = 20; // 4 minor ticks between majors = 5 subdivisions per unit
+const TICK_INTERVAL_MEDIUM = 50;
+const TICK_INTERVAL_MINOR = GRID_STEP; // 격자 점 간격과 동일
 
 const RULER_BG = '#f5f5f5';
 const TICK_COLOR_MAJOR = '#a0a0a0';
