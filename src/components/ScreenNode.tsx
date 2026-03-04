@@ -3140,26 +3140,33 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             {/* Canvas + Rulers - 패딩으로 상하좌우 균일, 중앙 정렬 제거로 영역 정확히 맞춤
                             - 눈금자 ON: inset = CANVAS_INSET (눈금자 + 여백)
                             - 눈금자 OFF 또는 잠금: inset = 0 (여백 없이 캔버스가 영역 꽉 채움) */}
-                            <CanvasRulers
-                                canvasWidth={canvasW - canvasInset * 2}
-                                canvasHeight={canvasH - canvasInset * 2}
-                                inset={canvasInset}
-                                visible={!isLocked && screen.guideLinesVisible !== false}
-                            >
-                                {/* Drawing Canvas Area - 캔버스와 감싸는 영역 크기를 동일하게 (스크롤/잘림 없음) */}
+                            <div className="relative shrink-0" style={{ width: canvasW, height: canvasH }}>
+                                {/* 격자 dots를 캔버스 전체(하단·우측 inset 스트립 포함)에 채우기 */}
+                                {!isLocked && canvasInset > 0 && (
+                                    <div
+                                        className="absolute inset-0 pointer-events-none"
+                                        style={{
+                                            backgroundImage: 'radial-gradient(circle at 0 0, #84878b 1.5px, transparent 1.5px)',
+                                            backgroundSize: `${GRID_STEP}px ${GRID_STEP}px`,
+                                            backgroundPosition: `${(canvasW / 2) % GRID_STEP}px ${(canvasH / 2) % GRID_STEP}px`,
+                                        }}
+                                    />
+                                )}
+                                <CanvasRulers
+                                    canvasWidth={canvasW - canvasInset * 2}
+                                    canvasHeight={canvasH - canvasInset * 2}
+                                    inset={canvasInset}
+                                    visible={!isLocked && screen.guideLinesVisible !== false}
+                                >
+                                    {/* Drawing Canvas Area - 캔버스와 감싸는 영역 크기를 동일하게 (스크롤/잘림 없음) */}
                                 {(() => {
                                     return (
                                         <div
                                             ref={canvasAreaRef}
-                                            className={`relative flex flex-col bg-white shrink-0 overflow-visible`}
+                                            className={`relative flex flex-col shrink-0 overflow-visible`}
                                             style={{
                                                 width: canvasW - canvasInset * 2,
                                                 height: canvasH - canvasInset * 2,
-                                                backgroundImage: !isLocked ? 'radial-gradient(circle at 0 0, #84878b 1.5px, transparent 1.5px)' : 'none',
-                                                backgroundSize: `${GRID_STEP}px ${GRID_STEP}px`,
-                                                backgroundPosition: !isLocked
-                                                    ? `${((canvasW - canvasInset * 2) / 2) % GRID_STEP}px ${((canvasH - canvasInset * 2) / 2) % GRID_STEP}px`
-                                                    : undefined,
                                             }}
                                         >
                                             {/* Canvas Viewboard - flex로 캔버스 높이만큼 채움, 스케일 div가 줄어들어 canvasRef가 전체 높이 사용 */}
@@ -4071,7 +4078,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         </div>
                                     );
                                 })()}
-                            </CanvasRulers>
+                                </CanvasRulers>
+                            </div>
                         </div>
 
                         {/* [RIGHT PANE 30%] - 초기화면설정/기능상세/관련테이블 (화면 설계에만 표시, 컴포넌트 캔버스에서는 숨김) */}
