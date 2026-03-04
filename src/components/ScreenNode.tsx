@@ -2157,8 +2157,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         : Math.ceil((canvasW + ENTITY_CANVAS_GAP * 2) / CANVAS_WIDTH_RATIO);
     const entityHeight =
         canvasH + ENTITY_CANVAS_GAP * 2 + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
-    // 눈금자 ON + 잠금 해제일 때만 inset(여백), OFF면 0으로 캔버스가 영역 꽉 채움
-    const canvasInset = !isLocked && screen.guideLinesVisible !== false ? CANVAS_INSET : 0;
+    // 잠금 해제 시 항상 inset 고정 → 격자 ON/OFF 전환해도 그리기 영역·스케일 동일하게 유지 (객체 위치 밀림 방지)
+    const canvasInset = !isLocked ? CANVAS_INSET : 0;
 
     return (
         <div
