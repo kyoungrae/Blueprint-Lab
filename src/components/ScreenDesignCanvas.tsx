@@ -28,6 +28,7 @@ import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import type { Screen, PageSizeOption, PageOrientation } from '../types/screenDesign';
+import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
     Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2
@@ -1049,14 +1050,14 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
             <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
-                    <button
-                        onClick={() => setCurrentProject(null)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                        title="프로젝트 목록으로 돌아가기"
-                    >
-                        <Home size={16} className="text-violet-500 shrink-0" />
-                    </button>
-
+                    <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
+                        <button
+                            onClick={() => setCurrentProject(null)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                        >
+                            <Home size={16} className="text-violet-500 shrink-0" />
+                        </button>
+                    </PremiumTooltip>
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
@@ -1079,22 +1080,24 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     </div>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                    <button
-                        onClick={handleAddScreenClick}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                    >
-                        <Plus size={16} className="shrink-0" />
-                        <span className="whitespace-nowrap">화면 추가</span>
-                    </button>
-
-                    <button
-                        onClick={handleAddSpecClick}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                    >
-                        <FileText size={16} className="shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">명세 추가</span>
-                    </button>
+                    <PremiumTooltip placement="bottom" offsetBottom={30} label="화면 추가">
+                        <button
+                            onClick={handleAddScreenClick}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                        >
+                            <Plus size={16} className="shrink-0" />
+                            <span className="whitespace-nowrap">화면 추가</span>
+                        </button>
+                    </PremiumTooltip>                            
+                    <PremiumTooltip placement="bottom" offsetBottom={30} label="명세 추가">
+                        <button
+                            onClick={handleAddSpecClick}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                        >
+                            <FileText size={16} className="shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">명세 추가</span>
+                        </button>
+                    </PremiumTooltip>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
@@ -1102,22 +1105,26 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <button
-                        onClick={() => setIsExportModalOpen(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                    >
-                        <Upload size={16} className="text-green-500 shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
-                    </button>
+                    <PremiumTooltip placement="bottom" offsetBottom={30} label="내보내기">
+                        <button
+                            onClick={() => setIsExportModalOpen(true)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                            >
+                            <Upload size={16} className="text-green-500 shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
+                        </button>
+                    </PremiumTooltip>
 
-                    <button
-                        disabled
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-400 border border-gray-200 rounded-lg text-sm font-bold shadow-sm cursor-not-allowed opacity-60 shrink-0"
-                        title="가져오기 기능 준비중"
-                    >
-                        <Download size={16} className="text-gray-400 shrink-0" />
-                        <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
-                    </button>
+                    <PremiumTooltip placement="bottom" offsetBottom={30} label="가져오기">
+                        <button
+                            disabled
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-400 border border-gray-200 rounded-lg text-sm font-bold shadow-sm cursor-not-allowed opacity-60 shrink-0"
+                            title="가져오기 기능 준비중"
+                        >
+                            <Download size={16} className="text-gray-400 shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
+                        </button>
+                    </PremiumTooltip>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
@@ -1138,18 +1145,20 @@ const ScreenDesignCanvasContent: React.FC = () => {
                             )}
                             <span className="text-sm font-bold text-gray-700 truncate max-w-[80px] sm:max-w-none">{user?.name}</span>
                         </div>
-                        <button
-                            onClick={() => {
-                                if (window.confirm('로그아웃 하시겠습니까?')) {
-                                    setCurrentProject(null);
-                                    logout();
-                                }
-                            }}
-                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
-                            title="로그아웃"
-                        >
-                            <LogOut size={18} />
-                        </button>
+                        <PremiumTooltip placement="bottom" offsetBottom={30} label="로그아웃">
+                            <button
+                                onClick={() => {
+                                    if (window.confirm('로그아웃 하시겠습니까?')) {
+                                        setCurrentProject(null);
+                                        logout();
+                                    }
+                                }}
+                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
+                                title="로그아웃"
+                                >
+                                <LogOut size={18} />
+                            </button>
+                        </PremiumTooltip>
                     </div>
                 </div>
 

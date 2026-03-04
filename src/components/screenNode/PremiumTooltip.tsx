@@ -6,12 +6,14 @@ interface PremiumTooltipProps {
     children: React.ReactNode;
     dotColor?: string;
     placement?: 'top' | 'bottom';
+    /** 상단바 등에서만 사용: bottom 배치 시 아이콘과의 간격(px). 없으면 기본 8px */
+    offsetBottom?: number;
 }
 
 const TOOLTIP_OFFSET = 8;
 const MIN_SPACE_ABOVE = 48;
 
-const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement }) => {
+const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement, offsetBottom }) => {
     const [visible, setVisible] = useState(false);
     const [pos, setPos] = useState({ top: 0, left: 0, placement: 'top' as 'top' | 'bottom' });
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -40,9 +42,10 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
         setVisible(false);
     }, []);
 
+    const bottomOffset = offsetBottom ?? TOOLTIP_OFFSET;
     const tooltipStyle: React.CSSProperties = pos.placement === 'top'
         ? { left: pos.left, top: pos.top - TOOLTIP_OFFSET, transform: 'translate(-50%, -100%)' }
-        : { left: pos.left, top: pos.top + TOOLTIP_OFFSET + 30, transform: 'translate(-50%, 0)' };
+        : { left: pos.left, top: pos.top + bottomOffset, transform: 'translate(-50%, 0)' };
 
     return (
         <div

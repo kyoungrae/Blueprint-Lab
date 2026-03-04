@@ -48,6 +48,7 @@ const edgeTypes = {
 };
 
 import { ExportModeContext } from '../contexts/ExportModeContext';
+import PremiumTooltip from './screenNode/PremiumTooltip';
 
 // ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
 const UserCursorsLayer: React.FC = () => {
@@ -823,14 +824,15 @@ const ComponentCanvasContent: React.FC = () => {
 
             <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
-                    <button
-                        onClick={() => { void flushAndLeaveProject(); }}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                        title="프로젝트 목록으로 돌아가기"
-                    >
-                        <Home size={16} className="text-violet-500 shrink-0" />
-                    </button>
-
+                    <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
+                        <button
+                            onClick={() => { void flushAndLeaveProject(); }}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                            title="프로젝트 목록으로 돌아가기"
+                        >
+                            <Home size={16} className="text-violet-500 shrink-0" />
+                        </button>
+                    </PremiumTooltip>
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
@@ -854,14 +856,15 @@ const ComponentCanvasContent: React.FC = () => {
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                    <button
-                        onClick={handleAddScreenClick}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                    >
-                        <Plus size={16} className="shrink-0" />
-                        <span className="whitespace-nowrap">컴포넌트 추가</span>
-                    </button>
-
+                    <PremiumTooltip placement="bottom" offsetBottom={30} label="컴포넌트 추가">
+                            <button
+                            onClick={handleAddScreenClick}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                        >
+                            <Plus size={16} className="shrink-0" />
+                            <span className="whitespace-nowrap">컴포넌트 추가</span>
+                        </button>
+                    </PremiumTooltip>
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <ToolbarUndoRedo />
@@ -885,20 +888,22 @@ const ComponentCanvasContent: React.FC = () => {
                             )}
                             <span className="text-sm font-bold text-gray-700 truncate max-w-[80px] sm:max-w-none">{user?.name}</span>
                         </div>
-                        <button
-                            onClick={() => {
-                                if (window.confirm('로그아웃 하시겠습니까?')) {
-                                    void (async () => {
-                                        await flushAndLeaveProject();
-                                        logout();
-                                    })();
-                                }
-                            }}
-                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
-                            title="로그아웃"
-                        >
-                            <LogOut size={18} />
-                        </button>
+                        <PremiumTooltip placement="bottom" offsetBottom={30} label="로그아웃">
+                            <button
+                                onClick={() => {
+                                    if (window.confirm('로그아웃 하시겠습니까?')) {
+                                        void (async () => {
+                                            await flushAndLeaveProject();
+                                            logout();
+                                        })();
+                                    }
+                                }}
+                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
+                                title="로그아웃"
+                            >
+                                <LogOut size={18} />
+                            </button>
+                        </PremiumTooltip>
                     </div>
                 </div>
 
