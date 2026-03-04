@@ -283,7 +283,8 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     operation.type.includes('DELETE') ||
                     operation.type === 'ERD_IMPORT' ||
                     (operation.type === 'SCREEN_UPDATE' && hasDrawElements);
-                debouncedSaveToMongo(projectId, newState, isCriticalOperation);
+                const savePromise = debouncedSaveToMongo(projectId, newState, isCriticalOperation);
+                if (savePromise) await savePromise;
 
                 // Record history in MongoDB
                 if (Types.ObjectId.isValid(projectId)) {
@@ -490,16 +491,15 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
     }
 }
 
-function debouncedSaveToMongo(projectId: string, state: ERDState, immediate = false): void {
+function debouncedSaveToMongo(projectId: string, state: ERDState, immediate = false): Promise<void> | void {
     const existing = pendingSaves.get(projectId);
     if (existing) {
         clearTimeout(existing.timer);
     }
 
     if (immediate) {
-        // Execute immediately
-        flushPendingSave(projectId, state);
-        return;
+        // Execute immediately and return promise so caller can await (prevents stale state on refresh)
+        return flushPendingSave(projectId, state);
     }
 
     const timer = setTimeout(async () => {

@@ -165,6 +165,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         e.stopPropagation();
         if (window.confirm(`화면 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
             deleteScreen(screen.id);
+            sendOperation({
+                type: 'SCREEN_DELETE',
+                targetId: screen.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: {}
+            });
         }
     };
 
@@ -3104,7 +3111,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     style={commonStyle}
                                                                     onMouseDown={(e) => handleElementMouseDown(el.id, e)}
                                                                     onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
-                                                                    className={`group-canvas-element ${isSelected ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-move' : ''}`}
+                                                                    className={`group-canvas-element ${isSelected ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
                                                                     data-element-id={el.id}
                                                                 >
                                                                     {el.type === 'rect' && (

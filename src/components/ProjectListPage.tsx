@@ -441,6 +441,8 @@ const ProjectListPage: React.FC = () => {
                             const isLocal = project.id.startsWith('local_');
                             const projectOwner = project.members?.find((m) => m.role === 'OWNER');
                             const isOwner = isLocal || user?.id === projectOwner?.id;
+                            const linkedComponentProject = project.linkedComponentProjectId ? projects.find(p => p.id === project.linkedComponentProjectId) : undefined;
+                            const hasLinkedComponent = !!linkedComponentProject;
 
                             return (
                                 <div
@@ -560,16 +562,16 @@ const ProjectListPage: React.FC = () => {
                                                             setLinkingProjectId(project.id);
                                                             setLinkingMode('component');
                                                         }}
-                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${project.linkedComponentProjectId
+                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${hasLinkedComponent
                                                             ? 'bg-teal-50 text-teal-600 hover:bg-teal-100'
                                                             : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
                                                             }`}
                                                         title="컴포넌트 프로젝트 연결"
                                                     >
                                                         <Box size={10} />
-                                                        {project.linkedComponentProjectId
-                                                            ? (projects.find(p => p.id === project.linkedComponentProjectId)?.name || '컴포넌트 연결됨')
-                                                            : '컴포넌트 연결'}
+                                                        {hasLinkedComponent
+                                                            ? (linkedComponentProject?.name || '컴포넌트 연결됨')
+                                                            : '컴포넌트 연결하기'}
                                                     </button>
                                                 </>
                                             )}
@@ -775,26 +777,28 @@ const ProjectListPage: React.FC = () => {
                                     className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white outline-none transition-all font-medium"
                                 />
                             </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">
-                                    데이터베이스 엔진
-                                    {(selectedProjectType === 'SCREEN_DESIGN' || selectedProjectType === 'COMPONENT') && <span className="text-[10px] text-gray-400 font-normal ml-2">(명세서의 기본 데이터 타입을 결정합니다)</span>}
-                                </label>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {(['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'] as DBType[]).map((type) => (
-                                        <button
-                                            key={type}
-                                            type="button"
-                                            onClick={() => setNewProjectDbType(type)}
-                                            className={`py-3 px-4 rounded-2xl border-2 transition-all font-bold text-sm ${newProjectDbType === type
-                                                ? (selectedProjectType === 'SCREEN_DESIGN' ? 'border-violet-500 bg-violet-50 text-violet-600' : selectedProjectType === 'COMPONENT' ? 'border-teal-500 bg-teal-50 text-teal-600' : 'border-blue-500 bg-blue-50 text-blue-600')
-                                                : 'border-gray-100 bg-gray-50 text-gray-400'}`}
-                                        >
-                                            {type}
-                                        </button>
-                                    ))}
+                            {(selectedProjectType === 'ERD' || selectedProjectType === 'SCREEN_DESIGN') && (
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">
+                                        데이터베이스 엔진
+                                        {selectedProjectType === 'SCREEN_DESIGN' && <span className="text-[10px] text-gray-400 font-normal ml-2">(명세서의 기본 데이터 타입을 결정합니다)</span>}
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {(['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'] as DBType[]).map((type) => (
+                                            <button
+                                                key={type}
+                                                type="button"
+                                                onClick={() => setNewProjectDbType(type)}
+                                                className={`py-3 px-4 rounded-2xl border-2 transition-all font-bold text-sm ${newProjectDbType === type
+                                                    ? (selectedProjectType === 'SCREEN_DESIGN' ? 'border-violet-500 bg-violet-50 text-violet-600' : 'border-blue-500 bg-blue-50 text-blue-600')
+                                                    : 'border-gray-100 bg-gray-50 text-gray-400'}`}
+                                            >
+                                                {type}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">설명 (선택사항)</label>
                                 <textarea

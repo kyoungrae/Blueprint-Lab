@@ -830,7 +830,7 @@ const ComponentCanvasContent: React.FC = () => {
                             className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                             title="프로젝트 목록으로 돌아가기"
                         >
-                            <Home size={16} className="text-violet-500 shrink-0" />
+                            <Home size={16} className="text-teal-500 shrink-0" />
                         </button>
                     </PremiumTooltip>
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
@@ -882,7 +882,7 @@ const ComponentCanvasContent: React.FC = () => {
                             {user?.picture ? (
                                 <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm shrink-0" />
                             ) : (
-                                <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
+                                <div className="w-6 h-6 rounded-full bg-teal-100 flex items-center justify-center text-teal-600 shrink-0">
                                     <UserIcon size={14} />
                                 </div>
                             )}
