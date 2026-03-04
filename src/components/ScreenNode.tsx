@@ -1014,11 +1014,21 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         height: el.height,
                     }));
 
+                const allowedXEdges: ('left' | 'right' | 'centerX')[] =
+                    dir.includes('e') ? ['right', 'centerX']
+                    : dir.includes('w') ? ['left', 'centerX']
+                    : ['left', 'right', 'centerX'];
+                const allowedYEdges: ('top' | 'bottom' | 'centerY')[] =
+                    dir.includes('n') ? ['top', 'centerY']
+                    : dir.includes('s') ? ['bottom', 'centerY']
+                    : ['top', 'bottom', 'centerY'];
+
                 const { deltaX, deltaY, guides, nextSnap } = getSmartGuidesAndSnap(
                     { left, right, top, bottom, centerX, centerY },
                     otherElements,
                     resizeSnapStateRef.current,
-                    guideLines
+                    guideLines,
+                    { allowedXEdges, allowedYEdges }
                 );
                 resizeSnapStateRef.current = nextSnap;
 

@@ -32,7 +32,8 @@ export function getSmartGuidesAndSnap(
     draggedBounds: { left: number; top: number; right: number; bottom: number; centerX: number; centerY: number },
     otherElements: Array<{ id: string; x: number; y: number; width: number; height: number }>,
     prevSnap: SnapState = {},
-    guideLines?: GuideLinesInput
+    guideLines?: GuideLinesInput,
+    options?: { allowedXEdges?: OwnXEdge[]; allowedYEdges?: OwnYEdge[] }
 ): { deltaX: number; deltaY: number; guides: AlignmentGuides; nextSnap: SnapState } {
     const guides: AlignmentGuides = { vertical: [], horizontal: [] };
 
@@ -59,16 +60,19 @@ export function getSmartGuidesAndSnap(
         .slice(0, MAX_NEARBY_CANDIDATES)
         .map(({ other }) => other);
 
-    const ourXEdges: Array<{ edge: OwnXEdge; value: number }> = [
-        { edge: 'left', value: draggedBounds.left },
-        { edge: 'right', value: draggedBounds.right },
-        { edge: 'centerX', value: draggedBounds.centerX },
-    ];
-    const ourYEdges: Array<{ edge: OwnYEdge; value: number }> = [
-        { edge: 'top', value: draggedBounds.top },
-        { edge: 'bottom', value: draggedBounds.bottom },
-        { edge: 'centerY', value: draggedBounds.centerY },
-    ];
+    const allowedX: OwnXEdge[] = options?.allowedXEdges ?? (['left', 'right', 'centerX'] as OwnXEdge[]);
+    const allowedY: OwnYEdge[] = options?.allowedYEdges ?? (['top', 'bottom', 'centerY'] as OwnYEdge[]);
+
+    const ourXEdges: Array<{ edge: OwnXEdge; value: number }> = ([
+        { edge: 'left' as OwnXEdge, value: draggedBounds.left },
+        { edge: 'right' as OwnXEdge, value: draggedBounds.right },
+        { edge: 'centerX' as OwnXEdge, value: draggedBounds.centerX },
+    ]).filter((e) => allowedX.includes(e.edge));
+    const ourYEdges: Array<{ edge: OwnYEdge; value: number }> = ([
+        { edge: 'top' as OwnYEdge, value: draggedBounds.top },
+        { edge: 'bottom' as OwnYEdge, value: draggedBounds.bottom },
+        { edge: 'centerY' as OwnYEdge, value: draggedBounds.centerY },
+    ]).filter((e) => allowedY.includes(e.edge));
 
     let bestX:
         | { dist: number; delta: number; targetId: string; targetValue: number; ownEdge: OwnXEdge }
@@ -148,8 +152,8 @@ export function getSmartGuidesAndSnap(
     let deltaY = bestY?.delta ?? 0;
     const nextSnap: SnapState = {};
 
-    // 히스테리시스: 이전 스냅 targetId+edge 조합을 우선 유지
-    if (prevSnap.x) {
+    // 히스테리시스: 이전 스냅 targetId+edge 조합을 우선 유지 (허용된 엣지에 한함)
+    if (prevSnap.x && allowedX.includes(prevSnap.x.ownEdge)) {
         const ourValue =
             prevSnap.x.ownEdge === 'left'
                 ? draggedBounds.left
@@ -178,7 +182,7 @@ export function getSmartGuidesAndSnap(
         guides.vertical = [bestX.targetValue];
     }
 
-    if (prevSnap.y) {
+    if (prevSnap.y && allowedY.includes(prevSnap.y.ownEdge)) {
         const ourValue =
             prevSnap.y.ownEdge === 'top'
                 ? draggedBounds.top
