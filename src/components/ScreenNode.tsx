@@ -40,7 +40,7 @@ import CanvasRulers from './screenNode/CanvasRulers';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 import { resolveFontFamilyCSS } from '../utils/fontFamily';
-
+import { BackgroundVariant } from 'reactflow';
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 
@@ -3048,7 +3048,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                             style={{
                                                 width: canvasW - canvasInset * 2,
                                                 height: canvasH - canvasInset * 2,
-                                                backgroundImage: !isLocked ? 'radial-gradient(circle at 0 0, #d1d5db 1px, transparent 1px)' : 'none',
+                                                backgroundImage: !isLocked ? 'radial-gradient(circle at 0 0, #84878b 1.5px, transparent 1.5px)' : 'none',
                                                 backgroundSize: `${GRID_STEP}px ${GRID_STEP}px`,
                                                 backgroundPosition: !isLocked
                                                     ? `${((canvasW - canvasInset * 2) / 2) % GRID_STEP}px ${((canvasH - canvasInset * 2) / 2) % GRID_STEP}px`
