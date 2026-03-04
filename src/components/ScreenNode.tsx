@@ -3078,7 +3078,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         return createPortal(
                             <div
                                 data-font-style-panel
-                                className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in-95 duration-150 origin-top-left"
+                                className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in-95 origin-top-left"
                                 style={{
                                     left: screenPos.x,
                                     top: screenPos.y,
