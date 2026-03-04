@@ -199,6 +199,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
     const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
     const guideLineDragRef = useRef<{ axis: 'vertical' | 'horizontal'; value: number } | null>(null);
+    /** 드래그 중인 보조선: store는 건드리지 않고, mouseup 시에만 최종 위치 반영 (지나간 자리에 선이 생기는 버그 방지) */
+    const [guideLineDragPreview, setGuideLineDragPreview] = useState<{ axis: 'vertical' | 'horizontal'; startValue: number; currentValue: number } | null>(null);
+    const guideLineDragPreviewValueRef = useRef<number>(0);
     const [selectedGuideLine, setSelectedGuideLine] = useState<{ axis: 'vertical' | 'horizontal'; value: number } | null>(null);
 
     const [showStylePanel, setShowStylePanel] = useState(false);
@@ -710,12 +713,50 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const drawElements = screen.drawElements || [];
     const guideLines = screen.guideLines || { vertical: [], horizontal: [] };
 
+    /** 같은 위치에 겹친 보조선 합치기 (tolerance px 이내는 하나로) */
+    const dedupeGuides = (arr: number[], tolerance = 2): number[] => {
+        const sorted = [...arr].sort((a, b) => a - b);
+        const out: number[] = [];
+        for (const v of sorted) {
+            if (out.length === 0 || Math.abs(v - out[out.length - 1]) > tolerance) out.push(v);
+        }
+        return out;
+    };
+
     const addGuideLine = (axis: 'vertical' | 'horizontal') => {
         const cw = canvasRef.current?.clientWidth ?? 400;
         const ch = canvasRef.current?.clientHeight ?? 300;
         if (cw <= 0 || ch <= 0) return;
+
+        // 이미 저장된 중복 보조선(같은 위치에 여러 줄) 정리 → 0 눈금자에 겹쳐 보이던 현상 제거
+        const dedupedVertical = dedupeGuides(guideLines.vertical);
+        const dedupedHorizontal = dedupeGuides(guideLines.horizontal);
+        if (dedupedVertical.length !== guideLines.vertical.length || dedupedHorizontal.length !== guideLines.horizontal.length) {
+            const cleaned = { vertical: dedupedVertical, horizontal: dedupedHorizontal };
+            update({ guideLines: cleaned });
+            syncUpdate({ guideLines: cleaned });
+        }
+
+        // 눈금자와 동일한 간격으로 최대 개수 계산 → 보조선이 눈금자 개수를 넘지 않도록 제한
+        const centerX = cw / 2;
+        const centerY = ch / 2;
+        let maxVerticalTicks = 0;
+        const minH = -Math.floor(centerX / GRID_STEP) * GRID_STEP;
+        const maxH = Math.ceil(centerX / GRID_STEP) * GRID_STEP;
+        for (let v = minH; v <= maxH; v += GRID_STEP) {
+            if (centerX + v >= 0 && centerX + v <= cw) maxVerticalTicks++;
+        }
+        let maxHorizontalTicks = 0;
+        const minV = -Math.floor(centerY / GRID_STEP) * GRID_STEP;
+        const maxV = Math.ceil(centerY / GRID_STEP) * GRID_STEP;
+        for (let v = minV; v <= maxV; v += GRID_STEP) {
+            if (centerY + v >= 0 && centerY + v <= ch) maxHorizontalTicks++;
+        }
+        if (axis === 'vertical' && dedupedVertical.length >= maxVerticalTicks) return;
+        if (axis === 'horizontal' && dedupedHorizontal.length >= maxHorizontalTicks) return;
+
         const dim = axis === 'vertical' ? cw : ch;
-        const existing = axis === 'vertical' ? guideLines.vertical : guideLines.horizontal;
+        const existing = axis === 'vertical' ? dedupedVertical : dedupedHorizontal;
         const minGap = 20;
 
         const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
@@ -754,9 +795,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     : Math.round(centerYInner + Math.round((dim / 2 - centerYInner) / innerStepY) * innerStepY);
             }
         }
+        // 같은 위치에 중복 추가 방지 (0 눈금자에 여러 줄 쌓여 색이 진해지는 현상 제거)
+        if (existing.some(v => Math.abs(v - nextValue!) < 2)) return;
         const nextLines = {
-            vertical: axis === 'vertical' ? [...guideLines.vertical, nextValue] : [...guideLines.vertical],
-            horizontal: axis === 'horizontal' ? [...guideLines.horizontal, nextValue] : [...guideLines.horizontal],
+            vertical: axis === 'vertical' ? [...dedupedVertical, nextValue] : [...dedupedVertical],
+            horizontal: axis === 'horizontal' ? [...dedupedHorizontal, nextValue] : [...dedupedHorizontal],
         };
         nextLines.vertical.sort((a, b) => a - b);
         nextLines.horizontal.sort((a, b) => a - b);
@@ -764,12 +807,44 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         syncUpdate({ guideLines: nextLines });
     };
 
-    const moveGuideLine = (axis: 'vertical' | 'horizontal', oldValue: number, newValue: number): number => {
+    const removeAllGuideLines = () => {
+        const nextLines = { vertical: [], horizontal: [] };
+        update({ guideLines: nextLines });
+        syncUpdate({ guideLines: nextLines });
+    };
+
+    const addAllGuideLines = () => {
+        const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+        const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
+        const outerW = canvasW - canvasInsetLocal * 2;
+        const outerH = canvasH - canvasInsetLocal * 2;
+        if (outerW <= 0 || outerH <= 0) return;
+        // 세로/가로줄 한 줄씩 추가할 때와 동일한 공식 사용 → 눈금자와 정렬
+        const innerStepX = (GRID_STEP * canvasW) / outerW;
+        const innerStepY = (GRID_STEP * canvasH) / outerH;
+        const centerXInner = canvasW / 2;
+        const centerYInner = canvasH / 2;
+        const vertical: number[] = [];
+        for (let k = Math.ceil(-centerXInner / innerStepX); centerXInner + k * innerStepX <= canvasW; k++) {
+            const x = centerXInner + k * innerStepX;
+            if (x >= 0) vertical.push(Math.round(x));
+        }
+        const horizontal: number[] = [];
+        for (let l = Math.ceil(-centerYInner / innerStepY); centerYInner + l * innerStepY <= canvasH; l++) {
+            const y = centerYInner + l * innerStepY;
+            if (y >= 0) horizontal.push(Math.round(y));
+        }
+        const nextLines = { vertical, horizontal };
+        update({ guideLines: nextLines });
+        syncUpdate({ guideLines: nextLines });
+    };
+
+    /** 그리드에 맞춘 위치만 계산 (store 갱신 없음). 드래그 미리보기·moveGuideLine 공용 */
+    const getSnappedGuideLinePosition = (axis: 'vertical' | 'horizontal', rawValue: number): number => {
         const cw = canvasRef.current?.clientWidth ?? 400;
         const ch = canvasRef.current?.clientHeight ?? 300;
         const max = axis === 'vertical' ? cw : ch;
-        let clamped = Math.max(2, Math.min(max - 2, newValue));
-
+        let clamped = Math.max(2, Math.min(max - 2, rawValue));
         const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
         const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
         const outerW = canvasW - canvasInsetLocal * 2;
@@ -781,11 +856,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         clamped = axis === 'vertical'
             ? Math.round(centerXInner + Math.round((clamped - centerXInner) / innerStepX) * innerStepX)
             : Math.round(centerYInner + Math.round((clamped - centerYInner) / innerStepY) * innerStepY);
-        clamped = Math.max(2, Math.min(max - 2, clamped));
+        return Math.max(2, Math.min(max - 2, clamped));
+    };
 
+    const moveGuideLine = (axis: 'vertical' | 'horizontal', oldValue: number, newValue: number): number => {
+        const clamped = getSnappedGuideLinePosition(axis, newValue);
         const current = getScreenById(screen.id)?.guideLines;
         const vert = current?.vertical ?? guideLines.vertical;
         const horz = current?.horizontal ?? guideLines.horizontal;
+        const arr = axis === 'vertical' ? vert : horz;
+        const others = arr.filter(v => Math.abs(v - oldValue) > 2);
+        if (others.some(v => Math.abs(v - clamped) < 2)) return oldValue;
+
         const nextLines = {
             vertical: axis === 'vertical' ? vert.map(v => v === oldValue ? clamped : v) : [...vert],
             horizontal: axis === 'horizontal' ? horz.map(v => v === oldValue ? clamped : v) : [...horz],
@@ -810,33 +892,36 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         e.stopPropagation();
         e.preventDefault();
         guideLineDragRef.current = { axis, value };
+        setGuideLineDragPreview({ axis, startValue: value, currentValue: value });
         let hasMoved = false;
         const rect = canvasRef.current.getBoundingClientRect();
         const scaleX = canvasRef.current.clientWidth / rect.width;
         const scaleY = canvasRef.current.clientHeight / rect.height;
-        const cw = canvasRef.current.clientWidth;
-        const ch = canvasRef.current.clientHeight;
 
         const onMove = (me: MouseEvent) => {
             if (!guideLineDragRef.current) return;
             hasMoved = true;
-            const { axis: ax, value: oldVal } = guideLineDragRef.current;
+            const { axis: ax } = guideLineDragRef.current;
             const newVal = ax === 'vertical'
                 ? Math.round((me.clientX - rect.left) * scaleX)
                 : Math.round((me.clientY - rect.top) * scaleY);
-            const clamped = Math.max(2, Math.min((ax === 'vertical' ? cw : ch) - 2, newVal));
-            const snapped = moveGuideLine(ax, oldVal, clamped);
-            guideLineDragRef.current.value = snapped;
+            const snapped = getSnappedGuideLinePosition(ax, newVal);
+            guideLineDragPreviewValueRef.current = snapped;
+            setGuideLineDragPreview(prev => prev ? { ...prev, currentValue: snapped } : null);
         };
         const onUp = () => {
             if (guideLineDragRef.current) {
-                const current = getScreenById(screen.id)?.guideLines;
-                if (current) syncUpdate({ guideLines: current });
-                if (!hasMoved) {
-                    setSelectedGuideLine({ axis, value: guideLineDragRef.current.value });
-                } else {
+                const { axis: ax, value: startVal } = guideLineDragRef.current;
+                if (hasMoved) {
+                    const finalValue = guideLineDragPreviewValueRef.current;
+                    moveGuideLine(ax, startVal, finalValue);
+                    const current = getScreenById(screen.id)?.guideLines;
+                    if (current) syncUpdate({ guideLines: current });
                     setSelectedGuideLine(null);
+                } else {
+                    setSelectedGuideLine({ axis: ax, value: startVal });
                 }
+                setGuideLineDragPreview(null);
             }
             guideLineDragRef.current = null;
             window.removeEventListener('mousemove', onMove, true);
@@ -1194,25 +1279,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const centerY = (minNewY + maxBottom) / 2;
 
             // Smart Guides: 다른 요소와 정렬 시 스냅 + 가이드라인 표시
-            // - 드래그 중인 그룹을 완전히 감싸는 rect(컨테이너)는 정렬 후보에서 제외하여,
-            //   컨테이너 안의 자식들(예: table 2개)끼리도 스마트 그리드가 적용되도록 함.
+            // - 드래그 중인 그룹을 완전히 감싸는 rect(컨테이너)도 정렬 후보에 포함하여,
+            //   자식 도형(B)이 컨테이너(A)의 가로/세로 중앙에 맞춰질 때 스마트 그리드가 나오도록 함.
             // - groupId 로 묶인 요소들은 하나의 바운딩 박스로만 스냅/정렬 대상으로 사용하여,
             //   그룹 내부 개별 요소들이 각각 따로 스냅되지 않도록 함.
-            const groupBox = { left: minNewX, right: maxRight, top: minNewY, bottom: maxBottom };
 
-            // 드래그 중이 아닌 요소들만 대상으로 삼되, 컨테이너 rect는 기존 로직대로 제외
-            const staticElements = drawElements
-                .filter(el => !draggingElementIds.includes(el.id))
-                .filter(el => {
-                    if (el.type !== 'rect') return true;
-                    const box = { left: el.x, right: el.x + el.width, top: el.y, bottom: el.y + el.height };
-                    const fullyContains =
-                        groupBox.left >= box.left &&
-                        groupBox.right <= box.right &&
-                        groupBox.top >= box.top &&
-                        groupBox.bottom <= box.bottom;
-                    return !fullyContains;
-                });
+            // 드래그 중이 아닌 요소들만 대상 (컨테이너 rect 포함 → 중앙 정렬 시 가이드 표시)
+            const staticElements = drawElements.filter(el => !draggingElementIds.includes(el.id));
 
             // groupId 가 있는 요소들은 그룹 바운딩 박스로 합치고, 나머지는 단일 요소로 사용
             const groupedById = new Map<string, typeof staticElements>();
@@ -2619,6 +2692,33 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         </PremiumTooltip>
                                                                     </div>
                                                                 </div>
+                                                                <div className="flex flex-col gap-1 pt-1 mt-1 border-t border-gray-100">
+                                                                    <span className="text-[10px] font-medium text-gray-500">격자 삭제</span>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <PremiumTooltip label="모든 세로·가로 격자선 제거">
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    removeAllGuideLines();
+                                                                                }}
+                                                                                className="px-2 py-1 text-[11px] rounded-md bg-gray-100 hover:bg-red-50 text-gray-700 hover:text-red-600"
+                                                                            >
+                                                                                모든 격자 삭제
+                                                                            </button>
+                                                                        </PremiumTooltip>
+                                                                        <PremiumTooltip label="눈금자 간격으로 세로·가로 격자선 전부 추가">
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    addAllGuideLines();
+                                                                                }}
+                                                                                className="px-2 py-1 text-[11px] rounded-md bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600"
+                                                                            >
+                                                                                모든 격자 추가
+                                                                            </button>
+                                                                        </PremiumTooltip>
+                                                                    </div>
+                                                                </div>
                                                             </div>
                                                         );
                                                     })(),
@@ -3835,17 +3935,25 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                             />
                                                         )}
 
-                                                        {/* Canvas Grid Lines (보조선) - 잠금/비활성화 시 숨김, 격자 잠금 시 이동/선택 불가 */}
-                                                        {!isLocked && screen.guideLinesVisible !== false && guideLines.vertical.map((vx) => (
+                                                        {/* Canvas Grid Lines (보조선) - 잠금/비활성화 시 숨김, 격자 잠금 시 이동/선택 불가. 드래그 중에는 원래 위치 제외·미리보기 위치만 표시 */}
+                                                        {!isLocked && screen.guideLinesVisible !== false && (() => {
+                                                            const verticalPositions = guideLineDragPreview?.axis === 'vertical'
+                                                                ? (() => {
+                                                                    const rest = guideLines.vertical.filter(v => v !== guideLineDragPreview.startValue);
+                                                                    if (rest.some(v => Math.abs(v - guideLineDragPreview.currentValue) < 2)) return rest;
+                                                                    return [...rest, guideLineDragPreview.currentValue].sort((a, b) => a - b);
+                                                                })()
+                                                                : guideLines.vertical;
+                                                            return verticalPositions.map((vx) => (
                                                             <div
-                                                                key={`grid-v-${vx}`}
+                                                                key={guideLineDragPreview?.axis === 'vertical' && guideLineDragPreview.currentValue === vx ? `grid-v-preview-${vx}` : `grid-v-${vx}`}
                                                                 data-guide-line
                                                                 className="group nodrag"
                                                                 style={{
                                                                     position: 'absolute',
                                                                     left: vx - 12,
                                                                     top: 0,
-                                                                    bottom: 0,
+                                                                    height: canvasH,
                                                                     width: 24,
                                                                     zIndex: 4500,
                                                                     cursor: screen.guideLinesLocked ? 'default' : 'col-resize',
@@ -3863,9 +3971,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         position: 'absolute',
                                                                         left: 11,
                                                                         top: 0,
-                                                                        bottom: 0,
+                                                                        height: canvasH,
                                                                         width: 2,
-                                                                        backgroundColor: 'rgba(232, 223, 177, 0.35)',
+                                                                        backgroundColor: screen.guideLinesLocked ? 'rgba(239, 239, 239, 0.5)' : 'rgba(232, 223, 177, 0.35)',
                                                                         pointerEvents: 'none',
                                                                     }}
                                                                 />
@@ -3889,10 +3997,19 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     </PremiumTooltip>
                                                                 </div>
                                                             </div>
-                                                        ))}
-                                                        {!isLocked && screen.guideLinesVisible !== false && guideLines.horizontal.map((vy) => (
+                                                        ));
+                                                        })()}
+                                                        {!isLocked && screen.guideLinesVisible !== false && (() => {
+                                                            const horizontalPositions = guideLineDragPreview?.axis === 'horizontal'
+                                                                ? (() => {
+                                                                    const rest = guideLines.horizontal.filter(v => v !== guideLineDragPreview.startValue);
+                                                                    if (rest.some(v => Math.abs(v - guideLineDragPreview.currentValue) < 2)) return rest;
+                                                                    return [...rest, guideLineDragPreview.currentValue].sort((a, b) => a - b);
+                                                                })()
+                                                                : guideLines.horizontal;
+                                                            return horizontalPositions.map((vy) => (
                                                             <div
-                                                                key={`grid-h-${vy}`}
+                                                                key={guideLineDragPreview?.axis === 'horizontal' && guideLineDragPreview.currentValue === vy ? `grid-h-preview-${vy}` : `grid-h-${vy}`}
                                                                 data-guide-line
                                                                 className="group nodrag"
                                                                 style={{
@@ -3919,7 +4036,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         right: 0,
                                                                         top: 11,
                                                                         height: 2,
-                                                                        backgroundColor: 'rgba(232, 223, 177, 0.35)',
+                                                                        backgroundColor: screen.guideLinesLocked ? 'rgba(239, 239, 239, 0.5)' : 'rgba(232, 223, 177, 0.35)',
                                                                         pointerEvents: 'none',
                                                                     }}
                                                                 />
@@ -3943,7 +4060,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     </PremiumTooltip>
                                                                 </div>
                                                             </div>
-                                                        ))}
+                                                        ));
+                                                        })()}
 
                                                         {/* Smart Guides - 정렬 시 가이드라인 */}
                                                         {alignmentGuides && <AlignmentGuidesOverlay guides={alignmentGuides} />}
