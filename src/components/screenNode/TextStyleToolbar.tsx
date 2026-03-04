@@ -118,6 +118,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
             fontStyle: s.fontStyle || el.fontStyle || 'normal',
             textDecoration: s.textDecoration || el.textDecoration || 'none',
             fontFamily: s.fontFamily || el.fontFamily || 'Pretendard',
+            fontSize: s.fontSize ?? el.fontSize ?? 14,
         };
     };
 
@@ -294,7 +295,21 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                         onChange={(e) => {
                             const px = Math.min(72, Math.max(8, parseInt(e.target.value) || 12));
                             const applied = applyFontSizePx(px);
-                            if (!applied && !fromTable) updateElement(el.id, { fontSize: px });
+                            if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+                                const cellIdx = textSelectionFromTable.cellIndex;
+                                const rows = el.tableRows || 3;
+                                const cols = el.tableCols || 3;
+                                const totalCells = rows * cols;
+                                const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+                                const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
+                                    if (!indices.includes(i)) return s;
+                                    return { ...(s || {}), fontSize: px };
+                                });
+                                update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+                                syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+                            } else if (!fromTable) {
+                                updateElement(el.id, { fontSize: px });
+                            }
                             setTextStyleToolbarRefresh(r => r + 1);
                         }}
                         className="w-10 bg-transparent text-[11px] font-bold text-gray-700 outline-none"

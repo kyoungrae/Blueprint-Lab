@@ -3035,7 +3035,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             const px = parseFloat(computed.fontSize);
                             return isNaN(px) ? null : Math.round(px);
                         };
-                        const displayFontSize = getFontSizeFromSelection() ?? defaultFontSize;
+                        const tableCellFontSize = fromTable && textSelectionFromTable
+                            ? (el.tableCellStyles?.[textSelectionFromTable.cellIndex]?.fontSize ?? el.fontSize ?? 14)
+                            : null;
+                        const displayFontSize = fromTable && tableCellFontSize != null
+                            ? tableCellFontSize
+                            : (getFontSizeFromSelection() ?? defaultFontSize);
                         const applyToSelection = (fn: () => void): boolean => {
                             const sel = window.getSelection();
                             if (sel && !sel.isCollapsed) {
@@ -3501,10 +3506,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                             }
                                                                                                         }}
                                                                                                         onMouseDown={(e) => e.stopPropagation()}
-                                                                                                        className="w-full h-full bg-white border-none outline-none p-1 text-[10px] absolute inset-0 z-[20] nodrag nopan"
+                                                                                                        className="w-full h-full bg-white border-none outline-none p-1 absolute inset-0 z-[20] nodrag nopan"
                                                                                                         style={{
                                                                                                             whiteSpace: 'pre-wrap',
                                                                                                             wordBreak: 'break-word',
+                                                                                                            fontSize: (cellStyle.fontSize ?? el.fontSize ?? 14),
                                                                                                             fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
                                                                                                             fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
                                                                                                             textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
@@ -3520,6 +3526,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                             justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
                                                                                                             wordBreak: 'break-word',
                                                                                                             unicodeBidi: 'isolate',
+                                                                                                            fontSize: cellStyle.fontSize ?? el.fontSize ?? 14,
                                                                                                             fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
                                                                                                             fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
                                                                                                             textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
