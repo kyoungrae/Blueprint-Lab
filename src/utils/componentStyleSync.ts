@@ -1,13 +1,15 @@
 import type { DrawElement, Screen } from '../types/screenDesign';
 
-/** 동기화할 스타일 속성 (위치/크기 제외). tableCellData/tableCellDataV2는 컴포넌트에 작성된 셀만 동기화 */
+/** 동기화할 스타일 속성 (위치/크기 제외).
+ *  - 표 구조(tableRows, tableCols, 셀 수/크기 등)는 인스턴스에서 자유롭게 수정할 수 있도록 SYNC 대상에서 제외한다.
+ *  - tableCellData/tableCellDataV2는 아래 mergeTableCellData에서 컴포넌트에 작성된 셀만 별도로 동기화한다.
+ */
 const STYLE_KEYS: (keyof DrawElement)[] = [
     'fill', 'stroke', 'strokeWidth', 'strokeStyle', 'strokeOpacity',
     'fillOpacity', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'fontFamily', 'color', 'text', 'textAlign', 'verticalAlign',
     'borderRadius', 'opacity', 'description',
     'imageUrl', 'imageCrop', 'imageRotation', 'imageFlipX', 'imageFlipY',
-    'tableRows', 'tableCols', 'tableCellColors', 'tableCellStyles',
-    'tableColWidths', 'tableRowHeights', 'tableRowColWidths', 'tableCellSpans',
+    // 표 구조 관련 키(tableRows, tableCols, 셀 수/크기 등)는 제외
     'tableBorderTop', 'tableBorderTopWidth', 'tableBorderTopStyle',
     'tableBorderBottom', 'tableBorderBottomWidth', 'tableBorderBottomStyle',
     'tableBorderLeft', 'tableBorderLeftWidth', 'tableBorderLeftStyle',
@@ -51,6 +53,34 @@ function mergeTableCellData(target: DrawElement, source: DrawElement): DrawEleme
         const tgtVal = newV2[i]?.content ?? newLegacy[i] ?? '';
         if (srcVal === tgtVal) continue;
 
+        const tgtContent = (tgtVal || '').trim();
+        // 컴포넌트 표 셀에 기본 텍스트가 있더라도, 인스턴스에서 사용자가 해당 셀 내용을 변경했다면 덮어쓰지 않는다.
+        if (tgtContent.length > 0 && tgtVal !== srcVal) {
+            // #region agent log
+            try {
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Debug-Session-Id': '9b5a26',
+                    },
+                    body: JSON.stringify({
+                        sessionId: '9b5a26',
+                        runId: 'pre-fix',
+                        hypothesisId: 'H3',
+                        location: 'componentStyleSync.ts:mergeTableCellData',
+                        message: 'Skip overwriting user-modified table cell',
+                        data: { cellIndex: i, srcValLength: srcVal.length, tgtValLength: tgtVal.length },
+                        timestamp: Date.now(),
+                    }),
+                }).catch(() => { });
+            } catch {
+                // ignore logging errors
+            }
+            // #endregion agent log
+            continue;
+        }
+
         newLegacy[i] = srcVal;
         if (newV2[i]) newV2[i] = { ...newV2[i], content: srcVal };
         changed = true;
@@ -70,8 +100,46 @@ function applyStyleFromSource(target: DrawElement, source: DrawElement): DrawEle
     let changed = false;
     for (const key of STYLE_KEYS) {
         if (key === 'text') {
+            // 컴포넌트에서 가져온 객체라도 화면 설계 인스턴스에서 사용자가 텍스트를 수정했다면 덮어쓰지 않는다.
             if (target.hasComponentText === false) continue;
-            if (target.hasComponentText === undefined && target.fromComponentId && !(source.text || '').trim().length) continue;
+
+            const srcText = (source.text || '').trim();
+            const tgtText = (target.text || '').trim();
+
+            // 컴포넌트 인스턴스이며, 원본/인스턴스 모두 텍스트가 있고 값이 다르면 → 사용자 override로 간주하고 동기화 생략
+            if (target.fromComponentId && srcText.length > 0 && tgtText.length > 0 && srcText !== tgtText) {
+                // #region agent log
+                try {
+                    fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Debug-Session-Id': '9b5a26',
+                        },
+                        body: JSON.stringify({
+                            sessionId: '9b5a26',
+                            runId: 'pre-fix',
+                            hypothesisId: 'H2',
+                            location: 'componentStyleSync.ts:applyStyleFromSource',
+                            message: 'Skip overwriting user-modified text element',
+                            data: {
+                                fromComponentId: target.fromComponentId,
+                                hasComponentText: target.hasComponentText ?? null,
+                                srcTextLength: srcText.length,
+                                tgtTextLength: tgtText.length,
+                            },
+                            timestamp: Date.now(),
+                        }),
+                    }).catch(() => { });
+                } catch {
+                    // ignore logging errors
+                }
+                // #endregion agent log
+                continue;
+            }
+
+            // 컴포넌트 원본에 텍스트가 없으면 인스턴스 텍스트를 유지
+            if (target.hasComponentText === undefined && target.fromComponentId && srcText.length === 0) continue;
         }
         const srcVal = source[key];
         if (srcVal === undefined) continue;

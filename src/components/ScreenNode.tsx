@@ -1399,6 +1399,39 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     const updateElement = (id: string, updates: Partial<DrawElement>) => {
         const nextElements = drawElements.map(el => el.id === id ? { ...el, ...updates } : el);
+
+        // #region agent log
+        try {
+            const targetEl = drawElements.find(el => el.id === id);
+            if (updates.text !== undefined && targetEl) {
+                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Debug-Session-Id': '9b5a26',
+                    },
+                    body: JSON.stringify({
+                        sessionId: '9b5a26',
+                        runId: 'pre-fix',
+                        hypothesisId: 'H1',
+                        location: 'ScreenNode.tsx:updateElement',
+                        message: 'updateElement text change for component instance',
+                        data: {
+                            screenId: screen.id,
+                            elementId: id,
+                            fromComponentId: targetEl.fromComponentId ?? null,
+                            hasComponentText: targetEl.hasComponentText ?? null,
+                            newTextLength: (updates.text ?? '').length,
+                        },
+                        timestamp: Date.now(),
+                    }),
+                }).catch(() => { });
+            }
+        } catch {
+            // ignore logging errors
+        }
+        // #endregion agent log
+
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
@@ -3479,6 +3512,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                             newData[cellIndex] = html;
                                                                                                             const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
                                                                                                             update({ drawElements: nextElements });
+                                                                                                            syncUpdate({ drawElements: nextElements });
                                                                                                         }}
                                                                                                         onSelectionChange={(rect) => {
                                                                                                             setTextSelectionRect(rect);
