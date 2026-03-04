@@ -58,69 +58,12 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
         if (divRef.current) {
             // Check if we are in the middle of IME composition (Korean, Japanese, etc.)
             if (e?.nativeEvent && (e.nativeEvent as any).isComposing) return;
-
-            // #region agent log
-            try {
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Debug-Session-Id': '9b5a26',
-                    },
-                    body: JSON.stringify({
-                        sessionId: '9b5a26',
-                        runId: 'pre-fix-2',
-                        hypothesisId: 'H4',
-                        location: 'DrawTextComponent.tsx:handleInput',
-                        message: 'DrawTextComponent handleInput',
-                        data: {
-                            elementId: element.id,
-                            fromComponentId: element.fromComponentId ?? null,
-                            hasComponentText: element.hasComponentText ?? null,
-                            textLength: (divRef.current.innerHTML || '').length,
-                        },
-                        timestamp: Date.now(),
-                    }),
-                }).catch(() => { });
-            } catch {
-                // ignore logging errors
-            }
-            // #endregion agent log
-
             onUpdate({ text: divRef.current.innerHTML });
         }
     };
 
     const handleCompositionEnd = () => {
         if (divRef.current) {
-            // #region agent log
-            try {
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Debug-Session-Id': '9b5a26',
-                    },
-                    body: JSON.stringify({
-                        sessionId: '9b5a26',
-                        runId: 'pre-fix-2',
-                        hypothesisId: 'H4',
-                        location: 'DrawTextComponent.tsx:handleCompositionEnd',
-                        message: 'DrawTextComponent handleCompositionEnd',
-                        data: {
-                            elementId: element.id,
-                            fromComponentId: element.fromComponentId ?? null,
-                            hasComponentText: element.hasComponentText ?? null,
-                            textLength: (divRef.current.innerHTML || '').length,
-                        },
-                        timestamp: Date.now(),
-                    }),
-                }).catch(() => { });
-            } catch {
-                // ignore logging errors
-            }
-            // #endregion agent log
-
             onUpdate({ text: divRef.current.innerHTML });
         }
     };

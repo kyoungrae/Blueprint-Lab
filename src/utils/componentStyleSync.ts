@@ -55,31 +55,7 @@ function mergeTableCellData(target: DrawElement, source: DrawElement): DrawEleme
 
         const tgtContent = (tgtVal || '').trim();
         // 컴포넌트 표 셀에 기본 텍스트가 있더라도, 인스턴스에서 사용자가 해당 셀 내용을 변경했다면 덮어쓰지 않는다.
-        if (tgtContent.length > 0 && tgtVal !== srcVal) {
-            // #region agent log
-            try {
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Debug-Session-Id': '9b5a26',
-                    },
-                    body: JSON.stringify({
-                        sessionId: '9b5a26',
-                        runId: 'pre-fix',
-                        hypothesisId: 'H3',
-                        location: 'componentStyleSync.ts:mergeTableCellData',
-                        message: 'Skip overwriting user-modified table cell',
-                        data: { cellIndex: i, srcValLength: srcVal.length, tgtValLength: tgtVal.length },
-                        timestamp: Date.now(),
-                    }),
-                }).catch(() => { });
-            } catch {
-                // ignore logging errors
-            }
-            // #endregion agent log
-            continue;
-        }
+        if (tgtContent.length > 0 && tgtVal !== srcVal) continue;
 
         newLegacy[i] = srcVal;
         if (newV2[i]) newV2[i] = { ...newV2[i], content: srcVal };
@@ -108,33 +84,6 @@ function applyStyleFromSource(target: DrawElement, source: DrawElement): DrawEle
 
             // 컴포넌트 인스턴스이며, 원본/인스턴스 모두 텍스트가 있고 값이 다르면 → 사용자 override로 간주하고 동기화 생략
             if (target.fromComponentId && srcText.length > 0 && tgtText.length > 0 && srcText !== tgtText) {
-                // #region agent log
-                try {
-                    fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Debug-Session-Id': '9b5a26',
-                        },
-                        body: JSON.stringify({
-                            sessionId: '9b5a26',
-                            runId: 'pre-fix',
-                            hypothesisId: 'H2',
-                            location: 'componentStyleSync.ts:applyStyleFromSource',
-                            message: 'Skip overwriting user-modified text element',
-                            data: {
-                                fromComponentId: target.fromComponentId,
-                                hasComponentText: target.hasComponentText ?? null,
-                                srcTextLength: srcText.length,
-                                tgtTextLength: tgtText.length,
-                            },
-                            timestamp: Date.now(),
-                        }),
-                    }).catch(() => { });
-                } catch {
-                    // ignore logging errors
-                }
-                // #endregion agent log
                 continue;
             }
 
