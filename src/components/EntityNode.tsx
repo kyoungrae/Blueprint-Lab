@@ -238,13 +238,13 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
     const user = useAuthStore((s) => s.user);
     const availableTypes = DATA_TYPES[dbType];
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(entityId);
-
-    if (!entity) return null;
-    const isLocalLocked = entity.isLocked ?? true; // Default to locked
-    const isLocked = isLocalLocked || isLockedByOther;
-
     const [entityNameComposing, setEntityNameComposing] = useState<string | null>(null);
     const [entityCommentComposing, setEntityCommentComposing] = useState<string | null>(null);
+
+    if (!entity) return null;
+
+    const isLocalLocked = entity.isLocked ?? true; // Default to locked
+    const isLocked = isLocalLocked || isLockedByOther;
 
     const handleNameChange = (newName: string) => {
         if (isLocked) return;

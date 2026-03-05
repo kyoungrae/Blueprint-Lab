@@ -32,9 +32,10 @@ import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { OnlineUsers, UserCursors } from './collaboration';
 import PremiumTooltip from './screenNode/PremiumTooltip';
-import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Zap, Undo2, Redo2, History, Square } from 'lucide-react';
+import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Zap, Undo2, Redo2, History, Square, Link } from 'lucide-react';
 import { getLayoutedElements } from '../utils/layout';
 import { getForceLayoutedElements } from '../utils/forceLayout';
+import { getRelationshipLayoutedElements } from '../utils/relationshipLayout';
 import { generateSQLFromERD } from '../utils/sqlGenerator';
 import { copyToClipboard } from '../utils/clipboard';
 
@@ -56,6 +57,176 @@ const UserCursorsLayer: React.FC = () => {
         >
             <UserCursors />
         </div>
+    );
+};
+
+/** Reports viewport to parent only when zoom/pan has been idle for VIEWPORT_DEBOUNCE_MS (no parent re-renders during gesture). */
+const VIEWPORT_DEBOUNCE_MS = 200;
+const ViewportDebounceUpdater: React.FC<{ onViewportIdle: (viewport: { x: number; y: number; zoom: number }) => void }> = ({ onViewportIdle }) => {
+    const { x, y, zoom } = useViewport();
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const viewportRef = useRef({ x, y, zoom });
+    viewportRef.current = { x, y, zoom };
+    useEffect(() => {
+        if (debounceRef.current != null) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            debounceRef.current = null;
+            onViewportIdle(viewportRef.current);
+        }, VIEWPORT_DEBOUNCE_MS);
+        return () => {
+            if (debounceRef.current != null) clearTimeout(debounceRef.current);
+        };
+    }, [x, y, zoom, onViewportIdle]);
+    return null;
+};
+
+const HANDLE_SIZE = 8;
+interface SectionOverlayLayerProps {
+    sections: Section[];
+    hoveredSectionId: string | null;
+    setHoveredSectionId: (id: string | null) => void;
+    editingSectionId: string | null;
+    editingSectionName: string;
+    setEditingSectionName: (s: string) => void;
+    setEditingSectionId: (id: string | null) => void;
+    startEditingSectionName: (section: Section) => void;
+    saveSectionName: (sectionId: string) => void;
+    deleteSection: (id: string) => void;
+    onSectionBodyMouseDown: (e: React.MouseEvent, sectionId: string) => void;
+    onSectionResizeMouseDown: (e: React.MouseEvent, sectionId: string, handle: string) => void;
+    sectionHeadersContainerRef: React.RefObject<HTMLDivElement | null>;
+}
+/** Section overlays (background + headers). Uses useViewport() so only this layer re-renders during zoom/pan; parent stays idle. */
+const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
+    const { x, y, zoom } = useViewport();
+    const {
+        sections,
+        hoveredSectionId,
+        setHoveredSectionId,
+        editingSectionId,
+        editingSectionName,
+        setEditingSectionName,
+        setEditingSectionId,
+        startEditingSectionName,
+        saveSectionName,
+        deleteSection,
+        onSectionBodyMouseDown,
+        onSectionResizeMouseDown,
+        sectionHeadersContainerRef,
+    } = props;
+    if (sections.length === 0) return null;
+    const transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    const sectionList = sections as Section[];
+    return (
+        <>
+            <div
+                className="absolute inset-0 z-[1] overflow-visible pointer-events-none"
+                style={{ transform, transformOrigin: '0 0' }}
+            >
+                {sectionList.map((s) => (
+                    <div
+                        key={s.id}
+                        className={`absolute border-2 border-blue-400/80 bg-blue-400/5 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-blue-400/40' : 'shadow-none'}`}
+                        style={{ left: s.position.x, top: s.position.y, width: s.size.width, height: s.size.height }}
+                    />
+                ))}
+            </div>
+            <div
+                ref={sectionHeadersContainerRef}
+                className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
+                style={{ transform, transformOrigin: '0 0' }}
+            >
+                {sectionList.map((s) => {
+                    const isEditing = editingSectionId === s.id;
+                    const w = s.size.width;
+                    const h = s.size.height;
+                    const handles: { key: string; cursor: string; left: number; top: number }[] = [
+                        { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
+                        { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
+                        { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
+                        { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
+                        { key: 'se', cursor: 'nwse-resize', left: w, top: h },
+                        { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
+                        { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
+                        { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
+                    ];
+                    return (
+                        <div
+                            key={s.id}
+                            className="absolute pointer-events-none"
+                            style={{ left: s.position.x, top: s.position.y, width: s.size.width, height: s.size.height }}
+                        >
+                            <div
+                                data-section-header
+                                className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-blue-400/15 border-b border-blue-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
+                                onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
+                                onMouseEnter={() => setHoveredSectionId(s.id)}
+                                onMouseLeave={() => setHoveredSectionId(null)}
+                            >
+                                {isEditing ? (
+                                    <input
+                                        type="text"
+                                        value={editingSectionName}
+                                        onChange={(e) => setEditingSectionName(e.target.value)}
+                                        onBlur={() => saveSectionName(s.id)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') saveSectionName(s.id);
+                                            if (e.key === 'Escape') {
+                                                setEditingSectionId(null);
+                                                setEditingSectionName('');
+                                            }
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="flex-1 min-w-0 bg-white/90 border border-blue-300 rounded px-1.5 py-0.5 text-xs font-semibold text-gray-800 outline-none focus:ring-1 focus:ring-blue-400"
+                                        autoFocus
+                                    />
+                                ) : (
+                                    <span
+                                        className="text-xl font-semibold text-gray-700 truncate flex-1 min-w-0"
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            startEditingSectionName(s);
+                                        }}
+                                    >
+                                        {s.name || 'Section'}
+                                    </span>
+                                )}
+                                <PremiumTooltip placement="bottom" offsetBottom={30} label="섹션 삭제">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            deleteSection(s.id);
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                    </button>
+                                </PremiumTooltip>
+                            </div>
+                            {handles.map((handle) => (
+                                <div
+                                    key={handle.key}
+                                    className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
+                                    style={{
+                                        left: handle.left,
+                                        top: handle.top,
+                                        width: HANDLE_SIZE,
+                                        height: HANDLE_SIZE,
+                                        transform: 'translate(-50%, -50%)',
+                                        cursor: handle.cursor,
+                                    }}
+                                    onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
+                                />
+                            ))}
+                        </div>
+                    );
+                })}
+            </div>
+        </>
     );
 };
 
@@ -124,11 +295,15 @@ const ERDCanvasContent: React.FC = () => {
     const paneContainerRef = React.useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
     const isDraggingRef = React.useRef(false);
+    const skipNextEntitySyncRef = React.useRef(false);
     const [paneSize, setPaneSize] = useState<{ width: number; height: number } | null>(null);
     const [visibleNodeIds, setVisibleNodeIds] = useState<Set<string>>(() => new Set());
-    const visibleThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const paneSizeRef = useRef<{ width: number; height: number } | null>(null);
+    const entitiesRef = useRef<typeof entities>([]);
+    paneSizeRef.current = paneSize;
+    entitiesRef.current = entities;
+
     const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
-    const { x: viewportX, y: viewportY, zoom: viewportZoom } = useViewport();
 
     // Pane size for viewport culling
     useEffect(() => {
@@ -142,37 +317,54 @@ const ERDCanvasContent: React.FC = () => {
         return () => ro.disconnect();
     }, []);
 
-    // Which nodes are in view (throttled 100ms) — reduces setNodes during pan/zoom
-    const VISIBLE_THROTTLE_MS = 100;
+    const computeInView = useCallback((viewport: { x: number; y: number; zoom: number }, pane: { width: number; height: number } | null, ents: typeof entities) => {
+        if (!pane || !ents.length) return new Set<string>();
+        const z = viewport.zoom || 1;
+        const left = -viewport.x / z;
+        const top = -viewport.y / z;
+        const w = pane.width / z;
+        const h = pane.height / z;
+        const margin = 280;
+        const inView = new Set<string>();
+        ents.forEach((e) => {
+            const px = e.position.x;
+            const py = e.position.y;
+            if (px >= left - margin && px <= left + w + margin && py >= top - margin && py <= top + h + margin) {
+                inView.add(e.id);
+            }
+        });
+        return inView;
+    }, []);
+
+    // Called only when zoom/pan has been idle 200ms (ViewportDebounceUpdater). Parent does not re-render during gesture.
+    const onViewportIdle = useCallback((viewport: { x: number; y: number; zoom: number }) => {
+        const pane = paneSizeRef.current;
+        const ents = entitiesRef.current;
+        if (!pane || !ents.length) {
+            setVisibleNodeIds((prev) => (prev.size === 0 ? prev : new Set()));
+            return;
+        }
+        const inView = computeInView(viewport, pane, ents);
+        setVisibleNodeIds((prev) => {
+            if (prev.size !== inView.size || [...prev].some((id) => !inView.has(id))) return inView;
+            return prev;
+        });
+    }, [computeInView]);
+
+    // When paneSize or entities change (not viewport), recompute visibleNodeIds once using current viewport
     useEffect(() => {
         if (!paneSize || !entities.length) {
             setVisibleNodeIds((prev) => (prev.size === 0 ? prev : new Set()));
             return;
         }
-        if (visibleThrottleRef.current != null) clearTimeout(visibleThrottleRef.current);
-        visibleThrottleRef.current = setTimeout(() => {
-            visibleThrottleRef.current = null;
-            const z = viewportZoom || 1;
-            const left = -viewportX / z;
-            const top = -viewportY / z;
-            const w = paneSize.width / z;
-            const h = paneSize.height / z;
-            const margin = 280;
-            const inView = new Set<string>();
-            entities.forEach((e) => {
-                const px = e.position.x;
-                const py = e.position.y;
-                if (px >= left - margin && px <= left + w + margin && py >= top - margin && py <= top + h + margin) {
-                    inView.add(e.id);
-                }
-            });
-            setVisibleNodeIds((prev) => {
-                if (prev.size !== inView.size || [...prev].some((id) => !inView.has(id))) return inView;
-                return prev;
-            });
-        }, VISIBLE_THROTTLE_MS);
-        return () => { if (visibleThrottleRef.current != null) clearTimeout(visibleThrottleRef.current); };
-    }, [viewportX, viewportY, viewportZoom, entities, paneSize]);
+        const vp = getViewport();
+        const inView = computeInView(vp, paneSize, entities);
+        setVisibleNodeIds((prev) => {
+            if (prev.size !== inView.size || [...prev].some((id) => !inView.has(id))) return inView;
+            return prev;
+        });
+    }, [paneSize, entities, computeInView, getViewport]);
+
 
     // Collaboration Store
     const { updateCursor, sendOperation, isSynced } = useSyncStore();
@@ -533,6 +725,10 @@ const ERDCanvasContent: React.FC = () => {
 
     const deferredEntities = useDeferredValue(entities);
     useEffect(() => {
+        if (skipNextEntitySyncRef.current) {
+            skipNextEntitySyncRef.current = false;
+            return;
+        }
         setNodes((prevNodes) => {
             const duringDrag = isDraggingRef.current;
             const allInView = visibleNodeIds.size === 0;
@@ -935,6 +1131,7 @@ const ERDCanvasContent: React.FC = () => {
             return updated ? updated : edge;
         });
 
+        skipNextEntitySyncRef.current = true;
         setNodes(newAllNodes);
         setEdges(newAllEdges);
 
@@ -970,6 +1167,7 @@ const ERDCanvasContent: React.FC = () => {
     const onForceLayout = useCallback(() => {
         const { nodes: layoutedNodes } = getForceLayoutedElements(nodes, edges);
 
+        skipNextEntitySyncRef.current = true;
         setNodes(layoutedNodes);
 
         // Sync with store
@@ -999,6 +1197,81 @@ const ERDCanvasContent: React.FC = () => {
 
         setIsLayoutMenuOpen(false);
     }, [nodes, edges, entities, relationships, setNodes, importData, sendOperation, user]);
+
+    const onRelationshipLayout = useCallback(() => {
+        if (entities.length === 0) {
+            setIsLayoutMenuOpen(false);
+            return;
+        }
+        // Use store (entities + relationships) so all relationships are included regardless of visible edges
+        const layoutInputNodes: Node[] = entities.map((e) => ({
+            id: e.id,
+            position: e.position,
+            width: 250,
+            height: 200,
+            data: {},
+        }));
+        const layoutInputEdges: Edge[] = relationships.map((r) => ({
+            id: r.id,
+            source: r.source,
+            target: r.target,
+        }));
+        const { nodes: layoutedNodes } = getRelationshipLayoutedElements(
+            layoutInputNodes,
+            layoutInputEdges,
+            'TB'
+        );
+
+        // Place layout in current viewport so the user sees the result
+        let finalPositions = layoutedNodes.map((n) => ({ id: n.id, position: n.position }));
+        if (flowWrapper.current) {
+            const { x: vpX, y: vpY, zoom } = getViewport();
+            const pad = 60;
+            const vpMinX = -vpX / zoom + pad;
+            const vpMinY = -vpY / zoom + pad;
+            let layoutMinX = Infinity, layoutMinY = Infinity;
+            layoutedNodes.forEach((n) => {
+                layoutMinX = Math.min(layoutMinX, n.position.x);
+                layoutMinY = Math.min(layoutMinY, n.position.y);
+            });
+            const dx = vpMinX - layoutMinX;
+            const dy = vpMinY - layoutMinY;
+            finalPositions = layoutedNodes.map((n) => ({
+                id: n.id,
+                position: { x: n.position.x + dx, y: n.position.y + dy },
+            }));
+        }
+
+        const positionById = new Map(finalPositions.map((p) => [p.id, p.position]));
+        const newNodes = nodes.map((node) => {
+            const pos = positionById.get(node.id);
+            return pos ? { ...node, position: pos } : node;
+        });
+        const updatedEntities = entities.map((entity) => {
+            const pos = positionById.get(entity.id);
+            return pos ? { ...entity, position: pos } : entity;
+        });
+
+        skipNextEntitySyncRef.current = true;
+        setNodes(newNodes);
+
+        importData({
+            entities: updatedEntities,
+            relationships: relationships,
+        });
+
+        newNodes.forEach((node) => {
+            sendOperation({
+                type: 'ENTITY_MOVE',
+                targetId: node.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { position: node.position },
+            });
+        });
+
+        setIsLayoutMenuOpen(false);
+    }, [nodes, entities, relationships, setNodes, importData, sendOperation, user, getViewport]);
 
     const onNodeDragStart = useCallback(() => {
         isDraggingRef.current = true;
@@ -1171,6 +1444,13 @@ const ERDCanvasContent: React.FC = () => {
                                 </button>
                                 <div className="h-[1px] bg-gray-100 my-1" />
                                 <button
+                                    onClick={onRelationshipLayout}
+                                    className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors text-left"
+                                >
+                                    <Link size={16} className="text-cyan-500" />
+                                    <span>관계 정렬</span>
+                                </button>
+                                <button
                                     onClick={onForceLayout}
                                     className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors text-left"
                                 >
@@ -1342,6 +1622,22 @@ const ERDCanvasContent: React.FC = () => {
                     deleteKeyCode={null}
                     onPaneMouseMove={onPaneMouseMove}
                 >
+                    <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
+                    <SectionOverlayLayer
+                        sections={sections}
+                        hoveredSectionId={hoveredSectionId}
+                        setHoveredSectionId={setHoveredSectionId}
+                        editingSectionId={editingSectionId}
+                        editingSectionName={editingSectionName}
+                        setEditingSectionName={setEditingSectionName}
+                        setEditingSectionId={setEditingSectionId}
+                        startEditingSectionName={startEditingSectionName}
+                        saveSectionName={saveSectionName}
+                        deleteSection={deleteSection}
+                        onSectionBodyMouseDown={onSectionBodyMouseDown}
+                        onSectionResizeMouseDown={onSectionResizeMouseDown}
+                        sectionHeadersContainerRef={sectionHeadersContainerRef}
+                    />
                     <UserCursorsLayer />
                     <Controls />
                     <MiniMap
@@ -1356,138 +1652,6 @@ const ERDCanvasContent: React.FC = () => {
                     />
                 </ReactFlow>
                 </div>
-
-                {/* 2a) 섹션 배경만 - 노드 뒤(z-[1])에 그려서 엔티티 색상이 가려지지 않음 */}
-                {sections.length > 0 && (
-                    <div
-                        className="absolute inset-0 z-[1] overflow-visible pointer-events-none"
-                        style={{
-                            transform: `translate(${viewportX}px, ${viewportY}px) scale(${viewportZoom})`,
-                            transformOrigin: '0 0',
-                        }}
-                    >
-                        {(sections as Section[]).map((s) => (
-                            <div
-                                key={s.id}
-                                className={`absolute border-2 border-blue-400/80 bg-blue-400/5 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-blue-400/40' : 'shadow-none'}`}
-                                style={{
-                                    left: s.position.x,
-                                    top: s.position.y,
-                                    width: s.size.width,
-                                    height: s.size.height,
-                                }}
-                            />
-                        ))}
-                    </div>
-                )}
-
-                {/* 2b) 섹션 제목 바 + 리사이즈 핸들만 노드 위(z-[15])에 그리기 - 드래그/리사이즈 가능 */}
-                {sections.length > 0 && (
-                    <div
-                        ref={sectionHeadersContainerRef}
-                        className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
-                        style={{
-                            transform: `translate(${viewportX}px, ${viewportY}px) scale(${viewportZoom})`,
-                            transformOrigin: '0 0',
-                        }}
-                    >
-                        {(sections as Section[]).map((s) => {
-                            const isEditing = editingSectionId === s.id;
-                            const HANDLE_SIZE = 8;
-                            const w = s.size.width;
-                            const h = s.size.height;
-                            const handles: { key: string; cursor: string; left: number; top: number }[] = [
-                                { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
-                                { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
-                                { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
-                                { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
-                                { key: 'se', cursor: 'nwse-resize', left: w, top: h },
-                                { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
-                                { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
-                                { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
-                            ];
-                            return (
-                                <div
-                                    key={s.id}
-                                    className="absolute pointer-events-none"
-                                    style={{
-                                        left: s.position.x,
-                                        top: s.position.y,
-                                        width: s.size.width,
-                                        height: s.size.height,
-                                    }}
-                                >
-                                    <div
-                                        data-section-header
-                                        className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-blue-400/15 border-b border-blue-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
-                                        onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
-                                        onMouseEnter={() => setHoveredSectionId(s.id)}
-                                        onMouseLeave={() => setHoveredSectionId(null)}
-                                    >
-                                        {isEditing ? (
-                                            <input
-                                                type="text"
-                                                value={editingSectionName}
-                                                onChange={(e) => setEditingSectionName(e.target.value)}
-                                                onBlur={() => saveSectionName(s.id)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') saveSectionName(s.id);
-                                                    if (e.key === 'Escape') {
-                                                        setEditingSectionId(null);
-                                                        setEditingSectionName('');
-                                                    }
-                                                }}
-                                                onClick={(e) => e.stopPropagation()}
-                                                onMouseDown={(e) => e.stopPropagation()}
-                                                className="flex-1 min-w-0 bg-white/90 border border-blue-300 rounded px-1.5 py-0.5 text-xs font-semibold text-gray-800 outline-none focus:ring-1 focus:ring-blue-400"
-                                                autoFocus
-                                            />
-                                        ) : (
-                                            <span
-                                                className="text-xl font-semibold text-gray-700 truncate flex-1 min-w-0"
-                                                onDoubleClick={(e) => {
-                                                    e.stopPropagation();
-                                                    startEditingSectionName(s);
-                                                }}
-                                            >
-                                                {s.name || 'Section'}
-                                            </span>
-                                        )}
-                                        <PremiumTooltip placement="bottom" offsetBottom={30} label="섹션 삭제">
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    e.preventDefault();
-                                                    deleteSection(s.id);
-                                                }}
-                                                onMouseDown={(e) => e.stopPropagation()}
-                                                className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
-                                                >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                                            </button>
-                                        </PremiumTooltip>
-                                    </div>
-                                    {handles.map((handle) => (
-                                        <div
-                                            key={handle.key}
-                                            className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
-                                            style={{
-                                                left: handle.left,
-                                                top: handle.top,
-                                                width: HANDLE_SIZE,
-                                                height: HANDLE_SIZE,
-                                                transform: 'translate(-50%, -50%)',
-                                                cursor: handle.cursor,
-                                            }}
-                                            onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
-                                        />
-                                    ))}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
 
                 {/* 3) 섹션 그리기 오버레이 (영역 지정 시에만) */}
                 {isSectionDrawMode && (
