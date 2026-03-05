@@ -40,15 +40,21 @@ export const useProjectStore = create<ProjectStore>()(
                         // Map Mongo _id to id
                         const projects = data.map((p: any) => {
                             const pt = p.projectType || 'ERD';
-                            let projData = p.data;
-                            if (!projData) {
-                                if (pt === 'COMPONENT' && p.componentSnapshot) {
-                                    projData = { components: p.componentSnapshot.components || [], flows: p.componentSnapshot.flows || [] };
-                                } else if (pt === 'SCREEN_DESIGN' && p.screenSnapshot) {
-                                    projData = { screens: p.screenSnapshot.screens || [], flows: p.screenSnapshot.flows || [] };
-                                } else {
-                                    projData = p.currentSnapshot?.entities ? p.currentSnapshot : { entities: [], relationships: [] };
-                                }
+                            let projData: any;
+                            if (pt === 'COMPONENT' && p.componentSnapshot) {
+                                projData = { components: p.componentSnapshot.components || [], flows: p.componentSnapshot.flows || [] };
+                            } else if (pt === 'SCREEN_DESIGN' && p.screenSnapshot) {
+                                projData = { screens: p.screenSnapshot.screens || [], flows: p.screenSnapshot.flows || [] };
+                            } else {
+                                // ERD: always build from currentSnapshot so sections are never dropped (API returns currentSnapshot, not data)
+                                const snap = p.currentSnapshot;
+                                projData = snap
+                                    ? {
+                                        entities: snap.entities || [],
+                                        relationships: snap.relationships || [],
+                                        sections: snap.sections || [],
+                                    }
+                                    : { entities: [], relationships: [], sections: [] };
                             }
                             return {
                                 ...p,
@@ -89,7 +95,7 @@ export const useProjectStore = create<ProjectStore>()(
                             ? { components: [], flows: [] }
                             : projectType === 'SCREEN_DESIGN'
                                 ? { screens: [], flows: [] }
-                                : { entities: [], relationships: [] },
+                                : { entities: [], relationships: [], sections: [] },
                         updatedAt: new Date().toISOString()
                     };
 

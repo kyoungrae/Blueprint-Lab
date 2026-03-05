@@ -21,10 +21,19 @@ export interface CRDTOperation {
     previousState?: Record<string, unknown>;
 }
 
+// Section (ERD grouping)
+export interface ISection {
+    id: string;
+    name?: string;
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+}
+
 // ERD State Interface
 export interface ERDState {
     entities: IEntity[];
     relationships: IRelationship[];
+    sections?: ISection[];
     screens?: IScreen[];
     flows?: IScreenFlow[];
     version: number;

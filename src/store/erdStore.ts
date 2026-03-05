@@ -329,11 +329,15 @@ export const useERDStore = create<ERDStore>((set, get) => {
                     data.entities.some((e: any) => e.id === r.source) &&
                     data.entities.some((e: any) => e.id === r.target)
                 );
+                const nextSections = Array.isArray(data.sections) ? data.sections : [];
+                // #region agent log
+                if (typeof fetch !== 'undefined') fetch('http://127.0.0.1:7788/ingest/b67387ba-eb25-4cfc-be0f-3dc7938c6bf2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'erdStore.ts:importData',message:'importData applying',data:{inSectionsLen:data.sections?.length??-1,nextSectionsLen:nextSections.length},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+                // #endregion
                 return {
                     ...pushHistory(state),
                     entities: data.entities ?? state.entities,
                     relationships: cleanedRelationships,
-                    sections: Array.isArray(data.sections) ? data.sections : [],
+                    sections: nextSections,
                     history: data.history || state.history,
                 };
             }),

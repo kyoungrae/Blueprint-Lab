@@ -139,6 +139,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                         state = {
                             entities: snap.currentSnapshot?.entities || [],
                             relationships: snap.currentSnapshot?.relationships || [],
+                            sections: (snap.currentSnapshot as any)?.sections || [],
                             screens: isComponent ? (snap.componentSnapshot?.components || []) : (snap.screenSnapshot?.screens || []),
                             flows: isComponent ? (snap.componentSnapshot?.flows || []) : (snap.screenSnapshot?.flows || []),
                             version: isComponent ? (snap.componentSnapshot?.version || 0) : (snap.currentSnapshot?.version || 0),
@@ -149,16 +150,17 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                             state.relationships,
                             state.version,
                             state.screens,
-                            state.flows
+                            state.flows,
+                            state.sections || []
                         );
                     } else {
                         // Project not found in DB
-                        state = { entities: [], relationships: [], screens: [], flows: [], version: 0 };
+                        state = { entities: [], relationships: [], sections: [], screens: [], flows: [], version: 0 };
                     }
                 } else {
                     // Invalid ObjectId (e.g. temporary ID 'proj_...'), treat as new empty project
                     console.log(`ℹ️ Project ID ${projectId} is not a valid ObjectId (likely temporary), initializing empty state.`);
-                    state = { entities: [], relationships: [], screens: [], flows: [], version: 0 };
+                    state = { entities: [], relationships: [], sections: [], screens: [], flows: [], version: 0 };
                 }
             }
 
@@ -175,6 +177,12 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 projectHistory = await History.find({ projectId })
                     .sort({ timestamp: -1 })
                     .limit(100);
+                // Always overlay sections from MongoDB so state_sync never sends stale/empty sections from Redis
+                const project = await Project.findById(projectId).select('currentSnapshot.sections').lean();
+                const dbSections = (project as any)?.currentSnapshot?.sections;
+                if (Array.isArray(dbSections)) {
+                    state = { ...state, sections: dbSections };
+                }
             }
 
             // Send current state to joining user
@@ -253,7 +261,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 // Get current state
                 let state = await projectStateManager.getState(projectId);
                 if (!state) {
-                    state = { entities: [], relationships: [], screens: [], flows: [], version: 0 };
+                    state = { entities: [], relationships: [], sections: [], screens: [], flows: [], version: 0 };
                 }
 
                 // Apply operation
@@ -266,7 +274,8 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     newState.relationships,
                     newState.version,
                     newState.screens || [],
-                    newState.flows || []
+                    newState.flows || [],
+                    newState.sections || []
                 );
 
                 // Broadcast to all other clients in the project
@@ -474,6 +483,7 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
                     version: stateToSave.version,
                     entities: stateToSave.entities,
                     relationships: stateToSave.relationships,
+                    sections: stateToSave.sections || [],
                     savedAt: new Date(),
                 },
                 screenSnapshot: {

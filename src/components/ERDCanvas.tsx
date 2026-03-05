@@ -84,7 +84,7 @@ const ERDCanvasContent: React.FC = () => {
     } = useERDStore();
 
     const { user, logout } = useAuthStore();
-    const { projects, currentProjectId, setCurrentProject, updateProjectData } = useProjectStore();
+    const { projects, currentProjectId, setCurrentProject, updateProjectData, fetchProjects } = useProjectStore();
 
     const currentProject = projects.find(p => p.id === currentProjectId);
 
@@ -370,7 +370,9 @@ const ERDCanvasContent: React.FC = () => {
         const handleStateSync = (e: CustomEvent<any>) => {
             const state = e.detail;
             if (!state) return;
-
+            // #region agent log
+            fetch('http://127.0.0.1:7788/ingest/b67387ba-eb25-4cfc-be0f-3dc7938c6bf2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'ERDCanvas.tsx:state_sync',message:'state_sync received',data:{sectionsLen:state.sections?.length??-1},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+            // #endregion
             console.log('Applying synced state:', state);
             importData(state);
         };
@@ -380,26 +382,85 @@ const ERDCanvasContent: React.FC = () => {
     }, [importData]);
 
 
-    // Initial load for local projects
+    // For remote projects: fetch latest from server on mount so we get sections (rehydrated state may be stale)
     useEffect(() => {
-        if (currentProjectId?.startsWith('local_') && currentProject) {
-            importData(currentProject.data as import('../types/erd').ERDState);
+        if (currentProjectId && !currentProjectId.startsWith('local_') && typeof fetchProjects === 'function') {
+            // #region agent log
+            fetch('http://127.0.0.1:7788/ingest/b67387ba-eb25-4cfc-be0f-3dc7938c6bf2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'ERDCanvas.tsx:fetchEffect',message:'calling fetchProjects',data:{currentProjectId},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+            // #endregion
+            fetchProjects();
         }
-    }, [currentProjectId]);
+    }, [currentProjectId, fetchProjects]);
 
-    // Auto-save ERDStore changes to ProjectStore for LOCAL projects
+    // Initial load: restore ERD state from project data (local from persist, remote from fetchProjects)
+    // Re-run when projects is populated or when current project data changes (e.g. fetchProjects returns fresh data with sections)
     useEffect(() => {
-        if (currentProjectId?.startsWith('local_')) {
-            const timer = setTimeout(() => {
-                updateProjectData(currentProjectId, {
-                    entities,
-                    relationships,
-                    sections,
-                });
-            }, 1000); // 1s debounce
-            return () => clearTimeout(timer);
+        if (currentProjectId && currentProject?.data) {
+            const d = currentProject.data as import('../types/erd').ERDState;
+            const sectionsLen = d.sections?.length ?? -1;
+            // #region agent log
+            fetch('http://127.0.0.1:7788/ingest/b67387ba-eb25-4cfc-be0f-3dc7938c6bf2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'ERDCanvas.tsx:initialLoadEffect',message:'importData called',data:{currentProjectId,sectionsLen,entitiesLen:d.entities?.length},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+            // #endregion
+            importData({
+                entities: d.entities ?? [],
+                relationships: d.relationships ?? [],
+                sections: d.sections ?? [],
+                history: d.history ?? [],
+            });
         }
+    }, [
+        currentProjectId,
+        currentProject?.id,
+        currentProject?.updatedAt,
+        (currentProject?.data as { sections?: unknown[] } | undefined)?.sections?.length,
+        importData,
+        projects.length,
+    ]);
+
+    // Auto-save ERDStore (entities, relationships, sections) to ProjectStore
+    // - Local: persist to localStorage via projectStore
+    // - Remote: PATCH to server so refresh/state_sync restores sections
+    useEffect(() => {
+        if (!currentProjectId) return;
+        const timer = setTimeout(() => {
+            updateProjectData(currentProjectId, {
+                entities,
+                relationships,
+                sections,
+            });
+        }, 300); // 300ms debounce
+        return () => clearTimeout(timer);
     }, [entities, relationships, sections, currentProjectId, updateProjectData]);
+
+    // Save immediately when sections change (so refresh before debounce doesn't lose sections)
+    const prevSectionsRef = React.useRef(sections);
+    useEffect(() => {
+        if (!currentProjectId) return;
+        if (prevSectionsRef.current !== sections) {
+            prevSectionsRef.current = sections;
+            updateProjectData(currentProjectId, {
+                entities,
+                relationships,
+                sections,
+            });
+        }
+    }, [sections, currentProjectId, entities, relationships, updateProjectData]);
+
+    // Flush save on page unload (refresh/close) so sections aren't lost when user refreshes before debounce
+    useEffect(() => {
+        const flush = () => {
+            const pid = useProjectStore.getState().currentProjectId;
+            if (!pid) return;
+            const { entities: e, relationships: r, sections: s } = useERDStore.getState();
+            useProjectStore.getState().updateProjectData(pid, { entities: e, relationships: r, sections: s ?? [] });
+        };
+        window.addEventListener('beforeunload', flush);
+        window.addEventListener('pagehide', flush);
+        return () => {
+            window.removeEventListener('beforeunload', flush);
+            window.removeEventListener('pagehide', flush);
+        };
+    }, []);
 
     useEffect(() => {
         setNodes((prevNodes) => {

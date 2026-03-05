@@ -210,7 +210,8 @@ export class ProjectStateManager {
         relationships: IRelationship[],
         version: number,
         screens: IScreen[] = [],
-        flows: IScreenFlow[] = []
+        flows: IScreenFlow[] = [],
+        sections: Array<{ id: string; name?: string; position: { x: number; y: number }; size: { width: number; height: number } }> = []
     ): Promise<void> {
         const stateKey = `project:${projectId}:state`;
 
@@ -219,6 +220,7 @@ export class ProjectStateManager {
             relationships: JSON.stringify(relationships),
             screens: JSON.stringify(screens),
             flows: JSON.stringify(flows),
+            sections: JSON.stringify(sections),
             version: version.toString(),
             lastUpdatedAt: Date.now().toString(),
         });
@@ -232,6 +234,7 @@ export class ProjectStateManager {
         relationships: IRelationship[];
         screens: IScreen[];
         flows: IScreenFlow[];
+        sections: Array<{ id: string; name?: string; position: { x: number; y: number }; size: { width: number; height: number } }>;
         version: number;
     } | null> {
         const stateKey = `project:${projectId}:state`;
@@ -246,6 +249,7 @@ export class ProjectStateManager {
             relationships: JSON.parse(data.relationships),
             screens: data.screens ? JSON.parse(data.screens) : [],
             flows: data.flows ? JSON.parse(data.flows) : [],
+            sections: data.sections ? JSON.parse(data.sections) : [],
             version: parseInt(data.version || '0', 10),
         };
     }
@@ -259,13 +263,14 @@ export class ProjectStateManager {
         relationships: IRelationship[],
         version: number,
         screens: IScreen[] = [],
-        flows: IScreenFlow[] = []
+        flows: IScreenFlow[] = [],
+        sections: Array<{ id: string; name?: string; position: { x: number; y: number }; size: { width: number; height: number } }> = []
     ): Promise<void> {
         const existing = await this.getState(projectId);
 
         // Only initialize if Redis doesn't have state
         if (!existing) {
-            await this.saveState(projectId, entities, relationships, version, screens, flows);
+            await this.saveState(projectId, entities, relationships, version, screens, flows, sections);
         }
     }
     /**

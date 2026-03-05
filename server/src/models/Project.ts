@@ -112,11 +112,20 @@ export interface IScreenSnapshot {
     savedAt: Date;
 }
 
+// Section (ERD grouping area)
+export interface ISection {
+    id: string;
+    name?: string;
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+}
+
 // ERD Snapshot Interface
 export interface IERDSnapshot {
     version: number;
     entities: IEntity[];
     relationships: IRelationship[];
+    sections?: ISection[];
     savedAt: Date;
 }
 
@@ -259,10 +268,18 @@ const ComponentSnapshotSchema = new Schema<IComponentSnapshot>({
     savedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
+const SectionSchema = new Schema<ISection>({
+    id: { type: String, required: true },
+    name: { type: String },
+    position: { x: { type: Number, required: true }, y: { type: Number, required: true } },
+    size: { width: { type: Number, required: true }, height: { type: Number, required: true } },
+}, { _id: false });
+
 const ERDSnapshotSchema = new Schema<IERDSnapshot>({
     version: { type: Number, default: 1 },
     entities: [EntitySchema],
     relationships: [RelationshipSchema],
+    sections: { type: [SectionSchema], default: [] },
     savedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
