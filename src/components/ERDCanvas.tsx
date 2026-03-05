@@ -117,7 +117,8 @@ const ERDCanvasContent: React.FC = () => {
     const [editingSectionName, setEditingSectionName] = useState('');
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
-    const { getViewport, screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
+    const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
+    const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
     const { x: viewportX, y: viewportY, zoom: viewportZoom } = useViewport();
 
     // Collaboration Store
@@ -300,6 +301,30 @@ const ERDCanvasContent: React.FC = () => {
         [editingSectionName, updateSection]
     );
 
+    // 섹션 제목/X 버튼 위에서 휠: 브라우저 동작 차단 + 캔버스와 동일하게 휠=패닝, Ctrl/Cmd+휠=줌
+    React.useLayoutEffect(() => {
+        const container = sectionHeadersContainerRef.current;
+        if (!container || sections.length === 0) return;
+        const headers = container.querySelectorAll('[data-section-header]');
+        const MIN_ZOOM = 0.05;
+        const MAX_ZOOM = 4;
+        const handler = (e: Event) => {
+            const we = e as WheelEvent;
+            e.preventDefault();
+            const { x, y, zoom } = getViewport();
+            const isZoom = we.ctrlKey || we.metaKey;
+            if (isZoom) {
+                const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * Math.pow(2, -we.deltaY / 200)));
+                setViewport({ x, y, zoom: nextZoom });
+            } else {
+                setViewport({ x: x - we.deltaX, y: y - we.deltaY, zoom });
+            }
+        };
+        const opts: AddEventListenerOptions = { passive: false, capture: true };
+        headers.forEach((el) => el.addEventListener('wheel', handler, opts));
+        return () => headers.forEach((el) => el.removeEventListener('wheel', handler, opts));
+    }, [sections.length, sections, getViewport, setViewport]);
+
     // Handle remote operations
     useEffect(() => {
         const handleRemoteOperation = (e: CustomEvent<any>) => {
@@ -453,7 +478,7 @@ const ERDCanvasContent: React.FC = () => {
             const pid = useProjectStore.getState().currentProjectId;
             if (!pid) return;
             const { entities: e, relationships: r, sections: s } = useERDStore.getState();
-            useProjectStore.getState().updateProjectData(pid, { entities: e, relationships: r, sections: s ?? [] });
+            useProjectStore.getState().updateProjectData(pid, { entities: e, relationships: r, sections: s ?? [] }, true);
         };
         window.addEventListener('beforeunload', flush);
         window.addEventListener('pagehide', flush);
@@ -1296,6 +1321,7 @@ const ERDCanvasContent: React.FC = () => {
                 {/* 2b) 섹션 제목 바 + 리사이즈 핸들만 노드 위(z-[15])에 그리기 - 드래그/리사이즈 가능 */}
                 {sections.length > 0 && (
                     <div
+                        ref={sectionHeadersContainerRef}
                         className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
                         style={{
                             transform: `translate(${viewportX}px, ${viewportY}px) scale(${viewportZoom})`,
@@ -1329,6 +1355,7 @@ const ERDCanvasContent: React.FC = () => {
                                     }}
                                 >
                                     <div
+                                        data-section-header
                                         className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-blue-400/15 border-b border-blue-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
                                         onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
                                         onMouseEnter={() => setHoveredSectionId(s.id)}
@@ -1373,8 +1400,6 @@ const ERDCanvasContent: React.FC = () => {
                                                 }}
                                                 onMouseDown={(e) => e.stopPropagation()}
                                                 className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
-                                                title="섹션 삭제"
-                                                aria-label="섹션 삭제"
                                                 >
                                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                                             </button>

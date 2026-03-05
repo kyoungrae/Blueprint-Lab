@@ -5,6 +5,25 @@ import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
+/** PATCH 요청 디바운스: 프로젝트별로 마지막 데이터만 일정 시간 후 한 번만 전송 */
+const SAVE_DEBOUNCE_MS = 1200;
+const pendingSave: Record<string, { timer: ReturnType<typeof setTimeout>; data: any }> = {};
+
+async function sendProjectDataPatch(id: string, data: any) {
+    const token = localStorage.getItem('auth-token');
+    if (!token || id.startsWith('local_')) return;
+    try {
+        const response = await fetchWithAuth(`${API_URL}/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data }),
+        });
+        if (!response.ok) console.error('Failed to sync project data to server');
+    } catch (error) {
+        console.error('Update project data error:', error);
+    }
+}
+
 interface ProjectStore {
     projects: Project[];
     currentProjectId: string | null;
@@ -13,7 +32,7 @@ interface ProjectStore {
     addRemoteProject: (id: string) => Promise<void>;
     deleteProject: (id: string) => Promise<void>;
     setCurrentProject: (id: string | null) => void;
-    updateProjectData: (id: string, data: any) => void;
+    updateProjectData: (id: string, data: any, immediate?: boolean) => void;
     updateProjectMetadata: (id: string, metadata: Partial<Project>) => Promise<void>;
     updateProjectMembers: (id: string, members: ProjectMember[]) => void;
     inviteMember: (projectId: string, email: string) => Promise<void>;
@@ -237,7 +256,7 @@ export const useProjectStore = create<ProjectStore>()(
 
             setCurrentProject: (id) => set({ currentProjectId: id }),
 
-            updateProjectData: async (id, data) => {
+            updateProjectData: (id, data, immediate = false) => {
                 // Update local state immediately for responsiveness
                 set((state) => ({
                     projects: state.projects.map((p) =>
@@ -245,23 +264,27 @@ export const useProjectStore = create<ProjectStore>()(
                     ),
                 }));
 
-                // Skip server sync for local projects or if no token
+                if (!id || id.startsWith('local_')) return;
                 const token = localStorage.getItem('auth-token');
-                if (!token || id.startsWith('local_')) return;
+                if (!token) return;
 
-                try {
-                    const response = await fetchWithAuth(`${API_URL}/${id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ data }),
-                    });
+                const merged = pendingSave[id] ? { ...pendingSave[id].data, ...data } : { ...data };
 
-                    if (!response.ok) {
-                        console.error('Failed to sync project data to server');
-                    }
-                } catch (error) {
-                    console.error('Update project data error:', error);
+                if (immediate) {
+                    if (pendingSave[id]?.timer) clearTimeout(pendingSave[id].timer);
+                    delete pendingSave[id];
+                    sendProjectDataPatch(id, merged);
+                    return;
                 }
+
+                if (pendingSave[id]?.timer) clearTimeout(pendingSave[id].timer);
+                pendingSave[id] = {
+                    data: merged,
+                    timer: setTimeout(() => {
+                        sendProjectDataPatch(id, pendingSave[id].data);
+                        delete pendingSave[id];
+                    }, SAVE_DEBOUNCE_MS),
+                };
             },
 
             updateProjectMetadata: async (id, metadata) => {
