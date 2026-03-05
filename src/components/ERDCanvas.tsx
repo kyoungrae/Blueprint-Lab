@@ -1220,13 +1220,21 @@ const ERDCanvasContent: React.FC = () => {
             return;
         }
         // Use store (entities + relationships) so all relationships are included regardless of visible edges
-        const layoutInputNodes: Node[] = entities.map((e) => ({
-            id: e.id,
-            position: e.position,
-            width: 250,
-            height: 200,
-            data: {},
-        }));
+        // 실제 React Flow 측정 크기를 사용해야 Dagre가 정확히 간격을 계산할 수 있음
+        const rfNodeById = new Map(nodes.map(n => [n.id, n]));
+        const layoutInputNodes: Node[] = entities.map((e) => {
+            const rfNode = rfNodeById.get(e.id);
+            const measured = (rfNode as any)?.measured;
+            const width = (measured?.width ?? rfNode?.width) || 300;
+            const height = (measured?.height ?? rfNode?.height) || 400;
+            return {
+                id: e.id,
+                position: e.position,
+                width,
+                height,
+                data: {},
+            };
+        });
         const layoutInputEdges: Edge[] = relationships.map((r) => ({
             id: r.id,
             source: r.source,
