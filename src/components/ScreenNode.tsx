@@ -2244,7 +2244,48 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         setShowSplitDialog(true);
     };
 
+    /** 선택된 셀들의 행 높이를 먼저 선택한 셀의 행 높이로 통일 (2개 이상 선택 시) */
+    const handleEqualizeRowHeights = (selectedEl: DrawElement) => {
+        if (!selectedEl.tableCols || !selectedEl.tableRows || selectedCellIndices.length < 2 || isLocked) return;
+        const rows = selectedEl.tableRows;
+        const cols = selectedEl.tableCols;
+        const refIdx = selectedCellIndices[0];
+        const { r: refRow } = flatIdxToRowCol(refIdx, cols);
+        const rowHeights = selectedEl.tableRowHeights ? [...selectedEl.tableRowHeights] : Array(rows).fill(100 / rows);
+        const refHeight = rowHeights[refRow];
+        const selectedRows = [...new Set(selectedCellIndices.map(i => flatIdxToRowCol(i, cols).r))];
+        selectedRows.forEach(r => { rowHeights[r] = refHeight; });
+        const sum = rowHeights.reduce((a, b) => a + b, 0);
+        if (sum <= 0) return;
+        const normalized = rowHeights.map(h => (h / sum) * 100);
+        const nextElements = drawElements.map(el =>
+            el.id === selectedEl.id ? { ...el, tableRowHeights: normalized } : el
+        );
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
+    };
 
+    /** 선택된 셀들의 열 너비를 먼저 선택한 셀의 열 너비로 통일 (2개 이상 선택 시) */
+    const handleEqualizeColWidths = (selectedEl: DrawElement) => {
+        if (!selectedEl.tableCols || !selectedEl.tableRows || selectedCellIndices.length < 2 || isLocked) return;
+        const cols = selectedEl.tableCols;
+        const refIdx = selectedCellIndices[0];
+        const { c: refCol } = flatIdxToRowCol(refIdx, cols);
+        const colWidths = selectedEl.tableColWidths ? [...selectedEl.tableColWidths] : Array(cols).fill(100 / cols);
+        const refWidth = colWidths[refCol];
+        const selectedCols = [...new Set(selectedCellIndices.map(i => flatIdxToRowCol(i, cols).c))];
+        selectedCols.forEach(c => { colWidths[c] = refWidth; });
+        const sum = colWidths.reduce((a, b) => a + b, 0);
+        if (sum <= 0) return;
+        const normalized = colWidths.map(w => (w / sum) * 100);
+        const nextElements = drawElements.map(el =>
+            el.id === selectedEl.id ? { ...el, tableColWidths: normalized } : el
+        );
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+        saveHistory(nextElements);
+    };
 
 
 
@@ -4543,6 +4584,40 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 </div>
                                                             )}
                                                         </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* 셀 높이/너비 같게 (2개 이상 셀 선택 시, 먼저 선택한 셀 기준) */}
+                                            {editingTableId === selectedEl.id && (
+                                                <div className="flex flex-col gap-2 pt-3 border-t border-gray-100">
+                                                    <div className="flex items-center gap-1.5 text-gray-700">
+                                                        <AlignVerticalDistributeCenter size={12} className="text-gray-400" />
+                                                        <span className="text-[11px] font-bold">셀 크기 맞춤</span>
+                                                    </div>
+                                                    <div className="flex gap-1.5">
+                                                        <PremiumTooltip label="선택한 셀들의 행 높이를 먼저 선택한 셀의 높이로 맞춥니다">
+                                                            <button
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                onClick={() => handleEqualizeRowHeights(selectedEl)}
+                                                                disabled={selectedCellIndices.length < 2}
+                                                                className={`flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length >= 2 ? 'bg-white shadow-sm text-blue-600 border border-blue-100 hover:bg-blue-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
+                                                            >
+                                                                <AlignHorizontalDistributeCenter size={16} />
+                                                                <span className="text-[10px] font-bold">셀 높이 같게</span>
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                        <PremiumTooltip label="선택한 셀들의 열 너비를 먼저 선택한 셀의 너비로 맞춥니다">
+                                                            <button
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                onClick={() => handleEqualizeColWidths(selectedEl)}
+                                                                disabled={selectedCellIndices.length < 2}
+                                                                className={`flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length >= 2 ? 'bg-white shadow-sm text-blue-600 border border-blue-100 hover:bg-blue-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
+                                                            >
+                                                                <AlignVerticalDistributeCenter size={16} />
+                                                                <span className="text-[10px] font-bold">셀 너비 같게</span>
+                                                            </button>
+                                                        </PremiumTooltip>
                                                     </div>
                                                 </div>
                                             )}
