@@ -14,7 +14,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
     const { entities, mergeData, addLog } = useERDStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
-    const { currentProjectId, updateProjectData } = useProjectStore();
+    const { currentProjectId } = useProjectStore();
     const [tab, setTab] = useState<'file' | 'code'>('file');
     const [sqlCode, setSqlCode] = useState('');
     const [sqlComposing, setSqlComposing] = useState<string | null>(null);
@@ -40,7 +40,6 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
             mergeData(data, false);
         }
 
-        // Add history log & broadcast
         const logData = {
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
@@ -54,31 +53,26 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
             }
         };
 
-        addLog(logData);
-
-        // Broadcast the imported data as a single atomic operation
-        sendOperation({
-            type: 'ERD_IMPORT',
-            targetId: currentProjectId || 'project',
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: {
-                ...data,
-                overwrite,
-                historyLog: logData // Pass the log for others to add
-            }
-        });
-
-        // Force a project save if we have a real project ID
-        if (currentProjectId && !currentProjectId.startsWith('proj_')) {
-            const { entities, relationships } = useERDStore.getState();
-            updateProjectData(currentProjectId, {
-                entities,
-                relationships,
+        // Defer log + broadcast + close to next tick to avoid "Maximum update depth" when importing many tables
+        // (mergeData already triggered one big store update; stacking addLog + updateProjectData in same tick can cause re-render storm)
+        setTimeout(() => {
+            addLog(logData);
+            sendOperation({
+                type: 'ERD_IMPORT',
+                targetId: currentProjectId || 'project',
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: {
+                    ...data,
+                    overwrite,
+                    historyLog: logData
+                }
             });
-        }
+            onClose();
+        }, 0);
 
-        onClose();
+        // Do NOT call updateProjectData here — ERDCanvas auto-save effect will save when entities/relationships change.
+        // Calling it here caused double store update in same tick and contributed to update depth exceeded.
     };
 
     const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {

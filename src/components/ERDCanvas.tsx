@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useDeferredValue, useRef } from 'react';
 import ReactFlow, {
     type Node,
     type Edge,
@@ -19,7 +19,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import EntityNode from './EntityNode';
+import EntityNode, { EntityNodePlaceholder } from './EntityNode';
 import ERDEdge from './ERDEdge';
 import EdgeEditModal from './EdgeEditModal';
 import ImportModal from './ImportModal';
@@ -40,6 +40,7 @@ import { copyToClipboard } from '../utils/clipboard';
 
 const nodeTypes: NodeTypes = {
     entity: EntityNode,
+    entityPlaceholder: EntityNodePlaceholder,
 };
 
 const edgeTypes = {
@@ -119,8 +120,56 @@ const ERDCanvasContent: React.FC = () => {
     const flowWrapper = React.useRef<HTMLDivElement>(null);
     const paneContainerRef = React.useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
+    const isDraggingRef = React.useRef(false);
+    const [paneSize, setPaneSize] = useState<{ width: number; height: number } | null>(null);
+    const [visibleNodeIds, setVisibleNodeIds] = useState<Set<string>>(() => new Set());
+    const visibleThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
     const { x: viewportX, y: viewportY, zoom: viewportZoom } = useViewport();
+
+    // Pane size for viewport culling
+    useEffect(() => {
+        const el = paneContainerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver((entries) => {
+            const { width, height } = entries[0]?.contentRect ?? { width: 0, height: 0 };
+            setPaneSize((prev) => (prev?.width === width && prev?.height === height ? prev : { width, height }));
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    // Which nodes are in view (throttled 100ms) — reduces setNodes during pan/zoom
+    const VISIBLE_THROTTLE_MS = 100;
+    useEffect(() => {
+        if (!paneSize || !entities.length) {
+            setVisibleNodeIds((prev) => (prev.size === 0 ? prev : new Set()));
+            return;
+        }
+        if (visibleThrottleRef.current != null) clearTimeout(visibleThrottleRef.current);
+        visibleThrottleRef.current = setTimeout(() => {
+            visibleThrottleRef.current = null;
+            const z = viewportZoom || 1;
+            const left = -viewportX / z;
+            const top = -viewportY / z;
+            const w = paneSize.width / z;
+            const h = paneSize.height / z;
+            const margin = 280;
+            const inView = new Set<string>();
+            entities.forEach((e) => {
+                const px = e.position.x;
+                const py = e.position.y;
+                if (px >= left - margin && px <= left + w + margin && py >= top - margin && py <= top + h + margin) {
+                    inView.add(e.id);
+                }
+            });
+            setVisibleNodeIds((prev) => {
+                if (prev.size !== inView.size || [...prev].some((id) => !inView.has(id))) return inView;
+                return prev;
+            });
+        }, VISIBLE_THROTTLE_MS);
+        return () => { if (visibleThrottleRef.current != null) clearTimeout(visibleThrottleRef.current); };
+    }, [viewportX, viewportY, viewportZoom, entities, paneSize]);
 
     // Collaboration Store
     const { updateCursor, sendOperation, isSynced } = useSyncStore();
@@ -485,21 +534,30 @@ const ERDCanvasContent: React.FC = () => {
         };
     }, []);
 
+    const deferredEntities = useDeferredValue(entities);
     useEffect(() => {
         setNodes((prevNodes) => {
-            return entities.map((entity) => {
+            const duringDrag = isDraggingRef.current;
+            const allInView = visibleNodeIds.size === 0;
+            return deferredEntities.map((entity) => {
                 const existingNode = prevNodes.find((n) => n.id === entity.id);
+                const inView = allInView || visibleNodeIds.has(entity.id);
+                const position = duringDrag && existingNode ? existingNode.position : entity.position;
+                const data = inView ? { entity, inView: true as const } : { entity };
+                if (existingNode && existingNode.position.x === position.x && existingNode.position.y === position.y &&
+                    existingNode.data?.entity === entity && (existingNode.type === 'entity') === inView) {
+                    return existingNode;
+                }
                 return {
                     id: entity.id,
-                    type: 'entity',
-                    position: entity.position,
-                    data: { entity },
-                    // Preserve selected state from React Flow's internal state
+                    type: inView ? 'entity' : 'entityPlaceholder',
+                    position,
+                    data,
                     selected: existingNode?.selected,
                 };
             });
         });
-    }, [entities, setNodes]);
+    }, [deferredEntities, visibleNodeIds, setNodes]);
 
     // Keyboard shortcuts for Undo/Redo and Deletion
     useEffect(() => {
@@ -575,7 +633,7 @@ const ERDCanvasContent: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [undo, redo, deleteEntity, deleteRelationship, edges, sendOperation, user, getNodes]);
 
-    // Convert relationships to ReactFlow edges
+    // Convert relationships to ReactFlow edges (cull edges whose nodes are both off-screen)
     useEffect(() => {
         const getRelColor = (type: string) => {
             switch (type) {
@@ -585,8 +643,12 @@ const ERDCanvasContent: React.FC = () => {
                 default: return '#3b82f6';
             }
         };
+        const showAllEdges = visibleNodeIds.size === 0;
+        const rels = showAllEdges
+            ? relationships
+            : relationships.filter((rel) => visibleNodeIds.has(rel.source) || visibleNodeIds.has(rel.target));
 
-        const flowEdges: Edge[] = relationships.map((rel) => ({
+        const flowEdges: Edge[] = rels.map((rel) => ({
             id: rel.id,
             source: rel.source,
             target: rel.target,
@@ -607,7 +669,7 @@ const ERDCanvasContent: React.FC = () => {
             },
         }));
         setEdges(flowEdges);
-    }, [relationships, setEdges, reconnectingEdgeId]);
+    }, [relationships, setEdges, reconnectingEdgeId, visibleNodeIds]);
 
     const isValidConnection = useCallback((connection: Connection) => {
         return connection.source !== connection.target;
@@ -940,8 +1002,13 @@ const ERDCanvasContent: React.FC = () => {
         setIsLayoutMenuOpen(false);
     }, [nodes, edges, entities, relationships, setNodes, importData, sendOperation, user]);
 
+    const onNodeDragStart = useCallback(() => {
+        isDraggingRef.current = true;
+    }, []);
+
     const onNodeDragStop = useCallback(
         (_: React.MouseEvent, node: Node) => {
+            isDraggingRef.current = false;
             const nodeCenter = {
                 x: node.position.x + (typeof node.width === 'number' ? node.width : 200) / 2,
                 y: node.position.y + (typeof node.height === 'number' ? node.height : 100) / 2,
@@ -1258,6 +1325,7 @@ const ERDCanvasContent: React.FC = () => {
                     edgeUpdaterRadius={20}
                     isValidConnection={isValidConnection}
                     onEdgeDoubleClick={onEdgeDoubleClick}
+                    onNodeDragStart={onNodeDragStart}
                     onNodeDragStop={onNodeDragStop}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}

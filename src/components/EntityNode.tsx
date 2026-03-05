@@ -209,18 +209,32 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
     );
 });
 
-interface EntityNodeData {
+export interface EntityNodeData {
     entity: Entity;
+    inView?: boolean;
 }
+
+/** Hooks-free placeholder for off-screen nodes (used when type is entityPlaceholder) */
+export const EntityNodePlaceholder: React.FC<NodeProps<{ entity: Entity }>> = memo(({ data, selected }) => (
+    <div
+        className={`rounded-lg border-2 min-w-[120px] max-w-[160px] px-2 py-1.5 text-xs font-medium truncate bg-white border-gray-200 shadow-sm ${selected ? 'border-orange-500 ring-1 ring-orange-300' : ''}`}
+        title={data.entity.name}
+    >
+        {data.entity.name}
+    </div>
+));
 
 const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => {
     const { entity } = data;
-    const { updateEntity, deleteEntity } = useERDStore();
-    const { projects, currentProjectId } = useProjectStore();
-    const { sendOperation } = useSyncStore();
-    const { user } = useAuthStore();
-    const currentProject = projects.find(p => p.id === currentProjectId);
-    const dbType = currentProject?.dbType || 'MySQL';
+    // Selective subscriptions: only re-render when these identities change (they don't), not when entities/projects change
+    const updateEntity = useERDStore((s) => s.updateEntity);
+    const deleteEntity = useERDStore((s) => s.deleteEntity);
+    const dbType = useProjectStore((s) => {
+        const p = s.projects.find((x) => x.id === s.currentProjectId);
+        return (p?.dbType ?? 'MySQL') as DBType;
+    });
+    const sendOperation = useSyncStore((s) => s.sendOperation);
+    const user = useAuthStore((s) => s.user);
     const availableTypes = DATA_TYPES[dbType];
 
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(entity.id);
