@@ -4597,6 +4597,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     </div>
                                                     <div className="flex gap-1.5">
                                                         <div className="flex-1 min-w-0">
+                                                            <PremiumTooltip label="선택한 셀들의 행 높이를 먼저 선택한 셀의 높이로 맞춥니다" wrapperClassName="w-full" offsetBottom={50}>
                                                                 <button
                                                                     onMouseDown={e => e.stopPropagation()}
                                                                     onClick={() => handleEqualizeRowHeights(selectedEl)}
@@ -4606,8 +4607,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     <AlignVerticalDistributeCenter size={16} />
                                                                     <span className="text-[10px] font-bold">셀 높이 같게</span>
                                                                 </button>
+                                                            </PremiumTooltip>
                                                         </div>
                                                         <div className="flex-1 min-w-0">
+                                                            <PremiumTooltip label="선택한 셀들의 열 너비를 먼저 선택한 셀의 너비로 맞춥니다" wrapperClassName="w-full" offsetBottom={50}>
                                                                 <button
                                                                     onMouseDown={e => e.stopPropagation()}
                                                                     onClick={() => handleEqualizeColWidths(selectedEl)}
@@ -4617,6 +4620,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     <AlignHorizontalDistributeCenter size={16} />
                                                                     <span className="text-[10px] font-bold">셀 너비 같게</span>
                                                                 </button>
+                                                            </PremiumTooltip>
                                                         </div>
                                                     </div>
                                                 </div>
