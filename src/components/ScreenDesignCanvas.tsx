@@ -285,7 +285,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     id: screen.id,
                     type: screen.variant === 'SPEC' ? 'spec' : 'screen',
                     position: screen.position,
-                    data: { screen },
+                    data: {
+                        screen,
+                        onFlushProjectData: () => {
+                            const pid = useProjectStore.getState().currentProjectId;
+                            if (pid) useProjectStore.getState().updateProjectData(pid, { screens: useScreenDesignStore.getState().screens, flows: useScreenDesignStore.getState().flows });
+                        },
+                    },
                     selected: existingNode?.selected,
                 };
                 if (style) {

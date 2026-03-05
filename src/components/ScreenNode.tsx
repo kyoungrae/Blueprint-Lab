@@ -58,6 +58,8 @@ function getClickTargetElement(target: EventTarget | null): Element | null {
 // ── Screen Node ─────────────────────────────────────────────
 interface ScreenNodeData {
     screen: Screen;
+    /** 보조선 등 변경 직후 프로젝트 저장(새로고침 시 유지). 화면 설계/컴포넌트 캔버스에서 주입 */
+    onFlushProjectData?: () => void;
 }
 
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
@@ -952,6 +954,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     moveGuideLine(ax, startVal, finalValue);
                     const current = getScreenById(screen.id)?.guideLines;
                     if (current) syncUpdate({ guideLines: current });
+                    data.onFlushProjectData?.();
                     setSelectedGuideLine(null);
                 } else {
                     setSelectedGuideLine({ axis: ax, value: startVal });

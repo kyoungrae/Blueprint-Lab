@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { TooltipPortalContext } from '../../contexts/TooltipPortalContext';
 
-const DEFAULT_TOOLTIP_Z_INDEX = 12000;
+const DEFAULT_TOOLTIP_Z_INDEX = 999999;
 
 interface PremiumTooltipProps {
     label: string;
