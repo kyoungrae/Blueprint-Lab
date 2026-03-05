@@ -69,15 +69,25 @@ export const getV2Cells = (el: DrawElement): TableCellData[] => {
 
     if (el.tableCellDataV2 && el.tableCellDataV2.length > 0) {
         const v2 = el.tableCellDataV2;
-        if (v2.length === totalCells) return v2;
+
+        // 길이가 정확히 맞으면 deep copy 반환 (직접 참조 반환 시 외부 변형 위험 방지)
+        if (v2.length === totalCells) {
+            return v2.map(cell => cell
+                ? { ...cell, content: cell.content != null ? String(cell.content) : '' }
+                : { content: '', rowSpan: 1, colSpan: 1, isMerged: false }
+            );
+        }
 
         // 길이가 안 맞는 V2는 인덱스를 재해석하지 않고
         // 앞에서부터 가능한 부분만 사용하고 나머지는 빈 셀로 채운다.
-        // 이렇게 하면 열/행 변경 시 기존 숫자가 다른 칸으로 "튀는" 현상을 막을 수 있다.
+        // 이렇게 하면 열/행 변경 시 기존 내용이 다른 칸으로 "튀는" 현상을 막을 수 있다.
         const out: TableCellData[] = [];
         const copyLen = Math.min(v2.length, totalCells);
         for (let i = 0; i < copyLen; i++) {
-            out.push(v2[i] ? { ...v2[i] } : { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+            out.push(v2[i]
+                ? { ...v2[i], content: v2[i].content != null ? String(v2[i].content) : '' }
+                : { content: '', rowSpan: 1, colSpan: 1, isMerged: false }
+            );
         }
         for (let i = copyLen; i < totalCells; i++) {
             out.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
@@ -85,6 +95,8 @@ export const getV2Cells = (el: DrawElement): TableCellData[] => {
 
         return out;
     }
+
+    // V2 데이터가 없을 때 레거시 데이터로 복원
     const legacyCells = el.tableCellData || Array(totalCells).fill('');
     const legacySpans = el.tableCellSpans;
 
@@ -92,8 +104,11 @@ export const getV2Cells = (el: DrawElement): TableCellData[] => {
     for (let i = 0; i < totalCells; i++) {
         const span = legacySpans?.[i];
         const isHidden = span ? (span.rowSpan === 0 && span.colSpan === 0) : false;
+        // 레거시 값이 숫자 등 비문자열일 수 있으므로 명시적으로 String 변환
+        const rawContent = legacyCells[i];
+        const content = (rawContent != null && rawContent !== '') ? String(rawContent) : '';
         v2Cells.push({
-            content: legacyCells[i] || '',
+            content,
             rowSpan: span ? (span.rowSpan === 0 ? 1 : span.rowSpan) : 1,
             colSpan: span ? (span.colSpan === 0 ? 1 : span.colSpan) : 1,
             isMerged: isHidden,
