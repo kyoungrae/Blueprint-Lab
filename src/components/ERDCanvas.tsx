@@ -1207,99 +1207,119 @@ const ERDCanvasContent: React.FC = () => {
                 </ReactFlow>
                 </div>
 
-                {/* 2) 섹션 영역 시각화 - z-[10]으로 위에 그리기(박스 보이게), wrapper·섹션본문은 pointer-events-none → 클릭은 아래 React Flow로 전달, 제목/리사이즈만 pointer-events-auto */}
+                {/* 2a) 섹션 배경만 - 노드 뒤(z-[1])에 그려서 엔티티 색상이 가려지지 않음 */}
                 {sections.length > 0 && (
                     <div
-                        className="absolute inset-0 z-[10] overflow-visible pointer-events-none"
+                        className="absolute inset-0 z-[1] overflow-visible pointer-events-none"
                         style={{
                             transform: `translate(${viewportX}px, ${viewportY}px) scale(${viewportZoom})`,
                             transformOrigin: '0 0',
                         }}
                     >
-                            {(sections as Section[]).map((s) => {
-                                const isEditing = editingSectionId === s.id;
-                                const HANDLE_SIZE = 8;
-                                const w = s.size.width;
-                                const h = s.size.height;
-                                const handles: { key: string; cursor: string; left: number; top: number }[] = [
-                                    { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
-                                    { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
-                                    { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
-                                    { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
-                                    { key: 'se', cursor: 'nwse-resize', left: w, top: h },
-                                    { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
-                                    { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
-                                    { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
-                                ];
-                                return (
+                        {(sections as Section[]).map((s) => (
+                            <div
+                                key={s.id}
+                                className={`absolute border-2 border-blue-400/80 bg-blue-400/5 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-blue-400/40' : 'shadow-none'}`}
+                                style={{
+                                    left: s.position.x,
+                                    top: s.position.y,
+                                    width: s.size.width,
+                                    height: s.size.height,
+                                }}
+                            />
+                        ))}
+                    </div>
+                )}
+
+                {/* 2b) 섹션 제목 바 + 리사이즈 핸들만 노드 위(z-[15])에 그리기 - 드래그/리사이즈 가능 */}
+                {sections.length > 0 && (
+                    <div
+                        className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
+                        style={{
+                            transform: `translate(${viewportX}px, ${viewportY}px) scale(${viewportZoom})`,
+                            transformOrigin: '0 0',
+                        }}
+                    >
+                        {(sections as Section[]).map((s) => {
+                            const isEditing = editingSectionId === s.id;
+                            const HANDLE_SIZE = 8;
+                            const w = s.size.width;
+                            const h = s.size.height;
+                            const handles: { key: string; cursor: string; left: number; top: number }[] = [
+                                { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
+                                { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
+                                { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
+                                { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
+                                { key: 'se', cursor: 'nwse-resize', left: w, top: h },
+                                { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
+                                { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
+                                { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
+                            ];
+                            return (
+                                <div
+                                    key={s.id}
+                                    className="absolute pointer-events-none"
+                                    style={{
+                                        left: s.position.x,
+                                        top: s.position.y,
+                                        width: s.size.width,
+                                        height: s.size.height,
+                                    }}
+                                >
                                     <div
-                                        key={s.id}
-                                        className={`absolute border-2 border-blue-400/80 bg-blue-400/5 rounded-lg flex flex-col pointer-events-none transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-blue-400/40' : 'shadow-none'}`}
-                                        style={{
-                                            left: s.position.x,
-                                            top: s.position.y,
-                                            width: s.size.width,
-                                            height: s.size.height,
-                                        }}
+                                        className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-blue-400/15 border-b border-blue-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
+                                        onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
+                                        onMouseEnter={() => setHoveredSectionId(s.id)}
+                                        onMouseLeave={() => setHoveredSectionId(null)}
                                     >
-                                        {/* 제목 바: 더블클릭 시 편집, 여기서만 섹션 드래그 가능 (노드 클릭 통과 위해) */}
-                                        <div
-                                            className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-blue-400/15 border-b border-blue-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
-                                            onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
-                                            onMouseEnter={() => setHoveredSectionId(s.id)}
-                                            onMouseLeave={() => setHoveredSectionId(null)}
-                                        >
-                                            {isEditing ? (
-                                                <input
-                                                    type="text"
-                                                    value={editingSectionName}
-                                                    onChange={(e) => setEditingSectionName(e.target.value)}
-                                                    onBlur={() => saveSectionName(s.id)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') saveSectionName(s.id);
-                                                        if (e.key === 'Escape') {
-                                                            setEditingSectionId(null);
-                                                            setEditingSectionName('');
-                                                        }
-                                                    }}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                    className="flex-1 min-w-0 bg-white/90 border border-blue-300 rounded px-1.5 py-0.5 text-xs font-semibold text-gray-800 outline-none focus:ring-1 focus:ring-blue-400"
-                                                    autoFocus
-                                                />
-                                            ) : (
-                                                <span
-                                                    className="text-xs font-semibold text-gray-700 truncate flex-1 min-w-0"
-                                                    onDoubleClick={(e) => {
-                                                        e.stopPropagation();
-                                                        startEditingSectionName(s);
-                                                    }}
-                                                >
-                                                    {s.name || 'Section'}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {/* 본문: pointer-events-none 으로 노드 드래그/선택 통과 */}
-                                        <div className="flex-1 min-h-0 pointer-events-none" />
-                                        {/* 리사이즈 핸들 */}
-                                        {handles.map((handle) => (
-                                            <div
-                                                key={handle.key}
-                                                className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
-                                                style={{
-                                                    left: handle.left,
-                                                    top: handle.top,
-                                                    width: HANDLE_SIZE,
-                                                    height: HANDLE_SIZE,
-                                                    transform: 'translate(-50%, -50%)',
-                                                    cursor: handle.cursor,
+                                        {isEditing ? (
+                                            <input
+                                                type="text"
+                                                value={editingSectionName}
+                                                onChange={(e) => setEditingSectionName(e.target.value)}
+                                                onBlur={() => saveSectionName(s.id)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') saveSectionName(s.id);
+                                                    if (e.key === 'Escape') {
+                                                        setEditingSectionId(null);
+                                                        setEditingSectionName('');
+                                                    }
                                                 }}
-                                                onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                                className="flex-1 min-w-0 bg-white/90 border border-blue-300 rounded px-1.5 py-0.5 text-xs font-semibold text-gray-800 outline-none focus:ring-1 focus:ring-blue-400"
+                                                autoFocus
                                             />
-                                        ))}
+                                        ) : (
+                                            <span
+                                                className="text-xs font-semibold text-gray-700 truncate flex-1 min-w-0"
+                                                onDoubleClick={(e) => {
+                                                    e.stopPropagation();
+                                                    startEditingSectionName(s);
+                                                }}
+                                            >
+                                                {s.name || 'Section'}
+                                            </span>
+                                        )}
                                     </div>
-                                );
-                            })}
+                                    {handles.map((handle) => (
+                                        <div
+                                            key={handle.key}
+                                            className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
+                                            style={{
+                                                left: handle.left,
+                                                top: handle.top,
+                                                width: HANDLE_SIZE,
+                                                height: HANDLE_SIZE,
+                                                transform: 'translate(-50%, -50%)',
+                                                cursor: handle.cursor,
+                                            }}
+                                            onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
+                                        />
+                                    ))}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 
