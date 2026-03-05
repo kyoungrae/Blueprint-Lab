@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Entity, Relationship, ERDState, HistoryLog, Attribute } from '../types/erd';
+import type { Entity, Relationship, ERDState, HistoryLog, Attribute, Section } from '../types/erd';
 
 interface ERDStore extends ERDState {
     past: ERDState[];
@@ -16,6 +16,9 @@ interface ERDStore extends ERDState {
     addRelationship: (relationship: Relationship, user?: any) => void;
     updateRelationship: (id: string, updates: Partial<Relationship>, user?: any) => void;
     deleteRelationship: (id: string, user?: any) => void;
+    addSection: (section: Section, user?: any) => void;
+    updateSection: (id: string, updates: Partial<Section>, user?: any) => void;
+    deleteSection: (id: string, user?: any) => void;
     exportData: () => ERDState;
     importData: (data: ERDState) => void;
     mergeData: (data: ERDState, overwrite?: boolean) => void;
@@ -30,8 +33,8 @@ const MAX_HISTORY = 50;
 
 export const useERDStore = create<ERDStore>((set, get) => {
     const pushHistory = (state: ERDStore) => {
-        const { entities, relationships, past, history } = state;
-        const newPast = [...past, { entities, relationships, history }].slice(-MAX_HISTORY);
+        const { entities, relationships, sections, past, history } = state;
+        const newPast = [...past, { entities, relationships, sections: sections ?? [], history }].slice(-MAX_HISTORY);
         return {
             past: newPast,
             future: [],
@@ -88,6 +91,7 @@ export const useERDStore = create<ERDStore>((set, get) => {
     return {
         entities: [],
         relationships: [],
+        sections: [],
         history: [],
         past: [],
         future: [],
@@ -222,6 +226,34 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 history: [createLog(user, 'DELETE', 'RELATIONSHIP', id, `Deleted relationship`), ...state.history].slice(0, 100)
             })),
 
+        addSection: (section, user) =>
+            set((state) => {
+                if ((state.sections ?? []).some(s => s.id === section.id)) return state;
+                return {
+                    ...pushHistory(state),
+                    sections: [...(state.sections ?? []), section],
+                };
+            }),
+
+        updateSection: (id, updates, _user) =>
+            set((state) => ({
+                ...pushHistory(state),
+                sections: (state.sections ?? []).map((s) => (s.id === id ? { ...s, ...updates } : s)),
+            })),
+
+        deleteSection: (id, _user) =>
+            set((state) => {
+                const sections = (state.sections ?? []).filter((s) => s.id !== id);
+                const entities = state.entities.map((e) =>
+                    e.sectionId === id ? { ...e, sectionId: undefined as string | undefined } : e
+                );
+                return {
+                    ...pushHistory(state),
+                    sections,
+                    entities,
+                };
+            }),
+
         updateAttribute: (entityId, attrId, updates, user) =>
             set((state) => {
                 const entity = state.entities.find(e => e.id === entityId);
@@ -257,9 +289,10 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 const newPast = state.past.slice(0, state.past.length - 1);
                 return {
                     past: newPast,
-                    future: [{ entities: state.entities, relationships: state.relationships }, ...state.future].slice(0, MAX_HISTORY),
+                    future: [{ entities: state.entities, relationships: state.relationships, sections: state.sections ?? [] }, ...state.future].slice(0, MAX_HISTORY),
                     entities: previous.entities,
                     relationships: previous.relationships,
+                    sections: previous.sections ?? state.sections ?? [],
                     canUndo: newPast.length > 0,
                     canRedo: true
                 };
@@ -271,10 +304,11 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 const next = state.future[0];
                 const newFuture = state.future.slice(1);
                 return {
-                    past: [...state.past, { entities: state.entities, relationships: state.relationships }].slice(-MAX_HISTORY),
+                    past: [...state.past, { entities: state.entities, relationships: state.relationships, sections: state.sections ?? [] }].slice(-MAX_HISTORY),
                     future: newFuture,
                     entities: next.entities,
                     relationships: next.relationships,
+                    sections: next.sections ?? state.sections ?? [],
                     canUndo: true,
                     canRedo: newFuture.length > 0
                 };
@@ -285,6 +319,7 @@ export const useERDStore = create<ERDStore>((set, get) => {
             return {
                 entities: state.entities,
                 relationships: state.relationships,
+                sections: state.sections ?? [],
             };
         },
 
@@ -296,8 +331,9 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 );
                 return {
                     ...pushHistory(state),
-                    entities: data.entities,
+                    entities: data.entities ?? state.entities,
                     relationships: cleanedRelationships,
+                    sections: Array.isArray(data.sections) ? data.sections : [],
                     history: data.history || state.history,
                 };
             }),
@@ -357,10 +393,16 @@ export const useERDStore = create<ERDStore>((set, get) => {
                     finalEntities.some(e => e.id === r.target)
                 );
 
+                const mergedSections = [...(state.sections ?? [])];
+                (data.sections ?? []).forEach((newSec: Section) => {
+                    if (!mergedSections.some(s => s.id === newSec.id)) mergedSections.push(newSec);
+                });
+
                 return {
                     ...history,
                     entities: finalEntities,
                     relationships: finalRelationships,
+                    sections: mergedSections,
                 };
             }),
     };

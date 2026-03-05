@@ -17,6 +17,16 @@ export interface Entity {
     attributes: Attribute[];
     isLocked?: boolean;
     comment?: string;
+    /** 이 엔티티가 속한 섹션 id (없으면 루트) */
+    sectionId?: string | null;
+}
+
+/** 피그마 스타일 영역: 마우스로 드래그해 만든 그룹. 테이블을 끌어다 놓으면 섹션 하위로 들어감 */
+export interface Section {
+    id: string;
+    name?: string;
+    position: { x: number; y: number };
+    size: { width: number; height: number };
 }
 
 /** 관계선 끝 기호: 일 필수(1), 일 선택(0또는1), 다 필수(1이상), 다 선택(0이상) */
@@ -78,6 +88,7 @@ export interface HistoryLog {
 export interface ERDState {
     entities: Entity[];
     relationships: Relationship[];
+    sections?: Section[];
     history?: HistoryLog[];
 }
 

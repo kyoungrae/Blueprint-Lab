@@ -26,13 +26,13 @@ import ImportModal from './ImportModal';
 import Sidebar from './Sidebar';
 import HistoryModal from './HistoryModal';
 import { useERDStore } from '../store/erdStore';
-import { type Relationship } from '../types/erd';
+import { type Relationship, type Section } from '../types/erd';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { OnlineUsers, UserCursors } from './collaboration';
 import PremiumTooltip from './screenNode/PremiumTooltip';
-import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Zap, Undo2, Redo2, History } from 'lucide-react';
+import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Zap, Undo2, Redo2, History, Square } from 'lucide-react';
 import { getLayoutedElements } from '../utils/layout';
 import { getForceLayoutedElements } from '../utils/forceLayout';
 import { generateSQLFromERD } from '../utils/sqlGenerator';
@@ -64,12 +64,15 @@ const ERDCanvasContent: React.FC = () => {
     const {
         entities,
         relationships,
+        sections = [],
         addEntity,
         updateEntity,
         deleteEntity,
         addRelationship,
         updateRelationship,
         deleteRelationship,
+        addSection,
+        updateSection,
         exportData,
         importData,
         mergeData,
@@ -94,8 +97,27 @@ const ERDCanvasContent: React.FC = () => {
     const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
     const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+    const [isSectionDrawMode, setIsSectionDrawMode] = useState(false);
+    const [sectionDrag, setSectionDrag] = useState<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
+    const [sectionMoveState, setSectionMoveState] = useState<{
+        sectionId: string;
+        startFlow: { x: number; y: number };
+        startSectionPosition: { x: number; y: number };
+        startEntityPositions: Record<string, { x: number; y: number }>;
+    } | null>(null);
+    const [sectionResizeState, setSectionResizeState] = useState<{
+        sectionId: string;
+        handle: string;
+        startFlow: { x: number; y: number };
+        startPosition: { x: number; y: number };
+        startSize: { width: number; height: number };
+    } | null>(null);
+    const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+    const [editingSectionName, setEditingSectionName] = useState('');
+    const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
-    const { getViewport, screenToFlowPosition, getNodes } = useReactFlow();
+    const { getViewport, screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
+    const { x: viewportX, y: viewportY, zoom: viewportZoom } = useViewport();
 
     // Collaboration Store
     const { updateCursor, sendOperation, isSynced } = useSyncStore();
@@ -110,6 +132,172 @@ const ERDCanvasContent: React.FC = () => {
         updateCursor({ ...position });
     }, [screenToFlowPosition, getViewport, updateCursor]);
 
+    // 섹션 그리기: 마우스로 영역 지정
+    const onSectionOverlayMouseDown = useCallback(
+        (e: React.MouseEvent) => {
+            if (!isSectionDrawMode || e.button !== 0) return;
+            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            setSectionDrag({ start: pos, current: pos });
+        },
+        [isSectionDrawMode, screenToFlowPosition]
+    );
+    const onSectionOverlayMouseMove = useCallback(
+        (e: React.MouseEvent) => {
+            if (!sectionDrag) return;
+            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            setSectionDrag((d) => (d ? { ...d, current: pos } : null));
+        },
+        [sectionDrag, screenToFlowPosition]
+    );
+    const onSectionOverlayMouseUp = useCallback(
+        (e: React.MouseEvent) => {
+            if (e.button !== 0 || !sectionDrag) return;
+            const { start, current } = sectionDrag;
+            const x = Math.min(start.x, current.x);
+            const y = Math.min(start.y, current.y);
+            const width = Math.max(20, Math.abs(current.x - start.x));
+            const height = Math.max(20, Math.abs(current.y - start.y));
+            const baseName = 'Section';
+            const existingNames = new Set((sections as Section[]).map((s) => s.name ?? baseName));
+            let name = baseName;
+            if (existingNames.has(baseName)) {
+                let n = 1;
+                while (existingNames.has(`${baseName} ${n}`)) n++;
+                name = `${baseName} ${n}`;
+            }
+            addSection({
+                id: `section_${Date.now()}`,
+                name,
+                position: { x, y },
+                size: { width, height },
+            });
+            setSectionDrag(null);
+            setIsSectionDrawMode(false);
+        },
+        [sectionDrag, sections, addSection]
+    );
+    const onSectionOverlayMouseLeave = useCallback(() => {
+        if (sectionDrag) setSectionDrag(null);
+    }, [sectionDrag]);
+
+    const MIN_SECTION_SIZE = 50;
+
+    // 섹션 드래그: 이동 시 하위 엔티티 함께 이동
+    const onSectionBodyMouseDown = useCallback(
+        (e: React.MouseEvent, sectionId: string) => {
+            if (e.button !== 0 || sectionResizeState || editingSectionId) return;
+            e.stopPropagation();
+            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const sec = (sections as Section[]).find((s) => s.id === sectionId);
+            if (!sec) return;
+            const startEntityPositions: Record<string, { x: number; y: number }> = {};
+            entities.filter((ent) => ent.sectionId === sectionId).forEach((ent) => {
+                startEntityPositions[ent.id] = { ...ent.position };
+            });
+            setSectionMoveState({
+                sectionId,
+                startFlow: pos,
+                startSectionPosition: { ...sec.position },
+                startEntityPositions,
+            });
+        },
+        [screenToFlowPosition, sectionResizeState, editingSectionId, sections, entities]
+    );
+
+    // 섹션 리사이즈 핸들 mousedown
+    const onSectionResizeMouseDown = useCallback(
+        (e: React.MouseEvent, sectionId: string, handle: string) => {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            const sec = (sections as Section[]).find((s) => s.id === sectionId);
+            if (!sec) return;
+            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            setSectionResizeState({
+                sectionId,
+                handle,
+                startFlow: pos,
+                startPosition: { ...sec.position },
+                startSize: { ...sec.size },
+            });
+        },
+        [sections, screenToFlowPosition]
+    );
+
+    useEffect(() => {
+        if (!sectionMoveState) return;
+        const { sectionId, startFlow, startSectionPosition, startEntityPositions } = sectionMoveState;
+        const onMove = (e: MouseEvent) => {
+            const cur = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const dx = cur.x - startFlow.x;
+            const dy = cur.y - startFlow.y;
+            updateSection(sectionId, {
+                position: { x: startSectionPosition.x + dx, y: startSectionPosition.y + dy },
+            });
+            Object.entries(startEntityPositions).forEach(([entId, pos]) => {
+                updateEntity(entId, {
+                    position: { x: pos.x + dx, y: pos.y + dy },
+                }, user);
+            });
+        };
+        const onUp = () => setSectionMoveState(null);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, [sectionMoveState, updateSection, updateEntity, user, screenToFlowPosition]);
+
+    useEffect(() => {
+        if (!sectionResizeState) return;
+        const sec = (sections as Section[]).find((s) => s.id === sectionResizeState.sectionId);
+        if (!sec) return;
+
+        const onMove = (e: MouseEvent) => {
+            const cur = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const dx = cur.x - sectionResizeState.startFlow.x;
+            const dy = cur.y - sectionResizeState.startFlow.y;
+            const { handle, startPosition, startSize } = sectionResizeState;
+            let x = startPosition.x;
+            let y = startPosition.y;
+            let w = startSize.width;
+            let h = startSize.height;
+            if (handle.includes('e')) w = Math.max(MIN_SECTION_SIZE, w + dx);
+            if (handle.includes('w')) {
+                const dw = Math.min(dx, w - MIN_SECTION_SIZE);
+                x = startPosition.x + dw;
+                w = startSize.width - dw;
+            }
+            if (handle.includes('s')) h = Math.max(MIN_SECTION_SIZE, h + dy);
+            if (handle.includes('n')) {
+                const dh = Math.min(dy, h - MIN_SECTION_SIZE);
+                y = startPosition.y + dh;
+                h = startSize.height - dh;
+            }
+            updateSection(sectionResizeState.sectionId, { position: { x, y }, size: { width: w, height: h } });
+        };
+        const onUp = () => setSectionResizeState(null);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, [sectionResizeState, sections, updateSection, screenToFlowPosition]);
+
+    const startEditingSectionName = useCallback((section: Section) => {
+        setEditingSectionId(section.id);
+        setEditingSectionName(section.name ?? '');
+    }, []);
+    const saveSectionName = useCallback(
+        (sectionId: string) => {
+            const trimmed = editingSectionName.trim();
+            if (trimmed) updateSection(sectionId, { name: trimmed });
+            setEditingSectionId(null);
+            setEditingSectionName('');
+        },
+        [editingSectionName, updateSection]
+    );
 
     // Handle remote operations
     useEffect(() => {
@@ -206,11 +394,12 @@ const ERDCanvasContent: React.FC = () => {
                 updateProjectData(currentProjectId, {
                     entities,
                     relationships,
+                    sections,
                 });
             }, 1000); // 1s debounce
             return () => clearTimeout(timer);
         }
-    }, [entities, relationships, currentProjectId, updateProjectData]);
+    }, [entities, relationships, sections, currentProjectId, updateProjectData]);
 
     useEffect(() => {
         setNodes((prevNodes) => {
@@ -667,19 +856,33 @@ const ERDCanvasContent: React.FC = () => {
         setIsLayoutMenuOpen(false);
     }, [nodes, edges, entities, relationships, setNodes, importData, sendOperation, user]);
 
-    const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
-        // Update local
-        updateEntity(node.id, { position: node.position }, user);
+    const onNodeDragStop = useCallback(
+        (_: React.MouseEvent, node: Node) => {
+            const nodeCenter = {
+                x: node.position.x + (typeof node.width === 'number' ? node.width : 200) / 2,
+                y: node.position.y + (typeof node.height === 'number' ? node.height : 100) / 2,
+            };
+            const sectionList = sections as Section[];
+            const containingSection = sectionList.find(
+                (s) =>
+                    nodeCenter.x >= s.position.x &&
+                    nodeCenter.x <= s.position.x + s.size.width &&
+                    nodeCenter.y >= s.position.y &&
+                    nodeCenter.y <= s.position.y + s.size.height
+            );
+            const sectionId = containingSection?.id ?? undefined;
+            updateEntity(node.id, { position: node.position, sectionId: sectionId || null }, user);
 
-        // Broadcast
-        sendOperation({
-            type: 'ENTITY_MOVE',
-            targetId: node.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: { position: node.position }
-        });
-    }, [updateEntity, user, sendOperation]);
+            sendOperation({
+                type: 'ENTITY_MOVE',
+                targetId: node.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { position: node.position, sectionId: sectionId ?? null },
+            });
+        },
+        [updateEntity, user, sendOperation, sections]
+    );
 
     if (currentProjectId && !isSynced) {
         return (
@@ -759,6 +962,16 @@ const ERDCanvasContent: React.FC = () => {
                         >
                             <Plus size={16} className="shrink-0" />
                             <span className="whitespace-nowrap hidden sm:inline">테이블 추가</span>
+                        </button>
+                    </PremiumTooltip>
+
+                    <PremiumTooltip placement="bottom" offsetBottom={30} label={isSectionDrawMode ? '캔버스에서 영역을 드래그해 섹션을 만드세요' : '섹션 추가'}>
+                        <button
+                            onClick={() => setIsSectionDrawMode((v) => !v)}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-bold shadow-md shrink-0 ${isSectionDrawMode ? 'bg-blue-600 text-white ring-2 ring-blue-300' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}
+                        >
+                            <Square size={16} className="shrink-0" />
+                            <span className="whitespace-nowrap hidden sm:inline">섹션 추가</span>
                         </button>
                     </PremiumTooltip>
 
@@ -945,7 +1158,8 @@ const ERDCanvasContent: React.FC = () => {
                     </div>
                 </div> {/* This closes the toolbar div from line 481 */}
 
-                {/* React Flow Canvas */}
+                {/* 1) React Flow Canvas - 먼저 배치, absolute inset-0 + z-[1] (아래 레이어). 노드 드래그/클릭은 2번 레이어가 pointer-events-none 이라 여기로 전달됨 */}
+                <div className="absolute inset-0 z-[1]">
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
@@ -991,6 +1205,130 @@ const ERDCanvasContent: React.FC = () => {
                         color="#84878bff"
                     />
                 </ReactFlow>
+                </div>
+
+                {/* 2) 섹션 영역 시각화 - z-[10]으로 위에 그리기(박스 보이게), wrapper·섹션본문은 pointer-events-none → 클릭은 아래 React Flow로 전달, 제목/리사이즈만 pointer-events-auto */}
+                {sections.length > 0 && (
+                    <div
+                        className="absolute inset-0 z-[10] overflow-visible pointer-events-none"
+                        style={{
+                            transform: `translate(${viewportX}px, ${viewportY}px) scale(${viewportZoom})`,
+                            transformOrigin: '0 0',
+                        }}
+                    >
+                            {(sections as Section[]).map((s) => {
+                                const isEditing = editingSectionId === s.id;
+                                const HANDLE_SIZE = 8;
+                                const w = s.size.width;
+                                const h = s.size.height;
+                                const handles: { key: string; cursor: string; left: number; top: number }[] = [
+                                    { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
+                                    { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
+                                    { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
+                                    { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
+                                    { key: 'se', cursor: 'nwse-resize', left: w, top: h },
+                                    { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
+                                    { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
+                                    { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
+                                ];
+                                return (
+                                    <div
+                                        key={s.id}
+                                        className={`absolute border-2 border-blue-400/80 bg-blue-400/5 rounded-lg flex flex-col pointer-events-none transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-blue-400/40' : 'shadow-none'}`}
+                                        style={{
+                                            left: s.position.x,
+                                            top: s.position.y,
+                                            width: s.size.width,
+                                            height: s.size.height,
+                                        }}
+                                    >
+                                        {/* 제목 바: 더블클릭 시 편집, 여기서만 섹션 드래그 가능 (노드 클릭 통과 위해) */}
+                                        <div
+                                            className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-blue-400/15 border-b border-blue-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
+                                            onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
+                                            onMouseEnter={() => setHoveredSectionId(s.id)}
+                                            onMouseLeave={() => setHoveredSectionId(null)}
+                                        >
+                                            {isEditing ? (
+                                                <input
+                                                    type="text"
+                                                    value={editingSectionName}
+                                                    onChange={(e) => setEditingSectionName(e.target.value)}
+                                                    onBlur={() => saveSectionName(s.id)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') saveSectionName(s.id);
+                                                        if (e.key === 'Escape') {
+                                                            setEditingSectionId(null);
+                                                            setEditingSectionName('');
+                                                        }
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    className="flex-1 min-w-0 bg-white/90 border border-blue-300 rounded px-1.5 py-0.5 text-xs font-semibold text-gray-800 outline-none focus:ring-1 focus:ring-blue-400"
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <span
+                                                    className="text-xs font-semibold text-gray-700 truncate flex-1 min-w-0"
+                                                    onDoubleClick={(e) => {
+                                                        e.stopPropagation();
+                                                        startEditingSectionName(s);
+                                                    }}
+                                                >
+                                                    {s.name || 'Section'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {/* 본문: pointer-events-none 으로 노드 드래그/선택 통과 */}
+                                        <div className="flex-1 min-h-0 pointer-events-none" />
+                                        {/* 리사이즈 핸들 */}
+                                        {handles.map((handle) => (
+                                            <div
+                                                key={handle.key}
+                                                className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
+                                                style={{
+                                                    left: handle.left,
+                                                    top: handle.top,
+                                                    width: HANDLE_SIZE,
+                                                    height: HANDLE_SIZE,
+                                                    transform: 'translate(-50%, -50%)',
+                                                    cursor: handle.cursor,
+                                                }}
+                                                onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
+                                            />
+                                        ))}
+                                    </div>
+                                );
+                            })}
+                    </div>
+                )}
+
+                {/* 3) 섹션 그리기 오버레이 (영역 지정 시에만) */}
+                {isSectionDrawMode && (
+                    <div
+                        className="absolute inset-0 z-[100] cursor-crosshair"
+                        onMouseDown={onSectionOverlayMouseDown}
+                        onMouseMove={onSectionOverlayMouseMove}
+                        onMouseUp={onSectionOverlayMouseUp}
+                        onMouseLeave={onSectionOverlayMouseLeave}
+                    >
+                        {sectionDrag && flowWrapper.current && (() => {
+                            const a = flowToScreenPosition(sectionDrag.start);
+                            const b = flowToScreenPosition(sectionDrag.current);
+                            const r = flowWrapper.current.getBoundingClientRect();
+                            const left = Math.min(a.x, b.x) - r.left;
+                            const top = Math.min(a.y, b.y) - r.top;
+                            const width = Math.max(1, Math.abs(b.x - a.x));
+                            const height = Math.max(1, Math.abs(b.y - a.y));
+                            return (
+                                <div
+                                    className="absolute border-2 border-blue-500 bg-blue-500/10 pointer-events-none"
+                                    style={{ left, top, width, height }}
+                                />
+                            );
+                        })()}
+                    </div>
+                )}
 
                 {/* Modals */}
                 {isImportModalOpen && (
