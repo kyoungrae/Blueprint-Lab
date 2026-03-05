@@ -62,21 +62,13 @@ function layoutComponentDagre(compNodes: Node[], compEdges: Edge[]): Node[] {
         return compNodes.map(n => ({ ...n, position: { x: 0, y: 0 } }));
     }
 
-    // 노드 중 가장 큰 높이/너비를 찾아서 간격을 동적으로 결정
-    let maxH = 0, maxW = 0;
-    compNodes.forEach(n => {
-        const { width, height } = getNodeSize(n);
-        maxH = Math.max(maxH, height);
-        maxW = Math.max(maxW, width);
-    });
-
     const dagreGraph = new dagre.graphlib.Graph();
     dagreGraph.setGraph({
         rankdir: 'LR',
-        // ranksep: 서로 다른 rank(계층) 사이의 거리 → 가로 간격. 가장 넓은 노드 너비 + 여백.
-        ranksep: maxW + 120,
-        // nodesep: 같은 rank 안에서 위아래 노드 사이의 거리 → 세로 간격. 가장 높은 노드 높이 + 여백.
-        nodesep: maxH + 80,
+        // ranksep: 계층(rank) 간 순수 여백. 노드 크기는 Dagre가 이미 알고 있음.
+        ranksep: 100,
+        // nodesep: 같은 계층 내 노드 간 순수 여백.
+        nodesep: 60,
     });
     dagreGraph.setDefaultEdgeLabel(() => ({}));
 
