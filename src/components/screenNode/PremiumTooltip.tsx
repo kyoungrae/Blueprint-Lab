@@ -26,9 +26,11 @@ interface PremiumTooltipProps {
     /** bottom 배치 시 버튼과의 간격(px). 기본 8 */
     offsetBottom?: number;
     zIndex?: number;
+    /** 래퍼 div에 붙일 클래스 (예: w-full로 부모 너비 채우기) */
+    wrapperClassName?: string;
 }
 
-const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement = 'bottom', offsetBottom, zIndex = DEFAULT_TOOLTIP_Z_INDEX }) => {
+const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement = 'bottom', offsetBottom, zIndex = DEFAULT_TOOLTIP_Z_INDEX, wrapperClassName }) => {
     const [visible, setVisible] = useState(false);
     const [portalPos, setPortalPos] = useState({ left: 0, top: 0 });
     const [viewportPos, setViewportPos] = useState({ left: 0, top: 0 });
@@ -125,7 +127,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
     return (
         <div
             ref={wrapperRef}
-            className="nodrag nopan relative inline-flex items-center justify-center"
+            className={`nodrag nopan relative inline-flex items-center justify-center ${wrapperClassName ?? ''}`.trim()}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
