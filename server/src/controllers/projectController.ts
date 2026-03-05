@@ -172,6 +172,17 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                     savedAt: new Date()
                 };
             } else {
+                // MongoDB document size limit is 16MB; reject before save to return clear error
+                const payloadSize = Buffer.byteLength(JSON.stringify(data), 'utf8');
+                const MAX_SNAPSHOT_BYTES = 14 * 1024 * 1024; // 14MB to stay under 16MB doc limit
+                if (payloadSize > MAX_SNAPSHOT_BYTES) {
+                    return res.status(413).json({
+                        message: '저장 데이터가 너무 큽니다. 테이블을 여러 번에 나누어 추가하거나, 일부 테이블을 삭제한 뒤 다시 시도해 주세요.',
+                        code: 'PAYLOAD_TOO_LARGE',
+                        size: payloadSize,
+                        limit: MAX_SNAPSHOT_BYTES,
+                    });
+                }
                 project.currentSnapshot = {
                     ...data,
                     version: (project.currentSnapshot?.version || 0) + 1,
@@ -208,9 +219,20 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
 
         await project.save();
         res.json(project);
-    } catch (error) {
+    } catch (error: any) {
         console.error('Update project error:', error);
-        res.status(500).json({ message: '프로젝트 수정 중 오류가 발생했습니다.' });
+        const msg = error?.message ?? '';
+        const isMongoTooLarge = error?.code === 10334 || msg.includes('document is too large') || msg.includes('BSON');
+        if (isMongoTooLarge) {
+            return res.status(413).json({
+                message: '저장 데이터가 너무 큽니다. 테이블을 여러 번에 나누어 추가하거나, 일부를 삭제한 뒤 다시 시도해 주세요.',
+                code: 'PAYLOAD_TOO_LARGE',
+            });
+        }
+        res.status(500).json({
+            message: '프로젝트 수정 중 오류가 발생했습니다.',
+            ...(process.env.NODE_ENV !== 'production' && msg ? { detail: msg } : {}),
+        });
     }
 };
 

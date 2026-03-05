@@ -18,7 +18,16 @@ async function sendProjectDataPatch(id: string, data: any) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data }),
         });
-        if (!response.ok) console.error('Failed to sync project data to server');
+        if (!response.ok) {
+            let serverMessage = 'Failed to sync project data to server';
+            try {
+                const body = await response.json();
+                if (body?.message) serverMessage = body.message;
+            } catch {
+                // ignore
+            }
+            console.error(serverMessage, response.status === 413 ? '(데이터가 너무 큽니다)' : '');
+        }
     } catch (error) {
         console.error('Update project data error:', error);
     }

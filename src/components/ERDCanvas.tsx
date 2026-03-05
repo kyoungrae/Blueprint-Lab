@@ -426,14 +426,11 @@ const ERDCanvasContent: React.FC = () => {
     }, [currentProjectId, fetchProjects]);
 
     // Initial load: restore ERD state from project data (local from persist, remote from fetchProjects)
-    // Re-run when projects is populated or when current project data changes (e.g. fetchProjects returns fresh data with sections)
+    // Only re-run when switching project (currentProjectId/currentProject.id) or when projects list is first populated.
+    // Do NOT depend on currentProject.updatedAt or currentProject.data — that would re-run after our own auto-save and cause an infinite loop with mergeData/importData.
     useEffect(() => {
         if (currentProjectId && currentProject?.data) {
             const d = currentProject.data as import('../types/erd').ERDState;
-            const sectionsLen = d.sections?.length ?? -1;
-            // #region agent log
-            fetch('http://127.0.0.1:7788/ingest/b67387ba-eb25-4cfc-be0f-3dc7938c6bf2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'ERDCanvas.tsx:initialLoadEffect',message:'importData called',data:{currentProjectId,sectionsLen,entitiesLen:d.entities?.length},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
             importData({
                 entities: d.entities ?? [],
                 relationships: d.relationships ?? [],
@@ -441,14 +438,7 @@ const ERDCanvasContent: React.FC = () => {
                 history: d.history ?? [],
             });
         }
-    }, [
-        currentProjectId,
-        currentProject?.id,
-        currentProject?.updatedAt,
-        (currentProject?.data as { sections?: unknown[] } | undefined)?.sections?.length,
-        importData,
-        projects.length,
-    ]);
+    }, [currentProjectId, currentProject?.id, importData, projects.length]);
 
     // Auto-save ERDStore (entities, relationships, sections) to ProjectStore
     // - Local: persist to localStorage via projectStore
