@@ -69,12 +69,16 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
                 setUseBodyPortal(false);
                 return;
             }
+            // 컨테이너는 있지만 트리거가 밖에 있음 → body 포탈로 패널 위에 표시
+            setViewportPos({
+                left: centerX,
+                top: placement === 'top' ? tr.top - gap : tr.bottom + gap,
+            });
+            setUseBodyPortal(true);
+            return;
         }
-        setViewportPos({
-            left: centerX,
-            top: placement === 'top' ? tr.top - gap : tr.bottom + gap,
-        });
-        setUseBodyPortal(true);
+        // 컨텍스트 없음(ERD 캔버스 등) → 인라인으로 줌/패닝 시 레이블에 붙어서 스케일되도록
+        setUseBodyPortal(false);
     }, [placement, gap, portalRootRef]);
 
     const handleMouseEnter = useCallback(() => {
@@ -87,7 +91,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
     const inlineStyle: React.CSSProperties =
         placement === 'top'
             ? { left: '50%', bottom: '100%', transform: 'translate(-50%, 0)', marginBottom: gap, zIndex }
-            : { left: '50%', top: '100%', transform: 'translate(-50%, 0)', marginTop: gap, zIndex };
+            : { left: '50%', top: '20px', transform: 'translate(-50%, 0)', marginTop: gap, zIndex };
 
     const containerPortalStyle: React.CSSProperties =
         placement === 'top'
