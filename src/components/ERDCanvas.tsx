@@ -1158,8 +1158,8 @@ const ERDCanvasContent: React.FC = () => {
                     </div>
                 </div> {/* This closes the toolbar div from line 481 */}
 
-                {/* 1) React Flow Canvas - 먼저 배치, absolute inset-0 + z-[1] (아래 레이어). 노드 드래그/클릭은 2번 레이어가 pointer-events-none 이라 여기로 전달됨 */}
-                <div className="absolute inset-0 z-[1]">
+                {/* 1) React Flow Canvas - z-[10]으로 섹션 배경(z-[1])보다 위에 그려서 엔티티 색상이 섹션 채움에 틴트되지 않음 */}
+                <div className="absolute inset-0 z-[10]">
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}

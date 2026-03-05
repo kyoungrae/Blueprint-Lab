@@ -146,7 +146,7 @@ const Sidebar: React.FC = () => {
                             const isEditing = editingSectionId === section.id;
                             return (
                                 <div key={section.id} className="space-y-0.5">
-                                    <div className="flex items-center gap-2 px-2 py-3 rounded-lg bg-gray-100/80 border border-gray-100 min-h-[64px]">
+                                    <div className="flex items-center gap-2 px-2 py-3 rounded-lg bg-gray-100/80 border border-gray-100 min-h-[32px]">
                                         <FolderOpen size={14} className="text-blue-500 shrink-0" />
                                         {isEditing ? (
                                             <input
