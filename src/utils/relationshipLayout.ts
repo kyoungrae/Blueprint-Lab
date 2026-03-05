@@ -64,11 +64,11 @@ function layoutComponentDagre(compNodes: Node[], compEdges: Edge[]): Node[] {
 
     const dagreGraph = new dagre.graphlib.Graph();
     dagreGraph.setGraph({
-        rankdir: 'LR',
-        // ranksep: 계층(rank) 간 순수 여백. 노드 크기는 Dagre가 이미 알고 있음.
+        rankdir: 'TB',
+        // ranksep: 위아래 계층(rank) 간 순수 여백
         ranksep: 100,
-        // nodesep: 같은 계층 내 노드 간 순수 여백.
-        nodesep: 60,
+        // nodesep: 같은 계층 내 좌우 노드 간 순수 여백
+        nodesep: 80,
     });
     dagreGraph.setDefaultEdgeLabel(() => ({}));
 
