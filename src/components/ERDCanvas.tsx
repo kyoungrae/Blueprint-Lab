@@ -899,10 +899,22 @@ const ERDCanvasContent: React.FC = () => {
                 );
 
                 if (existingRel) {
-                    // MOVE/UPDATE existing relationship instead of creating duplicate
+                    // B→A로 드래그 시 기존 A→B 관계와 방향이 반대인 경우 핸들을 스왑해야 함
+                    // 예) existingRel: source=A, target=B
+                    //     connection: source=B(sourceHandle=b2), target=A(targetHandle=a3)
+                    //     → existingRel.source=A에 적용해야 할 핸들은 a3(connection.targetHandle)
+                    //     → existingRel.target=B에 적용해야 할 핸들은 b2(connection.sourceHandle)
+                    const isReversed =
+                        existingRel.source === connection.target &&
+                        existingRel.target === connection.source;
+
                     const updates = {
-                        sourceHandle: connection.sourceHandle || undefined,
-                        targetHandle: connection.targetHandle || undefined,
+                        sourceHandle: (isReversed
+                            ? connection.targetHandle
+                            : connection.sourceHandle) || undefined,
+                        targetHandle: (isReversed
+                            ? connection.sourceHandle
+                            : connection.targetHandle) || undefined,
                     };
                     updateRelationship(existingRel.id, updates, user);
 
