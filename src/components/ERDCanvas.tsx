@@ -63,9 +63,9 @@ const UserCursorsLayer: React.FC = () => {
 
 const ERDCanvasContent: React.FC = () => {
     const {
-        entities,
-        relationships,
-        sections = [],
+        entitiesById,
+        relationshipsById,
+        sections,
         addEntity,
         updateEntity,
         deleteEntity,
@@ -84,6 +84,9 @@ const ERDCanvasContent: React.FC = () => {
         canUndo,
         canRedo
     } = useERDStore();
+
+    const entities = React.useMemo(() => Object.values(entitiesById), [entitiesById]);
+    const relationships = React.useMemo(() => Object.values(relationshipsById), [relationshipsById]);
 
     const { user, logout } = useAuthStore();
     const { projects, currentProjectId, setCurrentProject, updateProjectData, fetchProjects } = useProjectStore();
@@ -452,9 +455,6 @@ const ERDCanvasContent: React.FC = () => {
         const handleStateSync = (e: CustomEvent<any>) => {
             const state = e.detail;
             if (!state) return;
-            // #region agent log
-            fetch('http://127.0.0.1:7788/ingest/b67387ba-eb25-4cfc-be0f-3dc7938c6bf2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'ERDCanvas.tsx:state_sync',message:'state_sync received',data:{sectionsLen:state.sections?.length??-1},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-            // #endregion
             console.log('Applying synced state:', state);
             importData(state);
         };
@@ -467,9 +467,6 @@ const ERDCanvasContent: React.FC = () => {
     // For remote projects: fetch latest from server on mount so we get sections (rehydrated state may be stale)
     useEffect(() => {
         if (currentProjectId && !currentProjectId.startsWith('local_') && typeof fetchProjects === 'function') {
-            // #region agent log
-            fetch('http://127.0.0.1:7788/ingest/b67387ba-eb25-4cfc-be0f-3dc7938c6bf2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'ERDCanvas.tsx:fetchEffect',message:'calling fetchProjects',data:{currentProjectId},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-            // #endregion
             fetchProjects();
         }
     }, [currentProjectId, fetchProjects]);
@@ -523,8 +520,8 @@ const ERDCanvasContent: React.FC = () => {
         const flush = () => {
             const pid = useProjectStore.getState().currentProjectId;
             if (!pid) return;
-            const { entities: e, relationships: r, sections: s } = useERDStore.getState();
-            useProjectStore.getState().updateProjectData(pid, { entities: e, relationships: r, sections: s ?? [] }, true);
+            const data = useERDStore.getState().exportData();
+            useProjectStore.getState().updateProjectData(pid, data, true);
         };
         window.addEventListener('beforeunload', flush);
         window.addEventListener('pagehide', flush);
@@ -543,9 +540,9 @@ const ERDCanvasContent: React.FC = () => {
                 const existingNode = prevNodes.find((n) => n.id === entity.id);
                 const inView = allInView || visibleNodeIds.has(entity.id);
                 const position = duringDrag && existingNode ? existingNode.position : entity.position;
-                const data = inView ? { entity, inView: true as const } : { entity };
+                const data = inView ? { entityId: entity.id, inView: true as const } : { entityId: entity.id, entity };
                 if (existingNode && existingNode.position.x === position.x && existingNode.position.y === position.y &&
-                    existingNode.data?.entity === entity && (existingNode.type === 'entity') === inView) {
+                    existingNode.data?.entityId === entity.id && (existingNode.type === 'entity') === inView) {
                     return existingNode;
                 }
                 return {
@@ -576,8 +573,9 @@ const ERDCanvasContent: React.FC = () => {
                 if (selectedNodes.length > 0 || selectedEdges.length > 0) {
                     e.preventDefault();
                     if (selectedNodes.length > 0) {
+                        const firstName = entitiesById[selectedNodes[0].id]?.name ?? selectedNodes[0].id;
                         const confirmMsg = selectedNodes.length === 1
-                            ? `'${selectedNodes[0].data.entity.name}' 테이블을 삭제하시겠습니까?`
+                            ? `'${firstName}' 테이블을 삭제하시겠습니까?`
                             : `${selectedNodes.length}개의 테이블을 삭제하시겠습니까?`;
 
                         if (window.confirm(confirmMsg)) {

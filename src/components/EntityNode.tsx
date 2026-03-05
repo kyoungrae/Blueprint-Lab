@@ -210,23 +210,24 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
 });
 
 export interface EntityNodeData {
-    entity: Entity;
+    entityId: string;
+    entity?: Entity;
     inView?: boolean;
 }
 
 /** Hooks-free placeholder for off-screen nodes (used when type is entityPlaceholder) */
-export const EntityNodePlaceholder: React.FC<NodeProps<{ entity: Entity }>> = memo(({ data, selected }) => (
+export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entity: Entity }>> = memo(({ data, selected }) => (
     <div
         className={`rounded-lg border-2 min-w-[120px] max-w-[160px] px-2 py-1.5 text-xs font-medium truncate bg-white border-gray-200 shadow-sm ${selected ? 'border-orange-500 ring-1 ring-orange-300' : ''}`}
-        title={data.entity.name}
+        title={data.entity?.name ?? data.entityId}
     >
-        {data.entity.name}
+        {data.entity?.name ?? data.entityId}
     </div>
 ));
 
-const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => {
-    const { entity } = data;
-    // Selective subscriptions: only re-render when these identities change (they don't), not when entities/projects change
+const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: nodeId }) => {
+    const entityId = data.entityId ?? (data as { entity?: Entity }).entity?.id ?? nodeId;
+    const entity = useERDStore((s) => s.entitiesById[entityId]);
     const updateEntity = useERDStore((s) => s.updateEntity);
     const deleteEntity = useERDStore((s) => s.deleteEntity);
     const dbType = useProjectStore((s) => {
@@ -236,8 +237,9 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected }) => 
     const sendOperation = useSyncStore((s) => s.sendOperation);
     const user = useAuthStore((s) => s.user);
     const availableTypes = DATA_TYPES[dbType];
+    const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(entityId);
 
-    const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(entity.id);
+    if (!entity) return null;
     const isLocalLocked = entity.isLocked ?? true; // Default to locked
     const isLocked = isLocalLocked || isLockedByOther;
 

@@ -92,6 +92,14 @@ export interface ERDState {
     history?: HistoryLog[];
 }
 
+/** Normalized store shape for minimal re-renders (keyed by id) */
+export interface ERDStateNormalized {
+    entitiesById: Record<string, Entity>;
+    relationshipsById: Record<string, Relationship>;
+    sections: Section[];
+    history: HistoryLog[];
+}
+
 export interface ScreenDesignState {
     screens: unknown[];
     flows: unknown[];

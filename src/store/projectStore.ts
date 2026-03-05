@@ -20,16 +20,29 @@ async function sendProjectDataPatch(id: string, data: any) {
         });
         if (!response.ok) {
             let serverMessage = 'Failed to sync project data to server';
+            let detail = '';
             try {
                 const body = await response.json();
                 if (body?.message) serverMessage = body.message;
+                if (body?.detail) detail = body.detail;
             } catch {
                 // ignore
             }
-            console.error(serverMessage, response.status === 413 ? '(데이터가 너무 큽니다)' : '');
+            const suffix = response.status === 413 ? ' (데이터가 너무 큽니다)' : (detail ? ` ${detail}` : '');
+            console.error(serverMessage + suffix);
         }
-    } catch (error) {
-        console.error('Update project data error:', error);
+    } catch (error: any) {
+        const isNetworkError =
+            error?.name === 'TypeError' &&
+            (error?.message?.includes('fetch') || error?.message?.includes('NetworkError') || error?.message?.includes('Failed to fetch'));
+        if (isNetworkError) {
+            console.warn(
+                '프로젝트 저장 요청을 보낼 수 없습니다. 백엔드 서버가 실행 중인지, 인터넷 연결을 확인해 주세요.',
+                error
+            );
+        } else {
+            console.error('Update project data error:', error);
+        }
     }
 }
 

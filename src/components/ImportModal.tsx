@@ -11,7 +11,10 @@ interface ImportModalProps {
 }
 
 const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
-    const { entities, mergeData, addLog } = useERDStore();
+    const entitiesById = useERDStore((s) => s.entitiesById);
+    const entities = React.useMemo(() => Object.values(entitiesById), [entitiesById]);
+    const mergeData = useERDStore((s) => s.mergeData);
+    const addLog = useERDStore((s) => s.addLog);
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
     const { currentProjectId } = useProjectStore();

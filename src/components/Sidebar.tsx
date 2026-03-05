@@ -40,7 +40,10 @@ const EntityItem: React.FC<{ entity: Entity; onFocus: (e: React.MouseEvent, node
 );
 
 const Sidebar: React.FC = () => {
-    const { entities, sections = [], updateSection } = useERDStore();
+    const entitiesById = useERDStore((s) => s.entitiesById);
+    const entities = React.useMemo(() => Object.values(entitiesById), [entitiesById]);
+    const sections = useERDStore((s) => s.sections);
+    const updateSection = useERDStore((s) => s.updateSection);
     const { fitView, setNodes } = useReactFlow();
     const [search, setSearch] = useState('');
     const [composing, setComposing] = useState<string | null>(null);

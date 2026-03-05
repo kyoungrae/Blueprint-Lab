@@ -1,13 +1,36 @@
 import { create } from 'zustand';
 import type { Entity, Relationship, ERDState, HistoryLog, Attribute, Section } from '../types/erd';
 
-interface ERDStore extends ERDState {
-    past: ERDState[];
-    future: ERDState[];
+function arrayToEntitiesById(entities: Entity[]): Record<string, Entity> {
+    const out: Record<string, Entity> = {};
+    entities.forEach((e) => { out[e.id] = e; });
+    return out;
+}
+function arrayToRelationshipsById(relationships: Relationship[]): Record<string, Relationship> {
+    const out: Record<string, Relationship> = {};
+    relationships.forEach((r) => { out[r.id] = r; });
+    return out;
+}
+
+interface HistorySnapshot {
+    entitiesById: Record<string, Entity>;
+    relationshipsById: Record<string, Relationship>;
+    sections: Section[];
+    history: HistoryLog[];
+}
+
+interface ERDStore {
+    entitiesById: Record<string, Entity>;
+    relationshipsById: Record<string, Relationship>;
+    sections: Section[];
+    history: HistoryLog[];
+    past: HistorySnapshot[];
+    future: HistorySnapshot[];
     canUndo: boolean;
     canRedo: boolean;
 
-    history: HistoryLog[];
+    getEntities: () => Entity[];
+    getRelationships: () => Relationship[];
 
     addEntity: (entity: Entity, user?: any) => void;
     updateEntity: (id: string, entity: Partial<Entity>, user?: any) => void;
@@ -32,15 +55,15 @@ interface ERDStore extends ERDState {
 const MAX_HISTORY = 50;
 
 export const useERDStore = create<ERDStore>((set, get) => {
-    const pushHistory = (state: ERDStore) => {
-        const { entities, relationships, sections, past, history } = state;
-        const newPast = [...past, { entities, relationships, sections: sections ?? [], history }].slice(-MAX_HISTORY);
-        return {
-            past: newPast,
-            future: [],
-            canUndo: true,
-            canRedo: false
+    const pushHistory = (state: ERDStore): Partial<ERDStore> => {
+        const snap: HistorySnapshot = {
+            entitiesById: { ...state.entitiesById },
+            relationshipsById: { ...state.relationshipsById },
+            sections: [...state.sections],
+            history: [...state.history],
         };
+        const newPast = [...state.past, snap].slice(-MAX_HISTORY);
+        return { past: newPast, future: [], canUndo: true, canRedo: false };
     };
 
     const createLog = (user: any, type: any, targetType: any, targetName: string, details: string): HistoryLog => ({
@@ -57,8 +80,6 @@ export const useERDStore = create<ERDStore>((set, get) => {
 
     const diffAttributes = (oldAttrs: Attribute[], newAttrs: Attribute[]) => {
         const details: string[] = [];
-
-        // Find modified attributes
         newAttrs.forEach(newAttr => {
             const oldAttr = oldAttrs.find(a => a.id === newAttr.id);
             if (oldAttr) {
@@ -69,14 +90,9 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 if (oldAttr.isNullable !== newAttr.isNullable) changes.push(`Nullable: ${oldAttr.isNullable ? 'Y' : 'N'} -> ${newAttr.isNullable ? 'Y' : 'N'}`);
                 if (oldAttr.isPK !== newAttr.isPK) changes.push(`PK: ${oldAttr.isPK ? 'Y' : 'N'} -> ${newAttr.isPK ? 'Y' : 'N'}`);
                 if (oldAttr.isFK !== newAttr.isFK) changes.push(`FK: ${oldAttr.isFK ? 'Y' : 'N'} -> ${newAttr.isFK ? 'Y' : 'N'}`);
-
-                if (changes.length > 0) {
-                    details.push(`Column '${newAttr.name}': ${changes.join(', ')}`);
-                }
+                if (changes.length > 0) details.push(`Column '${newAttr.name}': ${changes.join(', ')}`);
             }
         });
-
-        // Check for added/removed
         if (newAttrs.length > oldAttrs.length) {
             const added = newAttrs.find(na => !oldAttrs.some(oa => oa.id === na.id));
             if (added) details.push(`Added column: ${added.name}`);
@@ -84,13 +100,12 @@ export const useERDStore = create<ERDStore>((set, get) => {
             const removed = oldAttrs.find(oa => !newAttrs.some(na => na.id === oa.id));
             if (removed) details.push(`Deleted column: ${removed.name}`);
         }
-
         return details;
     };
 
     return {
-        entities: [],
-        relationships: [],
+        entitiesById: {},
+        relationshipsById: {},
         sections: [],
         history: [],
         past: [],
@@ -98,57 +113,47 @@ export const useERDStore = create<ERDStore>((set, get) => {
         canUndo: false,
         canRedo: false,
 
+        getEntities: () => Object.values(get().entitiesById),
+        getRelationships: () => Object.values(get().relationshipsById),
+
         addEntity: (entity, user) =>
             set((state) => {
-                if (state.entities.some(e => e.id === entity.id)) {
-                    return state;
-                }
+                if (state.entitiesById[entity.id]) return state;
+                const nextById = { ...state.entitiesById, [entity.id]: entity };
                 return {
+                    ...state,
                     ...pushHistory(state),
-                    entities: [...state.entities, entity],
-                    history: [createLog(user, 'CREATE', 'ENTITY', entity.name, `Created table: ${entity.name}`), ...state.history].slice(0, 100)
+                    entitiesById: nextById,
+                    history: [createLog(user, 'CREATE', 'ENTITY', entity.name, `Created table: ${entity.name}`), ...state.history].slice(0, 100),
                 };
             }),
 
         updateEntity: (id, updates, user) =>
             set((state) => {
-                const entity = state.entities.find(e => e.id === id);
+                const entity = state.entitiesById[id];
                 if (!entity) return state;
 
-                // Special case: ignore lock/unlock for history
                 const updateKeys = Object.keys(updates);
                 const isOnlyLockToggle = updateKeys.length === 1 && updateKeys[0] === 'isLocked';
 
-                const newEntities = state.entities.map((e) =>
-                    e.id === id ? { ...e, ...updates } : e
-                );
-
+                const updated = { ...entity, ...updates };
                 if (isOnlyLockToggle) {
-                    return { entities: newEntities };
+                    return { entitiesById: { ...state.entitiesById, [id]: updated } };
                 }
 
                 let detailParts: string[] = [];
-                if (updates.name && updates.name !== entity.name) {
-                    detailParts.push(`Table Name: ${entity.name} -> ${updates.name}`);
-                }
-                if (updates.attributes) {
-                    detailParts.push(...diffAttributes(entity.attributes, updates.attributes));
-                }
-                if (updates.comment !== undefined && updates.comment !== entity.comment) {
-                    detailParts.push(`Comment: ${entity.comment || 'none'} -> ${updates.comment || 'none'}`);
-                }
+                if (updates.name && updates.name !== entity.name) detailParts.push(`Table Name: ${entity.name} -> ${updates.name}`);
+                if (updates.attributes) detailParts.push(...diffAttributes(entity.attributes, updates.attributes));
+                if (updates.comment !== undefined && updates.comment !== entity.comment) detailParts.push(`Comment: ${entity.comment || 'none'} -> ${updates.comment || 'none'}`);
 
-                // If no real data changes were detected, don't add a log or push history
                 if (detailParts.length === 0) {
-                    return { entities: newEntities };
+                    return { entitiesById: { ...state.entitiesById, [id]: updated } };
                 }
 
                 const detailsText = detailParts.join(', ');
                 const now = new Date();
                 const lastLog = state.history[0];
                 const targetName = updates.name || entity.name;
-
-                // Merging Logic: If same user, same entity, same type, and within 3 seconds, update the previous log
                 const isMergeable = lastLog &&
                     lastLog.userId === (user?.id || 'anonymous') &&
                     lastLog.targetName === targetName &&
@@ -158,127 +163,131 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 if (isMergeable) {
                     const updatedLog = { ...lastLog, details: detailsText, timestamp: now.toISOString() };
                     return {
+                        ...state,
                         ...pushHistory(state),
-                        entities: newEntities,
-                        history: [updatedLog, ...state.history.slice(1)]
+                        entitiesById: { ...state.entitiesById, [id]: updated },
+                        history: [updatedLog, ...state.history.slice(1)],
                     };
                 }
 
                 const log = createLog(user, 'UPDATE', 'ENTITY', targetName, detailsText);
                 return {
+                    ...state,
                     ...pushHistory(state),
-                    entities: newEntities,
-                    history: [log, ...state.history].slice(0, 100)
+                    entitiesById: { ...state.entitiesById, [id]: updated },
+                    history: [log, ...state.history].slice(0, 100),
                 };
             }),
 
         updateEntities: (entityUpdates) =>
             set((state) => {
-                const updatesMap = new Map(entityUpdates.map(u => [u.id, u.updates]));
-                return {
-                    ...pushHistory(state),
-                    entities: state.entities.map((e) => {
-                        const updates = updatesMap.get(e.id);
-                        return updates ? { ...e, ...updates } : e;
-                    }),
-                };
+                const nextById = { ...state.entitiesById };
+                entityUpdates.forEach(({ id, updates }) => {
+                    const e = nextById[id];
+                    if (e) nextById[id] = { ...e, ...updates };
+                });
+                return { ...state, ...pushHistory(state), entitiesById: nextById };
             }),
 
         deleteEntity: (id, user) =>
             set((state) => {
-                const entity = state.entities.find(e => e.id === id);
+                const entity = state.entitiesById[id];
                 const log = createLog(user, 'DELETE', 'ENTITY', entity?.name || 'Unknown', `Deleted table: ${entity?.name || id}`);
+                const nextById = { ...state.entitiesById };
+                delete nextById[id];
+                const nextRels = { ...state.relationshipsById };
+                Object.keys(nextRels).forEach(rid => {
+                    const r = nextRels[rid];
+                    if (r.source === id || r.target === id) delete nextRels[rid];
+                });
                 return {
+                    ...state,
                     ...pushHistory(state),
-                    entities: state.entities.filter((e) => e.id !== id),
-                    relationships: state.relationships.filter(
-                        (r) => r.source !== id && r.target !== id
-                    ),
-                    history: [log, ...state.history].slice(0, 100)
+                    entitiesById: nextById,
+                    relationshipsById: nextRels,
+                    history: [log, ...state.history].slice(0, 100),
                 };
             }),
 
         addRelationship: (relationship, user) =>
             set((state) => {
-                if (state.relationships.some(r => r.id === relationship.id)) {
-                    return state;
-                }
+                if (state.relationshipsById[relationship.id]) return state;
+                const nextRels = { ...state.relationshipsById, [relationship.id]: relationship };
                 return {
+                    ...state,
                     ...pushHistory(state),
-                    relationships: [...state.relationships, relationship],
-                    history: [createLog(user, 'CREATE', 'RELATIONSHIP', relationship.id, `Created relationship: ${relationship.type}`), ...state.history].slice(0, 100)
+                    relationshipsById: nextRels,
+                    history: [createLog(user, 'CREATE', 'RELATIONSHIP', relationship.id, `Created relationship: ${relationship.type}`), ...state.history].slice(0, 100),
                 };
             }),
 
         updateRelationship: (id, updates, user) =>
-            set((state) => ({
-                ...pushHistory(state),
-                relationships: state.relationships.map((r) =>
-                    r.id === id ? { ...r, ...updates } : r
-                ),
-                history: [createLog(user, 'UPDATE', 'RELATIONSHIP', id, `Updated relationship properties`), ...state.history].slice(0, 100)
-            })),
+            set((state) => {
+                const r = state.relationshipsById[id];
+                if (!r) return state;
+                const nextRels = { ...state.relationshipsById, [id]: { ...r, ...updates } };
+                return {
+                    ...state,
+                    ...pushHistory(state),
+                    relationshipsById: nextRels,
+                    history: [createLog(user, 'UPDATE', 'RELATIONSHIP', id, `Updated relationship properties`), ...state.history].slice(0, 100),
+                };
+            }),
 
         deleteRelationship: (id, user) =>
-            set((state) => ({
-                ...pushHistory(state),
-                relationships: state.relationships.filter((r) => r.id !== id),
-                history: [createLog(user, 'DELETE', 'RELATIONSHIP', id, `Deleted relationship`), ...state.history].slice(0, 100)
-            })),
+            set((state) => {
+                const nextRels = { ...state.relationshipsById };
+                delete nextRels[id];
+                return {
+                    ...state,
+                    ...pushHistory(state),
+                    relationshipsById: nextRels,
+                    history: [createLog(user, 'DELETE', 'RELATIONSHIP', id, `Deleted relationship`), ...state.history].slice(0, 100),
+                };
+            }),
 
         addSection: (section, _user) =>
             set((state) => {
-                if ((state.sections ?? []).some(s => s.id === section.id)) return state;
-                return {
-                    ...pushHistory(state),
-                    sections: [...(state.sections ?? []), section],
-                };
+                if (state.sections.some(s => s.id === section.id)) return state;
+                return { ...state, ...pushHistory(state), sections: [...state.sections, section] };
             }),
 
         updateSection: (id, updates, _user) =>
             set((state) => ({
+                ...state,
                 ...pushHistory(state),
-                sections: (state.sections ?? []).map((s) => (s.id === id ? { ...s, ...updates } : s)),
+                sections: state.sections.map((s) => (s.id === id ? { ...s, ...updates } : s)),
             })),
 
         deleteSection: (id, _user) =>
             set((state) => {
-                const sections = (state.sections ?? []).filter((s) => s.id !== id);
-                const entities = state.entities.map((e) =>
-                    e.sectionId === id ? { ...e, sectionId: undefined as string | undefined } : e
-                );
-                return {
-                    ...pushHistory(state),
-                    sections,
-                    entities,
-                };
+                const sections = state.sections.filter((s) => s.id !== id);
+                const nextById = { ...state.entitiesById };
+                Object.keys(nextById).forEach(eid => {
+                    if (nextById[eid].sectionId === id) nextById[eid] = { ...nextById[eid], sectionId: undefined as string | undefined };
+                });
+                return { ...state, ...pushHistory(state), sections, entitiesById: nextById };
             }),
 
         updateAttribute: (entityId, attrId, updates, user) =>
             set((state) => {
-                const entity = state.entities.find(e => e.id === entityId);
+                const entity = state.entitiesById[entityId];
                 if (!entity) return state;
 
                 const newAttributes = entity.attributes.map(attr =>
                     attr.id === attrId ? { ...attr, ...updates } : attr
                 );
-
-                const newEntities = state.entities.map(e =>
-                    e.id === entityId ? { ...e, attributes: newAttributes } : e
-                );
-
-                // For history logging
                 const attr = entity.attributes.find(a => a.id === attrId);
                 const changes = Object.entries(updates)
                     .map(([key, value]) => `${key}: ${(attr as any)?.[key]} -> ${value}`)
                     .join(', ');
-
                 const log = createLog(user, 'UPDATE', 'ENTITY', entity.name, `Updated column '${attr?.name}': ${changes}`);
 
                 return {
+                    ...state,
                     ...pushHistory(state),
-                    entities: newEntities,
-                    history: [log, ...state.history].slice(0, 100)
+                    entitiesById: { ...state.entitiesById, [entityId]: { ...entity, attributes: newAttributes } },
+                    history: [log, ...state.history].slice(0, 100),
                 };
             }),
 
@@ -287,14 +296,21 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 if (state.past.length === 0) return state;
                 const previous = state.past[state.past.length - 1];
                 const newPast = state.past.slice(0, state.past.length - 1);
+                const futureSnap: HistorySnapshot = {
+                    entitiesById: { ...state.entitiesById },
+                    relationshipsById: { ...state.relationshipsById },
+                    sections: [...state.sections],
+                    history: [...state.history],
+                };
                 return {
                     past: newPast,
-                    future: [{ entities: state.entities, relationships: state.relationships, sections: state.sections ?? [] }, ...state.future].slice(0, MAX_HISTORY),
-                    entities: previous.entities,
-                    relationships: previous.relationships,
-                    sections: previous.sections ?? state.sections ?? [],
+                    future: [futureSnap, ...state.future].slice(0, MAX_HISTORY),
+                    entitiesById: previous.entitiesById,
+                    relationshipsById: previous.relationshipsById,
+                    sections: previous.sections,
+                    history: previous.history,
                     canUndo: newPast.length > 0,
-                    canRedo: true
+                    canRedo: true,
                 };
             }),
 
@@ -303,40 +319,46 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 if (state.future.length === 0) return state;
                 const next = state.future[0];
                 const newFuture = state.future.slice(1);
+                const pastSnap: HistorySnapshot = {
+                    entitiesById: { ...state.entitiesById },
+                    relationshipsById: { ...state.relationshipsById },
+                    sections: [...state.sections],
+                    history: [...state.history],
+                };
                 return {
-                    past: [...state.past, { entities: state.entities, relationships: state.relationships, sections: state.sections ?? [] }].slice(-MAX_HISTORY),
+                    past: [...state.past, pastSnap].slice(-MAX_HISTORY),
                     future: newFuture,
-                    entities: next.entities,
-                    relationships: next.relationships,
-                    sections: next.sections ?? state.sections ?? [],
+                    entitiesById: next.entitiesById,
+                    relationshipsById: next.relationshipsById,
+                    sections: next.sections,
+                    history: next.history,
                     canUndo: true,
-                    canRedo: newFuture.length > 0
+                    canRedo: newFuture.length > 0,
                 };
             }),
 
         exportData: () => {
             const state = get();
             return {
-                entities: state.entities,
-                relationships: state.relationships,
-                sections: state.sections ?? [],
+                entities: Object.values(state.entitiesById),
+                relationships: Object.values(state.relationshipsById),
+                sections: state.sections,
             };
         },
 
         importData: (data) =>
             set((state) => {
-                const cleanedRelationships = (data.relationships || []).filter(r =>
-                    data.entities.some((e: any) => e.id === r.source) &&
-                    data.entities.some((e: any) => e.id === r.target)
+                const entities = data.entities ?? [];
+                const relationships = (data.relationships || []).filter((r: Relationship) =>
+                    entities.some((e: Entity) => e.id === r.source) &&
+                    entities.some((e: Entity) => e.id === r.target)
                 );
                 const nextSections = Array.isArray(data.sections) ? data.sections : [];
-                // #region agent log
-                if (typeof fetch !== 'undefined') fetch('http://127.0.0.1:7788/ingest/b67387ba-eb25-4cfc-be0f-3dc7938c6bf2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'erdStore.ts:importData',message:'importData applying',data:{inSectionsLen:data.sections?.length??-1,nextSectionsLen:nextSections.length},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-                // #endregion
                 return {
+                    ...state,
                     ...pushHistory(state),
-                    entities: data.entities ?? state.entities,
-                    relationships: cleanedRelationships,
+                    entitiesById: arrayToEntitiesById(entities),
+                    relationshipsById: arrayToRelationshipsById(relationships),
                     sections: nextSections,
                     history: data.history || state.history,
                 };
@@ -354,60 +376,52 @@ export const useERDStore = create<ERDStore>((set, get) => {
         mergeData: (data, overwrite = false) =>
             set((state) => {
                 const history = pushHistory(state);
-                let newEntities = [...state.entities];
-                let newRelationships = [...state.relationships];
+                let newById = { ...state.entitiesById };
+                let newRelsById = { ...state.relationshipsById };
+                const entitiesList = Object.values(newById);
+                const nameToId = Object.fromEntries(entitiesList.map(e => [e.name.toLowerCase(), e.id]));
 
-                data.entities.forEach((newEntity) => {
-                    const existingIndex = newEntities.findIndex(
-                        (e) => e.name.toLowerCase() === newEntity.name.toLowerCase()
-                    );
-
-                    if (existingIndex !== -1) {
+                (data.entities ?? []).forEach((newEntity: Entity) => {
+                    const existingId = nameToId[newEntity.name.toLowerCase()];
+                    if (existingId !== undefined) {
                         if (overwrite) {
-                            const oldId = newEntities[existingIndex].id;
-                            newEntities[existingIndex] = { ...newEntity };
-                            newRelationships = newRelationships.filter(
-                                (r) => r.source !== oldId && r.target !== oldId
-                            );
-                        } else {
-                            return;
+                            Object.keys(newRelsById).forEach(rid => {
+                                const r = newRelsById[rid];
+                                if (r.source === existingId || r.target === existingId) delete newRelsById[rid];
+                            });
+                            delete newById[existingId];
+                            newById[newEntity.id] = newEntity;
+                            nameToId[newEntity.name.toLowerCase()] = newEntity.id;
                         }
                     } else {
-                        newEntities.push(newEntity);
+                        newById[newEntity.id] = newEntity;
+                        nameToId[newEntity.name.toLowerCase()] = newEntity.id;
                     }
                 });
 
-                data.relationships.forEach((newRel) => {
-                    const exists = newRelationships.some(
+                (data.relationships ?? []).forEach((newRel: Relationship) => {
+                    const exists = Object.values(newRelsById).some(
                         (r) =>
-                            (r.source === newRel.source &&
-                                r.target === newRel.target &&
-                                r.sourceHandle === newRel.sourceHandle &&
-                                r.targetHandle === newRel.targetHandle) ||
-                            (r.id === newRel.id)
+                            (r.source === newRel.source && r.target === newRel.target &&
+                                r.sourceHandle === newRel.sourceHandle && r.targetHandle === newRel.targetHandle) ||
+                            r.id === newRel.id
                     );
-                    if (!exists) {
-                        newRelationships.push(newRel);
+                    if (!exists && newById[newRel.source] && newById[newRel.target]) {
+                        newRelsById[newRel.id] = newRel;
                     }
                 });
 
-                const finalEntities = newEntities;
-                const finalRelationships = newRelationships.filter(r =>
-                    finalEntities.some(e => e.id === r.source) &&
-                    finalEntities.some(e => e.id === r.target)
+                const finalRels = Object.values(newRelsById).filter(r =>
+                    newById[r.source] && newById[r.target]
                 );
+                newRelsById = arrayToRelationshipsById(finalRels);
 
-                const mergedSections = [...(state.sections ?? [])];
+                const mergedSections = [...state.sections];
                 (data.sections ?? []).forEach((newSec: Section) => {
                     if (!mergedSections.some(s => s.id === newSec.id)) mergedSections.push(newSec);
                 });
 
-                return {
-                    ...history,
-                    entities: finalEntities,
-                    relationships: finalRelationships,
-                    sections: mergedSections,
-                };
+                return { ...state, ...history, entitiesById: newById, relationshipsById: newRelsById, sections: mergedSections };
             }),
     };
 });

@@ -155,9 +155,6 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         if (linkedComponentProjectId !== undefined) project.linkedComponentProjectId = linkedComponentProjectId;
         if (data) {
             if (project.projectType === 'COMPONENT' && (data.components !== undefined || data.flows !== undefined)) {
-                // #region agent log
-                fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'projectController.updateProject',message:'COMPONENT_save',data:{projectId:id,compCount:(data.components||[]).length},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
-                // #endregion
                 project.componentSnapshot = {
                     version: (project.componentSnapshot?.version || 0) + 1,
                     components: data.components ?? project.componentSnapshot?.components ?? [],
@@ -183,8 +180,24 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                         limit: MAX_SNAPSHOT_BYTES,
                     });
                 }
+                // Sanitize entities so every attribute has required fields (Mongoose validation)
+                const sanitizedEntities = Array.isArray(data.entities) ? data.entities.map((ent: any) => ({
+                    ...ent,
+                    attributes: Array.isArray(ent.attributes) ? ent.attributes.map((attr: any, idx: number) => ({
+                        id: attr?.id ?? `attr_${idx}`,
+                        name: attr?.name != null && String(attr.name).trim() !== '' ? String(attr.name).trim() : `column_${idx + 1}`,
+                        type: attr?.type != null && String(attr.type).trim() !== '' ? String(attr.type).trim() : 'VARCHAR',
+                        isPK: Boolean(attr?.isPK),
+                        isFK: Boolean(attr?.isFK),
+                        isNullable: attr?.isNullable !== false,
+                        defaultVal: attr?.defaultVal != null ? String(attr.defaultVal) : undefined,
+                        comment: attr?.comment != null ? String(attr.comment) : undefined,
+                        length: attr?.length != null ? String(attr.length) : undefined,
+                    })) : [],
+                })) : [];
                 project.currentSnapshot = {
                     ...data,
+                    entities: sanitizedEntities,
                     version: (project.currentSnapshot?.version || 0) + 1,
                     savedAt: new Date()
                 };
@@ -221,7 +234,7 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         res.json(project);
     } catch (error: any) {
         console.error('Update project error:', error);
-        const msg = error?.message ?? '';
+        const msg = error?.message ?? (error ? String(error) : '');
         const isMongoTooLarge = error?.code === 10334 || msg.includes('document is too large') || msg.includes('BSON');
         if (isMongoTooLarge) {
             return res.status(413).json({
@@ -231,7 +244,7 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         }
         res.status(500).json({
             message: '프로젝트 수정 중 오류가 발생했습니다.',
-            ...(process.env.NODE_ENV !== 'production' && msg ? { detail: msg } : {}),
+            ...(process.env.NODE_ENV !== 'production' ? { detail: msg || (error?.stack ?? 'Unknown error') } : {}),
         });
     }
 };

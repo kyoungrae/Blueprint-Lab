@@ -120,9 +120,6 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
 
             // Get current state
             let state = await projectStateManager.getState(projectId);
-            // #region agent log
-            if (state) fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'SocketServer.join_project',message:'stateFromRedis',data:{projectId,screensCount:state.screens?.length||0},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
 
             // If no state in Redis, load from MongoDB
             if (!state) {
@@ -132,9 +129,6 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     if (project) {
                         const snap = project as any;
                         const projectType = snap.projectType || 'ERD';
-                        // #region agent log
-                        fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'SocketServer.join_project',message:'loadFromMongoDB',data:{projectId,projectType,usingComponentSnapshot:projectType==='COMPONENT',compCount:(snap.componentSnapshot?.components||[]).length,screenCount:(snap.screenSnapshot?.screens||[]).length},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-                        // #endregion
                         const isComponent = projectType === 'COMPONENT';
                         state = {
                             entities: snap.currentSnapshot?.entities || [],
@@ -468,9 +462,6 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
     try {
         const project = await Project.findById(projectId).select('projectType').lean();
         const projectType = (project as any)?.projectType || 'ERD';
-        // #region agent log
-        fetch('http://127.0.0.1:7788/ingest/d94b4e1a-77ec-4167-937b-9c37604ed749',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9b5a26'},body:JSON.stringify({sessionId:'9b5a26',location:'SocketServer.flushPendingSave',message:'saveToMongo',data:{projectId,projectType,savingToScreenSnapshot:projectType!=='COMPONENT',screensCount:(stateToSave.screens||[]).length},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         // Deep clone screens to ensure drawElements (incl. imageUrl) are stored as-is
         const screensToSave = JSON.parse(JSON.stringify(stateToSave.screens || []));
         if (projectType === 'COMPONENT') {
