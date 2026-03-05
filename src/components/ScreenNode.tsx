@@ -2278,7 +2278,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         >
             <TooltipPortalContext.Provider value={tooltipContainerRef}>
                 {/* 툴팁 포탈: overflow-hidden 밖에 있어서 잘리지 않고, 노드와 함께 줌/이동됨 */}
-                <div ref={tooltipContainerRef} className="absolute inset-0 pointer-events-none overflow-visible z-[11000]" aria-hidden />
+                <div ref={tooltipContainerRef} className="absolute inset-0 pointer-events-none overflow-visible z-[99999]" aria-hidden />
                 <EntityLockBadge entityId={screen.id} />
                 <div
                     ref={nodeRef}
