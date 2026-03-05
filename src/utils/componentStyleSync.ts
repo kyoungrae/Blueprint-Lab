@@ -63,6 +63,7 @@ function mergeTableCellData(target: DrawElement, source: DrawElement): DrawEleme
     }
 
     if (!changed) return target;
+
     return {
         ...target,
         tableCellData: newLegacy,

@@ -592,6 +592,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     useEffect(() => {
         setTableCellComposing(null);
     }, [editingCellIndex]);
+
+    // 표 패널 열릴 때 현재 V2 셀 분포와 잠금 인덱스를 스냅샷으로 로깅 (H2/H4 가설 검증)
+    useEffect(() => {
+        if (!showTablePanel) return;
+        const currentElements = screen.drawElements || [];
+        const selectedEl = currentElements.find(el => el.id === selectedElementIds[0]);
+        if (!selectedEl || selectedEl.type !== 'table') return;
+        const rows = selectedEl.tableRows || 3;
+        const cols = selectedEl.tableCols || 3;
+        const total = rows * cols;
+        const v2 = getV2Cells(selectedEl);
+    }, [showTablePanel, screen.drawElements, selectedElementIds]);
     const [tablePanelPos, setTablePanelPos] = useState({ x: 200, y: 100 });
     const isDraggingTablePanelRef = useRef(false);
     const isDraggingCellSelectionRef = useRef(false); // drag-to-select cells
@@ -1922,8 +1934,24 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     // ── Table V2 Utilities (flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells, gcd imported from ./screenNode/types) ──────────────────────────────────
 
-    // V2 셀 데이터를 요소에 저장하고 동기화 (closure over drawElements/update/syncUpdate)
+    // V2 셀 데이터를 요소에 저장하고 동기화 (항상 스토어 최신 drawElements 기준으로 병합)
     const saveV2Cells = (elId: string, v2Cells: TableCellData[], extraUpdates?: Partial<DrawElement>) => {
+        const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+        const prevEl = currentElements.find(el => el.id === elId);
+        const prevV2 = prevEl ? getV2Cells(prevEl) : [];
+        const summarizeNonEmpty = (cells: TableCellData[], rows?: number, cols?: number) => {
+            const result: { idx: number; r: number; c: number; content: string }[] = [];
+            if (!rows || !cols) return result;
+            const total = rows * cols;
+            for (let i = 0; i < Math.min(total, cells.length); i++) {
+                const cell = cells[i];
+                if (!cell || !cell.content || cell.content.toString().trim().length === 0) continue;
+                const { r, c } = flatIdxToRowCol(i, cols);
+                result.push({ idx: i, r, c, content: String(cell.content).slice(0, 32) });
+            }
+            return result;
+        };
+
         const legacyCellData = v2Cells.map(c => c.content);
         const legacySpans = v2Cells.map(c => ({
             rowSpan: c.isMerged ? 0 : c.rowSpan,
@@ -1937,7 +1965,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             ...extraUpdates,
         };
 
-        const nextElements = drawElements.map(el => el.id === elId ? { ...el, ...updates } : el);
+        const nextElements = currentElements.map(el => el.id === elId ? { ...el, ...updates } : el);
+
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
@@ -3726,6 +3755,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                             if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: html };
                                                                                                             const newData = [...(el.tableCellData || [])];
                                                                                                             newData[cellIndex] = html;
+
                                                                                                             const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
                                                                                                             update({ drawElements: nextElements });
                                                                                                             syncUpdate({ drawElements: nextElements });
@@ -4401,7 +4431,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
                             {/* ─── Table Panel ─── */}
                             {showTablePanel && (() => {
-                                const selectedEl = drawElements.find(el => el.id === selectedElementIds[0]);
+                                const tablePanelElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                const selectedEl = tablePanelElements.find(el => el.id === selectedElementIds[0]);
                                 if (!selectedEl || selectedEl.type !== 'table') return null;
                                 const rows = selectedEl.tableRows || 3;
                                 const cols = selectedEl.tableCols || 3;
@@ -4475,21 +4506,32 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     <button
                                                         onMouseDown={e => e.stopPropagation()}
                                                         onClick={() => {
-                                                            if (rows <= 1) return;
-                                                            const newRows = rows - 1;
-                                                            const newCellData = Array(newRows * cols).fill('');
-                                                            const newCellColors: (string | undefined)[] = Array(newRows * cols).fill(undefined);
-                                                            for (let r = 0; r < newRows; r++) {
-                                                                for (let c = 0; c < cols; c++) {
-                                                                    newCellData[r * cols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
-                                                                    newCellColors[r * cols + c] = selectedEl.tableCellColors?.[r * cols + c];
-                                                                }
+                                                            const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                                            const el = currentElements.find(e => e.id === selectedEl.id);
+                                                            if (!el || el.type !== 'table') return;
+                                                            const r = el.tableRows ?? 3;
+                                                            const c = el.tableCols ?? 3;
+                                                            if (r <= 1) return;
+                                                            const newRows = r - 1;
+                                                            const v2Cells = getV2Cells(el);
+                                                            const adjustedCols = c;
+                                                            const total = r * adjustedCols;
+                                                            const paddedV2 = [...v2Cells];
+                                                            while (paddedV2.length < total) {
+                                                                paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
                                                             }
+                                                            const newTotal = newRows * adjustedCols;
+                                                            const newV2 = paddedV2.slice(0, newTotal);
                                                             const newRowHeights = Array(newRows).fill(100 / newRows);
-                                                            const nextElements = drawElements.map(el =>
-                                                                el.id === selectedEl.id ? { ...el, tableRows: newRows, tableCellData: newCellData, tableRowHeights: newRowHeights, tableCellColors: newCellColors, tableCellDataV2: undefined, tableCellSpans: undefined, tableRowColWidths: undefined } : el
-                                                            );
-                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            const locked = el.tableCellLockedIndices ?? [];
+                                                            const newLocked = locked.filter(idx => idx < newTotal);
+
+                                                            saveV2Cells(el.id, newV2, {
+                                                                tableRows: newRows,
+                                                                tableRowHeights: newRowHeights,
+                                                                tableRowColWidths: undefined,
+                                                                tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                                            });
                                                             setSelectedCellIndices([]);
                                                             setEditingCellIndex(null);
                                                         }}
@@ -4499,20 +4541,34 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     <button
                                                         onMouseDown={e => e.stopPropagation()}
                                                         onClick={() => {
-                                                            const newRows = rows + 1;
-                                                            const newCellData = Array(newRows * cols).fill('');
-                                                            const newCellColors: (string | undefined)[] = Array(newRows * cols).fill(undefined);
-                                                            for (let r = 0; r < rows; r++) {
-                                                                for (let c = 0; c < cols; c++) {
-                                                                    newCellData[r * cols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
-                                                                    newCellColors[r * cols + c] = selectedEl.tableCellColors?.[r * cols + c];
-                                                                }
+                                                            const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                                            const el = currentElements.find(e => e.id === selectedEl.id);
+                                                            if (!el || el.type !== 'table') return;
+                                                            const r = el.tableRows ?? 3;
+                                                            const c = el.tableCols ?? 3;
+                                                            const newRows = r + 1;
+                                                            const v2Cells = getV2Cells(el);
+                                                            const adjustedCols = c;
+                                                            const total = r * adjustedCols;
+                                                            const paddedV2 = [...v2Cells];
+                                                            while (paddedV2.length < total) {
+                                                                paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                            }
+                                                            const newTotal = newRows * adjustedCols;
+                                                            const newV2 = [...paddedV2];
+                                                            while (newV2.length < newTotal) {
+                                                                newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
                                                             }
                                                             const newRowHeights = Array(newRows).fill(100 / newRows);
-                                                            const nextElements = drawElements.map(el =>
-                                                                el.id === selectedEl.id ? { ...el, tableRows: newRows, tableCellData: newCellData, tableRowHeights: newRowHeights, tableCellColors: newCellColors, tableCellDataV2: undefined, tableCellSpans: undefined, tableRowColWidths: undefined } : el
-                                                            );
-                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            const locked = el.tableCellLockedIndices ?? [];
+                                                            const newLocked = locked.slice(); // 행 추가는 기존 인덱스 유지
+
+                                                            saveV2Cells(el.id, newV2, {
+                                                                tableRows: newRows,
+                                                                tableRowHeights: newRowHeights,
+                                                                tableRowColWidths: undefined,
+                                                                tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                                            });
                                                             setSelectedCellIndices([]);
                                                             setEditingCellIndex(null);
                                                         }}
@@ -4526,21 +4582,44 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     <button
                                                         onMouseDown={e => e.stopPropagation()}
                                                         onClick={() => {
-                                                            if (cols <= 1) return;
-                                                            const newCols = cols - 1;
-                                                            const newCellData = Array(rows * newCols).fill('');
-                                                            const newCellColors: (string | undefined)[] = Array(rows * newCols).fill(undefined);
-                                                            for (let r = 0; r < rows; r++) {
-                                                                for (let c = 0; c < newCols; c++) {
-                                                                    newCellData[r * newCols + c] = selectedEl.tableCellData?.[r * cols + c] || '';
-                                                                    newCellColors[r * newCols + c] = selectedEl.tableCellColors?.[r * cols + c];
+                                                            const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                                            const el = currentElements.find(e => e.id === selectedEl.id);
+                                                            if (!el || el.type !== 'table') return;
+                                                            const numRows = el.tableRows ?? 3;
+                                                            const numCols = el.tableCols ?? 3;
+                                                            if (numCols <= 1) return;
+                                                            const newCols = numCols - 1;
+                                                            const v2Cells = getV2Cells(el);
+                                                            const adjustedRows = numRows;
+                                                            const total = adjustedRows * numCols;
+                                                            const paddedV2 = [...v2Cells];
+                                                            while (paddedV2.length < total) {
+                                                                paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                            }
+                                                            const newV2: TableCellData[] = [];
+                                                            for (let ri = 0; ri < numRows; ri++) {
+                                                                for (let ci = 0; ci < newCols; ci++) {
+                                                                    const oldIdx = ri * numCols + ci;
+                                                                    const v2 = paddedV2[oldIdx];
+                                                                    newV2.push(v2 || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
                                                                 }
                                                             }
                                                             const newColWidths = Array(newCols).fill(100 / newCols);
-                                                            const nextElements = drawElements.map(el =>
-                                                                el.id === selectedEl.id ? { ...el, tableCols: newCols, tableCellData: newCellData, tableColWidths: newColWidths, tableCellColors: newCellColors, tableCellDataV2: undefined, tableCellSpans: undefined, tableRowColWidths: undefined } : el
-                                                            );
-                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            const locked = el.tableCellLockedIndices ?? [];
+                                                            const newLocked = locked
+                                                                .map(idx => {
+                                                                    const { r, c } = flatIdxToRowCol(idx, numCols);
+                                                                    if (c >= newCols) return -1;
+                                                                    return r * newCols + c;
+                                                                })
+                                                                .filter(idx => idx >= 0);
+
+                                                            saveV2Cells(el.id, newV2, {
+                                                                tableCols: newCols,
+                                                                tableColWidths: newColWidths,
+                                                                tableRowColWidths: undefined,
+                                                                tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                                            });
                                                             setSelectedCellIndices([]);
                                                             setEditingCellIndex(null);
                                                         }}
@@ -4550,20 +4629,44 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                     <button
                                                         onMouseDown={e => e.stopPropagation()}
                                                         onClick={() => {
-                                                            const newCols = cols + 1;
-                                                            const newCellData = Array(rows * newCols).fill('');
-                                                            const newCellColors: (string | undefined)[] = Array(rows * newCols).fill(undefined);
-                                                            for (let r = 0; r < rows; r++) {
-                                                                for (let c = 0; c < newCols; c++) {
-                                                                    newCellData[r * newCols + c] = c < cols ? (selectedEl.tableCellData?.[r * cols + c] || '') : '';
-                                                                    newCellColors[r * newCols + c] = c < cols ? selectedEl.tableCellColors?.[r * cols + c] : undefined;
+                                                            const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                                            const el = currentElements.find(e => e.id === selectedEl.id);
+                                                            if (!el || el.type !== 'table') return;
+                                                            const numRows = el.tableRows ?? 3;
+                                                            const numCols = el.tableCols ?? 3;
+                                                            const newCols = numCols + 1;
+                                                            const v2Cells = getV2Cells(el);
+                                                            const adjustedRows = numRows;
+                                                            const total = adjustedRows * numCols;
+                                                            const paddedV2 = [...v2Cells];
+                                                            while (paddedV2.length < total) {
+                                                                paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                            }
+                                                            const newV2: TableCellData[] = [];
+                                                            for (let ri = 0; ri < numRows; ri++) {
+                                                                for (let ci = 0; ci < newCols; ci++) {
+                                                                    if (ci < numCols) {
+                                                                        const oldIdx = ri * numCols + ci;
+                                                                        const v2 = paddedV2[oldIdx];
+                                                                        newV2.push(v2 || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                    } else {
+                                                                        newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                    }
                                                                 }
                                                             }
                                                             const newColWidths = Array(newCols).fill(100 / newCols);
-                                                            const nextElements = drawElements.map(el =>
-                                                                el.id === selectedEl.id ? { ...el, tableCols: newCols, tableCellData: newCellData, tableColWidths: newColWidths, tableCellColors: newCellColors, tableCellDataV2: undefined, tableCellSpans: undefined, tableRowColWidths: undefined } : el
-                                                            );
-                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            const locked = el.tableCellLockedIndices ?? [];
+                                                            const newLocked = locked.map(idx => {
+                                                                const { r, c } = flatIdxToRowCol(idx, numCols);
+                                                                return r * newCols + c;
+                                                            });
+
+                                                            saveV2Cells(el.id, newV2, {
+                                                                tableCols: newCols,
+                                                                tableColWidths: newColWidths,
+                                                                tableRowColWidths: undefined,
+                                                                tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                                            });
                                                             setSelectedCellIndices([]);
                                                             setEditingCellIndex(null);
                                                         }}
