@@ -248,6 +248,18 @@ const ScreenDesignCanvasContent: React.FC = () => {
         }
     }, [screens, flows, currentProjectId, updateProjectData]);
 
+    // Unmount 시 현재 스토어 기준으로 즉시 저장 (격자 이동 등 직후 새로고침해도 유지)
+    useEffect(() => {
+        const projectId = currentProjectId;
+        return () => {
+            if (projectId) {
+                const { screens: scr, flows: flw } = useScreenDesignStore.getState();
+                const { updateProjectData: save } = useProjectStore.getState();
+                save(projectId, { screens: scr, flows: flw });
+            }
+        };
+    }, [currentProjectId]);
+
     // Sync screens → ReactFlow nodes (캔버스 70% 반영하여 entity 크기 계산, getCanvasDimensions 단일 소스)
     const computeNodeStyle = (screen: Screen): React.CSSProperties | undefined => {
         const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일

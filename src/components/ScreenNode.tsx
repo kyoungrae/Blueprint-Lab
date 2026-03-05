@@ -31,7 +31,7 @@ import { normalizeImageUrlForStorage } from '../utils/imageUrl';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
-import { getSmartGuidesAndSnap, type AlignmentGuides, type SnapState } from './screenNode/smartGuides';
+import { getSmartGuidesAndSnap, SNAP_THRESHOLD, type AlignmentGuides, type SnapState } from './screenNode/smartGuides';
 import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { GRID_STEP } from '../constants/canvasGrid';
 import { ScreenHeader } from './screenNode/ScreenHeader';
@@ -844,28 +844,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         syncUpdate({ guideLines: nextLines });
     };
 
-    /** 그리드에 맞춘 위치만 계산 (store 갱신 없음). 드래그 미리보기·moveGuideLine 공용 */
-    const getSnappedGuideLinePosition = (axis: 'vertical' | 'horizontal', rawValue: number): number => {
+    const moveGuideLine = (axis: 'vertical' | 'horizontal', oldValue: number, newValue: number): number => {
         const cw = canvasRef.current?.clientWidth ?? 400;
         const ch = canvasRef.current?.clientHeight ?? 300;
         const max = axis === 'vertical' ? cw : ch;
-        let clamped = Math.max(2, Math.min(max - 2, rawValue));
-        const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
-        const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
-        const outerW = canvasW - canvasInsetLocal * 2;
-        const outerH = canvasH - canvasInsetLocal * 2;
-        const innerStepX = outerW > 0 ? (GRID_STEP * canvasW) / outerW : GRID_STEP;
-        const innerStepY = outerH > 0 ? (GRID_STEP * canvasH) / outerH : GRID_STEP;
-        const centerXInner = canvasW / 2;
-        const centerYInner = canvasH / 2;
-        clamped = axis === 'vertical'
-            ? Math.round(centerXInner + Math.round((clamped - centerXInner) / innerStepX) * innerStepX)
-            : Math.round(centerYInner + Math.round((clamped - centerYInner) / innerStepY) * innerStepY);
-        return Math.max(2, Math.min(max - 2, clamped));
-    };
-
-    const moveGuideLine = (axis: 'vertical' | 'horizontal', oldValue: number, newValue: number): number => {
-        const clamped = getSnappedGuideLinePosition(axis, newValue);
+        const clamped = Math.max(2, Math.min(max - 2, Math.round(newValue)));
         const current = getScreenById(screen.id)?.guideLines;
         const vert = current?.vertical ?? guideLines.vertical;
         const horz = current?.horizontal ?? guideLines.horizontal;
@@ -902,21 +885,68 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const rect = canvasRef.current.getBoundingClientRect();
         const scaleX = canvasRef.current.clientWidth / rect.width;
         const scaleY = canvasRef.current.clientHeight / rect.height;
+        const cw = canvasRef.current.clientWidth;
+        const ch = canvasRef.current.clientHeight;
 
         const onMove = (me: MouseEvent) => {
             if (!guideLineDragRef.current) return;
             hasMoved = true;
-            const { axis: ax } = guideLineDragRef.current;
-            const newVal = ax === 'vertical'
-                ? Math.round((me.clientX - rect.left) * scaleX)
-                : Math.round((me.clientY - rect.top) * scaleY);
-            const snapped = getSnappedGuideLinePosition(ax, newVal);
+            const { axis: ax, value: startVal } = guideLineDragRef.current;
+            const rawVal = ax === 'vertical'
+                ? (me.clientX - rect.left) * scaleX
+                : (me.clientY - rect.top) * scaleY;
+            const max = ax === 'vertical' ? cw : ch;
+            const clampedRaw = Math.max(2, Math.min(max - 2, Math.round(rawVal)));
+
+            const current = getScreenById(screen.id);
+            const elements = current?.drawElements ?? [];
+            const gl = current?.guideLines ?? { vertical: [], horizontal: [] };
+
+            const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+            const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
+            const outerW = canvasW - canvasInsetLocal * 2;
+            const outerH = canvasH - canvasInsetLocal * 2;
+            const innerStepX = outerW > 0 ? (GRID_STEP * canvasW) / outerW : GRID_STEP;
+            const innerStepY = outerH > 0 ? (GRID_STEP * canvasH) / outerH : GRID_STEP;
+            const centerXInner = canvasW / 2;
+            const centerYInner = canvasH / 2;
+            const gridTickX: number[] = [];
+            for (let k = Math.ceil(-centerXInner / innerStepX); centerXInner + k * innerStepX <= canvasW; k++) {
+                const x = centerXInner + k * innerStepX;
+                if (x >= 0) gridTickX.push(Math.round(x));
+            }
+            const gridTickY: number[] = [];
+            for (let l = Math.ceil(-centerYInner / innerStepY); centerYInner + l * innerStepY <= canvasH; l++) {
+                const y = centerYInner + l * innerStepY;
+                if (y >= 0) gridTickY.push(Math.round(y));
+            }
+
+            const candidates: number[] = ax === 'vertical'
+                ? [cw / 2, ...gridTickX, ...elements.flatMap((el) => [el.x, el.x + el.width, el.x + el.width / 2]), ...gl.vertical.filter((v) => Math.abs(v - startVal) > 2)]
+                : [ch / 2, ...gridTickY, ...elements.flatMap((el) => [el.y, el.y + el.height, el.y + el.height / 2]), ...gl.horizontal.filter((v) => Math.abs(v - startVal) > 2)];
+
+            let snapped = clampedRaw;
+            let bestDist = SNAP_THRESHOLD + 1;
+            for (const cand of candidates) {
+                const d = Math.abs(clampedRaw - cand);
+                if (d <= SNAP_THRESHOLD && d < bestDist) {
+                    bestDist = d;
+                    snapped = Math.round(cand);
+                }
+            }
+            if (bestDist <= SNAP_THRESHOLD) {
+                setAlignmentGuides(ax === 'vertical' ? { vertical: [snapped], horizontal: [] } : { vertical: [], horizontal: [snapped] });
+            } else {
+                setAlignmentGuides(null);
+            }
+
             guideLineDragPreviewValueRef.current = snapped;
-            setGuideLineDragPreview(prev => prev ? { ...prev, currentValue: snapped } : null);
+            setGuideLineDragPreview((prev) => (prev ? { ...prev, currentValue: snapped } : null));
         };
         const onUp = () => {
             if (guideLineDragRef.current) {
                 const { axis: ax, value: startVal } = guideLineDragRef.current;
+                setAlignmentGuides(null);
                 if (hasMoved) {
                     const finalValue = guideLineDragPreviewValueRef.current;
                     moveGuideLine(ax, startVal, finalValue);
