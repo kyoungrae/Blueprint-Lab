@@ -41,7 +41,6 @@ import CanvasRulers from './screenNode/CanvasRulers';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 import { resolveFontFamilyCSS } from '../utils/fontFamily';
-import { BackgroundVariant } from 'reactflow';
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 

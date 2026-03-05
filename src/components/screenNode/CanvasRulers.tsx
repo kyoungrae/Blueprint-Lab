@@ -111,7 +111,7 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                     ))}
                     {/* Tick marks - 하단 배치, 3단계 눈금 (숫자와 겹치지 않음) */}
                     {horizontalTicks.map(({ x, level }) => {
-                        const { height, color } = getTickStyle(level, tickBaseHeight);
+                        const { color } = getTickStyle(level, tickBaseHeight);
                         return (
                             <div
                                 key={`h-${x}`}
@@ -165,8 +165,6 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                     {/* Tick marks - 우측 영역, 3단계 눈금 (숫자와 겹치지 않음) */}
                     {verticalTicks.map(({ y, level }) => {
                         const { color } = getTickStyle(level, tickBaseHeight);
-                        // 눈금 단계에 따라 길이가 달라지는 가로선
-                        const width = level === 'major' ? verticalTickZone : level === 'medium' ? verticalTickZone * 0.7 : verticalTickZone * 0.45;
                         return (
                             <div
                                 key={`v-${y}`}

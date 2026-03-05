@@ -226,7 +226,7 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 history: [createLog(user, 'DELETE', 'RELATIONSHIP', id, `Deleted relationship`), ...state.history].slice(0, 100)
             })),
 
-        addSection: (section, user) =>
+        addSection: (section, _user) =>
             set((state) => {
                 if ((state.sections ?? []).some(s => s.id === section.id)) return state;
                 return {

@@ -294,7 +294,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                         max={72}
                         onChange={(e) => {
                             const px = Math.min(72, Math.max(8, parseInt(e.target.value) || 12));
-                            const applied = applyFontSizePx(px);
+                            applyFontSizePx(px);
                             if (fromTable && textSelectionFromTable && editingTableId === el.id) {
                                 const cellIdx = textSelectionFromTable.cellIndex;
                                 const rows = el.tableRows || 3;
