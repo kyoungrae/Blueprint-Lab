@@ -1396,14 +1396,73 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             //   그룹 내부 개별 요소들이 각각 따로 스냅되지 않도록 함.
 
             // 드래그 중이 아닌 요소들만 대상 (컨테이너 rect 포함 → 중앙 정렬 시 가이드 표시)
-            const staticElements = drawElements.filter(el => !draggingElementIds.includes(el.id));
+            const staticAll = drawElements.filter(el => !draggingElementIds.includes(el.id));
+
+            // A(컨테이너) 안에 있는 B,C 만 서로 스마트 그리드가 적용되도록,
+            // 드래그 중인 요소들을 모두 포함하는 "부모 컨테이너"가 있으면
+            // 그 컨테이너 내부 요소들만 정렬 대상으로 제한한다.
+            let staticElements = staticAll;
+            if (staticAll.length > 0) {
+                // 드래그 중인 요소들의 바운딩 박스
+                const draggedBoxes = dragged.map(el => ({
+                    left: el.x,
+                    top: el.y,
+                    right: el.x + el.width,
+                    bottom: el.y + el.height,
+                }));
+
+                const containerCandidates = staticAll.filter(el => {
+                    const left = el.x;
+                    const top = el.y;
+                    const right = el.x + el.width;
+                    const bottom = el.y + el.height;
+                    if (right <= left || bottom <= top) return false;
+                    // 모든 드래그 요소를 감싸는 요소만 컨테이너 후보로 사용
+                    return draggedBoxes.every(b =>
+                        b.left >= left &&
+                        b.right <= right &&
+                        b.top >= top &&
+                        b.bottom <= bottom
+                    );
+                });
+
+                if (containerCandidates.length > 0) {
+                    // 가장 작은(타이트한) 컨테이너 하나만 사용
+                    const primary = containerCandidates.reduce((best, cur) => {
+                        const bestArea = best.width * best.height;
+                        const curArea = cur.width * cur.height;
+                        return curArea < bestArea ? cur : best;
+                    });
+                    const pLeft = primary.x;
+                    const pTop = primary.y;
+                    const pRight = primary.x + primary.width;
+                    const pBottom = primary.y + primary.height;
+
+                    staticElements = staticAll.filter(el => {
+                        if (el.id === primary.id) return true;
+                        const left = el.x;
+                        const top = el.y;
+                        const right = el.x + el.width;
+                        const bottom = el.y + el.height;
+                        // 컨테이너 안에 완전히 들어있는 요소만 후보
+                        return left >= pLeft && right <= pRight && top >= pTop && bottom <= pBottom;
+                    });
+                }
+            }
 
             // groupId 가 있는 요소들은 그룹 바운딩 박스로 합치고, 나머지는 단일 요소로 사용
+            // 단, 현재 드래그 중인 그룹 내부 요소들은 서로에 대해 개별 스냅이 가능해야 하므로
+            // draggingElementIds 에 속한 요소들의 groupId 에 대해서는 그룹 합치기를 하지 않는다.
             const groupedById = new Map<string, typeof staticElements>();
             const singles: typeof staticElements = [];
+            const draggingGroupIds = new Set(
+                drawElements
+                    .filter(el => draggingElementIds.includes(el.id) && el.groupId)
+                    .map(el => el.groupId as string),
+            );
 
             for (const el of staticElements) {
-                if (el.groupId) {
+                if (el.groupId && !draggingGroupIds.has(el.groupId)) {
                     if (!groupedById.has(el.groupId)) {
                         groupedById.set(el.groupId, []);
                     }
