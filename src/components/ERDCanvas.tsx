@@ -203,7 +203,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         onMouseDown={(e) => e.stopPropagation()}
                                         className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                                     </button>
                                 </PremiumTooltip>
                             </div>
@@ -346,7 +346,8 @@ const ERDCanvasContent: React.FC = () => {
         }
         const inView = computeInView(viewport, pane, ents);
         setVisibleNodeIds((prev) => {
-            if (prev.size !== inView.size || [...prev].some((id) => !inView.has(id))) return inView;
+            if (prev.size !== inView.size) return inView;
+            for (const id of prev) { if (!inView.has(id)) return inView; }
             return prev;
         });
     }, [computeInView]);
@@ -360,7 +361,8 @@ const ERDCanvasContent: React.FC = () => {
         const vp = getViewport();
         const inView = computeInView(vp, paneSize, entities);
         setVisibleNodeIds((prev) => {
-            if (prev.size !== inView.size || [...prev].some((id) => !inView.has(id))) return inView;
+            if (prev.size !== inView.size) return inView;
+            for (const id of prev) { if (!inView.has(id)) return inView; }
             return prev;
         });
     }, [paneSize, entities, computeInView, getViewport]);
@@ -369,15 +371,18 @@ const ERDCanvasContent: React.FC = () => {
     // Collaboration Store
     const { updateCursor, sendOperation, isSynced } = useSyncStore();
 
-    // Broadcast cursor position
+    // Broadcast cursor position (throttled to 50ms to reduce per-frame work)
+    const cursorThrottleRef = useRef<number>(0);
     const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
+        const now = Date.now();
+        if (now - cursorThrottleRef.current < 50) return;
+        cursorThrottleRef.current = now;
         const position = screenToFlowPosition({
             x: event.clientX,
             y: event.clientY,
         });
-
         updateCursor({ ...position });
-    }, [screenToFlowPosition, getViewport, updateCursor]);
+    }, [screenToFlowPosition, updateCursor]);
 
     // 섹션 그리기: 마우스로 영역 지정
     const onSectionOverlayMouseDown = useCallback(
@@ -732,14 +737,25 @@ const ERDCanvasContent: React.FC = () => {
         setNodes((prevNodes) => {
             const duringDrag = isDraggingRef.current;
             const allInView = visibleNodeIds.size === 0;
+            // [수정 1] O(n²) → O(n): Map으로 기존 노드를 O(1) 탐색
+            const prevNodeMap = new Map(prevNodes.map((n) => [n.id, n]));
             return deferredEntities.map((entity) => {
-                const existingNode = prevNodes.find((n) => n.id === entity.id);
+                const existingNode = prevNodeMap.get(entity.id);
                 const inView = allInView || visibleNodeIds.has(entity.id);
                 const position = duringDrag && existingNode ? existingNode.position : entity.position;
-                const data = inView ? { entityId: entity.id, inView: true as const } : { entityId: entity.id, entity };
-                if (existingNode && existingNode.position.x === position.x && existingNode.position.y === position.y &&
-                    existingNode.data?.entityId === entity.id && (existingNode.type === 'entity') === inView) {
-                    return existingNode;
+                // [수정 5] data 참조 안정화: 타입·entityId가 같으면 기존 data 객체 재사용 → EntityNode memo 활성화
+                const sameShape = existingNode &&
+                    existingNode.data?.entityId === entity.id &&
+                    (existingNode.type === 'entity') === inView;
+                const data = sameShape
+                    ? existingNode!.data
+                    : inView
+                        ? { entityId: entity.id, inView: true as const }
+                        : { entityId: entity.id, entity };
+                if (sameShape &&
+                    existingNode!.position.x === position.x &&
+                    existingNode!.position.y === position.y) {
+                    return existingNode!;
                 }
                 return {
                     id: entity.id,
@@ -1293,6 +1309,22 @@ const ERDCanvasContent: React.FC = () => {
                     nodeCenter.y <= s.position.y + s.size.height
             );
             const sectionId = containingSection?.id ?? undefined;
+
+            // [수정 4] 드래그 종료 후 뷰포트 culling 즉시 재계산 (200ms 디바운스 기다리지 않음)
+            const vp = getViewport();
+            const pane = paneSizeRef.current;
+            const ents = entitiesRef.current;
+            if (pane && ents.length) {
+                const inViewSet = computeInView(vp, pane, ents);
+                setVisibleNodeIds((prev) => {
+                    if (prev.size !== inViewSet.size) return inViewSet;
+                    for (const id of prev) { if (!inViewSet.has(id)) return inViewSet; }
+                    return prev;
+                });
+            }
+
+            // [수정 2] store 업데이트가 setNodes를 다시 실행하지 않도록 (ReactFlow가 이미 위치를 가짐)
+            skipNextEntitySyncRef.current = true;
             updateEntity(node.id, { position: node.position, sectionId: sectionId || null }, user);
 
             sendOperation({
@@ -1303,7 +1335,7 @@ const ERDCanvasContent: React.FC = () => {
                 payload: { position: node.position, sectionId: sectionId ?? null },
             });
         },
-        [updateEntity, user, sendOperation, sections]
+        [updateEntity, user, sendOperation, sections, getViewport, computeInView, paneSizeRef, entitiesRef]
     );
 
     if (currentProjectId && !isSynced) {
@@ -1589,68 +1621,68 @@ const ERDCanvasContent: React.FC = () => {
 
                 {/* 1) React Flow Canvas - z-[10]으로 섹션 배경(z-[1])보다 위에 그려서 엔티티 색상이 섹션 채움에 틴트되지 않음 */}
                 <div className="absolute inset-0 z-[10]" ref={paneContainerRef}>
-                <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onConnectStart={onConnectStart}
-                    onConnectEnd={onConnectEnd}
-                    onEdgeUpdate={onEdgeUpdate}
-                    onEdgeUpdateStart={onEdgeUpdateStart}
-                    onEdgeUpdateEnd={onEdgeUpdateEnd}
-                    edgeUpdaterRadius={20}
-                    isValidConnection={isValidConnection}
-                    onEdgeDoubleClick={onEdgeDoubleClick}
-                    onNodeDragStart={onNodeDragStart}
-                    onNodeDragStop={onNodeDragStop}
-                    nodeTypes={nodeTypes}
-                    edgeTypes={edgeTypes}
-                    connectionMode={ConnectionMode.Loose}
-                    panOnScroll={true}
-                    panOnScrollMode={PanOnScrollMode.Free}
-                    zoomOnScroll={false}
-                    zoomOnDoubleClick={false}
-                    zoomActivationKeyCode="Control"
-                    minZoom={0.05}
-                    maxZoom={4}
-                    fitView
-                    fitViewOptions={{ padding: 0.25 }}
-                    multiSelectionKeyCode="Shift"
-                    selectionKeyCode="Shift"
-                    deleteKeyCode={null}
-                    onPaneMouseMove={onPaneMouseMove}
-                >
-                    <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
-                    <SectionOverlayLayer
-                        sections={sections}
-                        hoveredSectionId={hoveredSectionId}
-                        setHoveredSectionId={setHoveredSectionId}
-                        editingSectionId={editingSectionId}
-                        editingSectionName={editingSectionName}
-                        setEditingSectionName={setEditingSectionName}
-                        setEditingSectionId={setEditingSectionId}
-                        startEditingSectionName={startEditingSectionName}
-                        saveSectionName={saveSectionName}
-                        deleteSection={deleteSection}
-                        onSectionBodyMouseDown={onSectionBodyMouseDown}
-                        onSectionResizeMouseDown={onSectionResizeMouseDown}
-                        sectionHeadersContainerRef={sectionHeadersContainerRef}
-                    />
-                    <UserCursorsLayer />
-                    <Controls />
-                    <MiniMap
-                        nodeColor={() => '#3b82f6'}
-                        className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
-                    />
-                    <Background
-                        variant={BackgroundVariant.Dots}
-                        gap={20}
-                        size={1.5}
-                        color="#84878bff"
-                    />
-                </ReactFlow>
+                    <ReactFlow
+                        nodes={nodes}
+                        edges={edges}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        onConnect={onConnect}
+                        onConnectStart={onConnectStart}
+                        onConnectEnd={onConnectEnd}
+                        onEdgeUpdate={onEdgeUpdate}
+                        onEdgeUpdateStart={onEdgeUpdateStart}
+                        onEdgeUpdateEnd={onEdgeUpdateEnd}
+                        edgeUpdaterRadius={20}
+                        isValidConnection={isValidConnection}
+                        onEdgeDoubleClick={onEdgeDoubleClick}
+                        onNodeDragStart={onNodeDragStart}
+                        onNodeDragStop={onNodeDragStop}
+                        nodeTypes={nodeTypes}
+                        edgeTypes={edgeTypes}
+                        connectionMode={ConnectionMode.Loose}
+                        panOnScroll={true}
+                        panOnScrollMode={PanOnScrollMode.Free}
+                        zoomOnScroll={false}
+                        zoomOnDoubleClick={false}
+                        zoomActivationKeyCode="Control"
+                        minZoom={0.05}
+                        maxZoom={4}
+                        fitView
+                        fitViewOptions={{ padding: 0.25 }}
+                        multiSelectionKeyCode="Shift"
+                        selectionKeyCode="Shift"
+                        deleteKeyCode={null}
+                        onPaneMouseMove={onPaneMouseMove}
+                    >
+                        <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
+                        <SectionOverlayLayer
+                            sections={sections}
+                            hoveredSectionId={hoveredSectionId}
+                            setHoveredSectionId={setHoveredSectionId}
+                            editingSectionId={editingSectionId}
+                            editingSectionName={editingSectionName}
+                            setEditingSectionName={setEditingSectionName}
+                            setEditingSectionId={setEditingSectionId}
+                            startEditingSectionName={startEditingSectionName}
+                            saveSectionName={saveSectionName}
+                            deleteSection={deleteSection}
+                            onSectionBodyMouseDown={onSectionBodyMouseDown}
+                            onSectionResizeMouseDown={onSectionResizeMouseDown}
+                            sectionHeadersContainerRef={sectionHeadersContainerRef}
+                        />
+                        <UserCursorsLayer />
+                        <Controls />
+                        <MiniMap
+                            nodeColor={() => '#3b82f6'}
+                            className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
+                        />
+                        <Background
+                            variant={BackgroundVariant.Dots}
+                            gap={20}
+                            size={1.5}
+                            color="#84878bff"
+                        />
+                    </ReactFlow>
                 </div>
 
                 {/* 3) 섹션 그리기 오버레이 (영역 지정 시에만) */}

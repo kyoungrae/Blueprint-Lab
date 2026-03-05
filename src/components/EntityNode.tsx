@@ -215,15 +215,91 @@ export interface EntityNodeData {
     inView?: boolean;
 }
 
-/** Hooks-free placeholder for off-screen nodes (used when type is entityPlaceholder) */
-export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entity: Entity }>> = memo(({ data, selected }) => (
-    <div
-        className={`rounded-lg border-2 min-w-[120px] max-w-[160px] px-2 py-1.5 text-xs font-medium truncate bg-white border-gray-200 shadow-sm ${selected ? 'border-orange-500 ring-1 ring-orange-300' : ''}`}
-        title={data.entity?.name ?? data.entityId}
-    >
-        {data.entity?.name ?? data.entityId}
-    </div>
-));
+/** 줌아웃/오프스크린용 경량 플레이스홀더.
+ *  EntityNode와 시각적으로 완전히 동일하나, React hook/이벤트 핸들러 없음
+ *  → 100개 기준 ~500개 Zustand 구독 제거, 리렌더링 0회 */
+export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entity: Entity }>> = memo(({ data, selected }) => {
+    const entity = data.entity;
+    if (!entity) return null;
+
+    const isLocked = entity.isLocked ?? true;
+
+    return (
+        <div
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] relative overflow-visible ${selected
+                ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
+                : isLocked
+                    ? 'border-gray-200 shadow-sm'
+                    : 'border-blue-500 shadow-blue-100'
+                }`}
+        >
+            {/* ── 헤더 ── */}
+            <div className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${isLocked ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
+                <Database size={16} className="flex-shrink-0" />
+                <span className="font-bold text-lg flex-1 truncate">{entity.name}</span>
+            </div>
+
+            {/* ── 테이블 설명 (있을 때만) ── */}
+            {entity.comment && (
+                <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                    <MessageSquare size={12} className="text-gray-400 shrink-0" />
+                    <span className="text-[11px] italic text-gray-400 truncate">{entity.comment}</span>
+                </div>
+            )}
+
+            {/* ── 컬럼 목록 (span으로 정적 표시 — input 없음) ── */}
+            <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
+                {entity.attributes.map((attr) => (
+                    <div key={attr.id} className={`flex items-center gap-1 py-1 px-2 rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
+                        {/* PK */}
+                        <div className="w-8 flex-shrink-0 flex justify-center">
+                            <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
+                                <Key size={14} />
+                            </span>
+                        </div>
+                        {/* 컬럼명 */}
+                        <div className="flex-1 min-w-0 mx-1">
+                            <span className={`text-sm px-1.5 py-0.5 block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
+                                {attr.name}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            {/* 타입 */}
+                            <div className="w-16 flex-shrink-0">
+                                <span className={`text-[10px] ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
+                                    {attr.type.split('(')[0]}{attr.length ? `(${attr.length})` : ''}
+                                </span>
+                            </div>
+                            {/* NN (표시만) */}
+                            <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
+                                <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'}`}>
+                                    <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                                </div>
+                                <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                            </div>
+                            {/* 코멘트 */}
+                            <div className="w-24 flex-shrink-0 flex items-center gap-1 px-1">
+                                {attr.comment && <><MessageSquare size={11} className="shrink-0 text-blue-400" /><span className="text-[9px] text-blue-500 italic truncate">{attr.comment}</span></>}
+                            </div>
+                            {/* FK */}
+                            <div className="w-8 flex-shrink-0 flex justify-center">
+                                <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
+                                    <Link size={14} />
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* ── ReactFlow 연결 핸들 ── */}
+            <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center" style={{ top: -10 }}><div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center" style={{ bottom: -10 }}><div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center" style={{ left: -10 }}><div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center" style={{ right: -10 }}><div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+        </div>
+    );
+});
 
 const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: nodeId }) => {
     const entityId = data.entityId ?? (data as { entity?: Entity }).entity?.id ?? nodeId;
@@ -373,12 +449,13 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 transition-all min-w-[300px] group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''} ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''} ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
                     : 'border-blue-500 shadow-blue-100'
                 }`}
+            style={{ contain: 'layout style paint' }}
         >
             <EntityLockBadge entityId={entity.id} />
 
