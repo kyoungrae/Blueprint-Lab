@@ -117,6 +117,7 @@ const ERDCanvasContent: React.FC = () => {
     const [editingSectionName, setEditingSectionName] = useState('');
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
+    const paneContainerRef = React.useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
     const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
     const { x: viewportX, y: viewportY, zoom: viewportZoom } = useViewport();
@@ -301,10 +302,11 @@ const ERDCanvasContent: React.FC = () => {
         [editingSectionName, updateSection]
     );
 
-    // 섹션 제목/X 버튼 위에서 휠: 브라우저 동작 차단 + 캔버스와 동일하게 휠=패닝, Ctrl/Cmd+휠=줌
+    // 섹션 제목/X 버튼 위에서 휠: 브라우저 동작 차단 + 캔버스와 동일하게 휠=패닝, Ctrl/Cmd+휠=마우스 위치 기준 줌
     React.useLayoutEffect(() => {
         const container = sectionHeadersContainerRef.current;
-        if (!container || sections.length === 0) return;
+        const paneEl = paneContainerRef.current;
+        if (!container || !paneEl || sections.length === 0) return;
         const headers = container.querySelectorAll('[data-section-header]');
         const MIN_ZOOM = 0.05;
         const MAX_ZOOM = 4;
@@ -315,7 +317,12 @@ const ERDCanvasContent: React.FC = () => {
             const isZoom = we.ctrlKey || we.metaKey;
             if (isZoom) {
                 const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * Math.pow(2, -we.deltaY / 200)));
-                setViewport({ x, y, zoom: nextZoom });
+                const rect = paneEl.getBoundingClientRect();
+                const paneX = we.clientX - rect.left;
+                const paneY = we.clientY - rect.top;
+                const newX = paneX - (paneX - x) * (nextZoom / zoom);
+                const newY = paneY - (paneY - y) * (nextZoom / zoom);
+                setViewport({ x: newX, y: newY, zoom: nextZoom });
             } else {
                 setViewport({ x: x - we.deltaX, y: y - we.deltaY, zoom });
             }
@@ -1246,7 +1253,7 @@ const ERDCanvasContent: React.FC = () => {
                 </div> {/* This closes the toolbar div from line 481 */}
 
                 {/* 1) React Flow Canvas - z-[10]으로 섹션 배경(z-[1])보다 위에 그려서 엔티티 색상이 섹션 채움에 틴트되지 않음 */}
-                <div className="absolute inset-0 z-[10]">
+                <div className="absolute inset-0 z-[10]" ref={paneContainerRef}>
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
