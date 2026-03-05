@@ -4105,6 +4105,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         width: 2,
                                                                         backgroundColor: screen.guideLinesLocked ? 'rgba(239, 239, 239, 0.5)' : 'rgba(232, 223, 177, 0.35)',
                                                                         pointerEvents: 'none',
+                                                                        ...(guideLineDragPreview?.axis === 'vertical' && guideLineDragPreview.currentValue === vx ? { boxShadow: '0 2px 12px rgba(0,0,0,0.2)' } : {}),
                                                                     }}
                                                                 />
                                                                 <div
@@ -4168,6 +4169,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         height: 2,
                                                                         backgroundColor: screen.guideLinesLocked ? 'rgba(239, 239, 239, 0.5)' : 'rgba(232, 223, 177, 0.35)',
                                                                         pointerEvents: 'none',
+                                                                        ...(guideLineDragPreview?.axis === 'horizontal' && guideLineDragPreview.currentValue === vy ? { boxShadow: '0 2px 12px rgba(0,0,0,0.2)' } : {}),
                                                                     }}
                                                                 />
                                                                 <div
