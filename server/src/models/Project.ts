@@ -21,6 +21,8 @@ export interface IEntity {
     attributes: IAttribute[];
     isLocked?: boolean;
     comment?: string;
+    /** 이 엔티티가 속한 섹션 id (없으면 루트) */
+    sectionId?: string | null;
 }
 
 // Relationship Interface
@@ -175,6 +177,7 @@ const EntitySchema = new Schema<IEntity>({
     attributes: [AttributeSchema],
     isLocked: { type: Boolean, default: false },
     comment: { type: String },
+    sectionId: { type: String, default: null },
 }, { _id: false });
 
 const RelationshipSchema = new Schema<IRelationship>({

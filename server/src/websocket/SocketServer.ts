@@ -177,11 +177,17 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 projectHistory = await History.find({ projectId })
                     .sort({ timestamp: -1 })
                     .limit(100);
-                // Always overlay sections from MongoDB so state_sync never sends stale/empty sections from Redis
-                const project = await Project.findById(projectId).select('currentSnapshot.sections').lean();
-                const dbSections = (project as any)?.currentSnapshot?.sections;
-                if (Array.isArray(dbSections)) {
-                    state = { ...state, sections: dbSections };
+                // Overlay full ERD snapshot from MongoDB so state_sync sends consistent entities+sections
+                // (Redis may be stale when user only PATCHes e.g. after section drag without sending operations)
+                const project = await Project.findById(projectId).select('currentSnapshot.entities currentSnapshot.relationships currentSnapshot.sections').lean();
+                const snap = (project as any)?.currentSnapshot;
+                if (snap && Array.isArray(snap.entities)) {
+                    state = {
+                        ...state,
+                        entities: snap.entities || state.entities,
+                        relationships: snap.relationships ?? state.relationships,
+                        sections: Array.isArray(snap.sections) ? snap.sections : (state.sections || []),
+                    };
                 }
             }
 
