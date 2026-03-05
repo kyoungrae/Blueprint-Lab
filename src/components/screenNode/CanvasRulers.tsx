@@ -67,7 +67,6 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
     const horizontalTickZone = Math.max(4, inset - horizontalNumberZone); // 눈금선 전용 하단
     const tickBaseHeight = horizontalTickZone - 1; // 눈금선 높이 (숫자와 1px 간격)
     const verticalNumberZone = inset * 0.4; // 세로 눈금자: 숫자 전용 좌측
-    const verticalTickZone = inset * 0.4; // 세로 눈금자: 눈금선 전용 우측 (간격으로 겹침 방지)
 
     const rulerStripStyle = visible
         ? { backgroundColor: RULER_BG }
