@@ -1292,7 +1292,7 @@ const ERDCanvasContent: React.FC = () => {
                                             />
                                         ) : (
                                             <span
-                                                className="text-xs font-semibold text-gray-700 truncate flex-1 min-w-0"
+                                                className="text-xl font-semibold text-gray-700 truncate flex-1 min-w-0"
                                                 onDoubleClick={(e) => {
                                                     e.stopPropagation();
                                                     startEditingSectionName(s);
