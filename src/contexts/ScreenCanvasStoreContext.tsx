@@ -8,6 +8,8 @@ export interface ScreenCanvasStoreValue {
     deleteScreen: (id: string) => void;
     canvasClipboard: DrawElement[];
     setCanvasClipboard: (elements: DrawElement[]) => void;
+    gridClipboard: { vertical: number[]; horizontal: number[] } | null;
+    setGridClipboard: (grid: { vertical: number[]; horizontal: number[] } | null) => void;
     lastInteractedScreenId: string | null;
     setLastInteractedScreenId: (id: string | null) => void;
     /** Get current screen by id (for use in callbacks - reads latest from store) */

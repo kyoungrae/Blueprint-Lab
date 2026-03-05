@@ -24,6 +24,7 @@ import ScreenEdge from './ScreenEdge';
 import ComponentSidebar from './ComponentSidebar';
 import AddScreenModal from './AddScreenModal';
 import { useComponentStore } from '../store/componentStore';
+import { useScreenDesignStore } from '../store/screenDesignStore';
 import { ScreenCanvasStoreProvider } from '../contexts/ScreenCanvasStoreContext';
 import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { useAuthStore } from '../store/authStore';
@@ -101,6 +102,7 @@ const ComponentCanvasContent: React.FC = () => {
         lastInteractedScreenId,
         setLastInteractedScreenId,
     } = useComponentStore();
+    const { gridClipboard, setGridClipboard } = useScreenDesignStore();
     const screens = components;
     const updateScreen = updateComponent;
     const deleteScreen = deleteComponent;
@@ -779,6 +781,8 @@ const ComponentCanvasContent: React.FC = () => {
         deleteScreen: deleteComponent,
         canvasClipboard,
         setCanvasClipboard,
+        gridClipboard,
+        setGridClipboard,
         lastInteractedScreenId,
         setLastInteractedScreenId,
         getScreenById: (id: string) => useComponentStore.getState().components.find((c) => c.id === id),
@@ -786,7 +790,7 @@ const ComponentCanvasContent: React.FC = () => {
             const s = useComponentStore.getState();
             return s.lastInteractedScreenId ?? (s.components.length === 1 ? s.components[0].id : null);
         },
-    }), [components, updateComponent, deleteComponent, canvasClipboard, setCanvasClipboard, lastInteractedScreenId, setLastInteractedScreenId]);
+    }), [components, updateComponent, deleteComponent, canvasClipboard, setCanvasClipboard, gridClipboard, setGridClipboard, lastInteractedScreenId, setLastInteractedScreenId]);
 
     // 서버 프로젝트: state_sync 도착 전 편집 시 이미지 등이 덮어쓰여 사라지는 것 방지
     if (currentProjectId && !currentProjectId.startsWith('local_') && !isSynced) {

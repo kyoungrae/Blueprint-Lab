@@ -72,6 +72,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         deleteScreen,
         canvasClipboard,
         setCanvasClipboard,
+        gridClipboard,
+        setGridClipboard,
         lastInteractedScreenId,
         setLastInteractedScreenId,
         getScreenById,
@@ -2797,6 +2799,41 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         </PremiumTooltip>
                                                                     </div>
                                                                 </div>
+                                                                {screen.guideLinesVisible !== false && (
+                                                                    <div className="flex flex-col gap-1 pt-1 mt-1 border-t border-gray-100">
+                                                                        <span className="text-[10px] font-medium text-gray-500">격자 복사 · 붙여넣기</span>
+                                                                        <div className="flex items-center gap-1">
+                                                                            <PremiumTooltip label="현재 격자를 복사해 다른 화면에 붙여넣을 수 있습니다">
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setGridClipboard({
+                                                                                            vertical: [...(guideLines.vertical ?? [])],
+                                                                                            horizontal: [...(guideLines.horizontal ?? [])],
+                                                                                        });
+                                                                                    }}
+                                                                                    className="px-2 py-1 text-[11px] rounded-md bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600"
+                                                                                >
+                                                                                    격자 복사
+                                                                                </button>
+                                                                            </PremiumTooltip>
+                                                                            <PremiumTooltip label={gridClipboard ? '복사한 격자를 이 화면에 적용합니다' : '먼저 다른 화면에서 격자를 복사하세요'}>
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        if (!gridClipboard) return;
+                                                                                        update({ guideLines: { vertical: [...gridClipboard.vertical], horizontal: [...gridClipboard.horizontal] } });
+                                                                                        syncUpdate({ guideLines: { vertical: [...gridClipboard.vertical], horizontal: [...gridClipboard.horizontal] } });
+                                                                                    }}
+                                                                                    disabled={!gridClipboard}
+                                                                                    className="px-2 py-1 text-[11px] rounded-md bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                                >
+                                                                                    격자 붙여넣기
+                                                                                </button>
+                                                                            </PremiumTooltip>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         );
                                                     })(),

@@ -20,6 +20,10 @@ interface ScreenDesignStore {
     canvasClipboard: DrawElement[];
     setCanvasClipboard: (elements: DrawElement[]) => void;
 
+    // 격자 복사/붙여넣기 (다른 엔티티·컴포넌트에 동일 격자 적용용)
+    gridClipboard: { vertical: number[]; horizontal: number[] } | null;
+    setGridClipboard: (grid: { vertical: number[]; horizontal: number[] } | null) => void;
+
     // 마지막 상호작용한 화면 ID (붙여넣기 대상 판단)
     lastInteractedScreenId: string | null;
     setLastInteractedScreenId: (id: string | null) => void;
@@ -84,6 +88,9 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
 
     canvasClipboard: [],
     setCanvasClipboard: (elements) => set({ canvasClipboard: elements }),
+
+    gridClipboard: null,
+    setGridClipboard: (grid) => set({ gridClipboard: grid }),
 
     lastInteractedScreenId: null,
     setLastInteractedScreenId: (id) => set({ lastInteractedScreenId: id }),
