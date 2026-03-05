@@ -412,7 +412,30 @@ const ComponentCanvasContent: React.FC = () => {
                 // Skip when sync would regress: (1) sync has fewer filled cells, or (2) same count but we have content (prefer local edits)
                 const shouldSkipStaleSync = localItems.length > 0 && (localNonEmpty > syncNonEmpty || (localNonEmpty === syncNonEmpty && localNonEmpty > 0));
                 if (shouldSkipStaleSync) return;
-                importData({ components: items || [], flows: flws || [] });
+
+                // sync 데이터와 로컬 데이터를 병합:
+                // 서버 sync에 없더라도 로컬에 guideLines 등이 있으면 보존 (서버 PATCH가 아직 반영 전일 때 발생하는 race condition 방지)
+                const mergedItems = (items || []).map((syncComp: any) => {
+                    const localComp = localItems.find((lc: any) => lc.id === syncComp.id);
+                    if (!localComp) return syncComp;
+
+                    const merged: any = { ...syncComp };
+                    // guideLines: 로컬에만 있거나, 로컬이 더 많은 경우 보존
+                    const syncGuideCount = (syncComp.guideLines?.vertical?.length ?? 0) + (syncComp.guideLines?.horizontal?.length ?? 0);
+                    const localGuideCount = (localComp.guideLines?.vertical?.length ?? 0) + (localComp.guideLines?.horizontal?.length ?? 0);
+                    if (localGuideCount > syncGuideCount) {
+                        merged.guideLines = localComp.guideLines;
+                        merged.guideLinesVisible = localComp.guideLinesVisible;
+                        merged.guideLinesLocked = localComp.guideLinesLocked;
+                    }
+                    // drawElements: 로컬이 더 많은 경우 보존 (서버 sync가 구버전일 때)
+                    if ((localComp.drawElements?.length ?? 0) > (syncComp.drawElements?.length ?? 0)) {
+                        merged.drawElements = localComp.drawElements;
+                    }
+                    return merged;
+                });
+
+                importData({ components: mergedItems, flows: flws || [] });
             }
         };
         window.addEventListener('erd:state_sync', handleSync as EventListener);
@@ -810,327 +833,327 @@ const ComponentCanvasContent: React.FC = () => {
 
     return (
         <CanvasOnlyModeContext.Provider value={false}>
-        <ScreenCanvasStoreProvider value={storeValue}>
-        <ScreenDesignUndoRedoProvider>
-        <ExportModeContext.Provider value={false}>
-        <div className="flex w-full h-screen overflow-hidden bg-gray-50">
-            <div className="relative flex h-full min-w-0">
-                <div
-                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
-                >
-                    <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
-                        <ComponentSidebar />
-                    </div>
-                </div>
-
-                <button
-                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-violet-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'}`}
-                    title={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
-                >
-                    {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-                </button>
-            </div>
-
-            <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
-                <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
-                    <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
-                        <button
-                            onClick={() => { void flushAndLeaveProject(); }}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                            title="프로젝트 목록으로 돌아가기"
-                        >
-                            <Home size={16} className="text-teal-500 shrink-0" />
-                        </button>
-                    </PremiumTooltip>
-                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                    <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
-                        <button
-                            onClick={async () => {
-                                if (currentProject?.id) {
-                                    const success = await copyToClipboard(currentProject.id);
-                                    if (success) {
-                                        alert('프로젝트 ID가 복사되었습니다: ' + currentProject.id);
-                                    } else {
-                                        alert('복사에 실패했습니다. 직접 복사해주세요: ' + currentProject.id);
-                                    }
-                                }
-                            }}
-                            className="text-xs font-mono font-bold text-gray-700 hover:text-violet-600 transition-colors text-left truncate max-w-[140px] sm:max-w-[180px]"
-                        >
-                            {currentProject?.id}
-                        </button>
-                    </div>
-
-                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                    <PremiumTooltip placement="bottom" offsetBottom={30} label="컴포넌트 추가">
-                            <button
-                            onClick={handleAddScreenClick}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                        >
-                            <Plus size={16} className="shrink-0" />
-                            <span className="whitespace-nowrap">컴포넌트 추가</span>
-                        </button>
-                    </PremiumTooltip>
-                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                    <ToolbarUndoRedo />
-
-                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                    <div className="shrink-0">
-                        <OnlineUsers />
-                    </div>
-
-                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                    <div className="flex items-center gap-2 px-1 shrink-0">
-                        <div className="flex items-center gap-2 pl-2 pr-2 sm:pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100 min-w-0">
-                            {user?.picture ? (
-                                <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm shrink-0" />
-                            ) : (
-                                <div className="w-6 h-6 rounded-full bg-teal-100 flex items-center justify-center text-teal-600 shrink-0">
-                                    <UserIcon size={14} />
+            <ScreenCanvasStoreProvider value={storeValue}>
+                <ScreenDesignUndoRedoProvider>
+                    <ExportModeContext.Provider value={false}>
+                        <div className="flex w-full h-screen overflow-hidden bg-gray-50">
+                            <div className="relative flex h-full min-w-0">
+                                <div
+                                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
+                                >
+                                    <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
+                                        <ComponentSidebar />
+                                    </div>
                                 </div>
-                            )}
-                            <span className="text-sm font-bold text-gray-700 truncate max-w-[80px] sm:max-w-none">{user?.name}</span>
-                        </div>
-                        <PremiumTooltip placement="bottom" offsetBottom={30} label="로그아웃">
-                            <button
-                                onClick={() => {
-                                    if (window.confirm('로그아웃 하시겠습니까?')) {
-                                        void (async () => {
-                                            await flushAndLeaveProject();
-                                            logout();
-                                        })();
-                                    }
-                                }}
-                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
-                                title="로그아웃"
-                            >
-                                <LogOut size={18} />
-                            </button>
-                        </PremiumTooltip>
-                    </div>
-                </div>
 
-                <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onNodeDragStop={onNodeDragStop}
-                    onConnect={onConnect}
-                    onEdgeUpdateStart={onEdgeUpdateStart}
-                    onEdgeUpdate={onEdgeUpdate}
-                    onEdgeUpdateEnd={onEdgeUpdateEnd}
-                    onEdgeDoubleClick={onEdgeDoubleClick}
-                    isValidConnection={isValidConnection}
-                    nodeTypes={nodeTypes}
-                    edgeTypes={edgeTypes}
-                    connectionMode={ConnectionMode.Loose}
-                    panOnScroll={true}
-                    panOnScrollMode={PanOnScrollMode.Free}
-                    noPanClassName="no-pan-scroll"
-                    zoomOnScroll={false}
-                    zoomOnDoubleClick={false}
-                    zoomActivationKeyCode="Control"
-                    minZoom={0.05}
-                    maxZoom={4}
-                    fitView
-                    multiSelectionKeyCode="Shift"
-                    selectionKeyCode="Shift"
-                    deleteKeyCode={null}
-                    onPaneClick={() => {
-                        // Notify all ScreenNodes to clear selection
-                        window.dispatchEvent(new CustomEvent('clear-screen-selection'));
-                    }}
-                    onPaneMouseMove={onPaneMouseMove}
-                >
-                    <UserCursorsLayer />
-                    <Controls />
-                    <MiniMap
-                        nodeColor={() => '#0d9488'}
-                        className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
-                    />
-                    <Background
-                        variant={BackgroundVariant.Dots}
-                        gap={20}
-                        size={1.5}
-                        color="#84878bff"
-                    />
-                </ReactFlow>
+                                <button
+                                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                                    className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-violet-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'}`}
+                                    title={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
+                                >
+                                    {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                                </button>
+                            </div>
 
-                {/* 그리기 도구 팝업 포털 - 상단 메뉴바/사이드바(z-10001) 아래에 렌더링 */}
-                <div id="panel-portal-root" className="fixed inset-0 z-[9000] pointer-events-none [&>*]:pointer-events-auto" aria-hidden="true" />
-
-                {isAddScreenModalOpen && (
-                    <AddScreenModal
-                        variant="component"
-                        onConfirm={handleAddScreenConfirm}
-                        onClose={() => setIsAddScreenModalOpen(false)}
-                    />
-                )}
-
-                {/* Relationship Edit Modal */}
-                {editingFlowId && (
-                    (() => {
-                        const editingFlow = flows.find(f => f.id === editingFlowId);
-                        const sourceNode = screens.find(s => s.id === editingFlow?.source);
-                        const targetNode = screens.find(s => s.id === editingFlow?.target);
-
-                        if (!editingFlow) return null;
-
-                        return (
-                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
-                                <div className="bg-white rounded-[15px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
-                                    {/* Header */}
-                                    <div className="px-8 py-6 flex items-center justify-between border-b border-gray-100">
-                                        <h3 className="text-xl font-black text-gray-900">관계 편집</h3>
+                            <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
+                                <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
+                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
                                         <button
-                                            onClick={() => setEditingFlowId(null)}
-                                            className="p-2 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
+                                            onClick={() => { void flushAndLeaveProject(); }}
+                                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                                            title="프로젝트 목록으로 돌아가기"
                                         >
-                                            <X size={20} />
+                                            <Home size={16} className="text-teal-500 shrink-0" />
                                         </button>
-                                    </div>
+                                    </PremiumTooltip>
+                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                                    <div className="p-8">
-                                        {/* Connection Info */}
-                                        <div className="bg-blue-50/50 rounded-2xl p-5 border border-blue-100 mb-8">
-                                            <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">연결 정보</span>
-                                            <div className="flex items-center gap-3 text-sm font-black text-gray-700">
-                                                <span className="truncate max-w-[140px]">{sourceNode?.name || 'Unknown'}</span>
-                                                <ArrowLeft size={14} className="text-gray-400 rotate-180" />
-                                                <span className="truncate max-w-[140px]">{targetNode?.name || 'Unknown'}</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Relationship Type Options */}
-                                        <div className="space-y-3">
-                                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">관계 유형</span>
-
-                                            {[
-                                                { id: '페이징', label: '페이징', desc: '페이지 이동' },
-                                                { id: '팝업', label: '팝업', desc: '팝업/모달 호출' },
-                                                { id: '명세서 연결', label: '명세서 연결', desc: '화면-명세 연결' }
-                                            ].map((opt) => (
-                                                <label
-                                                    key={opt.id}
-                                                    className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${editingFlow.label === opt.id
-                                                        ? 'border-blue-500 bg-blue-50/30'
-                                                        : 'border-gray-100 hover:border-blue-200'
-                                                        }`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${editingFlow.label === opt.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
-                                                            }`}>
-                                                            {editingFlow.label === opt.id && <div className="w-2 h-2 bg-white rounded-full" />}
-                                                        </div>
-                                                        <span className="text-sm font-black text-gray-800">{opt.label}</span>
-                                                    </div>
-                                                    <span className="text-[11px] font-bold text-gray-400">{opt.desc}</span>
-                                                    <input
-                                                        type="radio"
-                                                        className="hidden"
-                                                        name="relType"
-                                                        checked={editingFlow.label === opt.id}
-                                                        onChange={() => {
-                                                            updateFlow(editingFlow.id, { label: opt.id });
-                                                            sendOperation({
-                                                                type: 'SCREEN_FLOW_UPDATE',
-                                                                targetId: editingFlow.id,
-                                                                userId: user?.id || 'anonymous',
-                                                                userName: user?.name || 'Anonymous',
-                                                                payload: { label: opt.id }
-                                                            });
-                                                        }}
-                                                    />
-                                                </label>
-                                            ))}
-
-                                            {/* Custom Input */}
-                                            <div className="mt-4">
-                                                <input
-                                                    type="text"
-                                                    value={flowLabelComposing !== null ? flowLabelComposing : (editingFlow.label || '')}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-                                                            setFlowLabelComposing(val);
-                                                            return;
-                                                        }
-                                                        setFlowLabelComposing(null);
-                                                        updateFlow(editingFlow.id, { label: val });
-                                                        sendOperation({
-                                                            type: 'SCREEN_FLOW_UPDATE',
-                                                            targetId: editingFlow.id,
-                                                            userId: user?.id || 'anonymous',
-                                                            userName: user?.name || 'Anonymous',
-                                                            payload: { label: val }
-                                                        });
-                                                    }}
-                                                    onCompositionEnd={(e) => {
-                                                        const val = (e.target as HTMLInputElement).value;
-                                                        setFlowLabelComposing(null);
-                                                        updateFlow(editingFlow.id, { label: val });
-                                                        sendOperation({
-                                                            type: 'SCREEN_FLOW_UPDATE',
-                                                            targetId: editingFlow.id,
-                                                            userId: user?.id || 'anonymous',
-                                                            userName: user?.name || 'Anonymous',
-                                                            payload: { label: val }
-                                                        });
-                                                    }}
-                                                    placeholder="직접 입력..."
-                                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-xl outline-none text-sm font-bold text-gray-700 transition-all"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Footer */}
-                                    <div className="px-8 py-6 bg-gray-50 flex items-center justify-between">
+                                    <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
+                                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
                                         <button
-                                            onClick={() => {
-                                                if (window.confirm('정말로 이 관계를 삭제하시겠습니까?')) {
-                                                    deleteFlow(editingFlow.id);
-                                                    sendOperation({
-                                                        type: 'SCREEN_FLOW_DELETE',
-                                                        targetId: editingFlow.id,
-                                                        userId: user?.id || 'anonymous',
-                                                        userName: user?.name || 'Anonymous',
-                                                        payload: {}
-                                                    });
-                                                    setEditingFlowId(null);
+                                            onClick={async () => {
+                                                if (currentProject?.id) {
+                                                    const success = await copyToClipboard(currentProject.id);
+                                                    if (success) {
+                                                        alert('프로젝트 ID가 복사되었습니다: ' + currentProject.id);
+                                                    } else {
+                                                        alert('복사에 실패했습니다. 직접 복사해주세요: ' + currentProject.id);
+                                                    }
                                                 }
                                             }}
-                                            className="px-4 py-2 text-sm bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 transition-all font-semibold active:scale-95"
+                                            className="text-xs font-mono font-bold text-gray-700 hover:text-violet-600 transition-colors text-left truncate max-w-[140px] sm:max-w-[180px]"
                                         >
-                                            관계 삭제
+                                            {currentProject?.id}
                                         </button>
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => setEditingFlowId(null)}
-                                                className="px-8 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
-                                            >
-                                                닫기
-                                            </button>
+                                    </div>
+
+                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="컴포넌트 추가">
+                                        <button
+                                            onClick={handleAddScreenClick}
+                                            className="flex items-center gap-2 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                                        >
+                                            <Plus size={16} className="shrink-0" />
+                                            <span className="whitespace-nowrap">컴포넌트 추가</span>
+                                        </button>
+                                    </PremiumTooltip>
+                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                                    <ToolbarUndoRedo />
+
+                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                                    <div className="shrink-0">
+                                        <OnlineUsers />
+                                    </div>
+
+                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                                    <div className="flex items-center gap-2 px-1 shrink-0">
+                                        <div className="flex items-center gap-2 pl-2 pr-2 sm:pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100 min-w-0">
+                                            {user?.picture ? (
+                                                <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm shrink-0" />
+                                            ) : (
+                                                <div className="w-6 h-6 rounded-full bg-teal-100 flex items-center justify-center text-teal-600 shrink-0">
+                                                    <UserIcon size={14} />
+                                                </div>
+                                            )}
+                                            <span className="text-sm font-bold text-gray-700 truncate max-w-[80px] sm:max-w-none">{user?.name}</span>
                                         </div>
+                                        <PremiumTooltip placement="bottom" offsetBottom={30} label="로그아웃">
+                                            <button
+                                                onClick={() => {
+                                                    if (window.confirm('로그아웃 하시겠습니까?')) {
+                                                        void (async () => {
+                                                            await flushAndLeaveProject();
+                                                            logout();
+                                                        })();
+                                                    }
+                                                }}
+                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
+                                                title="로그아웃"
+                                            >
+                                                <LogOut size={18} />
+                                            </button>
+                                        </PremiumTooltip>
                                     </div>
                                 </div>
+
+                                <ReactFlow
+                                    nodes={nodes}
+                                    edges={edges}
+                                    onNodesChange={onNodesChange}
+                                    onEdgesChange={onEdgesChange}
+                                    onNodeDragStop={onNodeDragStop}
+                                    onConnect={onConnect}
+                                    onEdgeUpdateStart={onEdgeUpdateStart}
+                                    onEdgeUpdate={onEdgeUpdate}
+                                    onEdgeUpdateEnd={onEdgeUpdateEnd}
+                                    onEdgeDoubleClick={onEdgeDoubleClick}
+                                    isValidConnection={isValidConnection}
+                                    nodeTypes={nodeTypes}
+                                    edgeTypes={edgeTypes}
+                                    connectionMode={ConnectionMode.Loose}
+                                    panOnScroll={true}
+                                    panOnScrollMode={PanOnScrollMode.Free}
+                                    noPanClassName="no-pan-scroll"
+                                    zoomOnScroll={false}
+                                    zoomOnDoubleClick={false}
+                                    zoomActivationKeyCode="Control"
+                                    minZoom={0.05}
+                                    maxZoom={4}
+                                    fitView
+                                    multiSelectionKeyCode="Shift"
+                                    selectionKeyCode="Shift"
+                                    deleteKeyCode={null}
+                                    onPaneClick={() => {
+                                        // Notify all ScreenNodes to clear selection
+                                        window.dispatchEvent(new CustomEvent('clear-screen-selection'));
+                                    }}
+                                    onPaneMouseMove={onPaneMouseMove}
+                                >
+                                    <UserCursorsLayer />
+                                    <Controls />
+                                    <MiniMap
+                                        nodeColor={() => '#0d9488'}
+                                        className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
+                                    />
+                                    <Background
+                                        variant={BackgroundVariant.Dots}
+                                        gap={20}
+                                        size={1.5}
+                                        color="#84878bff"
+                                    />
+                                </ReactFlow>
+
+                                {/* 그리기 도구 팝업 포털 - 상단 메뉴바/사이드바(z-10001) 아래에 렌더링 */}
+                                <div id="panel-portal-root" className="fixed inset-0 z-[9000] pointer-events-none [&>*]:pointer-events-auto" aria-hidden="true" />
+
+                                {isAddScreenModalOpen && (
+                                    <AddScreenModal
+                                        variant="component"
+                                        onConfirm={handleAddScreenConfirm}
+                                        onClose={() => setIsAddScreenModalOpen(false)}
+                                    />
+                                )}
+
+                                {/* Relationship Edit Modal */}
+                                {editingFlowId && (
+                                    (() => {
+                                        const editingFlow = flows.find(f => f.id === editingFlowId);
+                                        const sourceNode = screens.find(s => s.id === editingFlow?.source);
+                                        const targetNode = screens.find(s => s.id === editingFlow?.target);
+
+                                        if (!editingFlow) return null;
+
+                                        return (
+                                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
+                                                <div className="bg-white rounded-[15px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
+                                                    {/* Header */}
+                                                    <div className="px-8 py-6 flex items-center justify-between border-b border-gray-100">
+                                                        <h3 className="text-xl font-black text-gray-900">관계 편집</h3>
+                                                        <button
+                                                            onClick={() => setEditingFlowId(null)}
+                                                            className="p-2 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
+                                                        >
+                                                            <X size={20} />
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="p-8">
+                                                        {/* Connection Info */}
+                                                        <div className="bg-blue-50/50 rounded-2xl p-5 border border-blue-100 mb-8">
+                                                            <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">연결 정보</span>
+                                                            <div className="flex items-center gap-3 text-sm font-black text-gray-700">
+                                                                <span className="truncate max-w-[140px]">{sourceNode?.name || 'Unknown'}</span>
+                                                                <ArrowLeft size={14} className="text-gray-400 rotate-180" />
+                                                                <span className="truncate max-w-[140px]">{targetNode?.name || 'Unknown'}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Relationship Type Options */}
+                                                        <div className="space-y-3">
+                                                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">관계 유형</span>
+
+                                                            {[
+                                                                { id: '페이징', label: '페이징', desc: '페이지 이동' },
+                                                                { id: '팝업', label: '팝업', desc: '팝업/모달 호출' },
+                                                                { id: '명세서 연결', label: '명세서 연결', desc: '화면-명세 연결' }
+                                                            ].map((opt) => (
+                                                                <label
+                                                                    key={opt.id}
+                                                                    className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${editingFlow.label === opt.id
+                                                                        ? 'border-blue-500 bg-blue-50/30'
+                                                                        : 'border-gray-100 hover:border-blue-200'
+                                                                        }`}
+                                                                >
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${editingFlow.label === opt.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                                                                            }`}>
+                                                                            {editingFlow.label === opt.id && <div className="w-2 h-2 bg-white rounded-full" />}
+                                                                        </div>
+                                                                        <span className="text-sm font-black text-gray-800">{opt.label}</span>
+                                                                    </div>
+                                                                    <span className="text-[11px] font-bold text-gray-400">{opt.desc}</span>
+                                                                    <input
+                                                                        type="radio"
+                                                                        className="hidden"
+                                                                        name="relType"
+                                                                        checked={editingFlow.label === opt.id}
+                                                                        onChange={() => {
+                                                                            updateFlow(editingFlow.id, { label: opt.id });
+                                                                            sendOperation({
+                                                                                type: 'SCREEN_FLOW_UPDATE',
+                                                                                targetId: editingFlow.id,
+                                                                                userId: user?.id || 'anonymous',
+                                                                                userName: user?.name || 'Anonymous',
+                                                                                payload: { label: opt.id }
+                                                                            });
+                                                                        }}
+                                                                    />
+                                                                </label>
+                                                            ))}
+
+                                                            {/* Custom Input */}
+                                                            <div className="mt-4">
+                                                                <input
+                                                                    type="text"
+                                                                    value={flowLabelComposing !== null ? flowLabelComposing : (editingFlow.label || '')}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                                            setFlowLabelComposing(val);
+                                                                            return;
+                                                                        }
+                                                                        setFlowLabelComposing(null);
+                                                                        updateFlow(editingFlow.id, { label: val });
+                                                                        sendOperation({
+                                                                            type: 'SCREEN_FLOW_UPDATE',
+                                                                            targetId: editingFlow.id,
+                                                                            userId: user?.id || 'anonymous',
+                                                                            userName: user?.name || 'Anonymous',
+                                                                            payload: { label: val }
+                                                                        });
+                                                                    }}
+                                                                    onCompositionEnd={(e) => {
+                                                                        const val = (e.target as HTMLInputElement).value;
+                                                                        setFlowLabelComposing(null);
+                                                                        updateFlow(editingFlow.id, { label: val });
+                                                                        sendOperation({
+                                                                            type: 'SCREEN_FLOW_UPDATE',
+                                                                            targetId: editingFlow.id,
+                                                                            userId: user?.id || 'anonymous',
+                                                                            userName: user?.name || 'Anonymous',
+                                                                            payload: { label: val }
+                                                                        });
+                                                                    }}
+                                                                    placeholder="직접 입력..."
+                                                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-xl outline-none text-sm font-bold text-gray-700 transition-all"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Footer */}
+                                                    <div className="px-8 py-6 bg-gray-50 flex items-center justify-between">
+                                                        <button
+                                                            onClick={() => {
+                                                                if (window.confirm('정말로 이 관계를 삭제하시겠습니까?')) {
+                                                                    deleteFlow(editingFlow.id);
+                                                                    sendOperation({
+                                                                        type: 'SCREEN_FLOW_DELETE',
+                                                                        targetId: editingFlow.id,
+                                                                        userId: user?.id || 'anonymous',
+                                                                        userName: user?.name || 'Anonymous',
+                                                                        payload: {}
+                                                                    });
+                                                                    setEditingFlowId(null);
+                                                                }
+                                                            }}
+                                                            className="px-4 py-2 text-sm bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 transition-all font-semibold active:scale-95"
+                                                        >
+                                                            관계 삭제
+                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => setEditingFlowId(null)}
+                                                                className="px-8 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
+                                                            >
+                                                                닫기
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()
+                                )}
                             </div>
-                        );
-                    })()
-                )}
-            </div>
-        </div>
-        </ExportModeContext.Provider>
-        </ScreenDesignUndoRedoProvider>
-        </ScreenCanvasStoreProvider>
+                        </div>
+                    </ExportModeContext.Provider>
+                </ScreenDesignUndoRedoProvider>
+            </ScreenCanvasStoreProvider>
         </CanvasOnlyModeContext.Provider>
     );
 };

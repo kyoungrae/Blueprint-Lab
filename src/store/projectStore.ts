@@ -63,7 +63,7 @@ interface ProjectStore {
 
 export const useProjectStore = create<ProjectStore>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             projects: [],
             currentProjectId: null,
 
@@ -79,13 +79,29 @@ export const useProjectStore = create<ProjectStore>()(
                     if (response.ok) {
                         const data = await response.json();
                         // Map Mongo _id to id
+                        const currentProjects = get().projects;
                         const projects = data.map((p: any) => {
                             const pt = p.projectType || 'ERD';
+                            // 로컬에 저장된 기존 프로젝트 (persist로 유지됨)
+                            const localProject = currentProjects.find((lp) => lp.id === p._id);
                             let projData: any;
                             if (pt === 'COMPONENT' && p.componentSnapshot) {
-                                projData = { components: p.componentSnapshot.components || [], flows: p.componentSnapshot.flows || [] };
+                                // 로컬이 서버보다 최신이면 (서버 PATCH가 아직 반영 전) 로컬 데이터 보존
+                                const serverTs = new Date(p.updatedAt || 0).getTime();
+                                const localTs = new Date(localProject?.updatedAt || 0).getTime();
+                                if (localProject?.data && (localProject.data as any).components && localTs > serverTs) {
+                                    projData = localProject.data;
+                                } else {
+                                    projData = { components: p.componentSnapshot.components || [], flows: p.componentSnapshot.flows || [] };
+                                }
                             } else if (pt === 'SCREEN_DESIGN' && p.screenSnapshot) {
-                                projData = { screens: p.screenSnapshot.screens || [], flows: p.screenSnapshot.flows || [] };
+                                const serverTs = new Date(p.updatedAt || 0).getTime();
+                                const localTs = new Date(localProject?.updatedAt || 0).getTime();
+                                if (localProject?.data && (localProject.data as any).screens && localTs > serverTs) {
+                                    projData = localProject.data;
+                                } else {
+                                    projData = { screens: p.screenSnapshot.screens || [], flows: p.screenSnapshot.flows || [] };
+                                }
                             } else {
                                 // ERD: always build from currentSnapshot so sections are never dropped (API returns currentSnapshot, not data)
                                 const snap = p.currentSnapshot;
