@@ -160,6 +160,8 @@ const ERDEdge = ({
         targetX: tx,
         targetY: ty,
         targetPosition,
+        borderRadius: 16,   // 코너를 둥글게 → 엣지 경로가 시각적으로 더 구분됨
+        offset: 50,         // 노드에서 나온 후 50px 직진 후 꺾임 → 같은 계층에서 나오는 선들이 퍼짐
     });
 
     const markerStartId = `erd-start-${sourceEnd}-${id}`;

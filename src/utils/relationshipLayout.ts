@@ -65,10 +65,11 @@ function layoutComponentDagre(compNodes: Node[], compEdges: Edge[]): Node[] {
     const dagreGraph = new dagre.graphlib.Graph();
     dagreGraph.setGraph({
         rankdir: 'TB',
-        // ranksep: 위아래 계층(rank) 간 순수 여백
-        ranksep: 100,
-        // nodesep: 같은 계층 내 좌우 노드 간 순수 여백
-        nodesep: 80,
+        acyclicer: 'greedy',
+        ranker: 'tight-tree',
+        ranksep: 120,
+        // nodesep: 같은 계층 내 좌우 노드 간격 - 넓힐수록 엣지 경로가 겹치지 않음
+        nodesep: 150,
     });
     dagreGraph.setDefaultEdgeLabel(() => ({}));
 

@@ -293,10 +293,10 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
             </div>
 
             {/* ── ReactFlow 연결 핸들 ── */}
-            <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center" style={{ top: -10 }}><div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
-            <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center" style={{ bottom: -10 }}><div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
-            <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center" style={{ left: -10 }}><div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
-            <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center" style={{ right: -10 }}><div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ top: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ bottom: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ left: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ right: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
         </div>
     );
 });
@@ -455,7 +455,7 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
                     ? 'border-gray-200 shadow-sm'
                     : 'border-blue-500 shadow-blue-100'
                 }`}
-            style={{ contain: 'layout style paint' }}
+            style={{ contain: 'layout style' }}
         >
             <EntityLockBadge entityId={entity.id} />
 
@@ -578,17 +578,17 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
 
 const PrivHandles = memo(() => (
     <>
-        <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center !cursor-pointer group/handle" style={{ top: -10 }}>
-            <div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
+        <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ top: -20 }}>
+            <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center !cursor-pointer group/handle" style={{ bottom: -10 }}>
-            <div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
+        <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ bottom: -20 }}>
+            <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center !cursor-pointer group/handle" style={{ left: -10 }}>
-            <div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
+        <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ left: -20 }}>
+            <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-5 !h-5 flex items-center justify-center !cursor-pointer group/handle" style={{ right: -10 }}>
-            <div className="w-2 h-2 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
+        <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ right: -20 }}>
+            <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
     </>
 ));
