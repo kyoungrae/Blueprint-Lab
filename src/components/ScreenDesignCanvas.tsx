@@ -141,6 +141,16 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 return;
             }
 
+            // 컴포넌트 추가 패널: 패널 자체 스크롤
+            const componentPicker = (e.target as Element)?.closest?.('[data-component-picker-portal]') as HTMLElement | null;
+            if (componentPicker) {
+                e.preventDefault();
+                e.stopPropagation();
+                componentPicker.scrollTop += e.deltaY;
+                componentPicker.scrollLeft += e.deltaX;
+                return;
+            }
+
             const isOverPopup = (e.target as Element)?.closest?.(
                 '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-grid-panel], [data-component-picker-portal], [data-text-style-toolbar], [data-font-style-panel], .floating-panel'
             );
