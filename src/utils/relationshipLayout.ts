@@ -1,7 +1,8 @@
+import dagre from 'dagre';
 import { type Node, type Edge } from 'reactflow';
 
-const COMPONENT_GAP = 120;
-const RADIAL_GAP = 80;
+const COMPONENT_GAP = 150;
+const MAX_ROW_WIDTH = 3000;
 
 /**
  * Find connected components in the graph (undirected).
@@ -39,12 +40,11 @@ function getConnectedComponents(nodes: Node[], edges: Edge[]): string[][] {
             components.push(comp);
         }
     }
+    // 가장 큰 그룹부터 배치하기 위해 정렬
+    components.sort((a, b) => b.length - a.length);
     return components;
 }
 
-/**
- * Get width/height for a node (same fallbacks as layout.ts).
- */
 function getNodeSize(node: Node): { width: number; height: number } {
     const measured = (node as any).measured;
     const width = (measured?.width ?? node.width) || 250;
@@ -53,96 +53,47 @@ function getNodeSize(node: Node): { width: number; height: number } {
 }
 
 /**
- * Star/radial layout: one center node (max degree), others arranged in a circle around it
- * so they don't overlap. Radius is computed so chord between adjacent nodes >= node size + gap.
+ * 독립된 묶음(Component)에 대해 Dagre 계층 레이아웃을 수행합니다.
+ * 이를 통해 선(Edge) 꼬임과 겹침을 최소화하고, 노드간 겹침을 원천 차단합니다.
  */
-function layoutComponentRadial(
-    compNodes: Node[],
-    getSize: (n: Node) => { width: number; height: number },
-    compEdges: Edge[]
-): Node[] {
-    if (compNodes.length === 1) {
-        const n = compNodes[0];
-        const { width, height } = getSize(n);
-        return [{ ...n, position: { x: 0, y: 0 } }];
+function layoutComponentDagre(compNodes: Node[], compEdges: Edge[]): Node[] {
+    if (compNodes.length <= 1) {
+        return compNodes.map(n => ({ ...n, position: { x: 0, y: 0 } }));
     }
 
-    const compIdSet = new Set(compNodes.map((n) => n.id));
-    const degree = new Map<string, number>();
-    compNodes.forEach((n) => degree.set(n.id, 0));
-    compEdges.forEach((e) => {
-        if (compIdSet.has(e.source) && compIdSet.has(e.target)) {
-            degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
-            degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
-        }
+    const dagreGraph = new dagre.graphlib.Graph();
+    // rankdir 'TB': 위에서 아래로 흐름. ranksep: 상하 간격, nodesep: 좌우 간격
+    dagreGraph.setGraph({ rankdir: 'TB', ranksep: 120, nodesep: 140 });
+    dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+    compNodes.forEach((node) => {
+        const { width, height } = getNodeSize(node);
+        dagreGraph.setNode(node.id, { width, height });
     });
 
-    // Center = node with highest degree (most relationships)
-    let centerNode = compNodes[0];
-    let maxDeg = degree.get(centerNode.id) ?? 0;
-    compNodes.forEach((n) => {
-        const d = degree.get(n.id) ?? 0;
-        if (d > maxDeg) {
-            maxDeg = d;
-            centerNode = n;
-        }
+    compEdges.forEach((edge) => {
+        dagreGraph.setEdge(edge.source, edge.target);
     });
 
-    const surrounding = compNodes.filter((n) => n.id !== centerNode.id);
-    const k = surrounding.length;
-    const centerSize = getSize(centerNode);
-    let maxSurroundingDim = 0;
-    surrounding.forEach((n) => {
-        const s = getSize(n);
-        maxSurroundingDim = Math.max(maxSurroundingDim, s.width, s.height);
+    dagre.layout(dagreGraph);
+
+    return compNodes.map((node) => {
+        const nodeWithPosition = dagreGraph.node(node.id);
+        const { width, height } = getNodeSize(node);
+        return {
+            ...node,
+            position: {
+                x: nodeWithPosition.x - width / 2,
+                y: nodeWithPosition.y - height / 2,
+            },
+        };
     });
-    const centerDim = Math.max(centerSize.width, centerSize.height);
-
-    // Radius so that (1) adjacent nodes on circle don't overlap, (2) center and surrounding don't overlap
-    // Chord between adjacent = 2*R*sin(π/k). Need >= maxSurroundingDim + RADIAL_GAP.
-    // Also R >= (centerDim/2 + maxSurroundingDim/2) + RADIAL_GAP.
-    const minRadiusByChord =
-        k >= 2
-            ? (maxSurroundingDim + RADIAL_GAP) / (2 * Math.sin(Math.PI / k))
-            : 0;
-    const minRadiusByCenter =
-        centerDim / 2 + maxSurroundingDim / 2 + RADIAL_GAP;
-    const R = Math.max(minRadiusByChord, minRadiusByCenter, 200);
-
-    // Center node: place so its center is at (0, 0) -> top-left = (-w/2, -h/2)
-    const centerPos = {
-        x: -centerSize.width / 2,
-        y: -centerSize.height / 2,
-    };
-
-    // Surrounding: evenly on circle, start from top (-π/2)
-    const positions: { id: string; x: number; y: number }[] = [
-        { id: centerNode.id, ...centerPos },
-    ];
-    for (let i = 0; i < k; i++) {
-        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / k;
-        const cx = R * Math.cos(angle);
-        const cy = R * Math.sin(angle);
-        const node = surrounding[i];
-        const { width, height } = getSize(node);
-        positions.push({
-            id: node.id,
-            x: cx - width / 2,
-            y: cy - height / 2,
-        });
-    }
-
-    const posById = new Map(positions.map((p) => [p.id, { x: p.x, y: p.y }]));
-    return compNodes.map((node) => ({
-        ...node,
-        position: posById.get(node.id) ?? { x: 0, y: 0 },
-    }));
 }
 
 /**
- * Relationship layout: group by connected components; for each group,
- * put the most-connected entity in the center and arrange the rest in a circle
- * around it (no overlap). Components are then placed in a row so they don't overlap.
+ * 관계 정렬:
+ * 연결된 엔티티 묶음별로 그룹을 분리 → 각 그룹 내부는 Dagre로 깔끔하게 정렬(겹침 X)
+ * → 완성된 그룹 덩어리들을 화면에 타일처럼 줄바꿈 배치
  */
 export function getRelationshipLayoutedElements(
     nodes: Node[],
@@ -153,10 +104,11 @@ export function getRelationshipLayoutedElements(
 
     const components = getConnectedComponents(nodes, edges);
     const nodeById = new Map(nodes.map((n) => [n.id, n]));
-    const getSize = getNodeSize;
     const layoutedNodes: Node[] = [];
-    let offsetX = 0;
-    let offsetY = 0;
+
+    let currentOffsetX = 0;
+    let currentOffsetY = 0;
+    let currentRowHeight = 0;
 
     for (const compIds of components) {
         const compNodes = compIds
@@ -167,18 +119,13 @@ export function getRelationshipLayoutedElements(
             (e) => compIdSet.has(e.source) && compIdSet.has(e.target)
         );
 
-        const positioned = layoutComponentRadial(
-            compNodes,
-            getSize,
-            compEdges
-        );
+        // 1. 그룹 내 노드들을 Dagre로 배치
+        const positioned = layoutComponentDagre(compNodes, compEdges);
 
-        let minX = Infinity,
-            minY = Infinity,
-            maxX = -Infinity,
-            maxY = -Infinity;
+        // 2. 그룹의 bounding box(전체 크기) 계산
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         positioned.forEach((node) => {
-            const { width, height } = getSize(node);
+            const { width, height } = getNodeSize(node);
             minX = Math.min(minX, node.position.x);
             minY = Math.min(minY, node.position.y);
             maxX = Math.max(maxX, node.position.x + width);
@@ -187,19 +134,31 @@ export function getRelationshipLayoutedElements(
         const compW = maxX - minX;
         const compH = maxY - minY;
 
+        // 3. 줄바꿈 처리 (가로로 너무 길어지면 다음 줄로)
+        if (currentOffsetX + compW > MAX_ROW_WIDTH && currentOffsetX > 0) {
+            currentOffsetX = 0;
+            currentOffsetY += currentRowHeight + COMPONENT_GAP;
+            currentRowHeight = 0;
+        }
+
+        // 4. 오프셋 적용하여 실제 위치 결정
         const withOffset = positioned.map((node) => ({
             ...node,
             position: {
-                x: node.position.x - minX + offsetX,
-                y: node.position.y - minY + offsetY,
+                x: node.position.x - minX + currentOffsetX,
+                y: node.position.y - minY + currentOffsetY,
             },
         }));
+
         layoutedNodes.push(...withOffset);
-        offsetX += compW + COMPONENT_GAP;
+
+        // 다음 요소를 위한 포인터 업데이트
+        currentOffsetX += compW + COMPONENT_GAP;
+        currentRowHeight = Math.max(currentRowHeight, compH);
     }
 
     const layoutedById = new Map(layoutedNodes.map((n) => [n.id, n]));
-    const resultNodes = nodes.map((node) => layoutedById.get(node) ?? node);
+    const resultNodes = nodes.map((node) => layoutedById.get(node.id) ?? node);
 
     return { nodes: resultNodes, edges };
 }
