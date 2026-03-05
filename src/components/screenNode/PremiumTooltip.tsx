@@ -8,7 +8,7 @@ const BODY_PORTAL_Z_INDEX = 99999;
 
 const GAP = 8;
 
-/** body로 포탈된 플로팅 패널 셀렉터. 이 안에 있으면 툴팁도 body 포탈로 패널 위에 그려야 함 */
+/** body로 포탈된 플로팅 패널 셀렉터. 이 안에 있으면 툴팁을 인라인으로 렌더해 패널 scale/줌에 따라 크기·위치가 맞게 동작 */
 const FLOATING_PANEL_SELECTOR = '[data-grid-panel], [data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-font-style-panel]';
 
 /** 트리거가 컨테이너 뷰포트 영역 안에 있는지 (패널이 body로 포탈된 경우 false) */
@@ -33,6 +33,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
     const [portalPos, setPortalPos] = useState({ left: 0, top: 0 });
     const [viewportPos, setViewportPos] = useState({ left: 0, top: 0 });
     const [useBodyPortal, setUseBodyPortal] = useState(false);
+    const [insideFloatingPanel, setInsideFloatingPanel] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const portalRootRef = useContext(TooltipPortalContext);
     const gap = offsetBottom ?? GAP;
@@ -43,16 +44,14 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
         const tr = el.getBoundingClientRect();
         const centerX = tr.left + tr.width / 2;
 
-        // 트리거가 body 포탈된 플로팅 패널 안에 있으면 항상 body 포탈 → 툴팁이 패널 위에 보이도록
+        // 플로팅 패널 안이면 인라인 렌더 → 패널 transform/줌에 따라 툴팁 크기·위치가 버튼에 맞게 유지
         const isInsideFloatingPanel = el.closest(FLOATING_PANEL_SELECTOR) != null;
         if (isInsideFloatingPanel) {
-            setViewportPos({
-                left: centerX,
-                top: placement === 'top' ? tr.top - gap : tr.bottom + gap,
-            });
-            setUseBodyPortal(true);
+            setInsideFloatingPanel(true);
+            setUseBodyPortal(false);
             return;
         }
+        setInsideFloatingPanel(false);
 
         const container = portalRootRef?.current;
         if (container) {
@@ -100,7 +99,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
             ? { position: 'fixed' as const, left: viewportPos.left, top: viewportPos.top, transform: 'translate(-50%, -100%)', zIndex: BODY_PORTAL_Z_INDEX }
             : { position: 'fixed' as const, left: viewportPos.left, top: viewportPos.top, transform: 'translate(-50%, 0)', zIndex: BODY_PORTAL_Z_INDEX };
 
-    const useContainerPortal = visible && !useBodyPortal && portalRootRef?.current != null;
+    const useContainerPortal = visible && !useBodyPortal && !insideFloatingPanel && portalRootRef?.current != null;
     const useBody = visible && useBodyPortal && typeof document !== 'undefined' && document.body;
     const tooltipStyle = useBody ? bodyPortalStyle : useContainerPortal ? containerPortalStyle : inlineStyle;
 
