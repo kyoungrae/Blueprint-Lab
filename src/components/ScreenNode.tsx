@@ -952,7 +952,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     const finalValue = guideLineDragPreviewValueRef.current;
                     moveGuideLine(ax, startVal, finalValue);
                     const current = getScreenById(screen.id)?.guideLines;
-                    if (current) syncUpdate({ guideLines: current });
+                    if (current) {
+                        syncUpdate({ guideLines: current });
+                    }
                     data.onFlushProjectData?.();
                     setSelectedGuideLine(null);
                 } else {

@@ -198,7 +198,7 @@ const ComponentCanvasContent: React.FC = () => {
                 importData({ components: data.components || [], flows: data.flows || [] });
             }
         }
-    }, [currentProjectId, currentProject?.id]);
+    }, [currentProjectId, currentProject?.id, importData]);
 
     // Auto-save to ProjectStore (local and server)
     useEffect(() => {
@@ -218,7 +218,7 @@ const ComponentCanvasContent: React.FC = () => {
     const flushAndLeaveProject = useCallback(async () => {
         if (currentProjectId) {
             const { components: comps, flows: flws } = useComponentStore.getState();
-            await updateProjectData(currentProjectId, { components: comps, flows: flws });
+            await updateProjectData(currentProjectId, { components: comps, flows: flws }, true);
         }
         setCurrentProject(null);
     }, [currentProjectId, updateProjectData, setCurrentProject]);
@@ -230,7 +230,7 @@ const ComponentCanvasContent: React.FC = () => {
             if (projectId) {
                 const { components: comps, flows: flws } = useComponentStore.getState();
                 const { updateProjectData: save } = useProjectStore.getState();
-                save(projectId, { components: comps, flows: flws });
+                save(projectId, { components: comps, flows: flws }, true);
             }
         };
     }, [currentProjectId]);
@@ -265,7 +265,10 @@ const ComponentCanvasContent: React.FC = () => {
                         screen,
                         onFlushProjectData: () => {
                             const pid = useProjectStore.getState().currentProjectId;
-                            if (pid) useProjectStore.getState().updateProjectData(pid, { components: useComponentStore.getState().components, flows: useComponentStore.getState().flows });
+                            if (pid) {
+                                const { components: comps, flows: flws } = useComponentStore.getState();
+                                useProjectStore.getState().updateProjectData(pid, { components: comps, flows: flws }, true);
+                            }
                         },
                     },
                     selected: existingNode?.selected,

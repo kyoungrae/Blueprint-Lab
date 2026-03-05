@@ -85,22 +85,37 @@ export const useProjectStore = create<ProjectStore>()(
                             // 로컬에 저장된 기존 프로젝트 (persist로 유지됨)
                             const localProject = currentProjects.find((lp) => lp.id === p._id);
                             let projData: any;
-                            if (pt === 'COMPONENT' && p.componentSnapshot) {
-                                // 로컬이 서버보다 최신이면 (서버 PATCH가 아직 반영 전) 로컬 데이터 보존
-                                const serverTs = new Date(p.updatedAt || 0).getTime();
-                                const localTs = new Date(localProject?.updatedAt || 0).getTime();
-                                if (localProject?.data && (localProject.data as any).components && localTs > serverTs) {
+
+                            if (pt === 'COMPONENT') {
+                                // 컴포넌트 캔버스: 한 번이라도 로컬에 components가 생기면,
+                                // 이후에는 항상 localProject.data를 우선 사용해 snapshot이 격자 정보를 덮어쓰지 않게 한다.
+                                if (localProject?.data && (localProject.data as any).components) {
                                     projData = localProject.data;
+                                } else if (p.data && (p.data as any).components) {
+                                    projData = p.data;
+                                } else if (p.componentSnapshot) {
+                                    projData = {
+                                        components: p.componentSnapshot.components || [],
+                                        flows: p.componentSnapshot.flows || [],
+                                    };
                                 } else {
-                                    projData = { components: p.componentSnapshot.components || [], flows: p.componentSnapshot.flows || [] };
+                                    projData = { components: [], flows: [] };
                                 }
-                            } else if (pt === 'SCREEN_DESIGN' && p.screenSnapshot) {
+                            } else if (pt === 'SCREEN_DESIGN') {
+                                // 화면 설계도 마찬가지로 data.screens가 있으면 우선 사용
                                 const serverTs = new Date(p.updatedAt || 0).getTime();
                                 const localTs = new Date(localProject?.updatedAt || 0).getTime();
                                 if (localProject?.data && (localProject.data as any).screens && localTs > serverTs) {
                                     projData = localProject.data;
+                                } else if (p.data && (p.data as any).screens) {
+                                    projData = p.data;
+                                } else if (p.screenSnapshot) {
+                                    projData = {
+                                        screens: p.screenSnapshot.screens || [],
+                                        flows: p.screenSnapshot.flows || [],
+                                    };
                                 } else {
-                                    projData = { screens: p.screenSnapshot.screens || [], flows: p.screenSnapshot.flows || [] };
+                                    projData = { screens: [], flows: [] };
                                 }
                             } else {
                                 // ERD: always build from currentSnapshot so sections are never dropped (API returns currentSnapshot, not data)

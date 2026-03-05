@@ -289,7 +289,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         screen,
                         onFlushProjectData: () => {
                             const pid = useProjectStore.getState().currentProjectId;
-                            if (pid) useProjectStore.getState().updateProjectData(pid, { screens: useScreenDesignStore.getState().screens, flows: useScreenDesignStore.getState().flows });
+                            if (pid) {
+                                const { screens: scr, flows: flw } = useScreenDesignStore.getState();
+                                useProjectStore.getState().updateProjectData(pid, { screens: scr, flows: flw }, true);
+                            }
                         },
                     },
                     selected: existingNode?.selected,
