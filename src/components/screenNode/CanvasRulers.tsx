@@ -20,10 +20,12 @@ const TICK_COLOR_MINOR = '#d0d0d0';
 const NUMBER_COLOR = '#888888';
 
 const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, children }: CanvasRulersProps) => {
-    if (!visible || inset < 4) {
+    // inset < 4면 눈금자 공간 없음 → children만 반환
+    if (inset < 4) {
         return <>{children}</>;
     }
 
+    // 격자 OFF여도 같은 wrapper 레이아웃 유지 → 객체 위치 어긋남 방지 (눈금만 숨김)
     const centerX = canvasWidth / 2;
     const centerY = canvasHeight / 2;
 
@@ -67,6 +69,11 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
     const verticalNumberZone = inset * 0.4; // 세로 눈금자: 숫자 전용 좌측
     const verticalTickZone = inset * 0.4; // 세로 눈금자: 눈금선 전용 우측 (간격으로 겹침 방지)
 
+    const rulerStripStyle = visible
+        ? { backgroundColor: RULER_BG }
+        : { backgroundColor: 'transparent', border: 'none', boxShadow: 'none' };
+    const rulerContentVisibility = visible ? undefined : { visibility: 'hidden' as const };
+
     return (
         <div
             className="nodrag flex flex-col shrink-0"
@@ -74,16 +81,16 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
         >
             {/* Top row: corner + horizontal ruler + corner */}
             <div className="flex" style={{ height: inset }}>
-                <div style={{ width: inset, backgroundColor: RULER_BG }} />
+                <div style={{ width: inset, ...rulerStripStyle }} />
                 <div
                     className="relative overflow-visible"
                     style={{
                         width: canvasWidth,
                         height: inset,
                         minHeight: inset,
-                        backgroundColor: RULER_BG,
-                        borderTop: '1px solid #e5e5e5',
-                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8)',
+                        ...rulerStripStyle,
+                        ...(visible ? { borderTop: '1px solid #e5e5e5', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8)' } : {}),
+                        ...rulerContentVisibility,
                     }}
                 >
                     {/* Numbers - 상단 배치, 눈금선과 분리 (스크린샷 스타일) */}
@@ -121,7 +128,7 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                         );
                     })}
                 </div>
-                <div style={{ width: inset, backgroundColor: RULER_BG }} />
+                <div style={{ width: inset, ...rulerStripStyle }} />
             </div>
 
             {/* Middle row: left ruler + canvas + right spacer */}
@@ -132,9 +139,9 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                         width: inset,
                         height: canvasHeight,
                         minWidth: inset,
-                        backgroundColor: RULER_BG,
-                        borderLeft: '1px solid #e5e5e5',
-                        boxShadow: 'inset 1px 0 0 rgba(255,255,255,0.8)',
+                        ...rulerStripStyle,
+                        ...(visible ? { borderLeft: '1px solid #e5e5e5', boxShadow: 'inset 1px 0 0 rgba(255,255,255,0.8)' } : {}),
+                        ...rulerContentVisibility,
                     }}
                 >
                     {/* Numbers - 좌측 배치, 90deg 시계방향 회전 (스크린샷 스타일) */}
@@ -178,11 +185,11 @@ const CanvasRulers = memo(({ canvasWidth, canvasHeight, inset, visible = true, c
                 <div style={{ width: canvasWidth, height: canvasHeight }} className="shrink-0">
                     {children}
                 </div>
-                <div style={{ width: inset, backgroundColor: RULER_BG }} />
+                <div style={{ width: inset, ...rulerStripStyle }} />
             </div>
 
             {/* Bottom row */}
-            <div style={{ height: inset, backgroundColor: RULER_BG }} />
+            <div style={{ height: inset, ...rulerStripStyle }} />
         </div>
     );
 });

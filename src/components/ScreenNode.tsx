@@ -15,6 +15,7 @@ import { useAuthStore } from '../store/authStore';
 import ScreenHandles from './screenNode/ScreenHandles';
 import { ExportModeContext } from '../contexts/ExportModeContext';
 import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
+import { TooltipPortalContext } from '../contexts/TooltipPortalContext';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import DrawTextComponent from './screenNode/DrawTextComponent';
 import EditableTableCell from './screenNode/EditableTableCell';
@@ -185,6 +186,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const tooltipContainerRef = useRef<HTMLDivElement>(null);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawStartPos, setDrawStartPos] = useState({ x: 0, y: 0 });
@@ -2239,10 +2241,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             className={`transition-all group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''}`}
             style={{ width: entityWidth, height: entityHeight }}
         >
-            <EntityLockBadge entityId={screen.id} />
-            <div
-                ref={nodeRef}
-                className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected && !isExporting
+            <TooltipPortalContext.Provider value={tooltipContainerRef}>
+                {/* 툴팁 포탈: overflow-hidden 밖에 있어서 잘리지 않고, 노드와 함께 줌/이동됨 */}
+                <div ref={tooltipContainerRef} className="absolute inset-0 pointer-events-none overflow-visible z-[11000]" aria-hidden />
+                <EntityLockBadge entityId={screen.id} />
+                <div
+                    ref={nodeRef}
+                    className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected && !isExporting
                     ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                     : isLocked
                         ? 'border-gray-200 shadow-md'
@@ -5038,6 +5043,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 }
             </div >
             <ScreenHandles />
+            </TooltipPortalContext.Provider>
         </div >
     );
 };
