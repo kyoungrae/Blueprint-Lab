@@ -133,10 +133,10 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                         state = {
                             entities: snap.currentSnapshot?.entities || [],
                             relationships: snap.currentSnapshot?.relationships || [],
-                            sections: (snap.currentSnapshot as any)?.sections || [],
+                            sections: isComponent ? [] : (projectType === 'SCREEN_DESIGN' ? (Array.isArray((snap.screenSnapshot as any)?.sections) ? (snap.screenSnapshot as any).sections : []) : ((snap.currentSnapshot as any)?.sections || [])),
                             screens: isComponent ? (snap.componentSnapshot?.components || []) : (snap.screenSnapshot?.screens || []),
                             flows: isComponent ? (snap.componentSnapshot?.flows || []) : (snap.screenSnapshot?.flows || []),
-                            version: isComponent ? (snap.componentSnapshot?.version || 0) : (snap.currentSnapshot?.version || 0),
+                            version: isComponent ? (snap.componentSnapshot?.version || 0) : ((snap.screenSnapshot?.version ?? snap.currentSnapshot?.version) || 0),
                         };
                         await projectStateManager.initializeFromDB(
                             projectId,
@@ -487,6 +487,7 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
                     version: stateToSave.version,
                     screens: screensToSave,
                     flows: stateToSave.flows || [],
+                    sections: stateToSave.sections || [],
                     savedAt: new Date(),
                 },
                 updatedAt: new Date(),

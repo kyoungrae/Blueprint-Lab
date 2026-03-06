@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import type { Screen, ScreenFlow, ScreenDesignState, DrawElement } from '../types/screenDesign';
+import type { Screen, ScreenFlow, ScreenDesignState, DrawElement, ScreenSection } from '../types/screenDesign';
 
 interface ScreenDesignStore {
     screens: Screen[];
     flows: ScreenFlow[];
+    sections: ScreenSection[];
 
     addScreen: (screen: Screen) => void;
     updateScreen: (id: string, updates: Partial<Screen>) => void;
@@ -12,6 +13,10 @@ interface ScreenDesignStore {
     addFlow: (flow: ScreenFlow) => void;
     updateFlow: (id: string, updates: Partial<ScreenFlow>) => void;
     deleteFlow: (id: string) => void;
+
+    addSection: (section: ScreenSection) => void;
+    updateSection: (id: string, updates: Partial<ScreenSection>) => void;
+    deleteSection: (id: string) => void;
 
     exportData: () => ScreenDesignState;
     importData: (data: ScreenDesignState) => void;
@@ -32,6 +37,7 @@ interface ScreenDesignStore {
 export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
     screens: [],
     flows: [],
+    sections: [],
 
     addScreen: (screen) => {
         set((state) => ({
@@ -74,15 +80,39 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
         }));
     },
 
+    addSection: (section) => {
+        set((state) => {
+            if (state.sections.some((s) => s.id === section.id)) return state;
+            return { sections: [...state.sections, section] };
+        });
+    },
+
+    updateSection: (id, updates) => {
+        set((state) => ({
+            sections: state.sections.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+        }));
+    },
+
+    deleteSection: (id) => {
+        set((state) => {
+            const sections = state.sections.filter((s) => s.id !== id);
+            const screens = state.screens.map((s) =>
+                s.sectionId === id ? { ...s, sectionId: undefined as string | undefined } : s
+            );
+            return { sections, screens };
+        });
+    },
+
     exportData: () => {
-        const { screens, flows } = get();
-        return { screens, flows };
+        const { screens, flows, sections } = get();
+        return { screens, flows, sections };
     },
 
     importData: (data) => {
         set({
             screens: data.screens || [],
             flows: data.flows || [],
+            sections: Array.isArray(data.sections) ? data.sections : [],
         });
     },
 

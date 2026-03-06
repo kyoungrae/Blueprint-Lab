@@ -111,6 +111,7 @@ export interface IScreenSnapshot {
     version: number;
     screens: IScreen[];
     flows: IScreenFlow[];
+    sections?: ISection[];
     savedAt: Date;
 }
 
@@ -259,10 +260,18 @@ const ScreenFlowSchema = new Schema<IScreenFlow>({
     label: { type: String },
 }, { _id: false });
 
+const SectionSchema = new Schema<ISection>({
+    id: { type: String, required: true },
+    name: { type: String },
+    position: { x: { type: Number, required: true }, y: { type: Number, required: true } },
+    size: { width: { type: Number, required: true }, height: { type: Number, required: true } },
+}, { _id: false });
+
 const ScreenSnapshotSchema = new Schema<IScreenSnapshot>({
     version: { type: Number, default: 1 },
     screens: [ScreenSchema],
     flows: [ScreenFlowSchema],
+    sections: { type: [SectionSchema], default: [] },
     savedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
@@ -271,13 +280,6 @@ const ComponentSnapshotSchema = new Schema<IComponentSnapshot>({
     components: [ScreenSchema],
     flows: [ScreenFlowSchema],
     savedAt: { type: Date, default: Date.now },
-}, { _id: false });
-
-const SectionSchema = new Schema<ISection>({
-    id: { type: String, required: true },
-    name: { type: String },
-    position: { x: { type: Number, required: true }, y: { type: Number, required: true } },
-    size: { width: { type: Number, required: true }, height: { type: Number, required: true } },
 }, { _id: false });
 
 const ERDSnapshotSchema = new Schema<IERDSnapshot>({

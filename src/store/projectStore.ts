@@ -113,9 +113,10 @@ export const useProjectStore = create<ProjectStore>()(
                                     projData = {
                                         screens: p.screenSnapshot.screens || [],
                                         flows: p.screenSnapshot.flows || [],
+                                        sections: (p.screenSnapshot as any).sections || [],
                                     };
                                 } else {
-                                    projData = { screens: [], flows: [] };
+                                    projData = { screens: [], flows: [], sections: [] };
                                 }
                             } else {
                                 // ERD: always build from currentSnapshot so sections are never dropped (API returns currentSnapshot, not data)
@@ -167,7 +168,7 @@ export const useProjectStore = create<ProjectStore>()(
                         data: projectType === 'COMPONENT'
                             ? { components: [], flows: [] }
                             : projectType === 'SCREEN_DESIGN'
-                                ? { screens: [], flows: [] }
+                                ? { screens: [], flows: [], sections: [] }
                                 : { entities: [], relationships: [], sections: [] },
                         updatedAt: new Date().toISOString()
                     };

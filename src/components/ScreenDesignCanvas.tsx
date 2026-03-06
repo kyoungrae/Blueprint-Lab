@@ -16,6 +16,154 @@ import ReactFlow, {
     useViewport,
     reconnectEdge,
 } from 'reactflow';
+
+const SECTION_HANDLE_SIZE = 8;
+interface SectionOverlayLayerProps {
+    sections: ScreenSection[];
+    hoveredSectionId: string | null;
+    setHoveredSectionId: (id: string | null) => void;
+    editingSectionId: string | null;
+    editingSectionName: string;
+    setEditingSectionName: (s: string) => void;
+    setEditingSectionId: (id: string | null) => void;
+    startEditingSectionName: (section: ScreenSection) => void;
+    saveSectionName: (sectionId: string) => void;
+    deleteSection: (id: string) => void;
+    onSectionBodyMouseDown: (e: React.MouseEvent, sectionId: string) => void;
+    onSectionResizeMouseDown: (e: React.MouseEvent, sectionId: string, handle: string) => void;
+    sectionHeadersContainerRef: React.RefObject<HTMLDivElement | null>;
+}
+const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
+    const { x, y, zoom } = useViewport();
+    const {
+        sections,
+        hoveredSectionId,
+        setHoveredSectionId,
+        editingSectionId,
+        editingSectionName,
+        setEditingSectionName,
+        setEditingSectionId,
+        startEditingSectionName,
+        saveSectionName,
+        deleteSection,
+        onSectionBodyMouseDown,
+        onSectionResizeMouseDown,
+        sectionHeadersContainerRef,
+    } = props;
+    if (sections.length === 0) return null;
+    const transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    return (
+        <>
+            <div
+                className="absolute inset-0 z-[1] overflow-visible pointer-events-none"
+                style={{ transform, transformOrigin: '0 0' }}
+            >
+                {sections.map((s) => (
+                    <div
+                        key={s.id}
+                        className={`absolute border-2 border-violet-400/80 bg-violet-400/5 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-violet-400/40' : 'shadow-none'}`}
+                        style={{ left: s.position.x, top: s.position.y, width: s.size.width, height: s.size.height }}
+                    />
+                ))}
+            </div>
+            <div
+                ref={sectionHeadersContainerRef}
+                className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
+                style={{ transform, transformOrigin: '0 0' }}
+            >
+                {sections.map((s) => {
+                    const isEditing = editingSectionId === s.id;
+                    const w = s.size.width;
+                    const h = s.size.height;
+                    const handles: { key: string; cursor: string; left: number; top: number }[] = [
+                        { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
+                        { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
+                        { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
+                        { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
+                        { key: 'se', cursor: 'nwse-resize', left: w, top: h },
+                        { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
+                        { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
+                        { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
+                    ];
+                    return (
+                        <div
+                            key={s.id}
+                            className="absolute pointer-events-none"
+                            style={{ left: s.position.x, top: s.position.y, width: s.size.width, height: s.size.height }}
+                        >
+                            <div
+                                data-section-header
+                                className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-violet-400/15 border-b border-violet-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
+                                onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
+                                onMouseEnter={() => setHoveredSectionId(s.id)}
+                                onMouseLeave={() => setHoveredSectionId(null)}
+                            >
+                                {isEditing ? (
+                                    <input
+                                        type="text"
+                                        value={editingSectionName}
+                                        onChange={(e) => setEditingSectionName(e.target.value)}
+                                        onBlur={() => saveSectionName(s.id)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') saveSectionName(s.id);
+                                            if (e.key === 'Escape') {
+                                                setEditingSectionId(null);
+                                                setEditingSectionName('');
+                                            }
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="flex-1 min-w-0 bg-white/90 border border-violet-300 rounded px-1.5 py-0.5 text-xs font-semibold text-gray-800 outline-none focus:ring-1 focus:ring-violet-400"
+                                        autoFocus
+                                    />
+                                ) : (
+                                    <span
+                                        className="text-xl font-semibold text-gray-700 truncate flex-1 min-w-0"
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            startEditingSectionName(s);
+                                        }}
+                                    >
+                                        {s.name || 'Section'}
+                                    </span>
+                                )}
+                                <PremiumTooltip placement="bottom" offsetBottom={30} label="섹션 삭제">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            deleteSection(s.id);
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </PremiumTooltip>
+                            </div>
+                            {handles.map((handle) => (
+                                <div
+                                    key={handle.key}
+                                    className="absolute bg-violet-500 border border-white rounded-sm shadow cursor-pointer hover:bg-violet-600 z-10 pointer-events-auto"
+                                    style={{
+                                        left: handle.left,
+                                        top: handle.top,
+                                        width: SECTION_HANDLE_SIZE,
+                                        height: SECTION_HANDLE_SIZE,
+                                        transform: 'translate(-50%, -50%)',
+                                        cursor: handle.cursor,
+                                    }}
+                                    onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
+                                />
+                            ))}
+                        </div>
+                    );
+                })}
+            </div>
+        </>
+    );
+};
 import 'reactflow/dist/style.css';
 
 import ScreenNode from './ScreenNode';
@@ -27,11 +175,11 @@ import AddScreenModal from './AddScreenModal';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
-import type { Screen, PageSizeOption, PageOrientation } from '../types/screenDesign';
+import type { Screen, ScreenSection, PageSizeOption, PageOrientation } from '../types/screenDesign';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
-    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2
+    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { RecentTextColorsProvider } from '../contexts/RecentTextColorsContext';
@@ -98,9 +246,10 @@ const ToolbarUndoRedo: React.FC = () => {
 // ── Canvas Content ──────────────────────────────────────────
 const ScreenDesignCanvasContent: React.FC = () => {
     const {
-        screens, flows,
+        screens, flows, sections,
         addScreen, updateScreen, deleteScreen,
         addFlow, updateFlow, deleteFlow,
+        addSection, updateSection, deleteSection,
         importData
     } = useScreenDesignStore();
 
@@ -123,13 +272,188 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isAddSpecModalOpen, setIsAddSpecModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
-    const { getNodes, fitView, screenToFlowPosition, getViewport, setViewport } = useReactFlow();
+    const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
+    const { getNodes, fitView, screenToFlowPosition, flowToScreenPosition, getViewport, setViewport } = useReactFlow();
+
+    const [isSectionDrawMode, setIsSectionDrawMode] = useState(false);
+    const [sectionDrag, setSectionDrag] = useState<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
+    const [sectionMoveState, setSectionMoveState] = useState<{
+        sectionId: string;
+        startFlow: { x: number; y: number };
+        startSectionPosition: { x: number; y: number };
+        startScreenPositions: Record<string, { x: number; y: number }>;
+    } | null>(null);
+    const [sectionResizeState, setSectionResizeState] = useState<{
+        sectionId: string;
+        handle: string;
+        startFlow: { x: number; y: number };
+        startPosition: { x: number; y: number };
+        startSize: { width: number; height: number };
+    } | null>(null);
+    const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+    const [editingSectionName, setEditingSectionName] = useState('');
+    const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
 
     // Broadcast cursor position (ERD와 동일)
     const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         updateCursor({ ...position });
     }, [screenToFlowPosition, updateCursor]);
+
+    const MIN_SECTION_SIZE = 50;
+    const onSectionOverlayMouseDown = useCallback(
+        (e: React.MouseEvent) => {
+            if (!isSectionDrawMode || e.button !== 0) return;
+            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            setSectionDrag({ start: pos, current: pos });
+        },
+        [isSectionDrawMode, screenToFlowPosition]
+    );
+    const onSectionOverlayMouseMove = useCallback(
+        (e: React.MouseEvent) => {
+            if (!sectionDrag) return;
+            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            setSectionDrag((d) => (d ? { ...d, current: pos } : null));
+        },
+        [sectionDrag, screenToFlowPosition]
+    );
+    const onSectionOverlayMouseUp = useCallback(
+        (e: React.MouseEvent) => {
+            if (e.button !== 0 || !sectionDrag) return;
+            const { start, current } = sectionDrag;
+            const x = Math.min(start.x, current.x);
+            const y = Math.min(start.y, current.y);
+            const width = Math.max(20, Math.abs(current.x - start.x));
+            const height = Math.max(20, Math.abs(current.y - start.y));
+            const baseName = 'Section';
+            const existingNames = new Set(sections.map((s) => s.name ?? baseName));
+            let name = baseName;
+            if (existingNames.has(baseName)) {
+                let n = 1;
+                while (existingNames.has(`${baseName} ${n}`)) n++;
+                name = `${baseName} ${n}`;
+            }
+            addSection({ id: `section_${Date.now()}`, name, position: { x, y }, size: { width, height } });
+            setSectionDrag(null);
+            setIsSectionDrawMode(false);
+        },
+        [sectionDrag, sections, addSection]
+    );
+    const onSectionOverlayMouseLeave = useCallback(() => {
+        if (sectionDrag) setSectionDrag(null);
+    }, [sectionDrag]);
+
+    const onSectionBodyMouseDown = useCallback(
+        (e: React.MouseEvent, sectionId: string) => {
+            if (e.button !== 0 || sectionResizeState || editingSectionId) return;
+            e.stopPropagation();
+            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const sec = sections.find((s) => s.id === sectionId);
+            if (!sec) return;
+            const startScreenPositions: Record<string, { x: number; y: number }> = {};
+            screens.filter((sc) => sc.sectionId === sectionId).forEach((sc) => {
+                startScreenPositions[sc.id] = { ...sc.position };
+            });
+            setSectionMoveState({
+                sectionId,
+                startFlow: pos,
+                startSectionPosition: { ...sec.position },
+                startScreenPositions,
+            });
+        },
+        [screenToFlowPosition, sectionResizeState, editingSectionId, sections, screens]
+    );
+
+    const onSectionResizeMouseDown = useCallback(
+        (e: React.MouseEvent, sectionId: string, handle: string) => {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            const sec = sections.find((s) => s.id === sectionId);
+            if (!sec) return;
+            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            setSectionResizeState({
+                sectionId,
+                handle,
+                startFlow: pos,
+                startPosition: { ...sec.position },
+                startSize: { ...sec.size },
+            });
+        },
+        [sections, screenToFlowPosition]
+    );
+
+    useEffect(() => {
+        if (!sectionMoveState) return;
+        const { sectionId, startFlow, startSectionPosition, startScreenPositions } = sectionMoveState;
+        const onMove = (e: MouseEvent) => {
+            const cur = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const dx = cur.x - startFlow.x;
+            const dy = cur.y - startFlow.y;
+            updateSection(sectionId, {
+                position: { x: startSectionPosition.x + dx, y: startSectionPosition.y + dy },
+            });
+            Object.entries(startScreenPositions).forEach(([screenId, pos]) => {
+                updateScreen(screenId, { position: { x: pos.x + dx, y: pos.y + dy } });
+            });
+        };
+        const onUp = () => setSectionMoveState(null);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, [sectionMoveState, updateSection, updateScreen, screenToFlowPosition]);
+
+    useEffect(() => {
+        if (!sectionResizeState) return;
+        const sec = sections.find((s) => s.id === sectionResizeState.sectionId);
+        if (!sec) return;
+        const onMove = (e: MouseEvent) => {
+            const cur = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const dx = cur.x - sectionResizeState.startFlow.x;
+            const dy = cur.y - sectionResizeState.startFlow.y;
+            const { handle, startPosition, startSize } = sectionResizeState;
+            let x = startPosition.x;
+            let y = startPosition.y;
+            let w = startSize.width;
+            let h = startSize.height;
+            if (handle.includes('e')) w = Math.max(MIN_SECTION_SIZE, w + dx);
+            if (handle.includes('w')) {
+                const dw = Math.min(dx, w - MIN_SECTION_SIZE);
+                x = startPosition.x + dw;
+                w = startSize.width - dw;
+            }
+            if (handle.includes('s')) h = Math.max(MIN_SECTION_SIZE, h + dy);
+            if (handle.includes('n')) {
+                const dh = Math.min(dy, h - MIN_SECTION_SIZE);
+                y = startPosition.y + dh;
+                h = startSize.height - dh;
+            }
+            updateSection(sectionResizeState.sectionId, { position: { x, y }, size: { width: w, height: h } });
+        };
+        const onUp = () => setSectionResizeState(null);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, [sectionResizeState, sections, updateSection, screenToFlowPosition]);
+
+    const startEditingSectionName = useCallback((section: ScreenSection) => {
+        setEditingSectionId(section.id);
+        setEditingSectionName(section.name ?? '');
+    }, []);
+    const saveSectionName = useCallback(
+        (sectionId: string) => {
+            const trimmed = editingSectionName.trim();
+            if (trimmed) updateSection(sectionId, { name: trimmed });
+            setEditingSectionId(null);
+            setEditingSectionName('');
+        },
+        [editingSectionName, updateSection]
+    );
 
     // 그리기 도구 팝업 위 휠 입력을 캔버스 줌/팬으로 전달
     useEffect(() => {
@@ -248,27 +572,27 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [screens, projects, currentProject, updateScreen, sendOperation, user]);
 
-    // Auto-save to ProjectStore for LOCAL projects
+    // Auto-save to ProjectStore (로컬: 주기적 저장, 원격: 섹션 포함해 PATCH 전송)
     useEffect(() => {
-        if (currentProjectId?.startsWith('local_')) {
-            const timer = setTimeout(() => {
-                updateProjectData(currentProjectId, {
-                    screens,
-                    flows,
-                });
-            }, 1000);
-            return () => clearTimeout(timer);
-        }
-    }, [screens, flows, currentProjectId, updateProjectData]);
+        if (!currentProjectId) return;
+        const timer = setTimeout(() => {
+            updateProjectData(currentProjectId, {
+                screens,
+                flows,
+                sections,
+            });
+        }, currentProjectId.startsWith('local_') ? 1000 : 500);
+        return () => clearTimeout(timer);
+    }, [screens, flows, sections, currentProjectId, updateProjectData]);
 
     // Unmount 시 현재 스토어 기준으로 즉시 저장 (격자 이동 등 직후 새로고침해도 유지)
     useEffect(() => {
         const projectId = currentProjectId;
         return () => {
             if (projectId) {
-                const { screens: scr, flows: flw } = useScreenDesignStore.getState();
+                const { screens: scr, flows: flw, sections: sec } = useScreenDesignStore.getState();
                 const { updateProjectData: save } = useProjectStore.getState();
-                save(projectId, { screens: scr, flows: flw });
+                save(projectId, { screens: scr, flows: flw, sections: sec });
             }
         };
     }, [currentProjectId]);
@@ -451,7 +775,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     return merged;
                 });
 
-                importData({ screens: mergedScreens, flows: flows || [] });
+                const syncSections = (e.detail as any).sections;
+                importData({ screens: mergedScreens, flows: flows || [], sections: Array.isArray(syncSections) ? syncSections : [] });
             }
         };
         window.addEventListener('erd:state_sync', handleSync as EventListener);
@@ -871,17 +1196,34 @@ const ScreenDesignCanvasContent: React.FC = () => {
         });
     }, [screens, addScreen, currentProject, user, sendOperation]);
 
-    const onNodeDragStop = useCallback((_: React.MouseEvent, node: RFNode) => {
-        updateScreen(node.id, { position: node.position });
+    const onNodeDragStop = useCallback(
+        (_: React.MouseEvent, node: RFNode) => {
+            const nodeWidth = typeof node.width === 'number' ? node.width : 200;
+            const nodeHeight = typeof node.height === 'number' ? node.height : 100;
+            const nodeCenter = {
+                x: node.position.x + nodeWidth / 2,
+                y: node.position.y + nodeHeight / 2,
+            };
+            const containingSection = sections.find(
+                (s) =>
+                    nodeCenter.x >= s.position.x &&
+                    nodeCenter.x <= s.position.x + s.size.width &&
+                    nodeCenter.y >= s.position.y &&
+                    nodeCenter.y <= s.position.y + s.size.height
+            );
+            const sectionId = containingSection?.id ?? undefined;
+            updateScreen(node.id, { position: node.position, sectionId: sectionId ?? undefined });
 
-        sendOperation({
-            type: 'SCREEN_MOVE',
-            targetId: node.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: { position: node.position }
-        });
-    }, [updateScreen, sendOperation, user]);
+            sendOperation({
+                type: 'SCREEN_MOVE',
+                targetId: node.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { position: node.position, sectionId: sectionId ?? undefined },
+            });
+        },
+        [updateScreen, sendOperation, user, sections]
+    );
 
     const handleExportImage = useCallback((selectedIds: string[], format: ExportFormat) => {
         setIsExportModalOpen(false);
@@ -1158,6 +1500,16 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                 </button>
                             </PremiumTooltip>
 
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label={isSectionDrawMode ? '캔버스에서 영역을 드래그해 섹션을 만드세요' : '섹션 추가'}>
+                                <button
+                                    onClick={() => setIsSectionDrawMode((v) => !v)}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-bold shadow-md shrink-0 ${isSectionDrawMode ? 'bg-violet-600 text-white ring-2 ring-violet-300' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}
+                                >
+                                    <Square size={16} className="shrink-0" />
+                                    <span className="whitespace-nowrap hidden sm:inline">섹션 추가</span>
+                                </button>
+                            </PremiumTooltip>
+
                             <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                             <ToolbarUndoRedo />
@@ -1254,6 +1606,21 @@ const ScreenDesignCanvasContent: React.FC = () => {
                             }}
                             onPaneMouseMove={onPaneMouseMove}
                         >
+                            <SectionOverlayLayer
+                                sections={sections}
+                                hoveredSectionId={hoveredSectionId}
+                                setHoveredSectionId={setHoveredSectionId}
+                                editingSectionId={editingSectionId}
+                                editingSectionName={editingSectionName}
+                                setEditingSectionName={setEditingSectionName}
+                                setEditingSectionId={setEditingSectionId}
+                                startEditingSectionName={startEditingSectionName}
+                                saveSectionName={saveSectionName}
+                                deleteSection={deleteSection}
+                                onSectionBodyMouseDown={onSectionBodyMouseDown}
+                                onSectionResizeMouseDown={onSectionResizeMouseDown}
+                                sectionHeadersContainerRef={sectionHeadersContainerRef}
+                            />
                             <UserCursorsLayer />
                             <Controls />
                             <MiniMap
@@ -1267,6 +1634,33 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                 color="#84878bff"
                             />
                         </ReactFlow>
+
+                        {/* 섹션 그리기 오버레이 (영역 지정 시에만) */}
+                        {isSectionDrawMode && (
+                            <div
+                                className="absolute inset-0 z-[100] cursor-crosshair"
+                                onMouseDown={onSectionOverlayMouseDown}
+                                onMouseMove={onSectionOverlayMouseMove}
+                                onMouseUp={onSectionOverlayMouseUp}
+                                onMouseLeave={onSectionOverlayMouseLeave}
+                            >
+                                {sectionDrag && flowWrapper.current && (() => {
+                                    const a = flowToScreenPosition(sectionDrag.start);
+                                    const b = flowToScreenPosition(sectionDrag.current);
+                                    const r = flowWrapper.current.getBoundingClientRect();
+                                    const left = Math.min(a.x, b.x) - r.left;
+                                    const top = Math.min(a.y, b.y) - r.top;
+                                    const width = Math.max(1, Math.abs(b.x - a.x));
+                                    const height = Math.max(1, Math.abs(b.y - a.y));
+                                    return (
+                                        <div
+                                            className="absolute border-2 border-violet-500 bg-violet-500/10 pointer-events-none"
+                                            style={{ left, top, width, height }}
+                                        />
+                                    );
+                                })()}
+                            </div>
+                        )}
 
                         {/* 그리기 도구 팝업 포털 - 상단 메뉴바/사이드바(z-10001) 아래에 렌더링 */}
                         <div id="panel-portal-root" className="fixed inset-0 z-[9000] pointer-events-none [&>*]:pointer-events-auto" aria-hidden="true" />

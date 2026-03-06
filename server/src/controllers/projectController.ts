@@ -162,11 +162,12 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                     flows: data.flows ?? project.componentSnapshot?.flows ?? [],
                     savedAt: new Date()
                 };
-            } else if (project.projectType === 'SCREEN_DESIGN' && (data.screens !== undefined || data.flows !== undefined)) {
+            } else if (project.projectType === 'SCREEN_DESIGN' && (data.screens !== undefined || data.flows !== undefined || data.sections !== undefined)) {
                 project.screenSnapshot = {
                     version: (project.screenSnapshot?.version || 0) + 1,
                     screens: data.screens ?? project.screenSnapshot?.screens ?? [],
                     flows: data.flows ?? project.screenSnapshot?.flows ?? [],
+                    sections: Array.isArray(data.sections) ? data.sections : (project.screenSnapshot?.sections ?? []),
                     savedAt: new Date()
                 };
             } else {

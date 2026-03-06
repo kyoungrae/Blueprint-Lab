@@ -105,6 +105,7 @@ export interface ERDStateNormalized {
 export interface ScreenDesignState {
     screens: unknown[];
     flows: unknown[];
+    sections?: unknown[];
 }
 
 export interface ComponentState {

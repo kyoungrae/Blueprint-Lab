@@ -25,9 +25,19 @@ export interface ScreenField {
     description?: string;   // 기능 설명
 }
 
+/** ERD와 동일: 드래그로 만든 그룹 영역. 화면 노드를 섹션 안에 넣을 수 있음 */
+export interface ScreenSection {
+    id: string;
+    name?: string;
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+}
+
 /** 화면(Screen) - 설계 문서 한 장에 해당 */
 export interface Screen {
     id: string;
+    /** 이 화면이 속한 섹션 id (없으면 루트) */
+    sectionId?: string | null;
     // ── 헤더 정보 ──
     systemName: string;     // 시스템명
     screenId: string;       // 화면 ID
@@ -219,6 +229,7 @@ export interface ScreenFlow {
 export interface ScreenDesignState {
     screens: Screen[];
     flows: ScreenFlow[];
+    sections?: ScreenSection[];
 }
 
 /** 용지 크기 프리셋 (px, 96dpi 기준) */
