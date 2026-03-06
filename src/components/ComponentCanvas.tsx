@@ -40,6 +40,7 @@ import { RecentStyleColorsProvider } from '../contexts/RecentStyleColorsContext'
 import { copyToClipboard } from '../utils/clipboard';
 import { OnlineUsers, UserCursors } from './collaboration';
 import { useSyncStore } from '../store/syncStore';
+import { setLastRemoteUpdateScreenId } from '../store/screenUndoRemoteFlag';
 
 const nodeTypes: NodeTypes = {
     screen: ScreenNode,
@@ -464,7 +465,10 @@ const ComponentCanvasContent: React.FC = () => {
 
             if (op.type.startsWith('SCREEN_')) {
                 if (op.type === 'SCREEN_CREATE') addComponent(op.payload as any);
-                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateComponent(op.targetId, op.payload as any);
+                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') {
+                    setLastRemoteUpdateScreenId(op.targetId);
+                    updateComponent(op.targetId, op.payload as any);
+                }
                 else if (op.type === 'SCREEN_DELETE') deleteComponent(op.targetId);
                 else if (op.type === 'SCREEN_FLOW_CREATE') addFlow(op.payload as any);
                 else if (op.type === 'SCREEN_FLOW_UPDATE') updateFlow(op.targetId, op.payload as any);

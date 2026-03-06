@@ -9,6 +9,7 @@ import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
+import { consumeLastRemoteUpdateScreenIdIfMatch } from '../store/screenUndoRemoteFlag';
 
 // ── Sub-Components ────────────────────────────────────────────
 
@@ -392,7 +393,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         past: HistorySnapshot[],
         future: HistorySnapshot[]
     }>({ past: [], future: [] });
-    const MAX_HISTORY = 50;
+    const MAX_HISTORY = 100;
     const restoringHistoryRef = useRef(false);
 
     const saveHistory = (elements: DrawElement[], position = screen.position, subComponents?: Screen['subComponents']) => {
@@ -615,11 +616,12 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         }
     }, []);
 
-    // 엔티티 이동(position)도 undo/redo 히스토리에 포함
+    // 엔티티 이동(position)도 undo/redo 히스토리에 포함 (원격 유저의 수정은 히스토리에 넣지 않음)
     useEffect(() => {
         if (restoringHistoryRef.current) return;
+        if (consumeLastRemoteUpdateScreenIdIfMatch(screen.id)) return;
         saveHistory(screen.drawElements || [], screen.position);
-    }, [screen.position.x, screen.position.y]);
+    }, [screen.position.x, screen.position.y, screen.id]);
 
     // 상단 툴바에 Undo/Redo 노출 (선택된 화면이면 잠금 여부와 관계없이 항상 노출)
     useEffect(() => {

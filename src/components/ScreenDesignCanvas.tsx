@@ -42,6 +42,7 @@ import { OnlineUsers, UserCursors } from './collaboration';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { useSyncStore } from '../store/syncStore';
+import { setLastRemoteUpdateScreenId } from '../store/screenUndoRemoteFlag';
 import type { ExportFormat } from './ScreenExportModal';
 
 const nodeTypes: NodeTypes = {
@@ -464,7 +465,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
             if (op.type.startsWith('SCREEN_')) {
                 if (op.type === 'SCREEN_CREATE') addScreen(op.payload as any);
-                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') updateScreen(op.targetId, op.payload as any);
+                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') {
+                    setLastRemoteUpdateScreenId(op.targetId);
+                    updateScreen(op.targetId, op.payload as any);
+                }
                 else if (op.type === 'SCREEN_DELETE') deleteScreen(op.targetId);
                 else if (op.type === 'SCREEN_FLOW_CREATE') addFlow(op.payload as any);
                 else if (op.type === 'SCREEN_FLOW_UPDATE') updateFlow(op.targetId, op.payload as any);
