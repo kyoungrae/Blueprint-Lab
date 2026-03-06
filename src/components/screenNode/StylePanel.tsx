@@ -368,6 +368,83 @@ const StylePanel: React.FC<StylePanelProps> = ({
                 </div>
             </div>
 
+            {/* 크기 (넓이 · 높이) - 테두리 스타일 위 */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                <span className="text-[11px] text-gray-600 font-medium">크기</span>
+                <div className="flex items-center gap-2">
+                    <div className="flex-1 flex items-center gap-1.5">
+                        <label className="text-[10px] text-gray-500 shrink-0">넓이</label>
+                        <input
+                            type="number"
+                            min={1}
+                            max={9999}
+                            value={selectedEl?.width ?? 0}
+                            onChange={(e) => {
+                                const num = Math.max(1, Math.min(9999, parseInt(e.target.value, 10) || 1));
+                                const nextElements = drawElements.map(el => {
+                                    if (!selectedElementIds.includes(el.id)) return el;
+                                    const w = el.width || 1;
+                                    const h = el.height || 1;
+                                    if (el.type === 'polygon' && el.polygonPoints?.length && w > 0) {
+                                        const sx = num / w;
+                                        const newPoints = el.polygonPoints.map(p => ({ x: el.x + (p.x - el.x) * sx, y: p.y }));
+                                        return { ...el, width: num, polygonPoints: newPoints };
+                                    }
+                                    if (el.type === 'line' && el.lineX1 != null && el.lineX2 != null && w > 0) {
+                                        const sx = num / w;
+                                        const lineX1 = el.x + (el.lineX1 - el.x) * sx;
+                                        const lineX2 = el.x + (el.lineX2 - el.x) * sx;
+                                        const minX = Math.min(lineX1, lineX2);
+                                        const maxX = Math.max(lineX1, lineX2);
+                                        return { ...el, x: minX, width: maxX - minX || 1, lineX1, lineX2 };
+                                    }
+                                    return { ...el, width: num };
+                                });
+                                update({ drawElements: nextElements });
+                                syncUpdate({ drawElements: nextElements });
+                            }}
+                            className="w-full px-2 py-1.5 text-[11px] font-medium border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                        />
+                        <span className="text-[10px] text-gray-400 shrink-0">px</span>
+                    </div>
+                    <div className="flex-1 flex items-center gap-1.5">
+                        <label className="text-[10px] text-gray-500 shrink-0">높이</label>
+                        <input
+                            type="number"
+                            min={1}
+                            max={9999}
+                            value={selectedEl?.height ?? 0}
+                            onChange={(e) => {
+                                const num = Math.max(1, Math.min(9999, parseInt(e.target.value, 10) || 1));
+                                const nextElements = drawElements.map(el => {
+                                    if (!selectedElementIds.includes(el.id)) return el;
+                                    const w = el.width || 1;
+                                    const h = el.height || 1;
+                                    if (el.type === 'polygon' && el.polygonPoints?.length && h > 0) {
+                                        const sy = num / h;
+                                        const newPoints = el.polygonPoints.map(p => ({ x: p.x, y: el.y + (p.y - el.y) * sy }));
+                                        return { ...el, height: num, polygonPoints: newPoints };
+                                    }
+                                    if (el.type === 'line' && el.lineY1 != null && el.lineY2 != null && h > 0) {
+                                        const sy = num / h;
+                                        const lineY1 = el.y + (el.lineY1 - el.y) * sy;
+                                        const lineY2 = el.y + (el.lineY2 - el.y) * sy;
+                                        const minY = Math.min(lineY1, lineY2);
+                                        const maxY = Math.max(lineY1, lineY2);
+                                        return { ...el, y: minY, height: maxY - minY || 1, lineY1, lineY2 };
+                                    }
+                                    return { ...el, height: num };
+                                });
+                                update({ drawElements: nextElements });
+                                syncUpdate({ drawElements: nextElements });
+                            }}
+                            className="w-full px-2 py-1.5 text-[11px] font-medium border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                        />
+                        <span className="text-[10px] text-gray-400 shrink-0">px</span>
+                    </div>
+                </div>
+            </div>
+
             {/* Stroke Style (Border style) - 그림으로 표시 */}
             <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
                 <span className="text-[11px] text-gray-600 font-medium">테두리 스타일</span>
