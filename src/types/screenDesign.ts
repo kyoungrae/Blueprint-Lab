@@ -102,14 +102,21 @@ export interface TableCellData {
     height?: number;     // 개별 셀 높이 오버라이드 (px)
 }
 
+/** 다각형 도형 프리셋 (삼각형, 다이아몬드, N각형 등) */
+export type PolygonPreset = 'triangle' | 'diamond' | 'pentagon' | 'hexagon';
+
 /** 직접 그리기 요소 타입 */
 export interface DrawElement {
     id: string;
-    type: 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no';
+    type: 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon';
     x: number;
     y: number;
     width: number;
     height: number;
+    /** polygon 전용: 꼭짓점 좌표 (캔버스 절대 좌표). x,y,width,height는 이 점들의 bbox */
+    polygonPoints?: { x: number; y: number }[];
+    /** polygon 전용: 프리셋 이름 (편집 시 참고용) */
+    polygonPreset?: PolygonPreset;
     fill?: string;
     stroke?: string;
     strokeWidth?: number;
