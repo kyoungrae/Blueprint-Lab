@@ -3650,6 +3650,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         ...(el.type === 'image' && rot !== 0
                                                                             ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' }
                                                                             : {}),
+                                                                        ...(el.type === 'polygon' ? { overflow: 'visible' as const } : {}),
                                                                     };
 
                                                                     return (
@@ -3698,14 +3699,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             {el.type === 'polygon' && (() => {
                                                                                 const pts = (el.polygonPoints ?? []).map(p => ({ x: p.x - el.x, y: p.y - el.y }));
                                                                                 const pointsStr = pts.map(p => `${p.x},${p.y}`).join(' ');
+                                                                                const strokeW = el.strokeWidth ?? 2;
                                                                                 return (
-                                                                                    <div className="w-full h-full relative overflow-hidden" style={{ pointerEvents: 'none' }}>
-                                                                                        <svg width="100%" height="100%" viewBox={`0 0 ${el.width || 1} ${el.height || 1}`} preserveAspectRatio="none" className="absolute inset-0">
+                                                                                    <div className="w-full h-full relative overflow-visible" style={{ pointerEvents: 'none' }}>
+                                                                                        <svg width="100%" height="100%" viewBox={`0 0 ${el.width || 1} ${el.height || 1}`} preserveAspectRatio="none" className="absolute inset-0" style={{ overflow: 'visible' }}>
                                                                                             <polygon
                                                                                                 points={pointsStr}
                                                                                                 fill={hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1)}
                                                                                                 stroke={hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1)}
-                                                                                                strokeWidth={el.strokeWidth ?? 2}
+                                                                                                strokeWidth={strokeW}
                                                                                                 strokeDasharray={el.strokeStyle === 'dashed' ? '4 2' : el.strokeStyle === 'dotted' ? '1 2' : undefined}
                                                                                             />
                                                                                         </svg>
