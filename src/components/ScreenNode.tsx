@@ -228,6 +228,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [drawingPolygonPreset, setDrawingPolygonPreset] = useState<PolygonPreset | null>(null);
     /** 다각형 꼭짓점 드래그: { elementId, pointIndex, startPoints } + window listener로 좌표 갱신 */
     const polygonVertexDragRef = useRef<{ elementId: string; pointIndex: number; startPoints: { x: number; y: number }[] } | null>(null);
+    const polygonVertexSnapStateRef = useRef<SnapState>({});
     const lineVertexDragRef = useRef<{ elementId: string; pointIndex: 0 | 1 } | null>(null);
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -1824,10 +1825,45 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             const rect = canvasRef.current.getBoundingClientRect();
             const scaleX = canvasRef.current.clientWidth / rect.width;
             const scaleY = canvasRef.current.clientHeight / rect.height;
-            const x = Math.round((moveE.clientX - rect.left) * scaleX);
-            const y = Math.round((moveE.clientY - rect.top) * scaleY);
+            const rawX = Math.round((moveE.clientX - rect.left) * scaleX);
+            const rawY = Math.round((moveE.clientY - rect.top) * scaleY);
             const currentEl = getScreenById(screen.id)?.drawElements?.find(item => item.id === id);
             if (!currentEl || currentEl.type !== 'polygon' || !currentEl.polygonPoints) return;
+
+            // 다각형 꼭짓점 전용 스마트 가이드: 끌고 있는 점을 다른 요소·다른 꼭짓점에 맞춤
+            const currentElements = getScreenById(screen.id)?.drawElements || [];
+            const otherElements: Array<{ id: string; x: number; y: number; width: number; height: number }> = [];
+            currentElements.forEach(item => {
+                if (item.id === id) {
+                    if (item.type === 'polygon' && Array.isArray(item.polygonPoints)) {
+                        item.polygonPoints.forEach((pt: { x: number; y: number }, i: number) => {
+                            if (i !== pointIndex) otherElements.push({ id: `polygon-vertex-${id}-${i}`, x: pt.x, y: pt.y, width: 0, height: 0 });
+                        });
+                    }
+                } else {
+                    otherElements.push({ id: item.id, x: item.x, y: item.y, width: item.width || 0, height: item.height || 0 });
+                    if (item.type === 'polygon' && Array.isArray(item.polygonPoints)) {
+                        item.polygonPoints.forEach((pt: { x: number; y: number }, i: number) => {
+                            otherElements.push({ id: `polygon-vertex-${item.id}-${i}`, x: pt.x, y: pt.y, width: 0, height: 0 });
+                        });
+                    }
+                }
+            });
+            const pointBounds = { left: rawX, right: rawX, top: rawY, bottom: rawY, centerX: rawX, centerY: rawY };
+            const currentScreen = getScreenById(screen.id);
+            const guideLinesInput = currentScreen?.guideLinesVisible !== false && currentScreen?.guideLines ? currentScreen.guideLines : undefined;
+            const { deltaX, deltaY, guides, nextSnap } = getSmartGuidesAndSnap(
+                pointBounds,
+                otherElements,
+                polygonVertexSnapStateRef.current,
+                guideLinesInput,
+                { allowedXEdges: ['left', 'right', 'centerX'], allowedYEdges: ['top', 'bottom', 'centerY'] }
+            );
+            polygonVertexSnapStateRef.current = nextSnap;
+            setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
+
+            const x = rawX + deltaX;
+            const y = rawY + deltaY;
             const newPoints = currentEl.polygonPoints.map((p, i) => i === pointIndex ? { x, y } : p);
             const minX = Math.min(...newPoints.map(p => p.x));
             const minY = Math.min(...newPoints.map(p => p.y));
@@ -1839,6 +1875,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             window.removeEventListener('mousemove', handleMove, true);
             window.removeEventListener('mouseup', handleUp, true);
             polygonVertexDragRef.current = null;
+            polygonVertexSnapStateRef.current = {};
+            setAlignmentGuides(null);
         };
         window.addEventListener('mousemove', handleMove, true);
         window.addEventListener('mouseup', handleUp, true);
