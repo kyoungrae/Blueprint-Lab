@@ -333,11 +333,31 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 while (existingNames.has(`${baseName} ${n}`)) n++;
                 name = `${baseName} ${n}`;
             }
-            addSection({ id: `section_${Date.now()}`, name, position: { x, y }, size: { width, height } });
+            const sectionId = `section_${Date.now()}`;
+            addSection({ id: sectionId, name, position: { x, y }, size: { width, height } });
             setSectionDrag(null);
             setIsSectionDrawMode(false);
+            // 드래그 영역 안에 있는 화면 노드는 해당 섹션에 포함
+            const nodes = getNodes();
+            nodes.forEach((node) => {
+                if (node.type !== 'screen' && node.type !== 'spec') return;
+                const nw = typeof node.width === 'number' ? node.width : 200;
+                const nh = typeof node.height === 'number' ? node.height : 100;
+                const cx = node.position.x + nw / 2;
+                const cy = node.position.y + nh / 2;
+                if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
+                    updateScreen(node.id, { sectionId });
+                    sendOperation({
+                        type: 'SCREEN_MOVE',
+                        targetId: node.id,
+                        userId: user?.id || 'anonymous',
+                        userName: user?.name || 'Anonymous',
+                        payload: { sectionId },
+                    });
+                }
+            });
         },
-        [sectionDrag, sections, addSection]
+        [sectionDrag, sections, addSection, getNodes, updateScreen, sendOperation, user]
     );
     const onSectionOverlayMouseLeave = useCallback(() => {
         if (sectionDrag) setSectionDrag(null);
