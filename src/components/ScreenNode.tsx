@@ -216,9 +216,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line'>('select');
     const [shapeSubPanelOpen, setShapeSubPanelOpen] = useState(false);
     const [shapePanelPos, setShapePanelPos] = useState({ x: 0, y: 0 });
+    const shapePanelAnchorRef = useRef<HTMLDivElement>(null);
     const [polygonPresetToCreate, setPolygonPresetToCreate] = useState<PolygonPreset | null>(null);
     const [linePanelOpen, setLinePanelOpen] = useState(false);
     const [linePanelPos, setLinePanelPos] = useState({ x: 0, y: 0 });
+    const linePanelAnchorRef = useRef<HTMLDivElement>(null);
     const [linePresetToCreate, setLinePresetToCreate] = useState<{ strokeStyle: 'solid' | 'dashed' | 'dotted'; lineEnd: LineEnd } | null>(null);
     const [lineDrawStart, setLineDrawStart] = useState<{ x: number; y: number } | null>(null);
     const [lineDrawEnd, setLineDrawEnd] = useState<{ x: number; y: number } | null>(null);
@@ -336,13 +338,19 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             if (showGridPanel && gridPanelAnchorRef.current && !gridPanelAnchorRef.current.contains(target) && !el?.closest('[data-grid-panel]')) {
                 setShowGridPanel(false);
             }
+            if (shapeSubPanelOpen && shapePanelAnchorRef.current && !shapePanelAnchorRef.current.contains(target) && !el?.closest('[data-shape-panel]')) {
+                setShapeSubPanelOpen(false);
+            }
+            if (linePanelOpen && linePanelAnchorRef.current && !linePanelAnchorRef.current.contains(target) && !el?.closest('[data-line-panel]')) {
+                setLinePanelOpen(false);
+            }
             if (!el?.closest('[data-guide-line]')) {
                 setSelectedGuideLine(null);
             }
         };
         document.addEventListener('mousedown', handleClickOutside, true);
         return () => document.removeEventListener('mousedown', handleClickOutside, true);
-    }, [showTablePicker, showComponentPicker, showGridPanel]);
+    }, [showTablePicker, showComponentPicker, showGridPanel, shapeSubPanelOpen, linePanelOpen]);
 
     // 이미지 스타일 패널이 닫히면 크롭 모드도 항상 해제
     useEffect(() => {
@@ -3105,15 +3113,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         <Circle size={18} />
                                                     </button>
                                                 </PremiumTooltip>
-                                                <div className="relative">
+                                                <div className="relative" ref={shapePanelAnchorRef}>
                                                     <PremiumTooltip label="도형 (삼각형·다각형)">
                                                         <button
                                                             type="button"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 e.preventDefault();
-                                                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                                                setShapePanelPos({ x: rect.left, y: rect.bottom + 4 });
+                                                                if (!shapeSubPanelOpen) {
+                                                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                    const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                    setShapePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                }
                                                                 setShapeSubPanelOpen(prev => !prev);
                                                             }}
                                                             className={`p-2 rounded-lg transition-colors ${activeTool === 'polygon' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
@@ -3122,42 +3133,58 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         </button>
                                                     </PremiumTooltip>
                                                     {shapeSubPanelOpen && createPortal(
-                                                        <div
-                                                            className="nodrag nopan fixed bg-white border border-gray-200 rounded-lg shadow-lg z-[9000] py-1 min-w-[120px]"
-                                                            style={{ left: shapePanelPos.x, top: shapePanelPos.y }}
-                                                            onMouseDown={(e) => e.stopPropagation()}
-                                                        >
-                                                            {(['triangle', 'diamond', 'pentagon', 'hexagon'] as PolygonPreset[]).map((preset) => (
-                                                                <button
-                                                                    key={preset}
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setPolygonPresetToCreate(preset);
-                                                                        setActiveTool('polygon');
-                                                                        setShapeSubPanelOpen(false);
+                                                        (() => {
+                                                            const screenPos = flowToScreenPosition({ x: shapePanelPos.x, y: shapePanelPos.y });
+                                                            return (
+                                                                <div
+                                                                    data-shape-panel
+                                                                    className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] py-2 min-w-[140px] animate-in fade-in zoom-in-95 origin-top-left"
+                                                                    style={{
+                                                                        left: screenPos.x,
+                                                                        top: screenPos.y,
+                                                                        transform: `scale(${0.85 * zoom})`,
                                                                     }}
-                                                                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                                                                    onMouseDown={(e) => e.stopPropagation()}
                                                                 >
-                                                                    {preset === 'triangle' && '삼각형'}
-                                                                    {preset === 'diamond' && '다이아몬드'}
-                                                                    {preset === 'pentagon' && '오각형'}
-                                                                    {preset === 'hexagon' && '육각형'}
-                                                                </button>
-                                                            ))}
-                                                        </div>,
+                                                                    <div className="px-3 pb-2 mb-1 border-b border-gray-100">
+                                                                        <span className="text-[11px] font-bold text-gray-600">도형</span>
+                                                                    </div>
+                                                                    {(['triangle', 'diamond', 'pentagon', 'hexagon'] as PolygonPreset[]).map((preset) => (
+                                                                        <button
+                                                                            key={preset}
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setPolygonPresetToCreate(preset);
+                                                                                setActiveTool('polygon');
+                                                                                setShapeSubPanelOpen(false);
+                                                                            }}
+                                                                            className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
+                                                                        >
+                                                                            {preset === 'triangle' && '삼각형'}
+                                                                            {preset === 'diamond' && '다이아몬드'}
+                                                                            {preset === 'pentagon' && '오각형'}
+                                                                            {preset === 'hexagon' && '육각형'}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            );
+                                                        })(),
                                                         document.body
                                                     )}
                                                 </div>
-                                                <div className="relative">
+                                                <div className="relative" ref={linePanelAnchorRef}>
                                                     <PremiumTooltip label="선 생성">
                                                         <button
                                                             type="button"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 e.preventDefault();
-                                                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                                                setLinePanelPos({ x: rect.left, y: rect.bottom + 4 });
+                                                                if (!linePanelOpen) {
+                                                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                    const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                    setLinePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                }
                                                                 setLinePanelOpen(prev => !prev);
                                                             }}
                                                             className={`p-2 rounded-lg transition-colors ${activeTool === 'line' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
@@ -3166,33 +3193,46 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         </button>
                                                     </PremiumTooltip>
                                                     {linePanelOpen && createPortal(
-                                                        <div
-                                                            className="nodrag nopan fixed bg-white border border-gray-200 rounded-lg shadow-lg z-[9000] py-1 min-w-[140px]"
-                                                            style={{ left: linePanelPos.x, top: linePanelPos.y }}
-                                                            onMouseDown={(e) => e.stopPropagation()}
-                                                        >
-                                                            {[
-                                                                { strokeStyle: 'solid' as const, lineEnd: 'none' as LineEnd, label: '실선' },
-                                                                { strokeStyle: 'dashed' as const, lineEnd: 'none' as LineEnd, label: '점선' },
-                                                                { strokeStyle: 'solid' as const, lineEnd: 'start' as LineEnd, label: '화살표(왼쪽)' },
-                                                                { strokeStyle: 'solid' as const, lineEnd: 'end' as LineEnd, label: '화살표(오른쪽)' },
-                                                                { strokeStyle: 'solid' as const, lineEnd: 'both' as LineEnd, label: '화살표(양쪽)' },
-                                                            ].map((preset) => (
-                                                                <button
-                                                                    key={`${preset.strokeStyle}-${preset.lineEnd}`}
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setLinePresetToCreate({ strokeStyle: preset.strokeStyle, lineEnd: preset.lineEnd });
-                                                                        setActiveTool('line');
-                                                                        setLinePanelOpen(false);
+                                                        (() => {
+                                                            const screenPos = flowToScreenPosition({ x: linePanelPos.x, y: linePanelPos.y });
+                                                            return (
+                                                                <div
+                                                                    data-line-panel
+                                                                    className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] py-2 min-w-[160px] animate-in fade-in zoom-in-95 origin-top-left"
+                                                                    style={{
+                                                                        left: screenPos.x,
+                                                                        top: screenPos.y,
+                                                                        transform: `scale(${0.85 * zoom})`,
                                                                     }}
-                                                                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                                                                    onMouseDown={(e) => e.stopPropagation()}
                                                                 >
-                                                                    {preset.label}
-                                                                </button>
-                                                            ))}
-                                                        </div>,
+                                                                    <div className="px-3 pb-2 mb-1 border-b border-gray-100">
+                                                                        <span className="text-[11px] font-bold text-gray-600">선</span>
+                                                                    </div>
+                                                                    {[
+                                                                        { strokeStyle: 'solid' as const, lineEnd: 'none' as LineEnd, label: '실선' },
+                                                                        { strokeStyle: 'dashed' as const, lineEnd: 'none' as LineEnd, label: '점선' },
+                                                                        { strokeStyle: 'solid' as const, lineEnd: 'start' as LineEnd, label: '화살표(왼쪽)' },
+                                                                        { strokeStyle: 'solid' as const, lineEnd: 'end' as LineEnd, label: '화살표(오른쪽)' },
+                                                                        { strokeStyle: 'solid' as const, lineEnd: 'both' as LineEnd, label: '화살표(양쪽)' },
+                                                                    ].map((preset) => (
+                                                                        <button
+                                                                            key={`${preset.strokeStyle}-${preset.lineEnd}`}
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setLinePresetToCreate({ strokeStyle: preset.strokeStyle, lineEnd: preset.lineEnd });
+                                                                                setActiveTool('line');
+                                                                                setLinePanelOpen(false);
+                                                                            }}
+                                                                            className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
+                                                                        >
+                                                                            {preset.label}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            );
+                                                        })(),
                                                         document.body
                                                     )}
                                                 </div>
