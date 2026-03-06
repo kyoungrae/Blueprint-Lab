@@ -85,6 +85,8 @@ export interface IScreen {
     variant?: 'UI' | 'SPEC';
     specs?: IScreenSpecItem[];
     position: { x: number; y: number };
+    /** 이 화면이 속한 섹션 id (없으면 루트) */
+    sectionId?: string | null;
     imageWidth?: number;
     imageHeight?: number;
     isLocked?: boolean;
@@ -241,6 +243,7 @@ const ScreenSchema = new Schema<IScreen>({
         x: { type: Number, required: true },
         y: { type: Number, required: true },
     },
+    sectionId: { type: String },
     imageWidth: { type: Number },
     imageHeight: { type: Number },
     isLocked: { type: Boolean, default: false },
