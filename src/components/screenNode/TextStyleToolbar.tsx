@@ -3,6 +3,7 @@ import { Type, Bold, Italic, Underline, ChevronDown, ChevronUp, Plus } from 'luc
 import type { DrawElement } from '../../types/screenDesign';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
+import { useRecentTextColors } from '../../contexts/RecentTextColorsContext';
 
 const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/api\/projects$/, '') || 'http://localhost:3001';
 
@@ -61,12 +62,14 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     editingTableId,
     tableCellSelectionRestoreRef,
 }) => {
+    const { recentTextColors, addRecentTextColor } = useRecentTextColors();
     const [fonts, setFonts] = useState<FontInfo[]>([]);
     const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
     const [uploadingFont, setUploadingFont] = useState(false);
     /** px 입력 중 로컬 문자열 (숫자만 입력 가능, 블러/Enter 시 반영) */
     const [fontSizeInputStr, setFontSizeInputStr] = useState<string | null>(null);
     const fontInputRef = useRef<HTMLInputElement>(null);
+    const colorInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(displayFontSize);
@@ -287,6 +290,28 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         ? getCellStyle(textSelectionFromTable.cellIndex).textDecoration === 'underline'
         : el.textDecoration === 'underline';
 
+    const applyColor = (color: string, closePickerInput?: HTMLInputElement | null) => {
+        const needFallback = applyToSelection(() => document.execCommand('foreColor', false, color));
+        if (needFallback) updateElement(el.id, { color: color });
+        if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
+            const cellIdx = textSelectionFromTable.cellIndex;
+            const rows = el.tableRows || 3;
+            const cols = el.tableCols || 3;
+            const totalCells = rows * cols;
+            const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
+                if (!indices.includes(i)) return s;
+                return { ...(s || {}), color };
+            });
+            update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+            syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+        }
+        addRecentTextColor(color);
+        setTextStyleToolbarRefresh(r => r + 1);
+        if (closePickerInput) closePickerInput.blur();
+    };
+
     return (
             <div data-text-style-toolbar className="nodrag nopan flex items-center gap-2 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
                 {/* Bold, Italic, Underline */}
@@ -419,64 +444,46 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                     )}
                 </div>
                 {/* Color */}
-                <div className="flex items-center gap-2 pl-1">
-                    <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm">
+                <div className="flex items-center gap-2 pl-1 flex-wrap">
+                    <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm flex-shrink-0">
                         <input
+                            ref={colorInputRef}
                             type="color"
                             value={defaultColor}
                             onChange={(e) => {
                                 const color = e.target.value;
-                                const needFallback = applyToSelection(() => document.execCommand('foreColor', false, color));
-                                if (needFallback) updateElement(el.id, { color });
-                                if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-                                    if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
-                                    const cellIdx = textSelectionFromTable.cellIndex;
-                                    const rows = el.tableRows || 3;
-                                    const cols = el.tableCols || 3;
-                                    const totalCells = rows * cols;
-                                    const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
-                                    const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
-                                        if (!indices.includes(i)) return s;
-                                        return { ...(s || {}), color };
-                                    });
-                                    update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-                                    syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-                                }
-                                setTextStyleToolbarRefresh(r => r + 1);
+                                applyColor(color, e.target);
                             }}
                             className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
                         />
                         <div className="w-full h-full" style={{ backgroundColor: defaultColor }} />
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-shrink-0">
                         {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
                             <button
                                 key={c}
-                                onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    const needFallback = applyToSelection(() => document.execCommand('foreColor', false, c));
-                                    if (needFallback) updateElement(el.id, { color: c });
-                                    if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-                                        if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
-                                        const cellIdx = textSelectionFromTable.cellIndex;
-                                        const rows = el.tableRows || 3;
-                                        const cols = el.tableCols || 3;
-                                        const totalCells = rows * cols;
-                                        const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
-                                        const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
-                                            if (!indices.includes(i)) return s;
-                                            return { ...(s || {}), color: c };
-                                        });
-                                        update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-                                        syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-                                    }
-                                    setTextStyleToolbarRefresh(r => r + 1);
-                                }}
+                                type="button"
+                                onMouseDown={(e) => { e.preventDefault(); applyColor(c); }}
                                 className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
                                 style={{ backgroundColor: c }}
+                                title={c}
                             />
                         ))}
                     </div>
+                    {recentTextColors.length > 0 && (
+                        <div className="flex gap-1 flex-shrink-0 items-center">
+                            {recentTextColors.slice(0, 5).map(c => (
+                                <button
+                                    key={c}
+                                    type="button"
+                                    onMouseDown={(e) => { e.preventDefault(); applyColor(c); }}
+                                    className={`w-3 h-3 rounded-full border transition-transform hover:scale-110 ${(defaultColor || '').toLowerCase() === c ? 'ring-2 ring-blue-500 ring-offset-0.5 border-blue-400' : 'border-gray-200'}`}
+                                    style={{ backgroundColor: c }}
+                                    title={c}
+                                />
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
     );
