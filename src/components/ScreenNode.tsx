@@ -1065,14 +1065,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 nextY = elY + dy;
             }
 
-            // Min size
-            if (nextW < 20) {
-                if (dir.includes('w')) nextX = elX + w - 20;
-                nextW = 20;
+            // Min size (리사이즈 시 최소 너비/높이)
+            const RESIZE_MIN = 8;
+            if (nextW < RESIZE_MIN) {
+                if (dir.includes('w')) nextX = elX + w - RESIZE_MIN;
+                nextW = RESIZE_MIN;
             }
-            if (nextH < 20) {
-                if (dir.includes('n')) nextY = elY + h - 20;
-                nextH = 20;
+            if (nextH < RESIZE_MIN) {
+                if (dir.includes('n')) nextY = elY + h - RESIZE_MIN;
+                nextH = RESIZE_MIN;
             }
 
             // Smart Guides 스냅: 다른 객체/보조선에 맞춰 리사이즈 엣지를 정렬
@@ -1120,11 +1121,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         const fixedRight = elX + w;
                         const snappedLeft = left + deltaX;
                         nextX = snappedLeft;
-                        nextW = Math.max(20, fixedRight - snappedLeft);
+                        nextW = Math.max(8, fixedRight - snappedLeft);
                     } else if (dir.includes('e')) {
                         // 오른쪽 엣지를 스냅, 왼쪽은 고정
                         const snappedRight = right + deltaX;
-                        nextW = Math.max(20, snappedRight - nextX);
+                        nextW = Math.max(8, snappedRight - nextX);
                     }
                 }
                 if (deltaY !== 0) {
@@ -1132,10 +1133,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         const fixedBottom = elY + h;
                         const snappedTop = top + deltaY;
                         nextY = snappedTop;
-                        nextH = Math.max(20, fixedBottom - snappedTop);
+                        nextH = Math.max(8, fixedBottom - snappedTop);
                     } else if (dir.includes('s')) {
                         const snappedBottom = bottom + deltaY;
-                        nextH = Math.max(20, snappedBottom - nextY);
+                        nextH = Math.max(8, snappedBottom - nextY);
                     }
                 }
 

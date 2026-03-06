@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Type, Bold, Italic, Underline, ChevronDown, Plus } from 'lucide-react';
+import { Type, Bold, Italic, Underline, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import type { DrawElement } from '../../types/screenDesign';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
@@ -62,8 +62,33 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     const [fonts, setFonts] = useState<FontInfo[]>([]);
     const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
     const [uploadingFont, setUploadingFont] = useState(false);
+    /** px 입력 중 로컬 문자열 (숫자만 입력 가능, 블러/Enter 시 반영) */
+    const [fontSizeInputStr, setFontSizeInputStr] = useState<string | null>(null);
     const fontInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(displayFontSize);
+
+    const applyFontSize = (px: number) => {
+        const clamped = Math.min(72, Math.max(8, px));
+        applyFontSizePx(clamped);
+        if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+            const cellIdx = textSelectionFromTable.cellIndex;
+            const rows = el.tableRows || 3;
+            const cols = el.tableCols || 3;
+            const totalCells = rows * cols;
+            const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
+                if (!indices.includes(i)) return s;
+                return { ...(s || {}), fontSize: clamped };
+            });
+            update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+            syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+        } else if (!fromTable) {
+            updateElement(el.id, { fontSize: clamped });
+        }
+        setTextStyleToolbarRefresh(r => r + 1);
+    };
 
     useEffect(() => {
         fetch(`${API_BASE}/api/fonts`)
@@ -71,6 +96,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
             .then((data: { fonts: FontInfo[] }) => setFonts(data.fonts || []))
             .catch(() => setFonts([]));
     }, []);
+
 
     // Inject @font-face for custom fonts
     useEffect(() => {
@@ -284,37 +310,57 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                     </button>
                 </div>
                 {/* Font size */}
-                <div className="flex items-center gap-1.5 px-1 border-r border-gray-200 pr-2">
-                    <Type size={12} className="text-gray-400" />
-                    <input
-                        type="number"
-                        value={displayFontSize}
-                        step={1}
-                        min={8}
-                        max={72}
-                        onChange={(e) => {
-                            const px = Math.min(72, Math.max(8, parseInt(e.target.value) || 12));
-                            applyFontSizePx(px);
-                            if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-                                const cellIdx = textSelectionFromTable.cellIndex;
-                                const rows = el.tableRows || 3;
-                                const cols = el.tableCols || 3;
-                                const totalCells = rows * cols;
-                                const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
-                                const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
-                                    if (!indices.includes(i)) return s;
-                                    return { ...(s || {}), fontSize: px };
-                                });
-                                update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-                                syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-                            } else if (!fromTable) {
-                                updateElement(el.id, { fontSize: px });
-                            }
-                            setTextStyleToolbarRefresh(r => r + 1);
-                        }}
-                        className="w-10 bg-transparent text-[11px] font-bold text-gray-700 outline-none"
-                    />
-                    <span className="text-[10px] text-gray-400">px</span>
+                <div className="flex items-center gap-1 px-1 border-r border-gray-200 pr-2">
+                    <Type size={12} className="text-gray-400 shrink-0" />
+                    <div className="flex items-center border border-gray-200 rounded-md overflow-hidden bg-gray-50/50">
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            value={displayValue}
+                            onFocus={() => setFontSizeInputStr(String(displayFontSize))}
+                            onChange={(e) => {
+                                const v = e.target.value.replace(/[^0-9]/g, '');
+                                if (v === '' || v.length <= 3) setFontSizeInputStr(v || '');
+                            }}
+                            onBlur={() => {
+                                const px = Math.min(72, Math.max(8, parseInt(fontSizeInputStr ?? String(displayFontSize), 10) || 8));
+                                setFontSizeInputStr(null);
+                                applyFontSize(px);
+                            }}
+                            onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                            }}
+                            className="w-9 py-1 px-1.5 bg-transparent text-[11px] font-bold text-gray-700 outline-none text-center"
+                        />
+                        <div className="flex flex-col border-l border-gray-200">
+                            <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setFontSizeInputStr(null);
+                                    applyFontSize(displayFontSize + 1);
+                                }}
+                                className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center"
+                                title="크게"
+                            >
+                                <ChevronUp size={12} />
+                            </button>
+                            <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setFontSizeInputStr(null);
+                                    applyFontSize(displayFontSize - 1);
+                                }}
+                                className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center border-t border-gray-200"
+                                title="작게"
+                            >
+                                <ChevronDown size={12} />
+                            </button>
+                        </div>
+                    </div>
+                    <span className="text-[10px] text-gray-400 shrink-0">px</span>
                 </div>
                 {/* Font dropdown */}
                 <div className="relative" ref={dropdownRef}>
