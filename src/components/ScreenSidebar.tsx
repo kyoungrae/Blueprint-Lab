@@ -12,6 +12,7 @@ const ScreenSidebar: React.FC = () => {
     const [composing, setComposing] = useState<string | null>(null);
     const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
     const [editingSectionName, setEditingSectionName] = useState('');
+    const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
     const displaySearch = composing !== null ? composing : search;
 
     const filteredScreens = screens.filter(s =>
@@ -49,6 +50,13 @@ const ScreenSidebar: React.FC = () => {
         updateSection(sectionId, { name });
         setEditingSectionId(null);
         setEditingSectionName('');
+    };
+
+    const toggleSectionCollapse = (sectionId: string) => {
+        setCollapsedSections((prev) => ({
+            ...prev,
+            [sectionId]: !prev[sectionId],
+        }));
     };
 
     const renderScreenItem = (screen: Screen) => (
@@ -163,9 +171,21 @@ const ScreenSidebar: React.FC = () => {
                         {sections.map((section) => {
                             const secScreens = filteredScreens.filter((s) => s.sectionId === section.id);
                             const isEditing = editingSectionId === section.id;
+                            const isCollapsed = collapsedSections[section.id] ?? false;
                             return (
                                 <div key={section.id} className="space-y-0.5">
                                     <div className="flex items-center gap-2 px-2 py-3 rounded-lg bg-gray-100/80 border border-gray-100 min-h-[32px]">
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleSectionCollapse(section.id)}
+                                            className="p-0.5 rounded hover:bg-violet-100 text-gray-500 hover:text-violet-600 transition-colors flex items-center justify-center shrink-0"
+                                            title={isCollapsed ? '섹션 펼치기' : '섹션 접기'}
+                                        >
+                                            <ChevronRight
+                                                size={12}
+                                                className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                                            />
+                                        </button>
                                         <FolderOpen size={14} className="text-violet-500 shrink-0" />
                                         {isEditing ? (
                                             <input
@@ -195,7 +215,7 @@ const ScreenSidebar: React.FC = () => {
                                         )}
                                         {!isEditing && <span className="ml-auto text-[10px] text-gray-400 shrink-0">{secScreens.length}</span>}
                                     </div>
-                                    {secScreens.length > 0 && (
+                                    {!isCollapsed && secScreens.length > 0 && (
                                         <div className="pl-3 border-l border-gray-200 ml-2 space-y-0.5">
                                             {secScreens.map((screen) => renderScreenItem(screen))}
                                         </div>
