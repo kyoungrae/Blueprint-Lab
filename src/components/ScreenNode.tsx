@@ -1147,9 +1147,20 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
             // Update in-place for smooth visual
             const currentElements = getScreenById(screen.id)?.drawElements || [];
-            const updated = currentElements.map(item =>
-                item.id === targetId ? { ...item, x: nextX, y: nextY, width: nextW, height: nextH } : item
-            );
+            const updated = currentElements.map(it => {
+                if (it.id !== targetId) return it;
+                const base = { ...it, x: nextX, y: nextY, width: nextW, height: nextH };
+                // 다각형: 현재 bbox 기준으로 새 bbox로 스케일 (매 프레임 현재 상태→다음 상태만 적용해 과도한 늘어남 방지)
+                if (it.type === 'polygon' && it.polygonPoints?.length && it.width > 0 && it.height > 0) {
+                    const sx = nextW / it.width;
+                    const sy = nextH / it.height;
+                    base.polygonPoints = it.polygonPoints.map(p => ({
+                        x: nextX + (p.x - it.x) * sx,
+                        y: nextY + (p.y - it.y) * sy,
+                    }));
+                }
+                return base;
+            });
             update({ drawElements: updated });
         };
 
@@ -4223,32 +4234,30 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 </button>
                                                                             )}
 
-                                                                            {/* Resize Handles (이미지 직접 크롭 모드에서는 ImageElement 크롭 핸들 사용) / 다각형은 꼭짓점 핸들 */}
+                                                                            {/* Resize Handles (이미지 직접 크롭 모드에서는 ImageElement 크롭 핸들 사용) / 다각형은 8방 리사이즈 + 꼭짓점 핸들 */}
                                                                             {isSelected && !isLocked && selectedElementIds.length === 1 && !(el.type === 'image' && imageCropMode) && (
                                                                                 <>
-                                                                                    {el.type === 'polygon' && (el.polygonPoints ?? []).length > 0 ? (
+                                                                                    {/* 파란 테두리 + 8방 리사이즈 핸들 (모든 도형 공통, 다각형 포함) */}
+                                                                                    <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
+                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize pointer-events-auto z-[130]" />
+                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize pointer-events-auto z-[130]" />
+                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize pointer-events-auto z-[130]" />
+                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize pointer-events-auto z-[130]" />
+                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize pointer-events-auto z-[130]" />
+                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize pointer-events-auto z-[130]" />
+                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize pointer-events-auto z-[130]" />
+                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize pointer-events-auto z-[130]" />
+                                                                                    {/* 다각형만: 꼭짓점 핸들 (모양 직접 편집) */}
+                                                                                    {el.type === 'polygon' && (el.polygonPoints ?? []).length > 0 && (
                                                                                         <>
-                                                                                            <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
                                                                                             {(el.polygonPoints ?? []).map((pt, idx) => (
                                                                                                 <div
                                                                                                     key={idx}
                                                                                                     onMouseDown={(e) => handlePolygonVertexDragStart(el.id, idx, e)}
-                                                                                                    className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[130]"
+                                                                                                    className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]"
                                                                                                     style={{ left: pt.x - el.x, top: pt.y - el.y, transform: 'translate(-50%, -50%)' }}
                                                                                                 />
                                                                                             ))}
-                                                                                        </>
-                                                                                    ) : el.type !== 'polygon' && (
-                                                                                        <>
-                                                                                            <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize pointer-events-auto z-[130]" />
                                                                                         </>
                                                                                     )}
                                                                                 </>
