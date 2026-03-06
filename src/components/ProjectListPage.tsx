@@ -3,14 +3,15 @@ import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2
 import './ProjectListPage.css';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
-import { type DBType, type ProjectType, type ProjectMember } from '../types/erd';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
+import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 import AdminPage from './AdminPage';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 
 const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2 };
 
 const ProjectListPage: React.FC = () => {
-    const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, updateProjectMembers, updateProjectMetadata, inviteMember, joinWithCode } = useProjectStore();
+    const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, currentProjectId, updateProjectMembers, updateProjectMetadata, inviteMember, joinWithCode } = useProjectStore();
     const { user, logout } = useAuthStore();
 
     // UI States
@@ -40,6 +41,12 @@ const ProjectListPage: React.FC = () => {
     // Utility States
     const [isLoading, setIsLoading] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
+
+    // 프로젝트 삭제 확인 (생성자: 비밀번호 검증 + 안내문구 후 삭제)
+    const [deleteConfirmProject, setDeleteConfirmProject] = useState<Project | null>(null);
+    const [deletePassword, setDeletePassword] = useState('');
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const [deleteVerifying, setDeleteVerifying] = useState(false);
 
     // Connection States
     const containerRef = useRef<HTMLDivElement>(null);
@@ -541,9 +548,9 @@ const ProjectListPage: React.FC = () => {
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        if (window.confirm(`'${project.name}' 프로젝트를 삭제하시겠습니까?`)) {
-                                                            deleteProject(project.id);
-                                                        }
+                                                        setDeleteConfirmProject(project);
+                                                        setDeletePassword('');
+                                                        setDeleteError(null);
                                                     }}
                                                     className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                                                     title="프로젝트 삭제"
@@ -704,6 +711,100 @@ const ProjectListPage: React.FC = () => {
                                 <Share2 size={18} />
                                 {!localStorage.getItem('auth-token') ? '로그인 후 참여 가능' : '프로젝트 참여하기'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 프로젝트 삭제 확인: 생성자 비밀번호 검증 + 안내문구 후 삭제 */}
+            {deleteConfirmProject && (
+                <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
+                        <div className="p-6 border-b border-gray-100">
+                            <h3 className="text-lg font-black text-gray-900">프로젝트 삭제</h3>
+                            <p className="text-sm text-gray-500 mt-1">"{deleteConfirmProject.name}"</p>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            {!deleteConfirmProject.id.startsWith('local_') && (
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1.5">비밀번호 확인</label>
+                                    <input
+                                        type="password"
+                                        value={deletePassword}
+                                        onChange={(e) => {
+                                            setDeletePassword(e.target.value);
+                                            setDeleteError(null);
+                                        }}
+                                        placeholder="로그인한 계정의 비밀번호를 입력하세요"
+                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400"
+                                        disabled={deleteVerifying}
+                                    />
+                                    {deleteError && (
+                                        <p className="mt-1.5 text-sm text-red-600 font-medium">{deleteError}</p>
+                                    )}
+                                </div>
+                            )}
+                            <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-800 font-medium">
+                                한번 삭제한 프로젝트는 되돌릴 수 없습니다. 정말 삭제 하시겠습니까?
+                            </div>
+                            <div className="flex gap-3 justify-end pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setDeleteConfirmProject(null);
+                                        setDeletePassword('');
+                                        setDeleteError(null);
+                                    }}
+                                    disabled={deleteVerifying}
+                                    className="px-4 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                                >
+                                    취소
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={!deleteConfirmProject.id.startsWith('local_') && !deletePassword.trim()}
+                                    onClick={async () => {
+                                        if (!deleteConfirmProject) return;
+                                        const isLocal = deleteConfirmProject.id.startsWith('local_');
+                                        if (isLocal) {
+                                            deleteProject(deleteConfirmProject.id);
+                                            if (currentProjectId === deleteConfirmProject.id) setCurrentProject(null);
+                                            setDeleteConfirmProject(null);
+                                            setDeletePassword('');
+                                            setDeleteError(null);
+                                            return;
+                                        }
+                                        setDeleteVerifying(true);
+                                        setDeleteError(null);
+                                        const AUTH_API = import.meta.env.VITE_AUTH_API_URL || 'http://localhost:3001/api/auth';
+                                        try {
+                                            const res = await fetchWithAuth(`${AUTH_API}/verify-password`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ password: deletePassword }),
+                                            });
+                                            const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
+                                            if (!res.ok) {
+                                                setDeleteError(data?.message || '비밀번호가 일치하지 않습니다.');
+                                                setDeleteVerifying(false);
+                                                return;
+                                            }
+                                            await deleteProject(deleteConfirmProject.id);
+                                            if (currentProjectId === deleteConfirmProject.id) setCurrentProject(null);
+                                            setDeleteConfirmProject(null);
+                                            setDeletePassword('');
+                                            setDeleteError(null);
+                                        } catch (err: any) {
+                                            setDeleteError(err?.message || '확인 중 오류가 발생했습니다.');
+                                        } finally {
+                                            setDeleteVerifying(false);
+                                        }
+                                    }}
+                                    className="px-4 py-2.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                                >
+                                    {deleteVerifying ? '확인 중...' : '확인'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

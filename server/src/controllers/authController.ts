@@ -143,6 +143,32 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     }
 };
 
+/** 프로젝트 삭제 등 위험 작업 전 로그인 사용자 비밀번호 확인 */
+export const verifyPassword = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: '인증이 필요합니다.' });
+        }
+        const { password } = req.body;
+        if (!password || typeof password !== 'string') {
+            return res.status(400).json({ message: '비밀번호를 입력해 주세요.' });
+        }
+        const user = await User.findById(userId).select('password').lean();
+        if (!user || !user.password) {
+            return res.status(401).json({ message: '사용자 정보를 찾을 수 없습니다.' });
+        }
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: '비밀번호가 일치하지 않습니다.' });
+        }
+        res.json({ ok: true });
+    } catch (error: any) {
+        console.error('Verify password error:', error);
+        res.status(500).json({ message: '비밀번호 확인 중 오류가 발생했습니다.' });
+    }
+};
+
 export const checkEmail = async (req: Request, res: Response) => {
     try {
         const { email } = req.query;
