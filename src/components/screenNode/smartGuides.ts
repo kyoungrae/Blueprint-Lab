@@ -5,8 +5,8 @@ export const SNAP_RELEASE_THRESHOLD = 1;
 
 /** 인접 거리(px) - 이 거리 이내의 객체만 고려 (멀리 있는 객체는 정렬 대상에서 제외) */
 const PROXIMITY_THRESHOLD = 90;
-/** 후보 객체 수 제한 - 가장 가까운 객체만 정렬 대상으로 사용 */
-const MAX_NEARBY_CANDIDATES = 1;
+/** 후보 객체 수 제한 - 가장 가까운 객체만 정렬 대상으로 사용 (컨테이너 내부가 아닐 때) */
+const MAX_NEARBY_CANDIDATES = 12;
 
 export type AlignmentGuides = { vertical: number[]; horizontal: number[] };
 type OwnXEdge = 'left' | 'right' | 'centerX';
@@ -33,7 +33,7 @@ export function getSmartGuidesAndSnap(
     otherElements: Array<{ id: string; x: number; y: number; width: number; height: number }>,
     prevSnap: SnapState = {},
     guideLines?: GuideLinesInput,
-    options?: { allowedXEdges?: OwnXEdge[]; allowedYEdges?: OwnYEdge[] }
+    options?: { allowedXEdges?: OwnXEdge[]; allowedYEdges?: OwnYEdge[]; /** 컨테이너 내부일 때 true → 거리/개수 제한 없이 모든 후보 사용 (B,C 끼리 스마트 가이드) */ skipProximityFilter?: boolean }
 ): { deltaX: number; deltaY: number; guides: AlignmentGuides; nextSnap: SnapState } {
     const guides: AlignmentGuides = { vertical: [], horizontal: [] };
 
@@ -44,21 +44,23 @@ export function getSmartGuidesAndSnap(
         bottom: draggedBounds.bottom,
     };
 
-    // 인접한 객체만 고려 + 거리순 정렬 후 상위 후보만 사용
-    const nearbyElements = otherElements
-        .map((other) => {
-            const otherBox = {
-                left: other.x,
-                right: other.x + other.width,
-                top: other.y,
-                bottom: other.y + other.height,
-            };
-            return { other, dist: minBoxDistance(ourBox, otherBox) };
-        })
-        .filter(({ dist }) => dist <= PROXIMITY_THRESHOLD)
-        .sort((a, b) => a.dist - b.dist)
-        .slice(0, MAX_NEARBY_CANDIDATES)
-        .map(({ other }) => other);
+    // 인접한 객체만 고려 + 거리순 정렬 후 상위 후보만 사용 (skipProximityFilter 시 컨테이너 내부 전부 사용)
+    const withDist = otherElements.map((other) => {
+        const otherBox = {
+            left: other.x,
+            right: other.x + other.width,
+            top: other.y,
+            bottom: other.y + other.height,
+        };
+        return { other, dist: minBoxDistance(ourBox, otherBox) };
+    });
+    const nearbyElements = options?.skipProximityFilter
+        ? withDist.sort((a, b) => a.dist - b.dist).map(({ other }) => other)
+        : withDist
+            .filter(({ dist }) => dist <= PROXIMITY_THRESHOLD)
+            .sort((a, b) => a.dist - b.dist)
+            .slice(0, MAX_NEARBY_CANDIDATES)
+            .map(({ other }) => other);
 
     const allowedX: OwnXEdge[] = options?.allowedXEdges ?? (['left', 'right', 'centerX'] as OwnXEdge[]);
     const allowedY: OwnYEdge[] = options?.allowedYEdges ?? (['top', 'bottom', 'centerY'] as OwnYEdge[]);

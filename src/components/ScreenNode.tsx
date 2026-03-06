@@ -1473,6 +1473,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             // 드래그 중인 요소들을 모두 포함하는 "부모 컨테이너"가 있으면
             // 그 컨테이너 내부 요소들만 정렬 대상으로 제한한다.
             let staticElements = staticAll;
+            let isInsideContainer = false; // 컨테이너 내부로 제한된 경우 → B,C 끼리도 스마트 가이드 적용
             if (staticAll.length > 0) {
                 // 드래그 중인 요소들의 바운딩 박스
                 const draggedBoxes = dragged.map(el => ({
@@ -1518,6 +1519,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         // 컨테이너 안에 완전히 들어있는 요소만 후보
                         return left >= pLeft && right <= pRight && top >= pTop && bottom <= pBottom;
                     });
+                    isInsideContainer = true;
                 }
             }
 
@@ -1565,7 +1567,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 { left: minNewX, right: maxRight, centerX, top: minNewY, bottom: maxBottom, centerY },
                 otherElements,
                 snapStateRef.current,
-                screen.guideLinesVisible !== false ? guideLines : undefined
+                screen.guideLinesVisible !== false ? guideLines : undefined,
+                { skipProximityFilter: isInsideContainer }
             );
             snapStateRef.current = nextSnap;
 
