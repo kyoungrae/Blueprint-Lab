@@ -95,6 +95,16 @@ const StylePanel: React.FC<StylePanelProps> = ({
 
     const currentBgColor = getCurrentBgColor();
 
+    // 최근 사용 색상: 생성(추가) 순서로 최대 5개. 새로 추가되면 가장 오래된 것이 하나씩 사라짐.
+    const [recentBgColors, setRecentBgColors] = useState<string[]>([]);
+    const [recentStrokeColors, setRecentStrokeColors] = useState<string[]>([]);
+    const addToRecent = (list: string[], color: string, max: number): string[] => {
+        const normalized = color.toLowerCase();
+        const without = list.filter(c => c.toLowerCase() !== normalized);
+        const appended = [...without, normalized];
+        return appended.slice(-max);
+    };
+
     const isText = selectedEl?.type === 'text';
     const [fonts, setFonts] = useState<{ name: string; filename: string; url: string }[]>([]);
     const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
@@ -196,7 +206,11 @@ const StylePanel: React.FC<StylePanelProps> = ({
                             <input
                                 type="color"
                                 value={currentBgColor}
-                                onChange={(e) => applyBgColor(e.target.value)}
+                                onChange={(e) => {
+                                    const color = e.target.value;
+                                    applyBgColor(color);
+                                    setRecentBgColors(prev => addToRecent(prev, color, 5));
+                                }}
                                 className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
                             />
                         </div>
@@ -206,12 +220,32 @@ const StylePanel: React.FC<StylePanelProps> = ({
                     {['#ffffff', '#f1f5f9', '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#2c3e7c'].map(color => (
                         <button
                             key={color}
-                            onClick={() => applyBgColor(color)}
+                            onClick={() => {
+                                applyBgColor(color);
+                                setRecentBgColors(prev => addToRecent(prev, color, 5));
+                            }}
                             className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110`}
                             style={{ backgroundColor: color }}
                         />
                     ))}
                 </div>
+                {recentBgColors.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] text-gray-400 shrink-0">최근</span>
+                        <div className="flex gap-1.5 flex-1 flex-wrap">
+                            {recentBgColors.slice(0, 5).map(color => (
+                                <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() => applyBgColor(color)}
+                                    className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 ${currentBgColor.toLowerCase() === color ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
+                                    style={{ backgroundColor: color }}
+                                    title={color}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Text Style (굵기, 기울기, 밑줄, 폰트) - 텍스트 요소 선택 시 */}
@@ -342,6 +376,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                     );
                                     update({ drawElements: nextElements });
                                     syncUpdate({ drawElements: nextElements });
+                                    setRecentStrokeColors(prev => addToRecent(prev, color, 5));
                                 }}
                                 className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
                             />
@@ -358,6 +393,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                 );
                                 update({ drawElements: nextElements });
                                 syncUpdate({ drawElements: nextElements });
+                                setRecentStrokeColors(prev => addToRecent(prev, color, 5));
                             }}
                             className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden`}
                             style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
@@ -366,6 +402,31 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         </button>
                     ))}
                 </div>
+                {recentStrokeColors.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] text-gray-400 shrink-0">최근</span>
+                        <div className="flex gap-1.5 flex-1 flex-wrap">
+                            {recentStrokeColors.slice(0, 5).map(color => (
+                                <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() => {
+                                        const nextElements = drawElements.map(el =>
+                                            selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
+                                        );
+                                        update({ drawElements: nextElements });
+                                        syncUpdate({ drawElements: nextElements });
+                                    }}
+                                    className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden ${(drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000').toLowerCase() === color ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
+                                    style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
+                                    title={color}
+                                >
+                                    {color === 'transparent' && <div className="w-full h-[1px] bg-red-400 rotate-45" />}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* 크기 (넓이 · 높이) - 테두리 스타일 위 */}
