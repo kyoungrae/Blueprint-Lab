@@ -82,6 +82,9 @@ export function getSmartGuidesAndSnap(
     let bestY:
         | { dist: number; delta: number; targetId: string; targetValue: number; ownEdge: OwnYEdge }
         | undefined;
+    /** 스냅 거리 내 모든 정렬선 수집 (한 축당 하나만 스냅하지만, 가이드는 왼/가운데/오른쪽 등 여러 개 표시) */
+    const verticalGuideValues = new Set<number>();
+    const horizontalGuideValues = new Set<number>();
 
     // 1) 다른 객체와의 스냅
     for (const other of nearbyElements) {
@@ -91,28 +94,34 @@ export function getSmartGuidesAndSnap(
         for (const ourEdge of ourXEdges) {
             for (const targetValue of otherXValues) {
                 const dist = Math.abs(ourEdge.value - targetValue);
-                if (dist <= SNAP_THRESHOLD && (!bestX || dist < bestX.dist)) {
-                    bestX = {
-                        dist,
-                        delta: targetValue - ourEdge.value,
-                        targetId: other.id,
-                        targetValue,
-                        ownEdge: ourEdge.edge,
-                    };
+                if (dist <= SNAP_THRESHOLD) {
+                    verticalGuideValues.add(targetValue);
+                    if (!bestX || dist < bestX.dist) {
+                        bestX = {
+                            dist,
+                            delta: targetValue - ourEdge.value,
+                            targetId: other.id,
+                            targetValue,
+                            ownEdge: ourEdge.edge,
+                        };
+                    }
                 }
             }
         }
         for (const ourEdge of ourYEdges) {
             for (const targetValue of otherYValues) {
                 const dist = Math.abs(ourEdge.value - targetValue);
-                if (dist <= SNAP_THRESHOLD && (!bestY || dist < bestY.dist)) {
-                    bestY = {
-                        dist,
-                        delta: targetValue - ourEdge.value,
-                        targetId: other.id,
-                        targetValue,
-                        ownEdge: ourEdge.edge,
-                    };
+                if (dist <= SNAP_THRESHOLD) {
+                    horizontalGuideValues.add(targetValue);
+                    if (!bestY || dist < bestY.dist) {
+                        bestY = {
+                            dist,
+                            delta: targetValue - ourEdge.value,
+                            targetId: other.id,
+                            targetValue,
+                            ownEdge: ourEdge.edge,
+                        };
+                    }
                 }
             }
         }
@@ -123,28 +132,34 @@ export function getSmartGuidesAndSnap(
         for (const targetValue of guideLines.vertical) {
             for (const ourEdge of ourXEdges) {
                 const dist = Math.abs(ourEdge.value - targetValue);
-                if (dist <= SNAP_THRESHOLD && (!bestX || dist < bestX.dist)) {
-                    bestX = {
-                        dist,
-                        delta: targetValue - ourEdge.value,
-                        targetId: `guideLine-v-${targetValue}`,
-                        targetValue,
-                        ownEdge: ourEdge.edge,
-                    };
+                if (dist <= SNAP_THRESHOLD) {
+                    verticalGuideValues.add(targetValue);
+                    if (!bestX || dist < bestX.dist) {
+                        bestX = {
+                            dist,
+                            delta: targetValue - ourEdge.value,
+                            targetId: `guideLine-v-${targetValue}`,
+                            targetValue,
+                            ownEdge: ourEdge.edge,
+                        };
+                    }
                 }
             }
         }
         for (const targetValue of guideLines.horizontal) {
             for (const ourEdge of ourYEdges) {
                 const dist = Math.abs(ourEdge.value - targetValue);
-                if (dist <= SNAP_THRESHOLD && (!bestY || dist < bestY.dist)) {
-                    bestY = {
-                        dist,
-                        delta: targetValue - ourEdge.value,
-                        targetId: `guideLine-h-${targetValue}`,
-                        targetValue,
-                        ownEdge: ourEdge.edge,
-                    };
+                if (dist <= SNAP_THRESHOLD) {
+                    horizontalGuideValues.add(targetValue);
+                    if (!bestY || dist < bestY.dist) {
+                        bestY = {
+                            dist,
+                            delta: targetValue - ourEdge.value,
+                            targetId: `guideLine-h-${targetValue}`,
+                            targetValue,
+                            ownEdge: ourEdge.edge,
+                        };
+                    }
                 }
             }
         }
@@ -166,14 +181,13 @@ export function getSmartGuidesAndSnap(
         if (dist <= SNAP_RELEASE_THRESHOLD) {
             deltaX = prevSnap.x.targetValue - ourValue;
             nextSnap.x = prevSnap.x;
-            guides.vertical = [prevSnap.x.targetValue];
+            verticalGuideValues.add(prevSnap.x.targetValue);
         } else if (bestX) {
             nextSnap.x = {
                 targetId: bestX.targetId,
                 targetValue: bestX.targetValue,
                 ownEdge: bestX.ownEdge,
             };
-            guides.vertical = [bestX.targetValue];
         }
     } else if (bestX) {
         nextSnap.x = {
@@ -181,8 +195,8 @@ export function getSmartGuidesAndSnap(
             targetValue: bestX.targetValue,
             ownEdge: bestX.ownEdge,
         };
-        guides.vertical = [bestX.targetValue];
     }
+    guides.vertical = [...verticalGuideValues].sort((a, b) => a - b);
 
     if (prevSnap.y && allowedY.includes(prevSnap.y.ownEdge)) {
         const ourValue =
@@ -195,14 +209,13 @@ export function getSmartGuidesAndSnap(
         if (dist <= SNAP_RELEASE_THRESHOLD) {
             deltaY = prevSnap.y.targetValue - ourValue;
             nextSnap.y = prevSnap.y;
-            guides.horizontal = [prevSnap.y.targetValue];
+            horizontalGuideValues.add(prevSnap.y.targetValue);
         } else if (bestY) {
             nextSnap.y = {
                 targetId: bestY.targetId,
                 targetValue: bestY.targetValue,
                 ownEdge: bestY.ownEdge,
             };
-            guides.horizontal = [bestY.targetValue];
         }
     } else if (bestY) {
         nextSnap.y = {
@@ -210,8 +223,8 @@ export function getSmartGuidesAndSnap(
             targetValue: bestY.targetValue,
             ownEdge: bestY.ownEdge,
         };
-        guides.horizontal = [bestY.targetValue];
     }
+    guides.horizontal = [...horizontalGuideValues].sort((a, b) => a - b);
 
     return {
         deltaX,
