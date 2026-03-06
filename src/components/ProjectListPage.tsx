@@ -104,11 +104,6 @@ const ProjectListPage: React.FC = () => {
         };
     }, []);
 
-    const sortedProjects = useMemo(
-        () => [...projects].sort((a, b) => PROJECT_TYPE_ORDER[a.projectType] - PROJECT_TYPE_ORDER[b.projectType]),
-        [projects]
-    );
-
     const projectConnections = useMemo(() => {
         const connections: { fromId: string; toId: string }[] = [];
         projects.forEach((p) => {
@@ -119,6 +114,53 @@ const ProjectListPage: React.FC = () => {
         });
         return connections;
     }, [projects]);
+
+    // 연결된 프로젝트끼리 그룹핑 (연결 요소). 그룹 내·그룹 간 순서: ERD → 화면설계 → 컴포넌트 고정
+    const connectedGroups = useMemo(() => {
+        const idToProject = new Map(projects.map((p) => [p.id, p]));
+        const adj = new Map<string, Set<string>>();
+        projects.forEach((p) => adj.set(p.id, new Set()));
+        projectConnections.forEach(({ fromId, toId }) => {
+            adj.get(fromId)?.add(toId);
+            adj.get(toId)?.add(fromId);
+        });
+        const visited = new Set<string>();
+        const components: string[][] = [];
+        projects.forEach((p) => {
+            if (visited.has(p.id)) return;
+            const stack = [p.id];
+            const comp: string[] = [];
+            while (stack.length) {
+                const id = stack.pop()!;
+                if (visited.has(id)) continue;
+                visited.add(id);
+                comp.push(id);
+                adj.get(id)?.forEach((nb) => {
+                    if (!visited.has(nb)) stack.push(nb);
+                });
+            }
+            if (comp.length) components.push(comp);
+        });
+        const groups = components.map((comp) =>
+            comp
+                .map((id) => idToProject.get(id)!)
+                .filter(Boolean)
+                .sort((a, b) => PROJECT_TYPE_ORDER[a.projectType] - PROJECT_TYPE_ORDER[b.projectType])
+        );
+        groups.sort((ga, gb) => {
+            const orderA = PROJECT_TYPE_ORDER[ga[0]?.projectType ?? 'ERD'];
+            const orderB = PROJECT_TYPE_ORDER[gb[0]?.projectType ?? 'ERD'];
+            if (orderA !== orderB) return orderA - orderB;
+            return (ga[0]?.name ?? '').localeCompare(gb[0]?.name ?? '');
+        });
+        return groups;
+    }, [projects, projectConnections]);
+
+    const groupIdByProjectId = useMemo(() => {
+        const map = new Map<string, number>();
+        connectedGroups.forEach((group, gi) => group.forEach((p) => map.set(p.id, gi)));
+        return map;
+    }, [connectedGroups]);
 
 
     useEffect(() => {
@@ -401,29 +443,23 @@ const ProjectListPage: React.FC = () => {
                         </button>
                     </div>
                 ) : (
-                    <div ref={containerRef} className="relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-16">
-                        {/* SVG Layer for Connections */}
+                    <div ref={containerRef} className="relative flex flex-col gap-12">
+                        {/* 연결선: 전체 컨테이너 기준 한 레이어 (같은 그룹 내 연결만 표시) */}
                         <svg className="connection-svg absolute inset-0 w-full h-full pointer-events-none z-0" style={{ minHeight: '100%' }}>
                             {projectConnections.map((conn, idx) => {
+                                if (groupIdByProjectId.get(conn.fromId) !== groupIdByProjectId.get(conn.toId)) return null;
                                 const from = cardPositions[conn.fromId];
                                 const to = cardPositions[conn.toId];
-
                                 if (!from || !to) return null;
-
                                 const startX = from.x + from.w;
                                 const startY = from.y + from.h / 2;
                                 const endX = to.x;
                                 const endY = to.y + to.h / 2;
-
-                                // If target is to the left, adjust start/end points
                                 const actualStartX = startX < endX ? startX : from.x;
                                 const actualEndX = startX < endX ? endX : to.x + to.w;
-
                                 const cp1x = actualStartX + (actualEndX - actualStartX) / 2;
                                 const cp2x = actualStartX + (actualEndX - actualStartX) / 2;
-
                                 const pathData = `M ${actualStartX} ${startY} C ${cp1x} ${startY}, ${cp2x} ${endY}, ${actualEndX} ${endY}`;
-
                                 return (
                                     <path
                                         key={`${conn.fromId}-${conn.toId}-${idx}`}
@@ -436,8 +472,14 @@ const ProjectListPage: React.FC = () => {
                                 );
                             })}
                         </svg>
-
-                        {sortedProjects.map((project) => {
+                        {connectedGroups.map((group, groupIndex) => (
+                                <div
+                                    key={groupIndex}
+                                    className="project-group relative rounded-[32px] border border-gray-100 bg-white/50 p-8 md:p-10 shadow-sm animate-project-group-in"
+                                    style={{ animationDelay: `${groupIndex * 120}ms` }}
+                                >
+                                    <div className="relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-16 z-10">
+                                        {group.map((project, cardIndex) => {
                             const isLocal = project.id.startsWith('local_');
                             const projectOwner = project.members?.find((m) => m.role === 'OWNER');
                             const isOwner = isLocal || user?.id === projectOwner?.id;
@@ -449,7 +491,8 @@ const ProjectListPage: React.FC = () => {
                                     key={project.id}
                                     data-project-id={project.id}
                                     onClick={() => setCurrentProject(project.id)}
-                                    className="group project-card bg-white rounded-[28px] p-6 border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-1 transition-all cursor-pointer flex flex-col h-full ring-0 hover:ring-2 ring-blue-500/20 z-10"
+                                    className="group project-card bg-white rounded-[28px] p-6 border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-1 transition-all cursor-pointer flex flex-col h-full ring-0 hover:ring-2 ring-blue-500/20 z-10 animate-project-card-in"
+                                    style={{ animationDelay: `${groupIndex * 120 + cardIndex * 80}ms` }}
                                 >
 
                                     <div className="flex items-start justify-between mb-6">
@@ -597,7 +640,10 @@ const ProjectListPage: React.FC = () => {
                                     </div>
                                 </div>
                             );
-                        })}
+                                        })}
+                                    </div>
+                                </div>
+                        ))}
                     </div>
                 )}
             </main>

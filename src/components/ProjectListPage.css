@@ -63,3 +63,36 @@
   opacity: 0.8;
   stroke-width: 3.5;
 }
+
+/* 연결 그룹·카드 시간 효과 (스태거 등장) */
+.animate-project-group-in {
+  animation: project-group-in 0.5s ease-out forwards;
+  opacity: 0;
+}
+
+.animate-project-card-in {
+  animation: project-card-in 0.45s ease-out forwards;
+  opacity: 0;
+}
+
+@keyframes project-group-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes project-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
