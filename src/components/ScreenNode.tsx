@@ -1122,15 +1122,48 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 nextY = elY + dy;
             }
 
-            // Min size (리사이즈 시 최소 너비/높이)
             const RESIZE_MIN = 8;
-            if (nextW < RESIZE_MIN) {
-                if (dir.includes('w')) nextX = elX + w - RESIZE_MIN;
-                nextW = RESIZE_MIN;
-            }
-            if (nextH < RESIZE_MIN) {
-                if (dir.includes('n')) nextY = elY + h - RESIZE_MIN;
-                nextH = RESIZE_MIN;
+            const isCorner = (dir.includes('n') || dir.includes('s')) && (dir.includes('e') || dir.includes('w'));
+            const shiftLockAspect = moveEvent.shiftKey && isCorner && h > 0;
+
+            // Shift + 꼭짓점: 비율 유지하며 크기 변경
+            if (shiftLockAspect) {
+                const aspectRatio = w / h;
+                let newW = Math.max(nextW, nextH * aspectRatio);
+                let newH = newW / aspectRatio;
+                if (newH < RESIZE_MIN) {
+                    newH = RESIZE_MIN;
+                    newW = newH * aspectRatio;
+                }
+                if (newW < RESIZE_MIN) {
+                    newW = RESIZE_MIN;
+                    newH = newW / aspectRatio;
+                }
+                nextW = newW;
+                nextH = newH;
+                // 고정 꼭짓점 기준으로 위치 보정
+                if (dir.includes('e') && dir.includes('s')) {
+                    nextX = elX;
+                    nextY = elY;
+                } else if (dir.includes('w') && dir.includes('s')) {
+                    nextX = elX + w - nextW;
+                    nextY = elY;
+                } else if (dir.includes('e') && dir.includes('n')) {
+                    nextX = elX;
+                    nextY = elY + h - nextH;
+                } else if (dir.includes('w') && dir.includes('n')) {
+                    nextX = elX + w - nextW;
+                    nextY = elY + h - nextH;
+                }
+            } else {
+                if (nextW < RESIZE_MIN) {
+                    if (dir.includes('w')) nextX = elX + w - RESIZE_MIN;
+                    nextW = RESIZE_MIN;
+                }
+                if (nextH < RESIZE_MIN) {
+                    if (dir.includes('n')) nextY = elY + h - RESIZE_MIN;
+                    nextH = RESIZE_MIN;
+                }
             }
 
             // Smart Guides 스냅: 다른 객체/보조선에 맞춰 리사이즈 엣지를 정렬
@@ -1201,6 +1234,36 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             } else {
                 resizeSnapStateRef.current = {};
                 setAlignmentGuides(null);
+            }
+
+            // Shift + 꼭짓점: 스냅 적용 후에도 비율 유지
+            if (shiftLockAspect && h > 0) {
+                const aspectRatio = w / h;
+                let newW = Math.max(nextW, nextH * aspectRatio);
+                let newH = newW / aspectRatio;
+                if (newH < RESIZE_MIN) {
+                    newH = RESIZE_MIN;
+                    newW = newH * aspectRatio;
+                }
+                if (newW < RESIZE_MIN) {
+                    newW = RESIZE_MIN;
+                    newH = newW / aspectRatio;
+                }
+                nextW = newW;
+                nextH = newH;
+                if (dir.includes('e') && dir.includes('s')) {
+                    nextX = elX;
+                    nextY = elY;
+                } else if (dir.includes('w') && dir.includes('s')) {
+                    nextX = elX + w - nextW;
+                    nextY = elY;
+                } else if (dir.includes('e') && dir.includes('n')) {
+                    nextX = elX;
+                    nextY = elY + h - nextH;
+                } else if (dir.includes('w') && dir.includes('n')) {
+                    nextX = elX + w - nextW;
+                    nextY = elY + h - nextH;
+                }
             }
 
             // Update in-place for smooth visual
