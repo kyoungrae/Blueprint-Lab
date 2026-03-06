@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { RecentTextColorsProvider } from '../contexts/RecentTextColorsContext';
+import { RecentStyleColorsProvider } from '../contexts/RecentStyleColorsContext';
 import { copyToClipboard } from '../utils/clipboard';
 import { syncComponentStyles } from '../utils/componentStyleSync';
 import { OnlineUsers, UserCursors } from './collaboration';
@@ -1081,6 +1082,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     return (
         <ScreenDesignUndoRedoProvider>
             <RecentTextColorsProvider>
+            <RecentStyleColorsProvider>
             <ExportModeContext.Provider value={isExporting}>
                 <div className="flex w-full h-screen overflow-hidden bg-gray-50">
                     <div className="relative flex h-full min-w-0">
@@ -1442,6 +1444,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     </div>
                 </div>
             </ExportModeContext.Provider>
+            </RecentStyleColorsProvider>
             </RecentTextColorsProvider>
         </ScreenDesignUndoRedoProvider>
     );
