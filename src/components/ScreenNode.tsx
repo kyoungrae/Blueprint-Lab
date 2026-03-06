@@ -3662,7 +3662,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             data-element-id={el.id}
                                                                         >
                                                                             {el.type === 'rect' && (
-                                                                                <div className={`w-full h-full shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
+                                                                                <div className={`w-full h-full relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
                                                                                     } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
                                                                                     }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius ?? 0 }}>
                                                                                     {(el.text || editingTextId === el.id) && (
@@ -3679,7 +3679,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 </div>
                                                                             )}
                                                                             {el.type === 'circle' && (
-                                                                                <div className={`w-full h-full shadow-sm relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
+                                                                                <div className={`w-full h-full relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
                                                                                     } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
                                                                                     }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius !== undefined ? el.borderRadius : '50%' }}>
                                                                                     {(el.text || editingTextId === el.id) && (
@@ -3699,7 +3699,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 const pts = (el.polygonPoints ?? []).map(p => ({ x: p.x - el.x, y: p.y - el.y }));
                                                                                 const pointsStr = pts.map(p => `${p.x},${p.y}`).join(' ');
                                                                                 return (
-                                                                                    <div className="w-full h-full shadow-sm relative overflow-hidden" style={{ pointerEvents: 'none' }}>
+                                                                                    <div className="w-full h-full relative overflow-hidden" style={{ pointerEvents: 'none' }}>
                                                                                         <svg width="100%" height="100%" viewBox={`0 0 ${el.width || 1} ${el.height || 1}`} preserveAspectRatio="none" className="absolute inset-0">
                                                                                             <polygon
                                                                                                 points={pointsStr}
@@ -4142,7 +4142,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             }
                                                                             {el.type === 'func-no' && (
                                                                                 <div
-                                                                                    className="w-full h-full rounded-full flex items-center justify-center font-bold text-white shadow-md select-none group/func"
+                                                                                    className="w-full h-full rounded-full flex items-center justify-center font-bold text-white select-none group/func"
                                                                                     style={{
                                                                                         backgroundColor: el.fill || '#ef4444',
                                                                                         fontSize: el.fontSize || 12,
