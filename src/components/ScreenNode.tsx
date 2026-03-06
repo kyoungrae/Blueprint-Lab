@@ -4045,26 +4045,42 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 );
                                                                             })()}
                                                                             {el.type === 'line' && (() => {
-                                                                                const x1 = (el.lineX1 ?? el.x) - el.x;
-                                                                                const y1 = (el.lineY1 ?? el.y) - el.y;
-                                                                                const x2 = (el.lineX2 ?? el.x + el.width) - el.x;
-                                                                                const y2 = (el.lineY2 ?? el.y + el.height) - el.y;
+                                                                                let x1 = (el.lineX1 ?? el.x) - el.x;
+                                                                                let y1 = (el.lineY1 ?? el.y) - el.y;
+                                                                                let x2 = (el.lineX2 ?? el.x + el.width) - el.x;
+                                                                                let y2 = (el.lineY2 ?? el.y + el.height) - el.y;
+                                                                                const end = el.lineEnd ?? 'none';
+                                                                                const hasStart = end === 'start' || end === 'both';
+                                                                                const hasEnd = end === 'end' || end === 'both';
+                                                                                const arrowSize = 8;
+                                                                                const dx = x2 - x1;
+                                                                                const dy = y2 - y1;
+                                                                                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                                                                                const ux = dx / len;
+                                                                                const uy = dy / len;
+                                                                                if (hasStart && len > arrowSize) {
+                                                                                    x1 += ux * arrowSize;
+                                                                                    y1 += uy * arrowSize;
+                                                                                }
+                                                                                if (hasEnd && len > arrowSize) {
+                                                                                    x2 -= ux * arrowSize;
+                                                                                    y2 -= uy * arrowSize;
+                                                                                }
                                                                                 const strokeW = el.strokeWidth ?? 2;
                                                                                 const strokeColor = hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1);
                                                                                 const dash = el.strokeStyle === 'dashed' ? '4 2' : el.strokeStyle === 'dotted' ? '1 2' : undefined;
-                                                                                const end = el.lineEnd ?? 'none';
                                                                                 const idStart = `line-arrow-start-${el.id}`;
                                                                                 const idEnd = `line-arrow-end-${el.id}`;
-                                                                                const markerStart = (end === 'start' || end === 'both') ? `url(#${idStart})` : undefined;
-                                                                                const markerEnd = (end === 'end' || end === 'both') ? `url(#${idEnd})` : undefined;
+                                                                                const markerStart = hasStart ? `url(#${idStart})` : undefined;
+                                                                                const markerEnd = hasEnd ? `url(#${idEnd})` : undefined;
                                                                                 return (
                                                                                     <div className="w-full h-full relative overflow-visible" style={{ pointerEvents: 'none' }}>
                                                                                         <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(el.width || 1, 1)} ${Math.max(el.height || 1, 1)}`} preserveAspectRatio="none" className="absolute inset-0" style={{ overflow: 'visible' }}>
                                                                                             <defs>
-                                                                                                <marker id={idStart} markerWidth="8" markerHeight="8" refX="0" refY="4" orient="auto">
+                                                                                                <marker id={idStart} markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
                                                                                                     <path d="M 0 4 L 8 0 L 8 8 Z" fill={strokeColor} />
                                                                                                 </marker>
-                                                                                                <marker id={idEnd} markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
+                                                                                                <marker id={idEnd} markerWidth="8" markerHeight="8" refX="0" refY="4" orient="auto">
                                                                                                     <path d="M 0 0 L 8 4 L 0 8 Z" fill={strokeColor} />
                                                                                                 </marker>
                                                                                             </defs>
