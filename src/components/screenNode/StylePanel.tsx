@@ -384,7 +384,6 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                 const nextElements = drawElements.map(el => {
                                     if (!selectedElementIds.includes(el.id)) return el;
                                     const w = el.width || 1;
-                                    const h = el.height || 1;
                                     if (el.type === 'polygon' && el.polygonPoints?.length && w > 0) {
                                         const sx = num / w;
                                         const newPoints = el.polygonPoints.map(p => ({ x: el.x + (p.x - el.x) * sx, y: p.y }));
@@ -418,7 +417,6 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                 const num = Math.max(1, Math.min(9999, parseInt(e.target.value, 10) || 1));
                                 const nextElements = drawElements.map(el => {
                                     if (!selectedElementIds.includes(el.id)) return el;
-                                    const w = el.width || 1;
                                     const h = el.height || 1;
                                     if (el.type === 'polygon' && el.polygonPoints?.length && h > 0) {
                                         const sy = num / h;
