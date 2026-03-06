@@ -1,7 +1,7 @@
 import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
-import type { Screen, DrawElement, TableCellData, PolygonPreset } from '../types/screenDesign';
+import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
 
 import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
@@ -213,14 +213,22 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
 
     // ── 4. Drawing Mode Logic ──
-    const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon'>('select');
+    const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line'>('select');
     const [shapeSubPanelOpen, setShapeSubPanelOpen] = useState(false);
     const [shapePanelPos, setShapePanelPos] = useState({ x: 0, y: 0 });
     const [polygonPresetToCreate, setPolygonPresetToCreate] = useState<PolygonPreset | null>(null);
+    const [linePanelOpen, setLinePanelOpen] = useState(false);
+    const [linePanelPos, setLinePanelPos] = useState({ x: 0, y: 0 });
+    const [linePresetToCreate, setLinePresetToCreate] = useState<{ strokeStyle: 'solid' | 'dashed' | 'dotted'; lineEnd: LineEnd } | null>(null);
+    const [lineDrawStart, setLineDrawStart] = useState<{ x: number; y: number } | null>(null);
+    const [lineDrawEnd, setLineDrawEnd] = useState<{ x: number; y: number } | null>(null);
+    const lineDrawStartRef = useRef<{ x: number; y: number } | null>(null);
+    const lineDrawEndRef = useRef<{ x: number; y: number } | null>(null);
     /** 다각형 드로잉 중 사용한 프리셋 (mouseup 시 폴리곤 생성에 사용) */
     const [drawingPolygonPreset, setDrawingPolygonPreset] = useState<PolygonPreset | null>(null);
     /** 다각형 꼭짓점 드래그: { elementId, pointIndex, startPoints } + window listener로 좌표 갱신 */
     const polygonVertexDragRef = useRef<{ elementId: string; pointIndex: number; startPoints: { x: number; y: number }[] } | null>(null);
+    const lineVertexDragRef = useRef<{ elementId: string; pointIndex: 0 | 1 } | null>(null);
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -1190,6 +1198,17 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const y = Math.round((e.clientY - rect.top) * scaleY);
 
         if (activeTool === 'polygon' && !polygonPresetToCreate) return;
+        if (activeTool === 'line' && !linePresetToCreate) return;
+
+        if (activeTool === 'line' && linePresetToCreate) {
+            const start = { x, y };
+            setLineDrawStart(start);
+            lineDrawStartRef.current = start;
+            setLineDrawEnd(null);
+            lineDrawEndRef.current = null;
+            setIsDrawing(true);
+            return;
+        }
 
         if (activeTool === 'select') {
             // Start marquee drag-selection on background click
@@ -1387,6 +1406,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         const scaleY = canvasRef.current.clientHeight / rect.height;
         const x = Math.round((e.clientX - rect.left) * scaleX);
         const y = Math.round((e.clientY - rect.top) * scaleY);
+
+        if (lineDrawStartRef.current) {
+            const end = { x, y };
+            setLineDrawEnd(end);
+            lineDrawEndRef.current = end;
+            return;
+        }
 
         // Marquee drag-selection logic
         if (isDragSelecting) {
@@ -1609,6 +1635,44 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             return;
         }
 
+        if (lineDrawStartRef.current && lineDrawEndRef.current && linePresetToCreate) {
+            const start = lineDrawStartRef.current;
+            const end = lineDrawEndRef.current;
+            const minX = Math.min(start.x, end.x);
+            const minY = Math.min(start.y, end.y);
+            const maxX = Math.max(start.x, end.x);
+            const maxY = Math.max(start.y, end.y);
+            const lineEl: DrawElement = {
+                id: `draw_${Date.now()}`,
+                type: 'line',
+                x: minX,
+                y: minY,
+                width: maxX - minX || 1,
+                height: maxY - minY || 1,
+                lineX1: start.x,
+                lineY1: start.y,
+                lineX2: end.x,
+                lineY2: end.y,
+                stroke: '#2c3e7c',
+                strokeWidth: 2,
+                strokeStyle: linePresetToCreate.strokeStyle,
+                lineEnd: linePresetToCreate.lineEnd,
+                zIndex: drawElements.length + 1,
+            };
+            const nextElements = [...drawElements, lineEl];
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements });
+            saveHistory(nextElements);
+            setSelectedElementIds([lineEl.id]);
+            setLineDrawStart(null);
+            setLineDrawEnd(null);
+            lineDrawStartRef.current = null;
+            lineDrawEndRef.current = null;
+            setIsDrawing(false);
+            if (activeTool !== 'select') setActiveTool('select');
+            return;
+        }
+
         if (isDrawing && tempElement) {
             // Skip if too small (but always allow tables and text)
             if (tempElement.width > 5 || tempElement.height > 5 || tempElement.type === 'text' || tempElement.type === 'table') {
@@ -1659,6 +1723,17 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                         const maxY = Math.max(...newPoints.map(q => q.y));
                         return { ...el, x: minX, y: minY, width: maxX - minX, height: maxY - minY, polygonPoints: newPoints };
                     }
+                    if (el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null) {
+                        const lineX1 = el.lineX1 + dx;
+                        const lineY1 = el.lineY1 + dy;
+                        const lineX2 = el.lineX2 + dx;
+                        const lineY2 = el.lineY2 + dy;
+                        const minX = Math.min(lineX1, lineX2);
+                        const minY = Math.min(lineY1, lineY2);
+                        const maxX = Math.max(lineX1, lineX2);
+                        const maxY = Math.max(lineY1, lineY2);
+                        return { ...el, x: minX, y: minY, width: maxX - minX || 1, height: maxY - minY || 1, lineX1, lineY1, lineX2, lineY2 };
+                    }
                     return { ...el, x: p.x, y: p.y };
                 })
                 : drawElements;
@@ -1675,6 +1750,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         setIsDrawing(false);
         setTempElement(null);
         setDrawingPolygonPreset(null);
+        setLineDrawStart(null);
+        setLineDrawEnd(null);
+        lineDrawStartRef.current = null;
+        lineDrawEndRef.current = null;
         if (activeTool !== 'select') setActiveTool('select');
     };
 
@@ -1712,6 +1791,41 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             window.removeEventListener('mousemove', handleMove, true);
             window.removeEventListener('mouseup', handleUp, true);
             polygonVertexDragRef.current = null;
+        };
+        window.addEventListener('mousemove', handleMove, true);
+        window.addEventListener('mouseup', handleUp, true);
+    };
+
+    const handleLineVertexDragStart = (id: string, pointIndex: 0 | 1, e: React.MouseEvent) => {
+        if (isLocked) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const el = drawElements.find(item => item.id === id && item.type === 'line' && item.lineX1 != null && item.lineY1 != null && item.lineX2 != null && item.lineY2 != null);
+        if (!el) return;
+        lineVertexDragRef.current = { elementId: id, pointIndex };
+        const handleMove = (moveE: MouseEvent) => {
+            if (!lineVertexDragRef.current || !canvasRef.current) return;
+            const rect = canvasRef.current.getBoundingClientRect();
+            const scaleX = canvasRef.current.clientWidth / rect.width;
+            const scaleY = canvasRef.current.clientHeight / rect.height;
+            const x = Math.round((moveE.clientX - rect.left) * scaleX);
+            const y = Math.round((moveE.clientY - rect.top) * scaleY);
+            const currentEl = getScreenById(screen.id)?.drawElements?.find(item => item.id === id);
+            if (!currentEl || currentEl.type !== 'line' || currentEl.lineX1 == null || currentEl.lineY1 == null || currentEl.lineX2 == null || currentEl.lineY2 == null) return;
+            const lineX1 = pointIndex === 0 ? x : currentEl.lineX1;
+            const lineY1 = pointIndex === 0 ? y : currentEl.lineY1;
+            const lineX2 = pointIndex === 1 ? x : currentEl.lineX2;
+            const lineY2 = pointIndex === 1 ? y : currentEl.lineY2;
+            const minX = Math.min(lineX1, lineX2);
+            const minY = Math.min(lineY1, lineY2);
+            const maxX = Math.max(lineX1, lineX2);
+            const maxY = Math.max(lineY1, lineY2);
+            updateElement(id, { lineX1, lineY1, lineX2, lineY2, x: minX, y: minY, width: Math.max(maxX - minX, 1), height: Math.max(maxY - minY, 1) });
+        };
+        const handleUp = () => {
+            window.removeEventListener('mousemove', handleMove, true);
+            window.removeEventListener('mouseup', handleUp, true);
+            lineVertexDragRef.current = null;
         };
         window.addEventListener('mousemove', handleMove, true);
         window.addEventListener('mouseup', handleUp, true);
@@ -2876,6 +2990,53 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                         document.body
                                                     )}
                                                 </div>
+                                                <div className="relative">
+                                                    <PremiumTooltip label="선 생성">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                setLinePanelPos({ x: rect.left, y: rect.bottom + 4 });
+                                                                setLinePanelOpen(prev => !prev);
+                                                            }}
+                                                            className={`p-2 rounded-lg transition-colors ${activeTool === 'line' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        >
+                                                            <Minus size={18} style={{ transform: 'rotate(-45deg)' }} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                    {linePanelOpen && createPortal(
+                                                        <div
+                                                            className="nodrag nopan fixed bg-white border border-gray-200 rounded-lg shadow-lg z-[9000] py-1 min-w-[140px]"
+                                                            style={{ left: linePanelPos.x, top: linePanelPos.y }}
+                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                        >
+                                                            {[
+                                                                { strokeStyle: 'solid' as const, lineEnd: 'none' as LineEnd, label: '실선' },
+                                                                { strokeStyle: 'dashed' as const, lineEnd: 'none' as LineEnd, label: '점선' },
+                                                                { strokeStyle: 'solid' as const, lineEnd: 'start' as LineEnd, label: '화살표(왼쪽)' },
+                                                                { strokeStyle: 'solid' as const, lineEnd: 'end' as LineEnd, label: '화살표(오른쪽)' },
+                                                                { strokeStyle: 'solid' as const, lineEnd: 'both' as LineEnd, label: '화살표(양쪽)' },
+                                                            ].map((preset) => (
+                                                                <button
+                                                                    key={`${preset.strokeStyle}-${preset.lineEnd}`}
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setLinePresetToCreate({ strokeStyle: preset.strokeStyle, lineEnd: preset.lineEnd });
+                                                                        setActiveTool('line');
+                                                                        setLinePanelOpen(false);
+                                                                    }}
+                                                                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                                                                >
+                                                                    {preset.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>,
+                                                        document.body
+                                                    )}
+                                                </div>
                                                 <PremiumTooltip label="텍스트">
                                                     <button
                                                         onClick={() => setActiveTool('text')}
@@ -3654,7 +3815,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         ...(el.type === 'image' && rot !== 0
                                                                             ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' }
                                                                             : {}),
-                                                                        ...(el.type === 'polygon' ? { overflow: 'visible' as const } : {}),
+                                                                        ...(el.type === 'polygon' || el.type === 'line' ? { overflow: 'visible' as const } : {}),
                                                                     };
 
                                                                     return (
@@ -3714,6 +3875,35 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                 strokeWidth={strokeW}
                                                                                                 strokeDasharray={el.strokeStyle === 'dashed' ? '4 2' : el.strokeStyle === 'dotted' ? '1 2' : undefined}
                                                                                             />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                );
+                                                                            })()}
+                                                                            {el.type === 'line' && (() => {
+                                                                                const x1 = (el.lineX1 ?? el.x) - el.x;
+                                                                                const y1 = (el.lineY1 ?? el.y) - el.y;
+                                                                                const x2 = (el.lineX2 ?? el.x + el.width) - el.x;
+                                                                                const y2 = (el.lineY2 ?? el.y + el.height) - el.y;
+                                                                                const strokeW = el.strokeWidth ?? 2;
+                                                                                const strokeColor = hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1);
+                                                                                const dash = el.strokeStyle === 'dashed' ? '4 2' : el.strokeStyle === 'dotted' ? '1 2' : undefined;
+                                                                                const end = el.lineEnd ?? 'none';
+                                                                                const idStart = `line-arrow-start-${el.id}`;
+                                                                                const idEnd = `line-arrow-end-${el.id}`;
+                                                                                const markerStart = (end === 'start' || end === 'both') ? `url(#${idStart})` : undefined;
+                                                                                const markerEnd = (end === 'end' || end === 'both') ? `url(#${idEnd})` : undefined;
+                                                                                return (
+                                                                                    <div className="w-full h-full relative overflow-visible" style={{ pointerEvents: 'none' }}>
+                                                                                        <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(el.width || 1, 1)} ${Math.max(el.height || 1, 1)}`} preserveAspectRatio="none" className="absolute inset-0" style={{ overflow: 'visible' }}>
+                                                                                            <defs>
+                                                                                                <marker id={idStart} markerWidth="8" markerHeight="8" refX="0" refY="4" orient="auto">
+                                                                                                    <path d="M 0 4 L 8 0 L 8 8 Z" fill={strokeColor} />
+                                                                                                </marker>
+                                                                                                <marker id={idEnd} markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
+                                                                                                    <path d="M 0 0 L 8 4 L 0 8 Z" fill={strokeColor} />
+                                                                                                </marker>
+                                                                                            </defs>
+                                                                                            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={strokeColor} strokeWidth={strokeW} strokeDasharray={dash} markerStart={markerStart} markerEnd={markerEnd} />
                                                                                         </svg>
                                                                                     </div>
                                                                                 );
@@ -4240,30 +4430,33 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 </button>
                                                                             )}
 
-                                                                            {/* Resize Handles (이미지 직접 크롭 모드에서는 ImageElement 크롭 핸들 사용) / 다각형은 8방 리사이즈 + 꼭짓점 핸들 */}
+                                                                            {/* Resize Handles (이미지 직접 크롭 모드에서는 ImageElement 크롭 핸들 사용) / 선은 끝점 핸들만, 다각형은 8방+꼭짓점 */}
                                                                             {isSelected && !isLocked && selectedElementIds.length === 1 && !(el.type === 'image' && imageCropMode) && (
                                                                                 <>
-                                                                                    {/* 파란 테두리 + 8방 리사이즈 핸들 (모든 도형 공통, 다각형 포함) */}
-                                                                                    <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
-                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize pointer-events-auto z-[130]" />
-                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize pointer-events-auto z-[130]" />
-                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize pointer-events-auto z-[130]" />
-                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize pointer-events-auto z-[130]" />
-                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize pointer-events-auto z-[130]" />
-                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize pointer-events-auto z-[130]" />
-                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize pointer-events-auto z-[130]" />
-                                                                                    <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize pointer-events-auto z-[130]" />
-                                                                                    {/* 다각형만: 꼭짓점 핸들 (모양 직접 편집) */}
-                                                                                    {el.type === 'polygon' && (el.polygonPoints ?? []).length > 0 && (
+                                                                                    {el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null ? (
                                                                                         <>
-                                                                                            {(el.polygonPoints ?? []).map((pt, idx) => (
-                                                                                                <div
-                                                                                                    key={idx}
-                                                                                                    onMouseDown={(e) => handlePolygonVertexDragStart(el.id, idx, e)}
-                                                                                                    className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]"
-                                                                                                    style={{ left: pt.x - el.x, top: pt.y - el.y, transform: 'translate(-50%, -50%)' }}
-                                                                                                />
-                                                                                            ))}
+                                                                                            <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
+                                                                                            <div onMouseDown={(e) => handleLineVertexDragStart(el.id, 0, e)} className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]" style={{ left: el.lineX1 - el.x, top: el.lineY1 - el.y, transform: 'translate(-50%, -50%)' }} />
+                                                                                            <div onMouseDown={(e) => handleLineVertexDragStart(el.id, 1, e)} className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]" style={{ left: el.lineX2 - el.x, top: el.lineY2 - el.y, transform: 'translate(-50%, -50%)' }} />
+                                                                                        </>
+                                                                                    ) : (
+                                                                                        <>
+                                                                                            <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
+                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize pointer-events-auto z-[130]" />
+                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize pointer-events-auto z-[130]" />
+                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize pointer-events-auto z-[130]" />
+                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize pointer-events-auto z-[130]" />
+                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize pointer-events-auto z-[130]" />
+                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize pointer-events-auto z-[130]" />
+                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize pointer-events-auto z-[130]" />
+                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize pointer-events-auto z-[130]" />
+                                                                                            {el.type === 'polygon' && (el.polygonPoints ?? []).length > 0 && (
+                                                                                                <>
+                                                                                                    {(el.polygonPoints ?? []).map((pt, idx) => (
+                                                                                                        <div key={idx} onMouseDown={(e) => handlePolygonVertexDragStart(el.id, idx, e)} className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]" style={{ left: pt.x - el.x, top: pt.y - el.y, transform: 'translate(-50%, -50%)' }} />
+                                                                                                    ))}
+                                                                                                </>
+                                                                                            )}
                                                                                         </>
                                                                                     )}
                                                                                 </>
@@ -4372,6 +4565,20 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     );
                                                                 })()}
 
+                                                                {/* 선 그리기 미리보기 */}
+                                                                {lineDrawStart && lineDrawEnd && linePresetToCreate && (
+                                                                    <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 9999 }}>
+                                                                        <line
+                                                                            x1={lineDrawStart.x}
+                                                                            y1={lineDrawStart.y}
+                                                                            x2={lineDrawEnd.x}
+                                                                            y2={lineDrawEnd.y}
+                                                                            stroke={hexToRgba('#2c3e7c', 1)}
+                                                                            strokeWidth={2}
+                                                                            strokeDasharray={linePresetToCreate.strokeStyle === 'dashed' ? '4 2' : linePresetToCreate.strokeStyle === 'dotted' ? '1 2' : undefined}
+                                                                        />
+                                                                    </svg>
+                                                                )}
                                                                 {/* Render Temporary Drawing Element */}
                                                                 {tempElement && (
                                                                     <div
