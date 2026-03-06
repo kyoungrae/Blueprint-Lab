@@ -1423,19 +1423,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     const handleElementMouseDown = (id: string, e: React.MouseEvent) => {
         if (isLocked) return;
+
+        // 그리기 도구일 때는 객체 위에서도 드래그로 새 객체 생성 가능하도록 이벤트를 캔버스까지 전파
+        const isDrawingTool = ['rect', 'circle', 'polygon', 'line', 'func-no', 'table', 'text', 'image'].includes(activeTool) ||
+            (activeTool === 'polygon' && polygonPresetToCreate) ||
+            (activeTool === 'line' && linePresetToCreate);
+        if (isDrawingTool) {
+            return; // stopPropagation 하지 않음 → 캔버스에서 handleCanvasMouseDown이 받아서 그리기 시작
+        }
+
         e.stopPropagation();
 
-        // 이미지/표 등 기존 요소 클릭 시 선택만 하고 드래그는 select 도구일 때만
-        if (activeTool !== 'select') {
-            const clickedEl = drawElements.find(el => el.id === id);
-            if (clickedEl) {
-                const nextSelected = clickedEl.groupId
-                    ? drawElements.filter(el => el.groupId === clickedEl.groupId).map(el => el.id)
-                    : [id];
-                setSelectedElementIds(nextSelected);
-            }
-            return;
-        }
+        // select 도구: 선택 및 드래그 이동
 
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect || !canvasRef.current) return;
