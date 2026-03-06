@@ -3964,7 +3964,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 {/* Render Existing Elements */}
                                                                 {drawElements.map((el) => {
                                                                     const isSelected = selectedElementIds.includes(el.id);
-                                                                    const rot = el.type === 'image' ? (el.imageRotation ?? 0) : 0;
+                                                                    const rot = el.type === 'image' ? (el.imageRotation ?? 0) : (el.rotation ?? 0);
                                                                     const previewPos = dragPreviewPositions?.[el.id];
                                                                     const commonStyle: React.CSSProperties = {
                                                                         position: 'absolute',
@@ -3977,9 +3977,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         transition: (isDrawing || isMoving) ? 'none' : 'all 0.1s ease',
                                                                         pointerEvents: isDrawing ? 'none' : 'auto',
                                                                         opacity: el.opacity !== undefined ? el.opacity : 1,
-                                                                        ...(el.type === 'image' && rot !== 0
-                                                                            ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' }
-                                                                            : {}),
+                                                                        ...(rot !== 0 ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' } : {}),
                                                                         ...(el.type === 'polygon' || el.type === 'line' ? { overflow: 'visible' as const } : {}),
                                                                     };
 

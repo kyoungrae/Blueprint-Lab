@@ -141,6 +141,8 @@ export interface DrawElement {
     imageUrl?: string;
     /** 이미지 회전 (도, 0-360) */
     imageRotation?: number;
+    /** 도형/텍스트 등 회전 (도, 0-360). 이미지는 imageRotation 사용 */
+    rotation?: number;
     /** 이미지 좌우 대칭 */
     imageFlipX?: boolean;
     /** 이미지 상하 대칭 */

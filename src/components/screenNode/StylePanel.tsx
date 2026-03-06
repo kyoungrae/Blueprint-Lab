@@ -1,8 +1,125 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Palette, GripVertical, X, Bold, Italic, Underline, ChevronDown, Plus } from 'lucide-react';
+import { Palette, GripVertical, X, Bold, Italic, Underline, ChevronDown, Plus, RotateCw } from 'lucide-react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import type { DrawElement } from '../../types/screenDesign';
+
+const normalizeRotationAngle = (deg: number) => ((deg % 360) + 360) % 360;
+
+const RotationSection: React.FC<{
+    selectedElementIds: string[];
+    drawElements: DrawElement[];
+    update: (u: any) => void;
+    syncUpdate: (u: any) => void;
+}> = ({ selectedElementIds, drawElements, update, syncUpdate }) => {
+    const [rotationInputStr, setRotationInputStr] = useState<string | null>(null);
+    const rotationDialRef = useRef<HTMLDivElement>(null);
+    const el = drawElements.find(e => selectedElementIds.includes(e.id));
+    const rotation = el ? normalizeRotationAngle(el.type === 'image' ? (el.imageRotation ?? 0) : (el.rotation ?? 0)) : 0;
+    const displayRotation = rotationInputStr !== null ? rotationInputStr : rotation.toFixed(1);
+
+    const applyRotation = (deg: number) => {
+        const val = normalizeRotationAngle(deg);
+        const nextElements = drawElements.map(el => {
+            if (!selectedElementIds.includes(el.id)) return el;
+            return el.type === 'image' ? { ...el, imageRotation: val } : { ...el, rotation: val };
+        });
+        update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
+    };
+
+    const handleRotationDialMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = rotationDialRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const updateFromPointer = (clientX: number, clientY: number) => {
+            const angleRad = Math.atan2(clientY - centerY, clientX - centerX);
+            const degFromTopClockwise = normalizeRotationAngle((angleRad * 180) / Math.PI + 90);
+            const snapped = Math.round(degFromTopClockwise * 10) / 10;
+            applyRotation(snapped);
+            setRotationInputStr(null);
+        };
+        updateFromPointer(e.clientX, e.clientY);
+        const onMove = (me: MouseEvent) => updateFromPointer(me.clientX, me.clientY);
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('mouseup', onUp, true);
+        };
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp, true);
+    };
+
+    const applyRotationFromInput = () => {
+        const num = parseFloat(rotationInputStr ?? String(rotation));
+        if (!Number.isNaN(num)) applyRotation(num);
+        setRotationInputStr(null);
+    };
+
+    return (
+        <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+            <div className="flex items-center gap-2">
+                <RotateCw size={14} className="text-gray-500 shrink-0" />
+                <span className="text-[11px] text-gray-600 font-medium">회전</span>
+            </div>
+            <div className="flex gap-1">
+                {[0, 90, 180, 270].map((deg) => (
+                    <button
+                        key={deg}
+                        type="button"
+                        onClick={() => { applyRotation(deg); setRotationInputStr(null); }}
+                        className={`flex-1 py-1.5 rounded text-[11px] font-medium transition-colors ${normalizeRotationAngle(rotation) === deg ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}
+                    >
+                        {deg}°
+                    </button>
+                ))}
+            </div>
+            <div className="flex items-center gap-3">
+                <div
+                    ref={rotationDialRef}
+                    className="relative w-14 h-14 cursor-grab active:cursor-grabbing select-none shrink-0"
+                    onMouseDown={handleRotationDialMouseDown}
+                >
+                    {(() => {
+                        const center = 28;
+                        const radius = 20;
+                        const rad = ((rotation - 90) * Math.PI) / 180;
+                        const lineX = center + Math.cos(rad) * (radius - 6);
+                        const lineY = center + Math.sin(rad) * (radius - 6);
+                        const knobX = center + Math.cos(rad) * radius;
+                        const knobY = center + Math.sin(rad) * radius;
+                        return (
+                            <svg width="56" height="56" viewBox="0 0 56 56" className="block">
+                                <circle cx={center} cy={center} r={radius} fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1.5" />
+                                <line x1={center} y1={center} x2={lineX} y2={lineY} stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
+                                <circle cx={knobX} cy={knobY} r="4" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
+                                <circle cx={center} cy={center} r="2" fill="#94a3b8" />
+                            </svg>
+                        );
+                    })()}
+                </div>
+                <div className="flex-1 flex flex-col gap-0.5">
+                    <span className="text-[10px] text-gray-500 font-medium">미세 조절</span>
+                    <input
+                        type="text"
+                        inputMode="decimal"
+                        value={displayRotation}
+                        onChange={(e) => {
+                            const v = e.target.value.replace(/[^0-9.-]/g, '');
+                            if (v === '' || v === '-' || /^-?\d*\.?\d*$/.test(v)) setRotationInputStr(v || '');
+                        }}
+                        onBlur={applyRotationFromInput}
+                        onKeyDown={(e) => { if (e.key === 'Enter') applyRotationFromInput(); }}
+                        className="w-full px-2 py-1.5 text-[11px] font-medium border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                    />
+                    <span className="text-[9px] text-gray-400">°</span>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface StylePanelProps {
     show: boolean;
@@ -503,6 +620,14 @@ const StylePanel: React.FC<StylePanelProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* 회전 */}
+            <RotationSection
+                selectedElementIds={selectedElementIds}
+                drawElements={drawElements}
+                update={update}
+                syncUpdate={syncUpdate}
+            />
 
             {/* Stroke Style (Border style) - 그림으로 표시 */}
             <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
