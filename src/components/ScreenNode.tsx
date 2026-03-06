@@ -1565,13 +1565,22 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     y: drawStartPos.y,
                 });
             } else {
-                const width = x - drawStartPos.x;
-                const height = y - drawStartPos.y;
+                let width = x - drawStartPos.x;
+                let height = y - drawStartPos.y;
+
+                // Shift + 드래그: 정사각형 비율로 초기 크기 설정
+                if (e.shiftKey) {
+                    const side = Math.max(Math.abs(width), Math.abs(height));
+                    const signW = width < 0 ? -1 : 1;
+                    const signH = height < 0 ? -1 : 1;
+                    width = signW * side;
+                    height = signH * side;
+                }
 
                 setTempElement({
                     ...tempElement,
-                    x: width < 0 ? x : drawStartPos.x,
-                    y: height < 0 ? y : drawStartPos.y,
+                    x: width < 0 ? drawStartPos.x + width : drawStartPos.x,
+                    y: height < 0 ? drawStartPos.y + height : drawStartPos.y,
                     width: Math.abs(width),
                     height: Math.abs(height)
                 });
