@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Trash2, Database, GripHorizontal } from 'lucide-react';
+import { Trash2, Database, GripHorizontal, Edit3, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
 
 const DEFAULT_RATIOS: [number, number, number] = [40, 35, 25];
@@ -85,6 +85,9 @@ const RightPane: React.FC<RightPaneProps> = ({
 
     // IME composition (한글 등) 시 자음/모음 분리 방지
     const [composing, setComposing] = useState<{ field: string; value: string } | null>(null);
+    // 테이블명 직접 입력 패널
+    const [showDirectInputPanel, setShowDirectInputPanel] = useState(false);
+    const [directInputValue, setDirectInputValue] = useState('');
 
     const handleChange = (field: 'initialSettings' | 'functionDetails', value: string, e: React.ChangeEvent<HTMLTextAreaElement>) => {
         if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
@@ -268,7 +271,21 @@ const RightPane: React.FC<RightPaneProps> = ({
                     <div className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 관련테이블
                     </div>
-                    {!isLocked && linkedErdProject && (
+                    {!isLocked && (
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowDirectInputPanel(true);
+                                    setDirectInputValue('');
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="nodrag flex items-center gap-1 text-[9px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors"
+                            >
+                                <Edit3 size={10} />
+                                <span>직접 입력</span>
+                            </button>
+                            {linkedErdProject && (
                         <div className="relative" ref={tableListRef}>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setIsTableListOpen(!isTableListOpen); }}
@@ -332,10 +349,89 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 getPanelPortalRoot()
                             )}
                         </div>
+                            )}
+                        </div>
                     )}
                 </div>
 
-                {/* Table list - scrollable area + input fixed at bottom (입력창 우선 보장) */}
+                {/* 테이블명 직접 입력 패널 (모달) */}
+                {showDirectInputPanel && createPortal(
+                    <div
+                        className="fixed inset-0 z-[9100] flex items-center justify-center p-4 bg-black/40"
+                        onClick={() => setShowDirectInputPanel(false)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        <div
+                            className="nodrag nopan bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                                <span className="text-sm font-bold text-gray-800">테이블명 직접 입력</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowDirectInputPanel(false)}
+                                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                            <div className="p-4 space-y-3">
+                                <input
+                                    type="text"
+                                    value={directInputValue}
+                                    onChange={(e) => setDirectInputValue(e.target.value)}
+                                    placeholder="테이블명 입력 후 Enter 또는 추가"
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !(e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                            e.preventDefault();
+                                            const val = directInputValue.trim();
+                                            if (val) {
+                                                const current = screen.relatedTables || '';
+                                                const toAdd = `• ${val}`;
+                                                const newValue = current ? `${current}\n${toAdd}` : toAdd;
+                                                update({ relatedTables: newValue });
+                                                syncUpdate({ relatedTables: newValue });
+                                                setDirectInputValue('');
+                                            }
+                                        }
+                                    }}
+                                    autoFocus
+                                />
+                                <div className="flex gap-2 justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDirectInputPanel(false)}
+                                        className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                    >
+                                        닫기
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const val = directInputValue.trim();
+                                            if (val) {
+                                                const current = screen.relatedTables || '';
+                                                const toAdd = `• ${val}`;
+                                                const newValue = current ? `${current}\n${toAdd}` : toAdd;
+                                                update({ relatedTables: newValue });
+                                                syncUpdate({ relatedTables: newValue });
+                                                setDirectInputValue('');
+                                            }
+                                        }}
+                                        className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                                    >
+                                        추가
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    getPanelPortalRoot()
+                )}
+
+                {/* Table list - scrollable area only (직접 입력은 버튼으로 모달에서) */}
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                     <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar no-pan-scroll p-2">
                         {tableLines.length === 0 ? (
@@ -373,30 +469,6 @@ const RightPane: React.FC<RightPaneProps> = ({
                             </div>
                         )}
                     </div>
-                    {!isLocked && (
-                        <div className="shrink-0 p-2 border-t border-gray-100 bg-white">
-                            <input
-                                type="text"
-                                placeholder="테이블 직접 입력 후 Enter..."
-                                className="nodrag w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-[10px] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !(e.nativeEvent as { isComposing?: boolean }).isComposing) {
-                                        const target = e.target as HTMLInputElement;
-                                        const val = target.value.trim();
-                                        if (val) {
-                                            const current = screen.relatedTables || '';
-                                            const toAdd = `• ${val}`;
-                                            const newValue = current ? `${current}\n${toAdd}` : toAdd;
-                                            update({ relatedTables: newValue });
-                                            syncUpdate({ relatedTables: newValue });
-                                            target.value = '';
-                                        }
-                                    }
-                                }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                            />
-                        </div>
-                    )}
                 </div>
             </div>
         </div>
