@@ -1,9 +1,11 @@
 import React, { useRef, useEffect } from 'react';
 
 interface EditableTableCellProps {
+    tableId: string;
     value: string;
     cellIndex: number;
     isLocked: boolean;
+    restoreSelectionRef?: React.MutableRefObject<{ tableId: string; cellIndex: number } | null>;
     autoFocus?: boolean;
     isComposing: boolean;
     composingValue: string | null;
@@ -27,9 +29,11 @@ function stripHtml(html: string): string {
 
 /** Table cell using textarea - avoids contentEditable BiDi reversal with Korean/IME */
 const EditableTableCell: React.FC<EditableTableCellProps> = ({
+    tableId,
     value,
     cellIndex,
     isLocked,
+    restoreSelectionRef,
     autoFocus,
     isComposing,
     composingValue,
@@ -44,6 +48,7 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
 }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const blurFromToolbarRef = useRef(false);
+    const lastSelectionRef = useRef({ start: 0, end: 0 });
 
     const plainValue = stripHtml(value || '');
     const displayValue = isComposing && composingValue != null ? stripHtml(composingValue) : plainValue;
@@ -66,6 +71,19 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
         return () => document.removeEventListener('mousedown', handleMouseDownCapture, true);
     }, []);
 
+    useEffect(() => {
+        if (!restoreSelectionRef?.current || textareaRef.current == null) return;
+        const req = restoreSelectionRef.current;
+        if (req.tableId !== tableId || req.cellIndex !== cellIndex) return;
+        const el = textareaRef.current;
+        const { start, end } = lastSelectionRef.current;
+        requestAnimationFrame(() => {
+            el.focus();
+            el.setSelectionRange(start, end);
+            restoreSelectionRef!.current = null;
+        });
+    });
+
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const v = e.target.value;
         if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
@@ -86,6 +104,7 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
         const el = textareaRef.current;
         if (!el) return;
         const { selectionStart, selectionEnd } = el;
+        lastSelectionRef.current = { start: selectionStart, end: selectionEnd };
         if (selectionStart !== selectionEnd) {
             const rect = el.getBoundingClientRect();
             onSelectionChange(rect);

@@ -28,6 +28,7 @@ interface TextStyleToolbarProps {
     textSelectionFromTable: { tableId: string; cellIndex: number } | null;
     selectedCellIndices: number[];
     editingTableId: string | null;
+    tableCellSelectionRestoreRef?: React.MutableRefObject<{ tableId: string; cellIndex: number } | null>;
 }
 
 // 피피티 기본 폰트: 한글(바탕, 굴림 등) + 영문
@@ -58,6 +59,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     textSelectionFromTable,
     selectedCellIndices,
     editingTableId,
+    tableCellSelectionRestoreRef,
 }) => {
     const [fonts, setFonts] = useState<FontInfo[]>([]);
     const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
@@ -73,6 +75,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         const clamped = Math.min(72, Math.max(8, px));
         applyFontSizePx(clamped);
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
@@ -169,6 +172,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         const needFallback = applyToSelection(() => document.execCommand('bold', false));
         if (needFallback) updateElement(el.id, { fontWeight: (el.fontWeight === 'bold' ? 'normal' : 'bold') as any });
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
@@ -190,6 +194,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         const needFallback = applyToSelection(() => document.execCommand('italic', false));
         if (needFallback) updateElement(el.id, { fontStyle: (el.fontStyle === 'italic' ? 'normal' : 'italic') as any });
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
@@ -211,6 +216,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         const needFallback = applyToSelection(() => document.execCommand('underline', false));
         if (needFallback) updateElement(el.id, { textDecoration: (el.textDecoration === 'underline' ? 'none' : 'underline') as any });
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
@@ -234,6 +240,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         });
         if (needFallback) updateElement(el.id, { fontFamily: fontName });
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
@@ -281,7 +288,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         : el.textDecoration === 'underline';
 
     return (
-            <div data-text-style-toolbar className="nodrag nopan flex items-center gap-2 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => e.stopPropagation()}>
+            <div data-text-style-toolbar className="nodrag nopan flex items-center gap-2 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
                 {/* Bold, Italic, Underline */}
                 <div className="flex items-center gap-0.5 border-r border-gray-200 pr-2">
                     <button
@@ -421,6 +428,21 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                                 const color = e.target.value;
                                 const needFallback = applyToSelection(() => document.execCommand('foreColor', false, color));
                                 if (needFallback) updateElement(el.id, { color });
+                                if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+                                    if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
+                                    const cellIdx = textSelectionFromTable.cellIndex;
+                                    const rows = el.tableRows || 3;
+                                    const cols = el.tableCols || 3;
+                                    const totalCells = rows * cols;
+                                    const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+                                    const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
+                                        if (!indices.includes(i)) return s;
+                                        return { ...(s || {}), color };
+                                    });
+                                    update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+                                    syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+                                }
+                                setTextStyleToolbarRefresh(r => r + 1);
                             }}
                             className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
                         />
@@ -434,6 +456,21 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                                     e.preventDefault();
                                     const needFallback = applyToSelection(() => document.execCommand('foreColor', false, c));
                                     if (needFallback) updateElement(el.id, { color: c });
+                                    if (fromTable && textSelectionFromTable && editingTableId === el.id) {
+                                        if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
+                                        const cellIdx = textSelectionFromTable.cellIndex;
+                                        const rows = el.tableRows || 3;
+                                        const cols = el.tableCols || 3;
+                                        const totalCells = rows * cols;
+                                        const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+                                        const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
+                                            if (!indices.includes(i)) return s;
+                                            return { ...(s || {}), color: c };
+                                        });
+                                        update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+                                        syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+                                    }
+                                    setTextStyleToolbarRefresh(r => r + 1);
                                 }}
                                 className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
                                 style={{ backgroundColor: c }}

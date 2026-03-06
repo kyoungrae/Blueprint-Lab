@@ -664,6 +664,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
     const [textSelectionFromTable, setTextSelectionFromTable] = useState<{ tableId: string; cellIndex: number } | null>(null);
+    const tableCellSelectionRestoreRef = useRef<{ tableId: string; cellIndex: number } | null>(null);
     const [textStyleToolbarRefresh, setTextStyleToolbarRefresh] = useState(0);
     const [showFontStylePanel, setShowFontStylePanel] = useState(false);
     const [fontStylePanelPos, setFontStylePanelPos] = useState({ x: 0, y: 0 });
@@ -691,6 +692,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // 텍스트 선택 해제 시 스타일 패널 숨김 (selectionchange + 선택 요소 변경 시)
     useEffect(() => {
         const handleSelectionChange = () => {
+            if (tableCellSelectionRestoreRef.current) return;
             const sel = window.getSelection();
             if (!sel || !sel.isCollapsed) return;
             const active = document.activeElement;
@@ -3778,7 +3780,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                 ? drawElements.find(it => it.id === textSelectionFromTable!.tableId)
                                 : drawElements.find(it => it.id === selectedElementIds[0]);
                             if (!el) return null;
-                            const defaultColor = el.color || '#333333';
+                            const defaultColor = fromTable && textSelectionFromTable
+                                ? (el.tableCellStyles?.[textSelectionFromTable.cellIndex]?.color ?? el.color ?? '#333333')
+                                : (el.color || '#333333');
                             const defaultFontSize = el.fontSize || 14;
                             const getFontSizeFromSelection = (): number | null => {
                                 const sel = window.getSelection();
@@ -3847,7 +3851,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         transform: `scale(${0.9 * zoom})`,
                                         transformOrigin: 'top left',
                                     }}
-                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                    }}
                                 >
                                     <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2">
                                         <div className="flex items-center gap-2">
@@ -3879,6 +3886,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         textSelectionFromTable={textSelectionFromTable}
                                         selectedCellIndices={selectedCellIndices}
                                         editingTableId={editingTableId}
+                                        tableCellSelectionRestoreRef={tableCellSelectionRestoreRef}
                                     />
                                 </div>,
                                 getPanelPortalRoot()
@@ -4270,9 +4278,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                     >
                                                                                                         {isCellEditing ? (
                                                                                                             <EditableTableCell
+                                                                                                                tableId={el.id}
                                                                                                                 value={cellData}
                                                                                                                 cellIndex={cellIndex}
                                                                                                                 isLocked={hasComponentText}
+                                                                                                                restoreSelectionRef={tableCellSelectionRestoreRef}
                                                                                                                 autoFocus
                                                                                                                 isComposing={tableCellComposing?.cellIndex === cellIndex}
                                                                                                                 composingValue={tableCellComposing?.cellIndex === cellIndex ? tableCellComposing.value : null}
@@ -4322,8 +4332,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                                     fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
                                                                                                                     textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
                                                                                                                     fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
+                                                                                                                    color: cellStyle.color ?? el.color ?? '#333333',
                                                                                                                 }}
-                                                                                                            />
+                                                                            />
                                                                                                         ) : (
                                                                                                             <div
                                                                                                                 dir="ltr"
@@ -4338,6 +4349,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                                                     fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
                                                                                                                     textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
                                                                                                                     fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
+                                                                                                                    color: cellStyle.color ?? el.color ?? '#333333',
                                                                                                                 }}
                                                                                                                 dangerouslySetInnerHTML={{ __html: cellData || '' }}
                                                                                                             />
