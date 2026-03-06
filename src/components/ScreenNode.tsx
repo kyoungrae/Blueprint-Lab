@@ -4030,8 +4030,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             className={`group-canvas-element ${isSelected ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
                                                                             data-element-id={el.id}
                                                                         >
-                                                                            {el.type === 'rect' && (
-                                                                                <div className={`w-full h-full relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
+                                                                            {el.type === 'rect' && (() => {
+                                                                                const isCompact = (el.width ?? 0) < 48 && (el.height ?? 0) < 48;
+                                                                                return (
+                                                                                <div className={`w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
                                                                                     } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
                                                                                     }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius ?? 0 }}>
                                                                                     {(el.text || editingTextId === el.id) && (
@@ -4042,13 +4044,17 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                             onUpdate={(updates) => updateElement(el.id, updates)}
                                                                                             onSelectionChange={handleElementTextSelectionChange}
                                                                                             autoFocus={editingTextId === el.id}
-                                                                                            className="px-2"
+                                                                                            className={isCompact ? 'px-0' : 'px-2'}
+                                                                                            compact={isCompact}
                                                                                         />
                                                                                     )}
                                                                                 </div>
-                                                                            )}
-                                                                            {el.type === 'circle' && (
-                                                                                <div className={`w-full h-full relative flex overflow-hidden ${el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center'
+                                                                                );
+                                                                            })()}
+                                                                            {el.type === 'circle' && (() => {
+                                                                                const isCompact = (el.width ?? 0) < 48 && (el.height ?? 0) < 48;
+                                                                                return (
+                                                                                <div className={`w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
                                                                                     } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
                                                                                     }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius !== undefined ? el.borderRadius : '50%' }}>
                                                                                     {(el.text || editingTextId === el.id) && (
@@ -4059,11 +4065,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                             onUpdate={(updates) => updateElement(el.id, updates)}
                                                                                             onSelectionChange={handleElementTextSelectionChange}
                                                                                             autoFocus={editingTextId === el.id}
-                                                                                            className="px-4"
+                                                                                            className={isCompact ? 'px-0' : 'px-4'}
+                                                                                            compact={isCompact}
                                                                                         />
                                                                                     )}
                                                                                 </div>
-                                                                            )}
+                                                                                );
+                                                                            })()}
                                                                             {el.type === 'polygon' && (() => {
                                                                                 const pts = (el.polygonPoints ?? []).map(p => ({ x: p.x - el.x, y: p.y - el.y }));
                                                                                 const pointsStr = pts.map(p => `${p.x},${p.y}`).join(' ');
@@ -4566,14 +4574,26 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                         backgroundColor: el.fill || '#ef4444',
                                                                                         fontSize: el.fontSize || 12,
                                                                                         border: `${el.strokeWidth || 2}px solid ${el.stroke || '#ffffff'}`,
-                                                                                        lineHeight: 1,
                                                                                         padding: 0,
                                                                                         display: 'flex',
                                                                                         alignItems: 'center',
-                                                                                        justifyContent: 'center'
+                                                                                        justifyContent: 'center',
+                                                                                        textAlign: 'center',
                                                                                     }}
                                                                                 >
-                                                                                    <span style={{ marginTop: '-1px' }}>{el.text}</span>
+                                                                                    <span
+                                                                                        style={{
+                                                                                            display: 'flex',
+                                                                                            alignItems: 'center',
+                                                                                            justifyContent: 'center',
+                                                                                            width: '100%',
+                                                                                            height: '100%',
+                                                                                            lineHeight: 1,
+                                                                                            textAlign: 'center',
+                                                                                        }}
+                                                                                    >
+                                                                                        {el.text}
+                                                                                    </span>
                                                                                     {!isLocked && (
                                                                                         <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 flex gap-1 opacity-0 group-hover/func:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm p-1 rounded-lg shadow-xl border border-gray-200 z-[120]">
                                                                                             <button

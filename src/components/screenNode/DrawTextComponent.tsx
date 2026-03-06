@@ -10,6 +10,8 @@ interface DrawTextComponentProps {
     onSelectionChange: (rect: DOMRect | null) => void;
     autoFocus?: boolean;
     className?: string;
+    /** 작은 도형 안에서 텍스트를 도형 기준 중앙 정렬 (lineHeight: 1.5, padding: 0, 100% 채워서 flex 중앙 정렬) */
+    compact?: boolean;
 }
 
 const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
@@ -19,7 +21,8 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     onUpdate,
     onSelectionChange,
     autoFocus,
-    className
+    className,
+    compact = false
 }) => {
     const divRef = useRef<HTMLDivElement>(null);
     const blurFromToolbarRef = useRef(false);
@@ -110,7 +113,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                     e.stopPropagation();
                 }
             }}
-            className={`outline-none p-0 text-gray-800 break-words min-h-[1.4em] w-full ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
+            className={`outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0' : 'p-0 min-h-[1.4em] w-full'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
             style={{
                 fontSize: `${element.fontSize || 14}px`,
                 color: element.color || '#333333',
@@ -118,9 +121,10 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                 fontStyle: element.fontStyle || 'normal',
                 textDecoration: element.textDecoration || 'none',
                 fontFamily: resolveFontFamilyCSS(element.fontFamily),
-                lineHeight: '1.4',
+                lineHeight: compact ? 1.5 : 1.4,
                 whiteSpace: 'pre-wrap',
-                cursor: isSelected && !element.hasComponentText ? 'text' : 'default'
+                cursor: isSelected && !element.hasComponentText ? 'text' : 'default',
+                ...(compact ? { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: 0 } : {})
             }}
         />
     );
