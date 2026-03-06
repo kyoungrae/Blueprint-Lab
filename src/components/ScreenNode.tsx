@@ -765,10 +765,58 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         };
     }, [setLastInteractedScreenId, screen.id]);
 
-
-
     const drawElements = screen.drawElements || [];
     const guideLines = screen.guideLines || { vertical: [], horizontal: [] };
+
+    // 방향키로 선택된 객체 이동 (1px 또는 Shift+방향키 시 GRID_STEP)
+    const ARROW_MOVE_STEP = 1;
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (selectedElementIds.length === 0 || isLocked) return;
+            const active = document.activeElement as HTMLElement | null;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || active.isContentEditable)) return;
+            const key = e.key;
+            if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown') return;
+            const step = e.shiftKey ? GRID_STEP : ARROW_MOVE_STEP;
+            let dx = 0;
+            let dy = 0;
+            if (key === 'ArrowLeft') dx = -step;
+            else if (key === 'ArrowRight') dx = step;
+            else if (key === 'ArrowUp') dy = -step;
+            else if (key === 'ArrowDown') dy = step;
+            if (dx === 0 && dy === 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const nextElements = drawElements.map(el => {
+                if (!selectedElementIds.includes(el.id)) return el;
+                if (el.type === 'polygon' && el.polygonPoints?.length) {
+                    const newPoints = el.polygonPoints.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                    const minX = Math.min(...newPoints.map(q => q.x));
+                    const minY = Math.min(...newPoints.map(q => q.y));
+                    const maxX = Math.max(...newPoints.map(q => q.x));
+                    const maxY = Math.max(...newPoints.map(q => q.y));
+                    return { ...el, x: minX, y: minY, width: maxX - minX, height: maxY - minY, polygonPoints: newPoints };
+                }
+                if (el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null) {
+                    const lineX1 = el.lineX1 + dx;
+                    const lineY1 = el.lineY1 + dy;
+                    const lineX2 = el.lineX2 + dx;
+                    const lineY2 = el.lineY2 + dy;
+                    const minX = Math.min(lineX1, lineX2);
+                    const minY = Math.min(lineY1, lineY2);
+                    const maxX = Math.max(lineX1, lineX2);
+                    const maxY = Math.max(lineY1, lineY2);
+                    return { ...el, x: minX, y: minY, width: maxX - minX || 1, height: maxY - minY || 1, lineX1, lineY1, lineX2, lineY2 };
+                }
+                return { ...el, x: el.x + dx, y: el.y + dy };
+            });
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements });
+            saveHistory(nextElements);
+        };
+        document.addEventListener('keydown', handleKeyDown, true);
+        return () => document.removeEventListener('keydown', handleKeyDown, true);
+    }, [selectedElementIds, drawElements, isLocked, update, syncUpdate, saveHistory]);
 
     /** 같은 위치에 겹친 보조선 합치기 (tolerance px 이내는 하나로) */
     const dedupeGuides = (arr: number[], tolerance = 2): number[] => {
