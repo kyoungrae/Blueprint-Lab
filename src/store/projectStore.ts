@@ -132,6 +132,7 @@ export const useProjectStore = create<ProjectStore>()(
                                 ...p,
                                 id: p._id,
                                 projectType: pt,
+                                author: p.author || '',
                                 linkedErdProjectId: p.linkedErdProjectId,
                                 linkedComponentProjectId: p.linkedComponentProjectId,
                                 members: p.members?.map((m: any) => ({

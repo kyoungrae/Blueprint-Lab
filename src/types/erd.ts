@@ -63,6 +63,8 @@ export interface Project {
     projectType: ProjectType;
     dbType: DBType;
     description?: string;
+    /** 프로젝트 생성자 표시명 (미설정 시 members OWNER의 name 사용) */
+    author?: string;
     updatedAt: string;
     members: ProjectMember[];
     data: ERDState | Record<string, unknown>;

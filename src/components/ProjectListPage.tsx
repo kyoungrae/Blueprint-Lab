@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil } from 'lucide-react';
 import './ProjectListPage.css';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
@@ -47,6 +47,9 @@ const ProjectListPage: React.FC = () => {
     const [deletePassword, setDeletePassword] = useState('');
     const [deleteError, setDeleteError] = useState<string | null>(null);
     const [deleteVerifying, setDeleteVerifying] = useState(false);
+
+    // 프로젝트 명 / 프로젝트 설명 편집 패널
+    const [editingProjectInfo, setEditingProjectInfo] = useState<{ project: Project; name: string; description: string } | null>(null);
 
     // Connection States
     const containerRef = useRef<HTMLDivElement>(null);
@@ -529,6 +532,22 @@ const ProjectListPage: React.FC = () => {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {isOwner && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setEditingProjectInfo({
+                                                            project,
+                                                            name: project.name,
+                                                            description: project.description ?? '',
+                                                        });
+                                                    }}
+                                                    className="p-2 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+                                                    title="프로젝트 명·설명 수정"
+                                                >
+                                                    <Pencil size={18} />
+                                                </button>
+                                            )}
                                             {!isLocal && (
                                                 <button
                                                     onClick={(e) => {
@@ -711,6 +730,59 @@ const ProjectListPage: React.FC = () => {
                                 <Share2 size={18} />
                                 {!localStorage.getItem('auth-token') ? '로그인 후 참여 가능' : '프로젝트 참여하기'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 프로젝트 명·프로젝트 설명 편집 패널 */}
+            {editingProjectInfo && (
+                <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setEditingProjectInfo(null)}>
+                    <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden scale-in" onClick={(e) => e.stopPropagation()}>
+                        <div className="p-6 border-b border-gray-100">
+                            <h3 className="text-lg font-black text-gray-900">프로젝트 정보 수정</h3>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1.5">프로젝트 명</label>
+                                <input
+                                    type="text"
+                                    value={editingProjectInfo.name}
+                                    onChange={(e) => setEditingProjectInfo((prev) => prev ? { ...prev, name: e.target.value } : null)}
+                                    placeholder="프로젝트 이름"
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1.5">프로젝트 설명</label>
+                                <textarea
+                                    value={editingProjectInfo.description}
+                                    onChange={(e) => setEditingProjectInfo((prev) => prev ? { ...prev, description: e.target.value } : null)}
+                                    placeholder="상세 설명을 입력하세요"
+                                    rows={3}
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 resize-none"
+                                />
+                            </div>
+                            <div className="flex gap-3 justify-end pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingProjectInfo(null)}
+                                    className="px-4 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                                >
+                                    취소
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const { project, name, description } = editingProjectInfo;
+                                        await updateProjectMetadata(project.id, { name: name.trim() || project.name, description: description.trim() || '' });
+                                        setEditingProjectInfo(null);
+                                    }}
+                                    className="px-4 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors"
+                                >
+                                    저장
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
