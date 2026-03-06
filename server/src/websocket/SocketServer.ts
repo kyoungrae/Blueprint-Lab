@@ -171,17 +171,35 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 projectHistory = await History.find({ projectId })
                     .sort({ timestamp: -1 })
                     .limit(100);
-                // Overlay full ERD snapshot from MongoDB so state_sync sends consistent entities+sections
-                // (Redis may be stale when user only PATCHes e.g. after section drag without sending operations)
-                const project = await Project.findById(projectId).select('currentSnapshot.entities currentSnapshot.relationships currentSnapshot.sections').lean();
-                const snap = (project as any)?.currentSnapshot;
-                if (snap && Array.isArray(snap.entities)) {
+                // Overlay latest snapshot from MongoDB so state_sync sends consistent data
+                // (Redis may be stale when user only PATCHes e.g. after section/ScreenDesign changes without sending operations)
+                const project = await Project.findById(projectId).select('projectType currentSnapshot.entities currentSnapshot.relationships currentSnapshot.sections screenSnapshot.screens screenSnapshot.flows screenSnapshot.sections').lean();
+                const projAny = project as any;
+                const projectType = projAny?.projectType || 'ERD';
+
+                // ERD: entities/relationships/sections from currentSnapshot
+                const erdSnap = projAny?.currentSnapshot;
+                if (erdSnap && Array.isArray(erdSnap.entities)) {
                     state = {
                         ...state,
-                        entities: snap.entities || state.entities,
-                        relationships: snap.relationships ?? state.relationships,
-                        sections: Array.isArray(snap.sections) ? snap.sections : (state.sections || []),
+                        entities: erdSnap.entities || state.entities,
+                        relationships: erdSnap.relationships ?? state.relationships,
+                        // ERD 섹션은 currentSnapshot.sections 기준으로 덮어씀
+                        sections: Array.isArray(erdSnap.sections) ? erdSnap.sections : (state.sections || []),
                     };
+                }
+
+                // SCREEN_DESIGN: screens/flows/sections는 screenSnapshot 기준으로 덮어씀
+                if (projectType === 'SCREEN_DESIGN') {
+                    const screenSnap = projAny?.screenSnapshot;
+                    if (screenSnap) {
+                        state = {
+                            ...state,
+                            screens: Array.isArray(screenSnap.screens) ? screenSnap.screens : (state.screens || []),
+                            flows: Array.isArray(screenSnap.flows) ? screenSnap.flows : (state.flows || []),
+                            sections: Array.isArray(screenSnap.sections) ? screenSnap.sections : (state.sections || []),
+                        };
+                    }
                 }
             }
 
@@ -460,7 +478,7 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
     if (!Types.ObjectId.isValid(projectId)) return;
 
     try {
-        const project = await Project.findById(projectId).select('projectType').lean();
+        const project = await Project.findById(projectId).select('projectType screenSnapshot.sections').lean();
         const projectType = (project as any)?.projectType || 'ERD';
         // Deep clone screens to ensure drawElements (incl. imageUrl) are stored as-is
         const screensToSave = JSON.parse(JSON.stringify(stateToSave.screens || []));
@@ -475,23 +493,48 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
                 updatedAt: new Date(),
             });
         } else {
-            await Project.findByIdAndUpdate(projectId, {
-                currentSnapshot: {
-                    version: stateToSave.version,
-                    entities: stateToSave.entities,
-                    relationships: stateToSave.relationships,
-                    sections: stateToSave.sections || [],
-                    savedAt: new Date(),
-                },
-                screenSnapshot: {
-                    version: stateToSave.version,
-                    screens: screensToSave,
-                    flows: stateToSave.flows || [],
-                    sections: stateToSave.sections || [],
-                    savedAt: new Date(),
-                },
-                updatedAt: new Date(),
-            });
+            // ERD 섹션은 state.sections를 사용하지만,
+            // 화면 설계(Screen Design)의 섹션은 REST PATCH를 통해 screenSnapshot.sections에만 저장하므로
+            // 여기서 state.sections로 덮어쓰지 않는다.
+            if (projectType === 'SCREEN_DESIGN') {
+                await Project.findByIdAndUpdate(projectId, {
+                    currentSnapshot: {
+                        version: stateToSave.version,
+                        entities: stateToSave.entities,
+                        relationships: stateToSave.relationships,
+                        sections: stateToSave.sections || [],
+                        savedAt: new Date(),
+                    },
+                    screenSnapshot: {
+                        version: stateToSave.version,
+                        screens: screensToSave,
+                        flows: stateToSave.flows || [],
+                        // 섹션은 기존 Mongo 값을 유지
+                        sections: (project as any)?.screenSnapshot?.sections || [],
+                        savedAt: new Date(),
+                    },
+                    updatedAt: new Date(),
+                });
+            } else {
+                // ERD 프로젝트: 섹션은 state.sections 기준으로 저장
+                await Project.findByIdAndUpdate(projectId, {
+                    currentSnapshot: {
+                        version: stateToSave.version,
+                        entities: stateToSave.entities,
+                        relationships: stateToSave.relationships,
+                        sections: stateToSave.sections || [],
+                        savedAt: new Date(),
+                    },
+                    screenSnapshot: {
+                        version: stateToSave.version,
+                        screens: screensToSave,
+                        flows: stateToSave.flows || [],
+                        sections: stateToSave.sections || [],
+                        savedAt: new Date(),
+                    },
+                    updatedAt: new Date(),
+                });
+            }
         }
         console.log(`💾 Project ${projectId} FLUSHED to MongoDB (immediate)`);
     } catch (error) {

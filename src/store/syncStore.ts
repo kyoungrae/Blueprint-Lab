@@ -265,7 +265,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
         const { socket } = get();
         if (socket) {
-            set({ cursors: new Map(), currentProjectId: projectId });
+            set({ cursors: new Map(), currentProjectId: projectId, isSynced: false });
             socket.emit('join_project', { projectId });
         }
     },

@@ -573,16 +573,21 @@ const ScreenDesignCanvasContent: React.FC = () => {
         return () => headers.forEach((el) => el.removeEventListener('wheel', handler, opts));
     }, [sections.length, getViewport, setViewport]);
 
-    // Initial load for local projects
+    // 진입 시 현재 프로젝트 데이터로 스토어 초기화 (로컬 프로젝트 전용)
+    // 원격 프로젝트는 state_sync 이벤트로 항상 최신 스냅샷을 받으므로, 여기서 다시 importData 하면
+    // 서버에서 내려온 화면 목록을 currentProject.data(구버전)로 덮어써 버릴 수 있다.
     useEffect(() => {
-        if (currentProjectId?.startsWith('local_') && currentProject) {
-            // Priority: currentProject.data contains screens/flows directly 
-            const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
-            if (data) {
-                importData(data);
-            }
+        if (!currentProjectId || !currentProject) return;
+        if (!currentProjectId.startsWith('local_')) return;
+        const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
+        if (data && Array.isArray(data.screens)) {
+            importData({
+                screens: data.screens || [],
+                flows: data.flows || [],
+                sections: Array.isArray((data as any).sections) ? (data as any).sections : [],
+            });
         }
-    }, [currentProjectId]);
+    }, [currentProjectId, currentProject?.id, importData]);
 
     // 연결된 컴포넌트 프로젝트 최신 데이터 확보 (스타일 동기화용)
     useEffect(() => {
@@ -635,6 +640,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
         }, currentProjectId.startsWith('local_') ? 1000 : 500);
         return () => clearTimeout(timer);
     }, [screens, flows, sections, currentProjectId, updateProjectData]);
+
+    // 섹션 변경은 딜레이 없이 바로 저장 (서버 프로젝트 전용, state_sync 이후에만)
+    useEffect(() => {
+        if (!currentProjectId || currentProjectId.startsWith('local_') || !isSynced) return;
+        // 섹션만 즉시 PATCH해서 screenSnapshot.sections 를 바로 갱신
+        updateProjectData(currentProjectId, { sections }, true);
+    }, [sections, currentProjectId, updateProjectData, isSynced]);
 
     // Unmount 시 현재 스토어 기준으로 즉시 저장 (격자 이동 등 직후 새로고침해도 유지)
     useEffect(() => {
