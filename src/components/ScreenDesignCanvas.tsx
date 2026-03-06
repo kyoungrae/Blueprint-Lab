@@ -542,6 +542,37 @@ const ScreenDesignCanvasContent: React.FC = () => {
         return () => document.removeEventListener('wheel', handleWheel, { capture: true });
     }, [getViewport, setViewport]);
 
+    // 섹션 제목/삭제 버튼 위에서 휠: 브라우저 줌 차단 + 캔버스와 동일하게 휠=패닝, Ctrl/Cmd+휠=줌
+    React.useLayoutEffect(() => {
+        const container = sectionHeadersContainerRef.current;
+        const paneEl = flowWrapper.current;
+        if (!container || !paneEl || sections.length === 0) return;
+        const headers = container.querySelectorAll('[data-section-header]');
+        const MIN_ZOOM = 0.05;
+        const MAX_ZOOM = 4;
+        const handler = (e: Event) => {
+            const we = e as WheelEvent;
+            e.preventDefault();
+            const { x, y, zoom } = getViewport();
+            const isZoom = we.ctrlKey || we.metaKey;
+            if (isZoom) {
+                const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * Math.pow(2, -we.deltaY / 200)));
+                const rect = paneEl.getBoundingClientRect();
+                const paneX = we.clientX - rect.left;
+                const paneY = we.clientY - rect.top;
+                const newX = paneX - (paneX - x) * (nextZoom / zoom);
+                const newY = paneY - (paneY - y) * (nextZoom / zoom);
+                setViewport({ x: newX, y: newY, zoom: nextZoom });
+            } else {
+                const deltaNormalize = we.deltaMode === 1 ? 20 : 1;
+                setViewport({ x: x - we.deltaX * deltaNormalize * 0.5, y: y - we.deltaY * deltaNormalize * 0.5, zoom });
+            }
+        };
+        const opts: AddEventListenerOptions = { passive: false, capture: true };
+        headers.forEach((el) => el.addEventListener('wheel', handler, opts));
+        return () => headers.forEach((el) => el.removeEventListener('wheel', handler, opts));
+    }, [sections.length, getViewport, setViewport]);
+
     // Initial load for local projects
     useEffect(() => {
         if (currentProjectId?.startsWith('local_') && currentProject) {
