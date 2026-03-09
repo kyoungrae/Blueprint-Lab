@@ -1,9 +1,197 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2 } from 'lucide-react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
+import * as XLSX from 'xlsx';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
+
+type SheetColIdx = { tableName: number; tableNameKr: number; columnName: number; columnNameKr: number; type: number; size: number; pk: number; fk: number; notNull: number; default: number };
+
+/** 엑셀에서 헤더 행을 찾아 (행 인덱스, 컬럼 인덱스 맵) 반환. 없으면 null */
+function findHeaderRowAndIndices(rows: (string | number)[][]): { headerRowIndex: number; idx: SheetColIdx } | null {
+    const normalize = (v: string) => String(v ?? '').trim().replace(/\s/g, '');
+    for (let r = 0; r < Math.min(25, rows.length); r++) {
+        const row = rows[r] || [];
+        let tableNameIdx = -1;
+        let tableNameKrIdx = -1;
+        let columnNameIdx = -1;
+        let columnNameKrIdx = -1;
+        let typeIdx = -1;
+        let sizeIdx = -1;
+        let pkIdx = -1;
+        let fkIdx = -1;
+        let notNullIdx = -1;
+        let defaultIdx = -1;
+        for (let c = 0; c < row.length; c++) {
+            const cell = normalize(String(row[c] ?? ''));
+            if (/테이블명/.test(cell) && !/한글/.test(cell)) tableNameIdx = c;
+            else if (/테이블한글명|테이블\s*한글/.test(cell) || (cell === '한글명' && tableNameIdx >= 0 && c === tableNameIdx + 1)) tableNameKrIdx = c;
+            else if (/컬럼명/.test(cell) && !/한글/.test(cell)) columnNameIdx = c;
+            else if (/컬럼한글명|컬럼\s*한글/.test(cell) || (cell === '한글명' && columnNameIdx >= 0 && c === columnNameIdx + 1)) columnNameKrIdx = c;
+            else if (/^타입$/.test(cell) || cell === '데이터타입') typeIdx = c;
+            else if (/^크기$/.test(cell) || /길이/.test(cell)) sizeIdx = c;
+            else if (/^PK$/i.test(cell) || /PK\s*\(/i.test(cell) || cell === 'PK(Y)') pkIdx = c;
+            else if (/^FK$/i.test(cell) || /FK\s*\(/i.test(cell) || cell === 'FK(Y)') fkIdx = c;
+            else if (/NOT\s*NULL/i.test(cell) || /NOTNULL/i.test(cell) || cell === 'NOT NULL(Y)') notNullIdx = c;
+            else if (/^Default$/i.test(cell) || /기본값/.test(cell)) defaultIdx = c;
+        }
+        if (tableNameIdx >= 0 && columnNameIdx >= 0) {
+            return {
+                headerRowIndex: r,
+                idx: {
+                    tableName: tableNameIdx,
+                    tableNameKr: tableNameKrIdx >= 0 ? tableNameKrIdx : tableNameIdx + 1,
+                    columnName: columnNameIdx,
+                    columnNameKr: columnNameKrIdx >= 0 ? columnNameKrIdx : columnNameIdx + 1,
+                    type: typeIdx >= 0 ? typeIdx : columnNameIdx + 2,
+                    size: sizeIdx >= 0 ? sizeIdx : columnNameIdx + 3,
+                    pk: pkIdx >= 0 ? pkIdx : columnNameIdx + 4,
+                    fk: fkIdx >= 0 ? fkIdx : columnNameIdx + 5,
+                    notNull: notNullIdx >= 0 ? notNullIdx : columnNameIdx + 6,
+                    default: defaultIdx >= 0 ? defaultIdx : columnNameIdx + 7,
+                },
+            };
+        }
+    }
+    return null;
+}
+
+type ColumnDef = { name: string; type: string; size: string; pk: boolean; fk: string; notNull: boolean; defaultVal: string; comment: string };
+type TableDef = { tableComment: string; columns: ColumnDef[] };
+
+/** 엑셀 시트 행 배열에서 테이블/컬럼 정보 추출 (헤더 자동 감지 또는 고정 위치) */
+function parseSheetToTableColumns(rows: (string | number)[][], startRow: number, idx: SheetColIdx): Record<string, TableDef> {
+    const result: Record<string, TableDef> = {};
+    for (let i = startRow; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const tableName = String(row[idx.tableName] ?? '').trim();
+        const columnName = String(row[idx.columnName] ?? '').trim();
+        if (!tableName || !columnName) continue;
+        if (/테이블명|컬럼명|순번|타입|한글/.test(tableName) || /테이블명|컬럼명|순번|한글/.test(columnName)) continue;
+        const tableComment = String(row[idx.tableNameKr] ?? '').trim();
+        const columnComment = String(row[idx.columnNameKr] ?? '').trim();
+        const type = String(row[idx.type] ?? 'VARCHAR').trim().toUpperCase() || 'VARCHAR';
+        const size = row[idx.size] !== undefined && row[idx.size] !== '' ? String(row[idx.size]).trim() : '';
+        const pk = /^Y$/i.test(String(row[idx.pk] ?? '').trim());
+        const fkRaw = String(row[idx.fk] ?? '').trim();
+        const notNull = /^Y$/i.test(String(row[idx.notNull] ?? '').trim());
+        let defaultVal = String(row[idx.default] ?? '').trim();
+        if (defaultVal && !/^default\s+/i.test(defaultVal)) defaultVal = 'default ' + defaultVal;
+        if (!result[tableName]) result[tableName] = { tableComment: '', columns: [] };
+        if (tableComment && !result[tableName].tableComment) result[tableName].tableComment = tableComment;
+        result[tableName].columns.push({
+            name: columnName, type, size, pk, fk: fkRaw, notNull, defaultVal,
+            comment: columnComment,
+        });
+    }
+    return result;
+}
+
+function escapeComment(s: string): string {
+    return s.replace(/\\/g, '\\\\').replace(/'/g, "''");
+}
+
+function tableDefsToDdl(tableDefs: Record<string, TableDef>): string {
+    const lines: string[] = [];
+    for (const [tableName, def] of Object.entries(tableDefs)) {
+        const cols = def.columns;
+        if (!cols.length) continue;
+        const tableComment = def.tableComment ? ` COMMENT='${escapeComment(def.tableComment)}'` : '';
+        const pkCols = cols.filter(c => c.pk).map(c => c.name);
+        const colDefs = cols.map((c) => {
+            let typeStr = c.type;
+            if (['VARCHAR', 'CHAR', 'NVARCHAR', 'NCHAR'].includes(c.type) && c.size) typeStr += `(${c.size})`;
+            if (c.type === 'DECIMAL' && c.size) typeStr += `(${c.size})`;
+            let line = `  \`${c.name}\` ${typeStr}`;
+            if (c.notNull) line += ' NOT NULL';
+            if (c.defaultVal) {
+                const d = c.defaultVal.replace(/^default\s+/i, '').trim();
+                if (/^NOW\(\)|CURRENT_TIMESTAMP$/i.test(d)) line += ' DEFAULT CURRENT_TIMESTAMP';
+                else if (/^'[^']*'$/.test(d) || /^\d+$/.test(d)) line += ` DEFAULT ${d}`;
+                else line += ` DEFAULT ${d}`;
+            }
+            if (c.comment) line += ` COMMENT '${escapeComment(c.comment)}'`;
+            return line;
+        });
+        if (pkCols.length) colDefs.push(`  PRIMARY KEY (\`${pkCols.join('`, `')}\`)`);
+        const fkRefs = cols.filter(c => c.fk);
+        for (const c of fkRefs) {
+            const m = c.fk.match(/^([^.]+)\.([^.]+)$/);
+            if (m) colDefs.push(`  CONSTRAINT \`fk_${tableName}_${c.name}\` FOREIGN KEY (\`${c.name}\`) REFERENCES \`${m[1]}\` (\`${m[2]}\`)`);
+        }
+        lines.push(`CREATE TABLE \`${tableName}\` (\n${colDefs.join(',\n')}\n)${tableComment};\n`);
+    }
+    return lines.join('\n');
+}
+
+/** 엑셀 파일 파싱 → DDL 문자열 */
+function parseExcelToDdl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = e.target?.result;
+                if (!data || !(data instanceof ArrayBuffer)) {
+                    reject(new Error('파일을 읽을 수 없습니다.'));
+                    return;
+                }
+                const wb = XLSX.read(data, { type: 'array', cellDates: false });
+                let allTableDefs: Record<string, TableDef> = {};
+
+                for (const sheetName of wb.SheetNames) {
+                    const sheet = wb.Sheets[sheetName];
+                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) as (string | number)[][];
+                    if (!rows.length) continue;
+
+                    const headerFound = findHeaderRowAndIndices(rows);
+                    let startRow: number;
+                    let idx: SheetColIdx;
+
+                    if (headerFound) {
+                        startRow = headerFound.headerRowIndex + 1;
+                        idx = headerFound.idx;
+                    } else {
+                        const isHeaderRow = (r: (string | number)[]) =>
+                            String(r[0] ?? '').trim() === '순번' || String(r[1] ?? '').trim() === '테이블명';
+                        startRow = isHeaderRow(rows[0]) ? 1 : 0;
+                        idx = {
+                            tableName: 1,
+                            tableNameKr: 2,
+                            columnName: 3,
+                            columnNameKr: 4,
+                            type: 5,
+                            size: 6,
+                            pk: 7,
+                            fk: 8,
+                            notNull: 9,
+                            default: 10,
+                        };
+                    }
+
+                    const parsed = parseSheetToTableColumns(rows, startRow, idx);
+                    for (const [t, def] of Object.entries(parsed)) {
+                        if (!allTableDefs[t]) allTableDefs[t] = { tableComment: '', columns: [] };
+                        if (def.tableComment && !allTableDefs[t].tableComment) allTableDefs[t].tableComment = def.tableComment;
+                        const existingNames = new Set(allTableDefs[t].columns.map(c => c.name));
+                        for (const c of def.columns) {
+                            if (!existingNames.has(c.name)) {
+                                existingNames.add(c.name);
+                                allTableDefs[t].columns.push(c);
+                            }
+                        }
+                    }
+                }
+
+                resolve(tableDefsToDdl(allTableDefs) || '-- 추출된 테이블이 없습니다.');
+            } catch (err: any) {
+                reject(err?.message || err || new Error('엑셀 파싱 실패'));
+            }
+        };
+        reader.onerror = () => reject(new Error('파일 읽기 실패'));
+        reader.readAsArrayBuffer(file);
+    });
+}
 
 type UserTier = 'FREE' | 'PRO' | 'MASTER';
 
@@ -33,7 +221,21 @@ interface AdminProject {
     memberCount: number;
 }
 
-type AdminTab = 'members' | 'projects';
+type AdminTab = 'members' | 'projects' | 'rollback' | 'ddl';
+
+interface AdminHistoryEntry {
+    id: string;
+    projectId: string;
+    userId: string;
+    userName: string;
+    userPicture?: string;
+    operationType: string;
+    targetType: string;
+    targetId: string;
+    targetName: string;
+    details: string;
+    timestamp: string;
+}
 
 const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { user, updateUser } = useAuthStore();
@@ -47,6 +249,18 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [deletePassword, setDeletePassword] = useState('');
     const [deleteLoading, setDeleteLoading] = useState(false);
 
+    const [rollbackProjects, setRollbackProjects] = useState<AdminProject[]>([]);
+    const [rollbackProjectSearch, setRollbackProjectSearch] = useState('');
+    const [rollbackSelectedProjectId, setRollbackSelectedProjectId] = useState<string | null>(null);
+    const [rollbackHistory, setRollbackHistory] = useState<AdminHistoryEntry[]>([]);
+    const [rollbackHistoryLoading, setRollbackHistoryLoading] = useState(false);
+    const [rollbackEntryToRollback, setRollbackEntryToRollback] = useState<AdminHistoryEntry | null>(null);
+    const [rollbackSubmitLoading, setRollbackSubmitLoading] = useState(false);
+
+    const [ddlResult, setDdlResult] = useState<string>('');
+    const [ddlError, setDdlError] = useState<string | null>(null);
+    const [ddlDragOver, setDdlDragOver] = useState(false);
+
     useEffect(() => {
         fetchUsers();
     }, []);
@@ -58,6 +272,24 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             setUserProjects([]);
         }
     }, [activeTab, selectedUserId]);
+
+    useEffect(() => {
+        if (activeTab === 'rollback') {
+            fetchRollbackProjects();
+        } else {
+            setRollbackProjects([]);
+            setRollbackSelectedProjectId(null);
+            setRollbackHistory([]);
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'rollback' && rollbackSelectedProjectId) {
+            fetchRollbackHistory(rollbackSelectedProjectId);
+        } else {
+            setRollbackHistory([]);
+        }
+    }, [activeTab, rollbackSelectedProjectId]);
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -158,6 +390,84 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         }
     };
 
+    const fetchRollbackProjects = async () => {
+        setError(null);
+        try {
+            const url = `${API_BASE}/admin/projects${rollbackProjectSearch.trim() ? `?q=${encodeURIComponent(rollbackProjectSearch.trim())}` : ''}`;
+            const res = await fetchWithAuth(url);
+            if (!res.ok) {
+                if (res.status === 403) setError('관리자 권한이 없습니다.');
+                else throw new Error('프로젝트 목록을 불러오지 못했습니다.');
+                return;
+            }
+            const data = await res.json();
+            setRollbackProjects(data);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+            if (err.message?.includes('세션')) onBack();
+        }
+    };
+
+    const fetchRollbackHistory = async (projectId: string) => {
+        setRollbackHistoryLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/projects/${projectId}/history?hours=24&limit=200`);
+            if (!res.ok) {
+                if (res.status === 403) setError('관리자 권한이 없습니다.');
+                else throw new Error('히스토리를 불러오지 못했습니다.');
+                return;
+            }
+            const data = await res.json();
+            setRollbackHistory(data);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+            setRollbackHistory([]);
+        } finally {
+            setRollbackHistoryLoading(false);
+        }
+    };
+
+    const handleRollbackConfirm = async () => {
+        if (!rollbackEntryToRollback || !rollbackSelectedProjectId) return;
+        setRollbackSubmitLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/projects/${rollbackSelectedProjectId}/rollback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ historyId: rollbackEntryToRollback.id }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '원복에 실패했습니다.');
+            }
+            setRollbackEntryToRollback(null);
+            await fetchRollbackHistory(rollbackSelectedProjectId);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+        } finally {
+            setRollbackSubmitLoading(false);
+        }
+    };
+
+    const handleDdlFile = async (file: File | null) => {
+        if (!file) return;
+        const ok = /\.(xlsx|xls)$/i.test(file.name);
+        if (!ok) {
+            setDdlError('엑셀 파일(.xlsx, .xls)만 업로드할 수 있습니다.');
+            return;
+        }
+        setDdlError(null);
+        setDdlResult('');
+        try {
+            const ddl = await parseExcelToDdl(file);
+            setDdlResult(ddl);
+        } catch (err: any) {
+            setDdlError(err?.message || 'DDL 추출 실패');
+        }
+    };
+
     const formatDate = (d: string) => {
         if (!d) return '-';
         const date = new Date(d);
@@ -213,6 +523,24 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         >
                             <FolderOpen size={16} className="inline-block mr-2 align-middle" />
                             회원 프로젝트 목록
+                        </button>
+                        <button
+                            onClick={() => { setActiveTab('rollback'); setRollbackEntryToRollback(null); }}
+                            className={`px-4 py-2.5 rounded-t-lg font-bold text-sm transition-all ${activeTab === 'rollback'
+                                ? 'bg-white border border-b-0 border-gray-200 text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                        >
+                            <RotateCcw size={16} className="inline-block mr-2 align-middle" />
+                            작업 원복
+                        </button>
+                        <button
+                            onClick={() => { setActiveTab('ddl'); setDdlError(null); setDdlResult(''); }}
+                            className={`px-4 py-2.5 rounded-t-lg font-bold text-sm transition-all ${activeTab === 'ddl'
+                                ? 'bg-white border border-b-0 border-gray-200 text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                        >
+                            <FileSpreadsheet size={16} className="inline-block mr-2 align-middle" />
+                            DDL추출
                         </button>
                     </div>
                 </div>
@@ -371,6 +699,168 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         회원 프로젝트 목록을 보려면 먼저 회원관리 탭에서 회원 목록을 불러오세요.
                     </div>
                 )}
+
+                {activeTab === 'ddl' && (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 font-bold text-sm text-gray-700">
+                            DDL 추출 — 엑셀 파일 업로드
+                        </div>
+                        <p className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100">
+                            컬럼 구성: 순번(A), 테이블명(B), 테이블한글명(C), 컬럼명(D), 컬럼한글명(E), 타입(F), 크기(G), PK(H), FK(I), NOT NULL(J), Default(K). 업로드 시 CREATE TABLE DDL로 변환됩니다.
+                        </p>
+                        <div
+                            className={`mx-4 mt-4 rounded-xl border-2 border-dashed transition-colors ${ddlDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-gray-50/50'}`}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDdlDragOver(true); }}
+                            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDdlDragOver(false); }}
+                            onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setDdlDragOver(false);
+                                const file = e.dataTransfer.files?.[0];
+                                handleDdlFile(file ?? null);
+                            }}
+                        >
+                            <div className="p-6 flex flex-col sm:flex-row items-center justify-center gap-4">
+                                <label className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-bold text-sm cursor-pointer hover:bg-blue-700 transition-colors shrink-0">
+                                    <FileSpreadsheet size={18} />
+                                    엑셀 파일 선택
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        className="sr-only"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            e.target.value = '';
+                                            handleDdlFile(file ?? null);
+                                        }}
+                                    />
+                                </label>
+                                <span className="text-sm text-gray-500">또는</span>
+                                <span className="text-sm text-gray-600 font-medium">여기에 엑셀 파일을 드래그하여 놓으세요</span>
+                            </div>
+                        </div>
+                        <div className="p-4 flex flex-wrap items-center gap-3">
+                            {ddlResult && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(ddlResult);
+                                    }}
+                                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-sm text-gray-700 transition-colors"
+                                >
+                                    <Copy size={16} /> 복사
+                                </button>
+                            )}
+                        </div>
+                        {ddlError && (
+                            <div className="mx-4 mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium">
+                                {ddlError}
+                            </div>
+                        )}
+                        {ddlResult && (
+                            <div className="px-4 pb-4">
+                                <pre className="p-4 bg-gray-900 text-gray-100 rounded-lg text-sm overflow-x-auto max-h-[480px] overflow-y-auto whitespace-pre font-mono">
+                                    {ddlResult}
+                                </pre>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {!loading && activeTab === 'rollback' && (
+                    <div className="space-y-4">
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 font-bold text-sm text-gray-700">
+                                프로젝트 선택 (최근 24시간 삭제 이력 · 원복 시 해당 항목만 복원)
+                            </div>
+                            <div className="p-4 flex flex-wrap items-center gap-2">
+                                <div className="flex flex-1 min-w-[200px] flex-wrap items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={rollbackProjectSearch}
+                                        onChange={(e) => setRollbackProjectSearch(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && fetchRollbackProjects()}
+                                        placeholder="프로젝트 이름 검색"
+                                        className="flex-1 min-w-[180px] px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-sm"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={fetchRollbackProjects}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700"
+                                    >
+                                        <Search size={16} /> 검색
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="border-t border-gray-100 max-h-[220px] overflow-y-auto">
+                                {rollbackProjects.length === 0 ? (
+                                    <div className="p-4 text-sm text-gray-500">검색 버튼을 눌러 프로젝트 목록을 불러오세요.</div>
+                                ) : (
+                                    <ul className="divide-y divide-gray-100">
+                                        {rollbackProjects.map((p) => (
+                                            <li key={p.id}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRollbackSelectedProjectId(p.id)}
+                                                    className={`w-full px-4 py-3 text-left flex items-center gap-2 transition-colors ${rollbackSelectedProjectId === p.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'}`}
+                                                >
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        {projectTypeIcon(p.projectType)}
+                                                        {p.projectType}
+                                                    </span>
+                                                    <span className="font-medium text-gray-900 truncate">{p.name}</span>
+                                                    <span className="text-xs text-gray-500 ml-auto shrink-0">{formatDate(p.updatedAt)}</span>
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+
+                        {rollbackSelectedProjectId && (
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                                    <div className="font-bold text-sm text-gray-700">최근 24시간 삭제 이력</div>
+                                    <div className="text-xs text-gray-500 mt-0.5">테이블, 관계, 화면, 연결선, 컬럼, 표·그리기 요소(화면 내) 삭제만 표시됩니다.</div>
+                                </div>
+                                {rollbackHistoryLoading ? (
+                                    <div className="flex items-center justify-center py-12">
+                                        <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+                                    </div>
+                                ) : (
+                                    <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+                                        {rollbackHistory.length === 0 ? (
+                                            <div className="p-8 text-center text-gray-500 text-sm">이 기간 내 삭제된 항목이 없습니다.</div>
+                                        ) : (
+                                            rollbackHistory.map((entry) => (
+                                                <div
+                                                    key={entry.id}
+                                                    className="px-4 py-3 flex flex-wrap items-center gap-2 sm:gap-4"
+                                                >
+                                                    <span className="text-xs text-gray-500 shrink-0 w-20 sm:w-24">
+                                                        {formatDate(entry.timestamp)}
+                                                    </span>
+                                                    <span className="text-sm font-medium text-gray-700 shrink-0">{entry.userName}</span>
+                                                    <span className="text-sm font-medium text-gray-900 truncate min-w-0 flex-1" title={entry.details}>
+                                                        {entry.details}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setRollbackEntryToRollback(entry)}
+                                                        className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200"
+                                                    >
+                                                        <RotateCcw size={14} /> 원복
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
             </main>
 
             {/* 회원 삭제 확인 모달 */}
@@ -406,6 +896,37 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {deleteLoading ? '처리 중...' : '삭제'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 작업 원복 확인 모달 */}
+            {rollbackEntryToRollback && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                        <h3 className="text-lg font-bold text-gray-900 mb-2">삭제 항목 원복</h3>
+                        <p className="text-gray-600 text-sm mb-2">
+                            삭제된 항목만 복원합니다. 다른 데이터에는 영향을 주지 않고, 해당 항목만 다시 추가됩니다.
+                        </p>
+                        <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
+                            <div className="font-medium text-gray-700">{rollbackEntryToRollback.details}</div>
+                            <div className="text-gray-500 mt-1">{rollbackEntryToRollback.userName} · {formatDate(rollbackEntryToRollback.timestamp)}</div>
+                        </div>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setRollbackEntryToRollback(null)}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleRollbackConfirm}
+                                disabled={rollbackSubmitLoading}
+                                className="px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {rollbackSubmitLoading ? '처리 중...' : '원복 실행'}
                             </button>
                         </div>
                     </div>

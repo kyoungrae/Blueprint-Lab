@@ -309,7 +309,8 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 const isCriticalOperation =
                     operation.type.includes('DELETE') ||
                     operation.type === 'ERD_IMPORT' ||
-                    (operation.type === 'SCREEN_UPDATE' && hasDrawElements);
+                    (operation.type === 'SCREEN_UPDATE' && hasDrawElements) ||
+                    operation.type === 'SCREEN_DRAW_DELETE';
                 const savePromise = debouncedSaveToMongo(projectId, newState, isCriticalOperation);
                 if (savePromise) await savePromise;
 
@@ -326,15 +327,46 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                         else if (operation.type.startsWith('ATTRIBUTE_')) targetType = 'ENTITY';
                         else if (operation.type.startsWith('SCREEN_FLOW_')) targetType = 'FLOW';
                         else if (operation.type.startsWith('SCREEN_')) targetType = 'SCREEN';
+                        else if (operation.type === 'SCREEN_DRAW_DELETE') targetType = 'SCREEN';
                         else if (operation.type.startsWith('FLOW_')) targetType = 'FLOW';
 
                         // Specific handling for common operations to make them look nice if historyLog is missing
+                        const prev = operation.previousState as Record<string, unknown> | undefined;
                         if (!histPayload.historyLog) {
                             if (operation.type === 'ENTITY_CREATE') {
                                 details = `새 테이블 '${histPayload.name || '알 수 없음'}'을 생성했습니다.`;
                                 targetName = histPayload.name || 'New Entity';
                             } else if (operation.type === 'ENTITY_DELETE') {
-                                details = `테이블(ID: ${operation.targetId})을 삭제했습니다.`;
+                                const name = (prev?.name as string) || histPayload.name || operation.targetId;
+                                targetName = name;
+                                details = `테이블 '${name}' 삭제`;
+                            } else if (operation.type === 'RELATIONSHIP_DELETE') {
+                                targetName = '관계';
+                                details = `관계 삭제`;
+                            } else if (operation.type === 'SCREEN_DELETE') {
+                                const name = (prev?.name as string) || histPayload.name || operation.targetId;
+                                targetName = name;
+                                details = `화면 '${name}' 삭제`;
+                            } else if (operation.type === 'FLOW_DELETE' || operation.type === 'SCREEN_FLOW_DELETE') {
+                                targetName = '연결선';
+                                details = `연결선 삭제`;
+                            } else if (operation.type === 'ATTRIBUTE_DELETE') {
+                                const prevAttrs = prev?.attributes as Array<{ id: string; name: string }> | undefined;
+                                const payloadAttrs = histPayload.attributes as Array<{ id: string }> | undefined;
+                                const deletedAttr = prevAttrs && payloadAttrs
+                                    ? prevAttrs.find((a: { id: string }) => !payloadAttrs.some((p: { id: string }) => p.id === a.id))
+                                    : undefined;
+                                const attrName = deletedAttr?.name || '컬럼';
+                                targetName = attrName;
+                                details = `컬럼 '${attrName}' 삭제`;
+                            } else if (operation.type === 'SCREEN_DRAW_DELETE') {
+                                const prevDraw = (prev?.drawElements || []) as Array<{ id: string; type?: string }>;
+                                const payloadDraw = (histPayload.drawElements || []) as Array<{ id: string }>;
+                                const deletedCount = prevDraw.length - payloadDraw.length;
+                                const deletedEl = prevDraw.find((e: { id: string }) => !payloadDraw.some((p: { id: string }) => p.id === e.id));
+                                const typeLabel = deletedEl?.type === 'table' ? '표 객체' : deletedEl?.type ? `그리기 요소(${deletedEl.type})` : '그리기 요소';
+                                targetName = deletedCount > 1 ? `그리기 요소 ${deletedCount}개` : typeLabel;
+                                details = deletedCount > 1 ? `그리기 요소 ${deletedCount}개 삭제` : `${typeLabel} 삭제`;
                             }
                         }
 

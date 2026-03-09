@@ -6,7 +6,7 @@ interface LayerPanelProps {
     selectedElementIds: string[];
     layerPanelPos: { x: number; y: number };
     onPositionChange: (pos: { x: number; y: number }) => void;
-    zoom: number;
+    zoom: number | string;
     screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     onClose: () => void;
@@ -63,7 +63,7 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
             style={{
                 left: flowToScreenPosition({ x: layerPanelPos.x, y: layerPanelPos.y }).x,
                 top: flowToScreenPosition({ x: layerPanelPos.x, y: layerPanelPos.y }).y,
-                transform: `scale(${0.85 * zoom})`,
+                transform: `scale(calc(0.85 * ${zoom}))`,
             }}
         >
             <div

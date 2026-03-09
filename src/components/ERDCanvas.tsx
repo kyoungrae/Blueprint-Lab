@@ -14,7 +14,7 @@ import ReactFlow, {
     ReactFlowProvider,
     PanOnScrollMode,
     useReactFlow,
-    useViewport,
+    useOnViewportChange,
     reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -38,7 +38,7 @@ import { getForceLayoutedElements } from '../utils/forceLayout';
 import { getRelationshipLayoutedElements } from '../utils/relationshipLayout';
 import { generateSQLFromERD } from '../utils/sqlGenerator';
 import { copyToClipboard } from '../utils/clipboard';
-
+import { BugReportButton } from './bug/BugReport';
 const nodeTypes: NodeTypes = {
     entity: EntityNode,
     entityPlaceholder: EntityNodePlaceholder,
@@ -49,34 +49,58 @@ const edgeTypes = {
 };
 
 const UserCursorsLayer: React.FC = () => {
-    const { x, y, zoom } = useViewport();
     return (
         <div
-            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-            style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})` }}
+            className="erd-viewport-sync absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
+            style={{ transform: 'translate(0px, 0px) scale(1)' }}
         >
             <UserCursors />
         </div>
     );
 };
 
+const GlobalViewportUpdater: React.FC = () => {
+    const { getViewport } = useReactFlow();
+
+    // 초기 마운트 시 (뷰포트 값이 이미 있을 때) 즉시 반영
+    useEffect(() => {
+        const vp = getViewport();
+        const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+        document.documentElement.style.setProperty('--erd-zoom', vp.zoom.toString());
+        document.querySelectorAll('.erd-viewport-sync').forEach(el => {
+            (el as HTMLElement).style.transform = transform;
+        });
+    }, [getViewport]);
+
+    // 줌/패닝 변경 시마다 클래스 붙은 요소들만 직접 업데이트 (React 상태와 CSS 상속을 우회하여 렉 제로화)
+    useOnViewportChange({
+        onChange: (vp) => {
+            const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+            document.documentElement.style.setProperty('--erd-zoom', vp.zoom.toString());
+            document.querySelectorAll('.erd-viewport-sync').forEach(el => {
+                (el as HTMLElement).style.transform = transform;
+            });
+        }
+    });
+
+    return null;
+};
+
 /** Reports viewport to parent only when zoom/pan has been idle for VIEWPORT_DEBOUNCE_MS (no parent re-renders during gesture). */
 const VIEWPORT_DEBOUNCE_MS = 200;
 const ViewportDebounceUpdater: React.FC<{ onViewportIdle: (viewport: { x: number; y: number; zoom: number }) => void }> = ({ onViewportIdle }) => {
-    const { x, y, zoom } = useViewport();
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const viewportRef = useRef({ x, y, zoom });
-    viewportRef.current = { x, y, zoom };
-    useEffect(() => {
-        if (debounceRef.current != null) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
-            debounceRef.current = null;
-            onViewportIdle(viewportRef.current);
-        }, VIEWPORT_DEBOUNCE_MS);
-        return () => {
+
+    useOnViewportChange({
+        onChange: (vp) => {
             if (debounceRef.current != null) clearTimeout(debounceRef.current);
-        };
-    }, [x, y, zoom, onViewportIdle]);
+            debounceRef.current = setTimeout(() => {
+                debounceRef.current = null;
+                onViewportIdle(vp);
+            }, VIEWPORT_DEBOUNCE_MS);
+        }
+    });
+
     return null;
 };
 
@@ -85,6 +109,8 @@ interface SectionOverlayLayerProps {
     sections: Section[];
     hoveredSectionId: string | null;
     setHoveredSectionId: (id: string | null) => void;
+    selectedSectionId: string | null;
+    setSelectedSectionId: (id: string | null) => void;
     editingSectionId: string | null;
     editingSectionName: string;
     setEditingSectionName: (s: string) => void;
@@ -98,11 +124,12 @@ interface SectionOverlayLayerProps {
 }
 /** Section overlays (background + headers). Uses useViewport() so only this layer re-renders during zoom/pan; parent stays idle. */
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
-    const { x, y, zoom } = useViewport();
     const {
         sections,
         hoveredSectionId,
         setHoveredSectionId,
+        selectedSectionId,
+        setSelectedSectionId,
         editingSectionId,
         editingSectionName,
         setEditingSectionName,
@@ -115,13 +142,12 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         sectionHeadersContainerRef,
     } = props;
     if (sections.length === 0) return null;
-    const transform = `translate(${x}px, ${y}px) scale(${zoom})`;
     const sectionList = sections as Section[];
     return (
         <>
             <div
-                className="absolute inset-0 z-[1] overflow-visible pointer-events-none"
-                style={{ transform, transformOrigin: '0 0' }}
+                className="erd-viewport-sync absolute inset-0 z-[1] overflow-visible pointer-events-none"
+                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
             >
                 {sectionList.map((s) => (
                     <div
@@ -133,8 +159,8 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
             </div>
             <div
                 ref={sectionHeadersContainerRef}
-                className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
-                style={{ transform, transformOrigin: '0 0' }}
+                className="erd-viewport-sync absolute inset-0 z-[15] overflow-visible pointer-events-none"
+                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
             >
                 {sectionList.map((s) => {
                     const isEditing = editingSectionId === s.id;
@@ -207,7 +233,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                     </button>
                                 </PremiumTooltip>
                             </div>
-                            {handles.map((handle) => (
+                            {selectedSectionId === s.id && handles.map((handle) => (
                                 <div
                                     key={handle.key}
                                     className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
@@ -216,10 +242,13 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         top: handle.top,
                                         width: HANDLE_SIZE,
                                         height: HANDLE_SIZE,
-                                        transform: 'translate(-50%, -50%)',
+                                        transform: 'translate(-50%, -50%) scale(calc(1 / var(--erd-zoom, 1)))',
                                         cursor: handle.cursor,
                                     }}
-                                    onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
+                                    onMouseDown={(ev) => {
+                                        setSelectedSectionId(s.id);
+                                        onSectionResizeMouseDown(ev, s.id, handle.key);
+                                    }}
                                 />
                             ))}
                         </div>
@@ -291,6 +320,7 @@ const ERDCanvasContent: React.FC = () => {
     const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
     const [editingSectionName, setEditingSectionName] = useState('');
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
+    const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
     const paneContainerRef = React.useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
@@ -417,16 +447,33 @@ const ERDCanvasContent: React.FC = () => {
                 while (existingNames.has(`${baseName} ${n}`)) n++;
                 name = `${baseName} ${n}`;
             }
+            const newSectionId = `section_${Date.now()}`;
             addSection({
-                id: `section_${Date.now()}`,
+                id: newSectionId,
                 name,
                 position: { x, y },
                 size: { width, height },
             });
+
+            // newly added section automatically assigns entities inside its bounds
+            const nodes = getNodes().filter(n => n.type === 'entity' || n.type === 'entityPlaceholder');
+            nodes.forEach(n => {
+                const nx = n.position.x;
+                const ny = n.position.y;
+                const nw = n.width || 200; // fallback width
+                const nh = n.height || 100; // fallback height
+                const cx = nx + nw / 2;
+                const cy = ny + nh / 2;
+                // Check if the center of the entity is inside the drawn section
+                if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
+                    updateEntity(n.id, { sectionId: newSectionId }, user);
+                }
+            });
+
             setSectionDrag(null);
             setIsSectionDrawMode(false);
         },
-        [sectionDrag, sections, addSection]
+        [sectionDrag, sections, addSection, getNodes, updateEntity, user]
     );
     const onSectionOverlayMouseLeave = useCallback(() => {
         if (sectionDrag) setSectionDrag(null);
@@ -439,6 +486,7 @@ const ERDCanvasContent: React.FC = () => {
         (e: React.MouseEvent, sectionId: string) => {
             if (e.button !== 0 || sectionResizeState || editingSectionId) return;
             e.stopPropagation();
+            setSelectedSectionId(sectionId);
             const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
             const sec = (sections as Section[]).find((s) => s.id === sectionId);
             if (!sec) return;
@@ -461,6 +509,7 @@ const ERDCanvasContent: React.FC = () => {
         (e: React.MouseEvent, sectionId: string, handle: string) => {
             if (e.button !== 0) return;
             e.stopPropagation();
+            setSelectedSectionId(sectionId);
             const sec = (sections as Section[]).find((s) => s.id === sectionId);
             if (!sec) return;
             const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
@@ -528,14 +577,35 @@ const ERDCanvasContent: React.FC = () => {
             }
             updateSection(sectionResizeState.sectionId, { position: { x, y }, size: { width: w, height: h } });
         };
-        const onUp = () => setSectionResizeState(null);
+        const onUp = () => {
+            const x = sec.position.x;
+            const y = sec.position.y;
+            const width = sec.size.width;
+            const height = sec.size.height;
+
+            const nodes = getNodes().filter((n) => n.type === 'entity' || n.type === 'entityPlaceholder');
+            nodes.forEach((n) => {
+                const nx = n.position.x;
+                const ny = n.position.y;
+                const nw = n.width || 200;
+                const nh = n.height || 100;
+                const cx = nx + nw / 2;
+                const cy = ny + nh / 2;
+                // Check if the center of the entity is inside the resized section
+                if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
+                    updateEntity(n.id, { sectionId: sec.id }, user);
+                }
+            });
+
+            setSectionResizeState(null);
+        };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
         return () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [sectionResizeState, sections, updateSection, screenToFlowPosition]);
+    }, [sectionResizeState, sections, updateSection, screenToFlowPosition, getNodes, updateEntity, user]);
 
     const startEditingSectionName = useCallback((section: Section) => {
         setEditingSectionId(section.id);
@@ -736,22 +806,17 @@ const ERDCanvasContent: React.FC = () => {
         }
         setNodes((prevNodes) => {
             const duringDrag = isDraggingRef.current;
-            const allInView = visibleNodeIds.size === 0;
-            // [수정 1] O(n²) → O(n): Map으로 기존 노드를 O(1) 탐색
+            // 항상 'entity' 타입만 사용하여 줌인/줌아웃 시 노드 키·타입이 바뀌지 않도록 함
             const prevNodeMap = new Map(prevNodes.map((n) => [n.id, n]));
             return deferredEntities.map((entity) => {
                 const existingNode = prevNodeMap.get(entity.id);
-                const inView = allInView || visibleNodeIds.has(entity.id);
                 const position = duringDrag && existingNode ? existingNode.position : entity.position;
-                // [수정 5] data 참조 안정화: 타입·entityId가 같으면 기존 data 객체 재사용 → EntityNode memo 활성화
                 const sameShape = existingNode &&
                     existingNode.data?.entityId === entity.id &&
-                    (existingNode.type === 'entity') === inView;
+                    existingNode.type === 'entity';
                 const data = sameShape
                     ? existingNode!.data
-                    : inView
-                        ? { entityId: entity.id, inView: true as const }
-                        : { entityId: entity.id, entity };
+                    : { entityId: entity.id, inView: true as const };
                 if (sameShape &&
                     existingNode!.position.x === position.x &&
                     existingNode!.position.y === position.y) {
@@ -759,14 +824,14 @@ const ERDCanvasContent: React.FC = () => {
                 }
                 return {
                     id: entity.id,
-                    type: inView ? 'entity' : 'entityPlaceholder',
+                    type: 'entity',
                     position,
                     data,
                     selected: existingNode?.selected,
                 };
             });
         });
-    }, [deferredEntities, visibleNodeIds, setNodes]);
+    }, [deferredEntities, setNodes]);
 
     // Keyboard shortcuts for Undo/Redo and Deletion
     useEffect(() => {
@@ -1174,7 +1239,8 @@ const ERDCanvasContent: React.FC = () => {
 
         importData({
             entities: updatedEntities,
-            relationships: relationships
+            relationships: relationships,
+            sections,
         });
 
 
@@ -1190,7 +1256,7 @@ const ERDCanvasContent: React.FC = () => {
         });
 
         setIsLayoutMenuOpen(false);
-    }, [nodes, edges, entities, relationships, setNodes, setEdges, importData, getViewport, sendOperation, user]);
+    }, [nodes, edges, entities, relationships, sections, setNodes, setEdges, importData, getViewport, sendOperation, user]);
 
     const onForceLayout = useCallback(() => {
         const { nodes: layoutedNodes } = getForceLayoutedElements(nodes, edges);
@@ -1209,7 +1275,8 @@ const ERDCanvasContent: React.FC = () => {
 
         importData({
             entities: updatedEntities,
-            relationships: relationships
+            relationships: relationships,
+            sections,
         });
 
         // Broadcast Batch Move
@@ -1224,7 +1291,7 @@ const ERDCanvasContent: React.FC = () => {
         });
 
         setIsLayoutMenuOpen(false);
-    }, [nodes, edges, entities, relationships, setNodes, importData, sendOperation, user]);
+    }, [nodes, edges, entities, relationships, sections, setNodes, importData, sendOperation, user]);
 
     const onRelationshipLayout = useCallback(() => {
         if (entities.length === 0) {
@@ -1252,10 +1319,10 @@ const ERDCanvasContent: React.FC = () => {
             source: r.source,
             target: r.target,
         }));
-        const { nodes: layoutedNodes } = getRelationshipLayoutedElements(
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getRelationshipLayoutedElements(
             layoutInputNodes,
             layoutInputEdges,
-            'TB'
+            'LR'
         );
 
         // Place layout in current viewport so the user sees the result
@@ -1288,12 +1355,24 @@ const ERDCanvasContent: React.FC = () => {
             return pos ? { ...entity, position: pos } : entity;
         });
 
+        const edgeHandlesById = new Map(layoutedEdges.map((e) => [e.id, e]));
+        const updatedRelationships = relationships.map((rel) => {
+            const le = edgeHandlesById.get(rel.id);
+            if (!le) return rel;
+            return {
+                ...rel,
+                sourceHandle: le.sourceHandle || undefined,
+                targetHandle: le.targetHandle || undefined,
+            };
+        });
+
         skipNextEntitySyncRef.current = true;
         setNodes(newNodes);
 
         importData({
             entities: updatedEntities,
-            relationships: relationships,
+            relationships: updatedRelationships,
+            sections,
         });
 
         newNodes.forEach((node) => {
@@ -1306,8 +1385,18 @@ const ERDCanvasContent: React.FC = () => {
             });
         });
 
+        updatedRelationships.forEach((rel) => {
+            sendOperation({
+                type: 'RELATIONSHIP_UPDATE',
+                targetId: rel.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { sourceHandle: rel.sourceHandle, targetHandle: rel.targetHandle },
+            });
+        });
+
         setIsLayoutMenuOpen(false);
-    }, [nodes, entities, relationships, setNodes, importData, sendOperation, user, getViewport]);
+    }, [nodes, entities, relationships, sections, setNodes, importData, sendOperation, user, getViewport]);
 
     const onNodeDragStart = useCallback(() => {
         isDraggingRef.current = true;
@@ -1392,7 +1481,7 @@ const ERDCanvasContent: React.FC = () => {
             </div>
 
             {/* Main Canvas Area - pr-4 pt-4 prevents edge/handle clipping at boundaries */}
-            <div className="flex-1 min-w-0 h-full relative select-none pr-4 pt-4 pb-4 pl-4" ref={flowWrapper}>
+            <div id="erd-canvas-container" className="flex-1 min-w-0 h-full relative select-none pr-4 pt-4 pb-4 pl-4" ref={flowWrapper}>
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
                     <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
@@ -1611,6 +1700,10 @@ const ERDCanvasContent: React.FC = () => {
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
+                    {currentProject && <BugReportButton project={currentProject} />}
+
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
                     {/* User Profile & Logout */}
                     <div className="flex items-center gap-2 px-1 shrink-0">
                         <div className="flex items-center gap-2 pl-2 pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
@@ -1673,12 +1766,16 @@ const ERDCanvasContent: React.FC = () => {
                         selectionKeyCode="Shift"
                         deleteKeyCode={null}
                         onPaneMouseMove={onPaneMouseMove}
+                        onPaneClick={() => setSelectedSectionId(null)}
                     >
                         <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
+                        <GlobalViewportUpdater />
                         <SectionOverlayLayer
                             sections={sections}
                             hoveredSectionId={hoveredSectionId}
                             setHoveredSectionId={setHoveredSectionId}
+                            selectedSectionId={selectedSectionId}
+                            setSelectedSectionId={setSelectedSectionId}
                             editingSectionId={editingSectionId}
                             editingSectionName={editingSectionName}
                             setEditingSectionName={setEditingSectionName}

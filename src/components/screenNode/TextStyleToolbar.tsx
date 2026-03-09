@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, startTransition } from 'react';
 import { Type, Bold, Italic, Underline, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import type { DrawElement } from '../../types/screenDesign';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
@@ -6,6 +6,9 @@ import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import { useRecentTextColors } from '../../contexts/RecentTextColorsContext';
 
 const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/api\/projects$/, '') || 'http://localhost:3001';
+
+/** 테이블 셀 폰트 사이즈 변경 시 store 업데이트 디바운스 (비테이블 PENDING_FONT_SIZE_DEBOUNCE_MS=380과 유사) */
+const TABLE_FONT_SIZE_DEBOUNCE_MS = 300;
 
 interface FontInfo {
     name: string;
@@ -19,10 +22,10 @@ interface TextStyleToolbarProps {
     defaultColor: string;
     defaultFontSize: number;
     displayFontSize: number;
+    onBeforeFontSizeApply?: (elementId: string, px: number) => void;
     updateElement: (id: string, updates: Partial<DrawElement>) => void;
     applyToSelection: (fn: () => void) => boolean;
     applyFontSizePx: (px: number) => boolean;
-    setTextStyleToolbarRefresh: (fn: (r: number) => number) => void;
     drawElements: DrawElement[];
     update: (updates: any) => void;
     syncUpdate: (updates: any) => void;
@@ -50,10 +53,10 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     fromTable,
     defaultColor,
     displayFontSize,
+    onBeforeFontSizeApply,
     updateElement,
     applyToSelection,
     applyFontSizePx,
-    setTextStyleToolbarRefresh,
     drawElements,
     update,
     syncUpdate,
@@ -68,17 +71,48 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     const [uploadingFont, setUploadingFont] = useState(false);
     /** px 입력 중 로컬 문자열 (숫자만 입력 가능, 블러/Enter 시 반영) */
     const [fontSizeInputStr, setFontSizeInputStr] = useState<string | null>(null);
+    /** +/- 클릭 시 부모 리렌더 전에 숫자만 즉시 표시 (1.5초 지연 방지) */
+    const [optimisticFontSize, setOptimisticFontSize] = useState<number | null>(null);
     const fontInputRef = useRef<HTMLInputElement>(null);
     const colorInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    /** 테이블 셀 폰트 사이즈 디바운스 타이머 */
+    const tableFontSizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** 디바운스 중 최신 nextElements를 보관 */
+    const pendingTableFontSizeRef = useRef<DrawElement[] | null>(null);
+    /** 로컬 강제 리렌더 (ScreenNode 전체 리렌더 우회) */
+    const [refresh, setRefresh] = useState(0);
 
-    const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(displayFontSize);
+    const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(optimisticFontSize ?? displayFontSize);
+
+    useEffect(() => {
+        if (optimisticFontSize != null && displayFontSize === optimisticFontSize) setOptimisticFontSize(null);
+    }, [displayFontSize, optimisticFontSize]);
+
+    // 테이블 폰트 사이즈 디바운스 타이머 정리
+    useEffect(() => {
+        return () => {
+            if (tableFontSizeTimerRef.current) {
+                clearTimeout(tableFontSizeTimerRef.current);
+                tableFontSizeTimerRef.current = null;
+                // cleanup 시 pending이 있으면 즉시 반영
+                const pending = pendingTableFontSizeRef.current;
+                if (pending) {
+                    pendingTableFontSizeRef.current = null;
+                    update({ drawElements: pending });
+                    syncUpdate({ drawElements: pending });
+                }
+            }
+        };
+    }, []);
 
     const applyFontSize = (px: number) => {
         const clamped = Math.min(72, Math.max(8, px));
         applyFontSizePx(clamped);
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
+            // 즉시 표시 (store 업데이트 전에 툴바 숫자만 갱신)
+            setOptimisticFontSize(clamped);
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
@@ -88,12 +122,29 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 if (!indices.includes(i)) return s;
                 return { ...(s || {}), fontSize: clamped };
             });
-            update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-            syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
+            // DOM은 applyFontSizePx로 이미 변경됨 → store 업데이트는 디바운스 + startTransition으로 지연
+            pendingTableFontSizeRef.current = nextElements;
+            if (tableFontSizeTimerRef.current) clearTimeout(tableFontSizeTimerRef.current);
+            tableFontSizeTimerRef.current = setTimeout(() => {
+                tableFontSizeTimerRef.current = null;
+                const toApply = pendingTableFontSizeRef.current;
+                if (!toApply) return;
+                pendingTableFontSizeRef.current = null;
+                startTransition(() => {
+                    update({ drawElements: toApply });
+                });
+                syncUpdate({ drawElements: toApply });
+            }, TABLE_FONT_SIZE_DEBOUNCE_MS);
         } else if (!fromTable) {
-            updateElement(el.id, { fontSize: clamped });
+            if (onBeforeFontSizeApply) {
+                setOptimisticFontSize(clamped);
+                onBeforeFontSizeApply(el.id, clamped);
+            } else {
+                updateElement(el.id, { fontSize: clamped });
+            }
         }
-        setTextStyleToolbarRefresh(r => r + 1);
+        setRefresh(r => r + 1);
     };
 
     useEffect(() => {
@@ -187,10 +238,11 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 const nextBold = current.fontWeight === 'bold' ? 'normal' : 'bold';
                 return { ...current, fontWeight: nextBold };
             });
-            update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-            syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements });
         }
-        setTextStyleToolbarRefresh(r => r + 1);
+        setRefresh(r => r + 1);
     };
 
     const applyItalic = () => {
@@ -209,10 +261,11 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 const nextItalic = current.fontStyle === 'italic' ? 'normal' : 'italic';
                 return { ...current, fontStyle: nextItalic };
             });
-            update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-            syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements });
         }
-        setTextStyleToolbarRefresh(r => r + 1);
+        setRefresh(r => r + 1);
     };
 
     const applyUnderline = () => {
@@ -231,10 +284,11 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 const nextUnderline = current.textDecoration === 'underline' ? 'none' : 'underline';
                 return { ...current, textDecoration: nextUnderline };
             });
-            update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-            syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements });
         }
-        setTextStyleToolbarRefresh(r => r + 1);
+        setRefresh(r => r + 1);
     };
 
     const applyFont = (fontName: string) => {
@@ -253,11 +307,12 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 if (!indices.includes(i)) return s;
                 return { ...(s || {}), fontFamily: fontName };
             });
-            update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-            syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements });
         }
         setFontDropdownOpen(false);
-        setTextStyleToolbarRefresh(r => r + 1);
+        setRefresh(r => r + 1);
     };
 
     const handleFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -304,187 +359,190 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 if (!indices.includes(i)) return s;
                 return { ...(s || {}), color };
             });
-            update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
-            syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
+            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements });
         }
         addRecentTextColor(color);
-        setTextStyleToolbarRefresh(r => r + 1);
+        setRefresh(r => r + 1);
         if (closePickerInput) closePickerInput.blur();
     };
 
     return (
-            <div data-text-style-toolbar className="nodrag nopan flex items-center gap-2 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
-                {/* Bold, Italic, Underline */}
-                <div className="flex items-center gap-0.5 border-r border-gray-200 pr-2">
-                    <button
-                        type="button"
-                        onMouseDown={(e) => { e.preventDefault(); applyBold(); }}
-                        className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isBold ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
-                        title="굵게"
-                    >
-                        <Bold size={14} />
-                    </button>
-                    <button
-                        type="button"
-                        onMouseDown={(e) => { e.preventDefault(); applyItalic(); }}
-                        className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isItalic ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
-                        title="기울임"
-                    >
-                        <Italic size={14} />
-                    </button>
-                    <button
-                        type="button"
-                        onMouseDown={(e) => { e.preventDefault(); applyUnderline(); }}
-                        className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isUnderline ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
-                        title="밑줄"
-                    >
-                        <Underline size={14} />
-                    </button>
-                </div>
-                {/* Font size */}
-                <div className="flex items-center gap-1 px-1 border-r border-gray-200 pr-2">
-                    <Type size={12} className="text-gray-400 shrink-0" />
-                    <div className="flex items-center border border-gray-200 rounded-md overflow-hidden bg-gray-50/50">
-                        <input
-                            type="text"
-                            inputMode="numeric"
-                            value={displayValue}
-                            onFocus={() => setFontSizeInputStr(String(displayFontSize))}
-                            onChange={(e) => {
-                                const v = e.target.value.replace(/[^0-9]/g, '');
-                                if (v === '' || v.length <= 3) setFontSizeInputStr(v || '');
-                            }}
-                            onBlur={() => {
-                                const px = Math.min(72, Math.max(8, parseInt(fontSizeInputStr ?? String(displayFontSize), 10) || 8));
+        <div data-text-style-toolbar className="nodrag nopan flex items-center gap-2 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
+            {/* Bold, Italic, Underline */}
+            <div className="flex items-center gap-0.5 border-r border-gray-200 pr-2">
+                <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); applyBold(); }}
+                    className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isBold ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
+                    title="굵게"
+                >
+                    <Bold size={14} />
+                </button>
+                <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); applyItalic(); }}
+                    className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isItalic ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
+                    title="기울임"
+                >
+                    <Italic size={14} />
+                </button>
+                <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); applyUnderline(); }}
+                    className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isUnderline ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
+                    title="밑줄"
+                >
+                    <Underline size={14} />
+                </button>
+            </div>
+            {/* Font size */}
+            <div className="flex items-center gap-1 px-1 border-r border-gray-200 pr-2">
+                <Type size={12} className="text-gray-400 shrink-0" />
+                <div className="flex items-center border border-gray-200 rounded-md overflow-hidden bg-gray-50/50">
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        value={displayValue}
+                        onFocus={() => setFontSizeInputStr(String(optimisticFontSize ?? displayFontSize))}
+                        onChange={(e) => {
+                            const v = e.target.value.replace(/[^0-9]/g, '');
+                            if (v === '' || v.length <= 3) setFontSizeInputStr(v || '');
+                        }}
+                        onBlur={() => {
+                            const px = Math.min(72, Math.max(8, parseInt(fontSizeInputStr ?? String(displayFontSize), 10) || 8));
+                            setFontSizeInputStr(null);
+                            applyFontSize(px);
+                        }}
+                        onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                        }}
+                        className="w-9 py-1 px-1.5 bg-transparent text-[11px] font-bold text-gray-700 outline-none text-center"
+                    />
+                    <div className="flex flex-col border-l border-gray-200">
+                        <button
+                            type="button"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
                                 setFontSizeInputStr(null);
-                                applyFontSize(px);
+                                const current = optimisticFontSize ?? displayFontSize;
+                                applyFontSize(current + 1);
                             }}
-                            onKeyDown={(e) => {
-                                e.stopPropagation();
-                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                            }}
-                            className="w-9 py-1 px-1.5 bg-transparent text-[11px] font-bold text-gray-700 outline-none text-center"
-                        />
-                        <div className="flex flex-col border-l border-gray-200">
-                            <button
-                                type="button"
-                                onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    setFontSizeInputStr(null);
-                                    applyFontSize(displayFontSize + 1);
-                                }}
-                                className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center"
-                                title="크게"
-                            >
-                                <ChevronUp size={12} />
-                            </button>
-                            <button
-                                type="button"
-                                onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    setFontSizeInputStr(null);
-                                    applyFontSize(displayFontSize - 1);
-                                }}
-                                className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center border-t border-gray-200"
-                                title="작게"
-                            >
-                                <ChevronDown size={12} />
-                            </button>
-                        </div>
-                    </div>
-                    <span className="text-[10px] text-gray-400 shrink-0">px</span>
-                </div>
-                {/* Font dropdown */}
-                <div className="relative" ref={dropdownRef}>
-                    <button
-                        type="button"
-                        onMouseDown={(e) => { e.preventDefault(); setFontDropdownOpen(v => !v); }}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-gray-200 text-[11px] font-medium text-gray-700 min-w-[100px] justify-between"
-                        style={{ fontFamily: resolveFontFamilyCSS(currentFont) }}
-                    >
-                        <span className="truncate">{currentFont}</span>
-                        <ChevronDown size={12} className={`text-gray-400 transition-transform ${fontDropdownOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                    {fontDropdownOpen && (
-                        <div
-                            data-font-dropdown
-                            className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[10000] max-h-48 overflow-y-auto overflow-x-hidden min-w-[140px] overscroll-contain"
-                            onWheel={(e) => e.stopPropagation()}
+                            className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center"
+                            title="크게"
                         >
-                            {allFonts.map(f => (
-                                <button
-                                    key={f}
-                                    type="button"
-                                    onMouseDown={(e) => { e.preventDefault(); applyFont(f); }}
-                                    className={`w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 first:rounded-t-lg last:rounded-b-lg ${currentFont === f ? 'bg-blue-50 text-blue-700' : ''}`}
-                                    style={{ fontFamily: resolveFontFamilyCSS(f) }}
-                                >
-                                    {f}
-                                </button>
-                            ))}
-                            <div className="border-t border-gray-100 p-1">
-                                <input
-                                    ref={fontInputRef}
-                                    type="file"
-                                    accept=".ttf,.otf,.woff,.woff2"
-                                    onChange={handleFontUpload}
-                                    className="hidden"
-                                />
-                                <button
-                                    type="button"
-                                    onMouseDown={(e) => { e.preventDefault(); fontInputRef.current?.click(); }}
-                                    disabled={uploadingFont}
-                                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
-                                >
-                                    <Plus size={12} />
-                                    {uploadingFont ? '업로드 중...' : '폰트 추가'}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-                {/* Color */}
-                <div className="flex items-center gap-2 pl-1 flex-wrap">
-                    <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm flex-shrink-0">
-                        <input
-                            ref={colorInputRef}
-                            type="color"
-                            value={defaultColor}
-                            onChange={(e) => {
-                                const color = e.target.value;
-                                applyColor(color, e.target);
+                            <ChevronUp size={12} />
+                        </button>
+                        <button
+                            type="button"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                setFontSizeInputStr(null);
+                                const current = optimisticFontSize ?? displayFontSize;
+                                applyFontSize(current - 1);
                             }}
-                            className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
-                        />
-                        <div className="w-full h-full" style={{ backgroundColor: defaultColor }} />
+                            className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center border-t border-gray-200"
+                            title="작게"
+                        >
+                            <ChevronDown size={12} />
+                        </button>
                     </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                        {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
+                </div>
+                <span className="text-[10px] text-gray-400 shrink-0">px</span>
+            </div>
+            {/* Font dropdown */}
+            <div className="relative" ref={dropdownRef}>
+                <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); setFontDropdownOpen(v => !v); }}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-gray-200 text-[11px] font-medium text-gray-700 min-w-[100px] justify-between"
+                    style={{ fontFamily: resolveFontFamilyCSS(currentFont) }}
+                >
+                    <span className="truncate">{currentFont}</span>
+                    <ChevronDown size={12} className={`text-gray-400 transition-transform ${fontDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {fontDropdownOpen && (
+                    <div
+                        data-font-dropdown
+                        className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[10000] max-h-48 overflow-y-auto overflow-x-hidden min-w-[140px] overscroll-contain"
+                        onWheel={(e) => e.stopPropagation()}
+                    >
+                        {allFonts.map(f => (
+                            <button
+                                key={f}
+                                type="button"
+                                onMouseDown={(e) => { e.preventDefault(); applyFont(f); }}
+                                className={`w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 first:rounded-t-lg last:rounded-b-lg ${currentFont === f ? 'bg-blue-50 text-blue-700' : ''}`}
+                                style={{ fontFamily: resolveFontFamilyCSS(f) }}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                        <div className="border-t border-gray-100 p-1">
+                            <input
+                                ref={fontInputRef}
+                                type="file"
+                                accept=".ttf,.otf,.woff,.woff2"
+                                onChange={handleFontUpload}
+                                className="hidden"
+                            />
+                            <button
+                                type="button"
+                                onMouseDown={(e) => { e.preventDefault(); fontInputRef.current?.click(); }}
+                                disabled={uploadingFont}
+                                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
+                            >
+                                <Plus size={12} />
+                                {uploadingFont ? '업로드 중...' : '폰트 추가'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+            {/* Color */}
+            <div className="flex items-center gap-2 pl-1 flex-wrap">
+                <div className="relative w-5 h-5 rounded-md border border-gray-200 overflow-hidden shadow-sm flex-shrink-0">
+                    <input
+                        ref={colorInputRef}
+                        type="color"
+                        value={defaultColor}
+                        onChange={(e) => {
+                            const color = e.target.value;
+                            applyColor(color, e.target);
+                        }}
+                        className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                    />
+                    <div className="w-full h-full" style={{ backgroundColor: defaultColor }} />
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                    {['#333333', '#2c3e7c', '#dc2626', '#059669'].map(c => (
+                        <button
+                            key={c}
+                            type="button"
+                            onMouseDown={(e) => { e.preventDefault(); applyColor(c); }}
+                            className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
+                            style={{ backgroundColor: c }}
+                            title={c}
+                        />
+                    ))}
+                </div>
+                {recentTextColors.length > 0 && (
+                    <div className="flex gap-1 flex-shrink-0 items-center">
+                        {recentTextColors.slice(0, 5).map(c => (
                             <button
                                 key={c}
                                 type="button"
                                 onMouseDown={(e) => { e.preventDefault(); applyColor(c); }}
-                                className="w-3 h-3 rounded-full border border-gray-100 transition-transform hover:scale-110"
+                                className={`w-3 h-3 rounded-full border transition-transform hover:scale-110 ${(defaultColor || '').toLowerCase() === c ? 'ring-2 ring-blue-500 ring-offset-0.5 border-blue-400' : 'border-gray-200'}`}
                                 style={{ backgroundColor: c }}
                                 title={c}
                             />
                         ))}
                     </div>
-                    {recentTextColors.length > 0 && (
-                        <div className="flex gap-1 flex-shrink-0 items-center">
-                            {recentTextColors.slice(0, 5).map(c => (
-                                <button
-                                    key={c}
-                                    type="button"
-                                    onMouseDown={(e) => { e.preventDefault(); applyColor(c); }}
-                                    className={`w-3 h-3 rounded-full border transition-transform hover:scale-110 ${(defaultColor || '').toLowerCase() === c ? 'ring-2 ring-blue-500 ring-offset-0.5 border-blue-400' : 'border-gray-200'}`}
-                                    style={{ backgroundColor: c }}
-                                    title={c}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
+                )}
             </div>
+        </div>
     );
 };

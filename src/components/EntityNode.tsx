@@ -1,5 +1,5 @@
 import React, { memo, useState, useEffect } from 'react';
-import { Handle, Position, type NodeProps } from 'reactflow';
+import { Handle, Position, type NodeProps, useStore } from 'reactflow';
 import type { Entity, Attribute } from '../types/erd';
 import { Database, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare } from 'lucide-react';
 import { useERDStore } from '../store/erdStore';
@@ -301,8 +301,145 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
     );
 });
 
+/** 줌아웃 임계값 — 이 줌 레벨 이하에서는 무거운 편집 UI 대신 경량 Placeholder를 렌더링한다.
+ *  100개 노드 기준 Zustand 구독 500개 → 0으로 줄여 패닝/줌 시 프레임 드랍 완전 제거. */
+const ZOOM_THRESHOLD = 0.35;
+const zoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
+
 const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: nodeId }) => {
+    const zoom = useStore(zoomSelector);
     const entityId = data.entityId ?? (data as { entity?: Entity }).entity?.id ?? nodeId;
+
+    // ── 줌아웃 시 경량 렌더링 (store 구독·이벤트 핸들러 0개) ──
+    if (zoom < ZOOM_THRESHOLD) {
+        return <EntityNodeLite entityId={entityId} selected={selected} />;
+    }
+
+    // ── 줌인 시 전체 편집 UI ──
+    return <EntityNodeFull entityId={entityId} selected={selected} nodeId={nodeId} />;
+};
+
+/** 줌아웃 시 사용되는 초경량 노드. Zustand 구독 1개(entity 데이터), useEffect 0개. */
+const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(({ entityId, selected }) => {
+    const entity = useERDStore((s) => s.entitiesById[entityId]);
+    if (!entity) return null;
+    const isLocked = entity.isLocked ?? true;
+
+    // 이 노드는 EntityNodeFull의 isLocked 상태(또는 렌더링 구조)와 레이아웃(높이)이 완전히 동일해야 덜컹거리지 않습니다.
+    return (
+        <div
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] group relative overflow-visible ${selected
+                ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
+                : isLocked
+                    ? 'border-gray-200 shadow-sm'
+                    : 'border-blue-500 shadow-blue-100'
+                }`}
+            style={{ contain: 'layout style paint' }}
+        >
+            <EntityLockBadge entityId={entityId} />
+
+            <div className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${isLocked ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
+                <Database size={16} className="flex-shrink-0" />
+                {/* Full의 input과 동일한 구조/크기 */}
+                <span className={`${!isLocked ? 'nodrag bg-blue-400/20' : 'bg-transparent'} border-none font-bold text-lg w-full p-0 block truncate`}>
+                    {entity.name}
+                </span>
+                <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0' : ''}`}>
+                    <div className="nodrag p-1 rounded-md text-white pointer-events-none">
+                        {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                    </div>
+                </div>
+            </div>
+
+            {(!isLocked || entity.comment) && (
+                <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                    <MessageSquare size={12} className="text-gray-400 shrink-0" />
+                    <span className={`text-[11px] w-full bg-transparent p-0 italic block truncate ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
+                        {entity.comment}
+                    </span>
+                </div>
+            )}
+
+            <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
+                {entity.attributes.map((attr) => (
+                    <div key={attr.id} className={`flex items-center gap-1 py-1 px-2 rounded group/attr relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'}`}>
+                        {/* PK Icon/Toggle */}
+                        <div className="w-8 flex-shrink-0 flex justify-center">
+                            <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
+                                <Key size={14} />
+                            </span>
+                        </div>
+
+                        {/* Name Input equivalent */}
+                        <div className="flex-1 min-w-0 mx-1">
+                            <span className={`w-full text-sm px-1.5 py-0.5 rounded block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
+                                {attr.name}
+                            </span>
+                        </div>
+
+                        <div className="flex flex-nowrap items-center gap-2 flex-shrink-0">
+                            {/* Type Column equivalent */}
+                            <div className="w-16 flex-shrink-0 flex items-center h-4">
+                                <span className={`text-[10px] w-full block truncate ${!isLocked ? 'text-blue-600' : 'text-gray-400'}`}>
+                                    {attr.type.split('(')[0]}
+                                </span>
+                            </div>
+
+                            {/* Length Column equivalent (렌더링은 input과 동일한 높이/크기로 빈공간 유지) */}
+                            <div className="w-10 flex-shrink-0">
+                                <span className={`block w-full text-[9px] px-1 py-0.5 border border-transparent truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                                    {attr.length || ''}
+                                </span>
+                            </div>
+
+                            {/* NN Toggle equivalent */}
+                            <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
+                                <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
+                                    <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                                </div>
+                                <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                            </div>
+
+                            {/* Comment Column equivalent */}
+                            <div className="w-24 flex-shrink-0 flex items-center gap-1 bg-gray-50/30 px-1 rounded h-[18px]">
+                                <MessageSquare size={11} className={`shrink-0 ${attr.comment ? 'text-blue-400' : 'text-gray-200'}`} />
+                                <span className={`text-[9px] p-0 italic w-full truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                                    {attr.comment}
+                                </span>
+                            </div>
+
+                            {/* FK Toggle equivalent */}
+                            <div className="w-8 flex-shrink-0 flex justify-center">
+                                <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
+                                    <Link size={14} />
+                                </span>
+                            </div>
+
+                            {/* Delete Column padding equivalent to maintain layout */}
+                            {!isLocked && (
+                                <div className="w-[20px]" />
+                            )}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {!isLocked && (
+                <div className="px-2 pb-2">
+                    <div className="w-full flex items-center justify-center gap-2 py-1.5 border-2 border-dashed border-gray-200 rounded text-gray-400 text-xs font-medium">
+                        <Plus size={14} />
+                        컬럼 추가
+                    </div>
+                </div>
+            )}
+
+            <PrivHandles />
+        </div>
+    );
+});
+
+/** 줌인 시 사용되는 전체 편집 가능 노드. */
+const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: string }> = memo(({ entityId, selected }) => {
     const entity = useERDStore((s) => s.entitiesById[entityId]);
     const updateEntity = useERDStore((s) => s.updateEntity);
     const deleteEntity = useERDStore((s) => s.deleteEntity);
@@ -421,29 +558,29 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
         e.stopPropagation();
         if (isLocked) return;
         const newAttributes = entity.attributes.filter((attr) => attr.id !== attrId);
-        updateEntity(entity.id, { attributes: newAttributes });
-
         sendOperation({
             type: 'ATTRIBUTE_DELETE',
             targetId: entity.id,
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
-            payload: { attributes: newAttributes }
+            payload: { attributes: newAttributes },
+            previousState: { attributes: entity.attributes },
         });
+        updateEntity(entity.id, { attributes: newAttributes });
     };
 
     const handleDeleteEntity = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (window.confirm(`Delete entity "${entity.name}"?`)) {
-            deleteEntity(entity.id);
-
             sendOperation({
                 type: 'ENTITY_DELETE',
                 targetId: entity.id,
                 userId: user?.id || 'anonymous',
                 userName: user?.name || 'Anonymous',
-                payload: {}
+                payload: {},
+                previousState: entity as unknown as Record<string, unknown>,
             });
+            deleteEntity(entity.id);
         }
     };
 
@@ -574,20 +711,20 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
             <PrivHandles />
         </div>
     );
-};
+});
 
 const PrivHandles = memo(() => (
     <>
-        <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ top: -20 ,zIndex:999}}>
+        <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ top: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ bottom: -20 ,zIndex:999}}>
+        <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ bottom: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ left: -20 ,zIndex:999}}>
+        <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ left: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ right: -20 ,zIndex:999}}>
+        <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ right: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
     </>

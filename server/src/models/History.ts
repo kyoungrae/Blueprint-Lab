@@ -23,6 +23,7 @@ export type OperationType =
     | 'SCREEN_FLOW_CREATE'
     | 'SCREEN_FLOW_UPDATE'
     | 'SCREEN_FLOW_DELETE'
+    | 'SCREEN_DRAW_DELETE'
     | 'SCREEN_IMPORT';
 
 // History Document Interface
@@ -64,6 +65,7 @@ const HistorySchema = new Schema<IHistory>({
             'SCREEN_CREATE', 'SCREEN_UPDATE', 'SCREEN_DELETE', 'SCREEN_MOVE',
             'FLOW_CREATE', 'FLOW_UPDATE', 'FLOW_DELETE',
             'SCREEN_FLOW_CREATE', 'SCREEN_FLOW_UPDATE', 'SCREEN_FLOW_DELETE',
+            'SCREEN_DRAW_DELETE',
             'SCREEN_IMPORT'
         ],
         required: true
@@ -84,5 +86,6 @@ const HistorySchema = new Schema<IHistory>({
 
 HistorySchema.index({ projectId: 1, timestamp: -1 });
 HistorySchema.index({ userId: 1, timestamp: -1 });
+HistorySchema.index({ timestamp: 1 }, { expireAfterSeconds: 86400 }); // 24h TTL
 
 export const History = mongoose.model<IHistory>('History', HistorySchema);
