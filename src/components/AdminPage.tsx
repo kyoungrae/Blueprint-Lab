@@ -24,7 +24,7 @@ function findHeaderRowAndIndices(rows: (string | number)[][]): { headerRowIndex:
         let notNullIdx = -1;
         let defaultIdx = -1;
         for (let c = 0; c < row.length; c++) {
-            const cell = normalize(row[c]);
+            const cell = normalize(String(row[c] ?? ''));
             if (/테이블명/.test(cell) && !/한글/.test(cell)) tableNameIdx = c;
             else if (/테이블한글명|테이블\s*한글/.test(cell) || (cell === '한글명' && tableNameIdx >= 0 && c === tableNameIdx + 1)) tableNameKrIdx = c;
             else if (/컬럼명/.test(cell) && !/한글/.test(cell)) columnNameIdx = c;
