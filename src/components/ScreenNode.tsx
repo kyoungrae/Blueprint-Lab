@@ -1164,10 +1164,49 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             if (dir.includes('s')) nextMaxY = ref.maxY + dy;
             if (dir.includes('n')) nextMinY = ref.minY + dy;
             const RESIZE_MIN = 16;
-            const newW = Math.max(RESIZE_MIN, nextMaxX - nextMinX);
-            const newH = Math.max(RESIZE_MIN, nextMaxY - nextMinY);
-            if (dir.includes('w')) nextMinX = nextMaxX - newW;
-            if (dir.includes('n')) nextMinY = nextMaxY - newH;
+            let newW = Math.max(RESIZE_MIN, nextMaxX - nextMinX);
+            let newH = Math.max(RESIZE_MIN, nextMaxY - nextMinY);
+            const isCorner = (dir.includes('n') || dir.includes('s')) && (dir.includes('e') || dir.includes('w'));
+            const shiftLockAspect = moveEvent.shiftKey && isCorner && h > 0;
+            if (shiftLockAspect) {
+                const aspectRatio = w / h;
+                let fitW = Math.max(newW, newH * aspectRatio);
+                let fitH = fitW / aspectRatio;
+                if (fitH < RESIZE_MIN) {
+                    fitH = RESIZE_MIN;
+                    fitW = fitH * aspectRatio;
+                }
+                if (fitW < RESIZE_MIN) {
+                    fitW = RESIZE_MIN;
+                    fitH = fitW / aspectRatio;
+                }
+                newW = fitW;
+                newH = fitH;
+                if (dir.includes('e') && dir.includes('s')) {
+                    nextMinX = ref.minX;
+                    nextMinY = ref.minY;
+                    nextMaxX = nextMinX + newW;
+                    nextMaxY = nextMinY + newH;
+                } else if (dir.includes('w') && dir.includes('s')) {
+                    nextMaxX = ref.maxX;
+                    nextMinY = ref.minY;
+                    nextMinX = nextMaxX - newW;
+                    nextMaxY = nextMinY + newH;
+                } else if (dir.includes('e') && dir.includes('n')) {
+                    nextMinX = ref.minX;
+                    nextMaxY = ref.maxY;
+                    nextMaxX = nextMinX + newW;
+                    nextMinY = nextMaxY - newH;
+                } else if (dir.includes('w') && dir.includes('n')) {
+                    nextMaxX = ref.maxX;
+                    nextMaxY = ref.maxY;
+                    nextMinX = nextMaxX - newW;
+                    nextMinY = nextMaxY - newH;
+                }
+            } else {
+                if (dir.includes('w')) nextMinX = nextMaxX - newW;
+                if (dir.includes('n')) nextMinY = nextMaxY - newH;
+            }
             const currentElements = getScreenById(screen.id)?.drawElements || [];
             const updated = currentElements.map((it) => {
                 const snap = ref.elements.find((s) => s.id === it.id);
