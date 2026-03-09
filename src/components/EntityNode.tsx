@@ -1,5 +1,5 @@
 import React, { memo, useState, useEffect } from 'react';
-import { Handle, Position, type NodeProps } from 'reactflow';
+import { Handle, Position, type NodeProps, useStore } from 'reactflow';
 import type { Entity, Attribute } from '../types/erd';
 import { Database, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare } from 'lucide-react';
 import { useERDStore } from '../store/erdStore';
@@ -301,8 +301,82 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
     );
 });
 
+/** 줌아웃 임계값 — 이 줌 레벨 이하에서는 무거운 편집 UI 대신 경량 Placeholder를 렌더링한다.
+ *  100개 노드 기준 Zustand 구독 500개 → 0으로 줄여 패닝/줌 시 프레임 드랍 완전 제거. */
+const ZOOM_THRESHOLD = 0.35;
+const zoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
+
 const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: nodeId }) => {
+    const zoom = useStore(zoomSelector);
     const entityId = data.entityId ?? (data as { entity?: Entity }).entity?.id ?? nodeId;
+
+    // ── 줌아웃 시 경량 렌더링 (store 구독·이벤트 핸들러 0개) ──
+    if (zoom < ZOOM_THRESHOLD) {
+        return <EntityNodeLite entityId={entityId} selected={selected} />;
+    }
+
+    // ── 줌인 시 전체 편집 UI ──
+    return <EntityNodeFull entityId={entityId} selected={selected} nodeId={nodeId} />;
+};
+
+/** 줌아웃 시 사용되는 초경량 노드. Zustand 구독 1개(entity 데이터), useEffect 0개. */
+const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(({ entityId, selected }) => {
+    const entity = useERDStore((s) => s.entitiesById[entityId]);
+    if (!entity) return null;
+    const isLocked = entity.isLocked ?? true;
+    return (
+        <div
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] relative overflow-visible ${selected
+                ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
+                : isLocked
+                    ? 'border-gray-200 shadow-sm'
+                    : 'border-blue-500 shadow-blue-100'
+                }`}
+            style={{ contain: 'layout style paint' }}
+        >
+            <div className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${isLocked ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
+                <Database size={16} className="flex-shrink-0" />
+                <span className="font-bold text-lg flex-1 truncate">{entity.name}</span>
+            </div>
+            {entity.comment && (
+                <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                    <MessageSquare size={12} className="text-gray-400 shrink-0" />
+                    <span className="text-[11px] italic text-gray-400 truncate">{entity.comment}</span>
+                </div>
+            )}
+            <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
+                {entity.attributes.map((attr) => (
+                    <div key={attr.id} className={`flex items-center gap-1 py-1 px-2 rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
+                        <div className="w-8 flex-shrink-0 flex justify-center">
+                            <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}><Key size={14} /></span>
+                        </div>
+                        <div className="flex-1 min-w-0 mx-1">
+                            <span className={`text-sm px-1.5 py-0.5 block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>{attr.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="w-16 flex-shrink-0"><span className={`text-[10px] ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>{attr.type.split('(')[0]}{attr.length ? `(${attr.length})` : ''}</span></div>
+                            <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
+                                <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'}`}><div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} /></div>
+                                <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                            </div>
+                            <div className="w-24 flex-shrink-0 flex items-center gap-1 px-1">
+                                {attr.comment && <><MessageSquare size={11} className="shrink-0 text-blue-400" /><span className="text-[9px] text-blue-500 italic truncate">{attr.comment}</span></>}
+                            </div>
+                            <div className="w-8 flex-shrink-0 flex justify-center"><span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}><Link size={14} /></span></div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ top: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ bottom: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ left: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ right: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+        </div>
+    );
+});
+
+/** 줌인 시 사용되는 전체 편집 가능 노드. */
+const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: string }> = memo(({ entityId, selected }) => {
     const entity = useERDStore((s) => s.entitiesById[entityId]);
     const updateEntity = useERDStore((s) => s.updateEntity);
     const deleteEntity = useERDStore((s) => s.deleteEntity);
@@ -574,20 +648,20 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
             <PrivHandles />
         </div>
     );
-};
+});
 
 const PrivHandles = memo(() => (
     <>
-        <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ top: -20 ,zIndex:999}}>
+        <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ top: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ bottom: -20 ,zIndex:999}}>
+        <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ bottom: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ left: -20 ,zIndex:999}}>
+        <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ left: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
-        <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ right: -20 ,zIndex:999}}>
+        <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ right: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
     </>
