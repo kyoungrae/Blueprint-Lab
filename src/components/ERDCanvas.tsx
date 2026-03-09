@@ -66,6 +66,7 @@ const GlobalViewportUpdater: React.FC = () => {
     useEffect(() => {
         const vp = getViewport();
         const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+        document.documentElement.style.setProperty('--erd-zoom', vp.zoom.toString());
         document.querySelectorAll('.erd-viewport-sync').forEach(el => {
             (el as HTMLElement).style.transform = transform;
         });
@@ -75,6 +76,7 @@ const GlobalViewportUpdater: React.FC = () => {
     useOnViewportChange({
         onChange: (vp) => {
             const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+            document.documentElement.style.setProperty('--erd-zoom', vp.zoom.toString());
             document.querySelectorAll('.erd-viewport-sync').forEach(el => {
                 (el as HTMLElement).style.transform = transform;
             });
@@ -107,6 +109,8 @@ interface SectionOverlayLayerProps {
     sections: Section[];
     hoveredSectionId: string | null;
     setHoveredSectionId: (id: string | null) => void;
+    selectedSectionId: string | null;
+    setSelectedSectionId: (id: string | null) => void;
     editingSectionId: string | null;
     editingSectionName: string;
     setEditingSectionName: (s: string) => void;
@@ -124,6 +128,8 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         sections,
         hoveredSectionId,
         setHoveredSectionId,
+        selectedSectionId,
+        setSelectedSectionId,
         editingSectionId,
         editingSectionName,
         setEditingSectionName,
@@ -227,7 +233,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                     </button>
                                 </PremiumTooltip>
                             </div>
-                            {handles.map((handle) => (
+                            {selectedSectionId === s.id && handles.map((handle) => (
                                 <div
                                     key={handle.key}
                                     className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
@@ -236,10 +242,13 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         top: handle.top,
                                         width: HANDLE_SIZE,
                                         height: HANDLE_SIZE,
-                                        transform: 'translate(-50%, -50%)',
+                                        transform: 'translate(-50%, -50%) scale(calc(1 / var(--erd-zoom, 1)))',
                                         cursor: handle.cursor,
                                     }}
-                                    onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
+                                    onMouseDown={(ev) => {
+                                        setSelectedSectionId(s.id);
+                                        onSectionResizeMouseDown(ev, s.id, handle.key);
+                                    }}
                                 />
                             ))}
                         </div>
@@ -311,6 +320,7 @@ const ERDCanvasContent: React.FC = () => {
     const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
     const [editingSectionName, setEditingSectionName] = useState('');
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
+    const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
     const paneContainerRef = React.useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
@@ -476,6 +486,7 @@ const ERDCanvasContent: React.FC = () => {
         (e: React.MouseEvent, sectionId: string) => {
             if (e.button !== 0 || sectionResizeState || editingSectionId) return;
             e.stopPropagation();
+            setSelectedSectionId(sectionId);
             const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
             const sec = (sections as Section[]).find((s) => s.id === sectionId);
             if (!sec) return;
@@ -498,6 +509,7 @@ const ERDCanvasContent: React.FC = () => {
         (e: React.MouseEvent, sectionId: string, handle: string) => {
             if (e.button !== 0) return;
             e.stopPropagation();
+            setSelectedSectionId(sectionId);
             const sec = (sections as Section[]).find((s) => s.id === sectionId);
             if (!sec) return;
             const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
@@ -565,14 +577,35 @@ const ERDCanvasContent: React.FC = () => {
             }
             updateSection(sectionResizeState.sectionId, { position: { x, y }, size: { width: w, height: h } });
         };
-        const onUp = () => setSectionResizeState(null);
+        const onUp = () => {
+            const x = sec.position.x;
+            const y = sec.position.y;
+            const width = sec.size.width;
+            const height = sec.size.height;
+
+            const nodes = getNodes().filter((n) => n.type === 'entity' || n.type === 'entityPlaceholder');
+            nodes.forEach((n) => {
+                const nx = n.position.x;
+                const ny = n.position.y;
+                const nw = n.width || 200;
+                const nh = n.height || 100;
+                const cx = nx + nw / 2;
+                const cy = ny + nh / 2;
+                // Check if the center of the entity is inside the resized section
+                if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
+                    updateEntity(n.id, { sectionId: sec.id }, user);
+                }
+            });
+
+            setSectionResizeState(null);
+        };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
         return () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [sectionResizeState, sections, updateSection, screenToFlowPosition]);
+    }, [sectionResizeState, sections, updateSection, screenToFlowPosition, getNodes, updateEntity, user]);
 
     const startEditingSectionName = useCallback((section: Section) => {
         setEditingSectionId(section.id);
@@ -1708,6 +1741,7 @@ const ERDCanvasContent: React.FC = () => {
                         selectionKeyCode="Shift"
                         deleteKeyCode={null}
                         onPaneMouseMove={onPaneMouseMove}
+                        onPaneClick={() => setSelectedSectionId(null)}
                     >
                         <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
                         <GlobalViewportUpdater />
@@ -1715,6 +1749,8 @@ const ERDCanvasContent: React.FC = () => {
                             sections={sections}
                             hoveredSectionId={hoveredSectionId}
                             setHoveredSectionId={setHoveredSectionId}
+                            selectedSectionId={selectedSectionId}
+                            setSelectedSectionId={setSelectedSectionId}
                             editingSectionId={editingSectionId}
                             editingSectionName={editingSectionName}
                             setEditingSectionName={setEditingSectionName}
