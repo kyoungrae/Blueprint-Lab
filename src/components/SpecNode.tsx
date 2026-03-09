@@ -401,10 +401,15 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         });
     };
 
-    // Linked ERD Project Data
+    // Linked ERD Project Data (여러 개 연결 시 첫 번째 기준)
     const { projects, currentProjectId } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
-    const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
+    const linkedErdProjects = React.useMemo(() => {
+        if (!currentProject) return [];
+        const ids = currentProject.linkedErdProjectIds?.length ? currentProject.linkedErdProjectIds : (currentProject.linkedErdProjectId ? [currentProject.linkedErdProjectId] : []);
+        return projects.filter(p => ids.includes(p.id));
+    }, [currentProject, projects]);
+    const linkedErdProject = linkedErdProjects[0];
 
     // DB Types for Format column
     const dbFieldTypes = React.useMemo(() => {

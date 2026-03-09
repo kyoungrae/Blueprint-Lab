@@ -157,6 +157,8 @@ export interface IProject extends Document {
     screenSnapshot?: IScreenSnapshot;
     componentSnapshot?: IComponentSnapshot;
     linkedErdProjectId?: string;
+    /** 화면 설계에 연결된 ERD 프로젝트 ID 배열 (여러 개 연결 가능) */
+    linkedErdProjectIds?: string[];
     linkedComponentProjectId?: string;
 }
 
@@ -304,6 +306,7 @@ const ProjectSchema = new Schema<IProject>({
     screenSnapshot: { type: ScreenSnapshotSchema, default: { version: 1, screens: [], flows: [], savedAt: new Date() } },
     componentSnapshot: { type: ComponentSnapshotSchema, default: { version: 1, components: [], flows: [], savedAt: new Date() } },
     linkedErdProjectId: { type: String },
+    linkedErdProjectIds: [{ type: String }],
     linkedComponentProjectId: { type: String },
 }, {
     timestamps: true, // createdAt, updatedAt 자동 생성

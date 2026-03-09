@@ -156,13 +156,20 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     const { projects, currentProjectId } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
-    const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
+    const linkedErdProjects = React.useMemo(() => {
+        if (!currentProject) return [];
+        const ids = currentProject.linkedErdProjectIds?.length ? currentProject.linkedErdProjectIds : (currentProject.linkedErdProjectId ? [currentProject.linkedErdProjectId] : []);
+        return projects.filter(p => ids.includes(p.id));
+    }, [currentProject, projects]);
     const linkedComponentProject = projects.find(p => p.id === currentProject?.linkedComponentProjectId);
     const erdTables = React.useMemo(() => {
-        const data = linkedErdProject?.data as { entities?: { name: string }[] } | undefined;
-        if (!data?.entities) return [];
-        return data.entities.map((e: { name: string }) => e.name).sort();
-    }, [linkedErdProject]);
+        const names = new Set<string>();
+        linkedErdProjects.forEach((erdProj) => {
+            const data = erdProj?.data as { entities?: { name: string }[] } | undefined;
+            data?.entities?.forEach((e: { name: string }) => names.add(e.name));
+        });
+        return Array.from(names).sort();
+    }, [linkedErdProjects]);
     const componentList = React.useMemo(() => {
         // 연결된 프로젝트가 COMPONENT 타입일 때만 컴포넌트 목록 사용 (화면 설계 프로젝트의 screens와 혼동 방지)
         if (linkedComponentProject?.projectType !== 'COMPONENT') return [];
@@ -5217,7 +5224,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     tableListRef={tableListRef}
                                     isTableListOpen={isTableListOpen}
                                     setIsTableListOpen={setIsTableListOpen}
-                                    linkedErdProject={linkedErdProject}
+                                    linkedErdProject={linkedErdProjects[0]}
                                     erdTables={erdTables}
                                     drawElements={drawElements}
                                     zoom={zoom}

@@ -134,7 +134,8 @@ export const useProjectStore = create<ProjectStore>()(
                                 id: p._id,
                                 projectType: pt,
                                 author: p.author || '',
-                                linkedErdProjectId: p.linkedErdProjectId,
+                                linkedErdProjectIds: (p.linkedErdProjectIds && p.linkedErdProjectIds.length) ? p.linkedErdProjectIds : (p.linkedErdProjectId ? [p.linkedErdProjectId] : []),
+                                linkedErdProjectId: p.linkedErdProjectId || (p.linkedErdProjectIds && p.linkedErdProjectIds[0]),
                                 linkedComponentProjectId: p.linkedComponentProjectId,
                                 members: p.members?.map((m: any) => ({
                                     id: m.userId?._id || m.userId,

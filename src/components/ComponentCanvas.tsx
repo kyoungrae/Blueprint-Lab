@@ -579,16 +579,24 @@ const ComponentCanvasContent: React.FC = () => {
                     .filter(line => line.startsWith('•'))
                     .map(line => line.substring(1).trim());
 
-                const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
-                const erdData = linkedErdProject?.data as { entities?: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] }[] } | undefined;
+                const linkedErdProjects = currentProject?.linkedErdProjectIds?.length
+                    ? projects.filter(p => currentProject.linkedErdProjectIds!.includes(p.id))
+                    : currentProject?.linkedErdProjectId
+                        ? projects.filter(p => p.id === currentProject.linkedErdProjectId)
+                        : [];
                 // Component project: no ERD linking - skip spec auto-populate from ERD
-                if (tableNames.length > 0 && erdData?.entities) {
+                if (tableNames.length > 0 && linkedErdProjects.length > 0) {
                     const existingSpecs = specScreen.specs || [];
                     const existingControlNames = new Set(existingSpecs.map(s => s.controlName));
                     const newSpecs: any[] = [];
 
                     tableNames.forEach(tableName => {
-                        const entity = erdData.entities!.find((e: { name: string }) => e.name === tableName);
+                        let entity: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] } | undefined;
+                        for (const erdProj of linkedErdProjects) {
+                            const erdData = erdProj?.data as { entities?: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] }[] } | undefined;
+                            entity = erdData?.entities?.find((e: { name: string }) => e.name === tableName);
+                            if (entity) break;
+                        }
                         if (entity) {
                             entity.attributes.forEach((attr: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }) => {
                                 if (!existingControlNames.has(attr.name)) {
