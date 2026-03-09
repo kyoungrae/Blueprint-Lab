@@ -1169,7 +1169,8 @@ const ERDCanvasContent: React.FC = () => {
 
         importData({
             entities: updatedEntities,
-            relationships: relationships
+            relationships: relationships,
+            sections,
         });
 
 
@@ -1185,7 +1186,7 @@ const ERDCanvasContent: React.FC = () => {
         });
 
         setIsLayoutMenuOpen(false);
-    }, [nodes, edges, entities, relationships, setNodes, setEdges, importData, getViewport, sendOperation, user]);
+    }, [nodes, edges, entities, relationships, sections, setNodes, setEdges, importData, getViewport, sendOperation, user]);
 
     const onForceLayout = useCallback(() => {
         const { nodes: layoutedNodes } = getForceLayoutedElements(nodes, edges);
@@ -1204,7 +1205,8 @@ const ERDCanvasContent: React.FC = () => {
 
         importData({
             entities: updatedEntities,
-            relationships: relationships
+            relationships: relationships,
+            sections,
         });
 
         // Broadcast Batch Move
@@ -1219,7 +1221,7 @@ const ERDCanvasContent: React.FC = () => {
         });
 
         setIsLayoutMenuOpen(false);
-    }, [nodes, edges, entities, relationships, setNodes, importData, sendOperation, user]);
+    }, [nodes, edges, entities, relationships, sections, setNodes, importData, sendOperation, user]);
 
     const onRelationshipLayout = useCallback(() => {
         if (entities.length === 0) {
@@ -1289,6 +1291,7 @@ const ERDCanvasContent: React.FC = () => {
         importData({
             entities: updatedEntities,
             relationships: relationships,
+            sections,
         });
 
         newNodes.forEach((node) => {
@@ -1302,7 +1305,7 @@ const ERDCanvasContent: React.FC = () => {
         });
 
         setIsLayoutMenuOpen(false);
-    }, [nodes, entities, relationships, setNodes, importData, sendOperation, user, getViewport]);
+    }, [nodes, entities, relationships, sections, setNodes, importData, sendOperation, user, getViewport]);
 
     const onNodeDragStart = useCallback(() => {
         isDraggingRef.current = true;
