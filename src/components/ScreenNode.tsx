@@ -1,6 +1,6 @@
 import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback, startTransition } from 'react';
 import { createPortal } from 'react-dom';
-import { type NodeProps, useReactFlow, useOnViewportChange } from 'reactflow';
+import { type NodeProps, useReactFlow, useOnViewportChange, useStore as useRFStore } from 'reactflow';
 import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
 
@@ -43,6 +43,7 @@ import TablePanelFloating from './screenNode/TablePanelFloating';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 import { resolveFontFamilyCSS } from '../utils/fontFamily';
+import { Monitor } from 'lucide-react';
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 /** 다각형 프리셋에 따른 정규화된 꼭짓점 (0~1). [x,y] 배열 */
@@ -73,9 +74,6 @@ function getPolygonPointsForPreset(preset: PolygonPreset, left: number, top: num
     return POLYGON_PRESET_NORM[preset].map(([nx, ny]) => ({ x: left + w * nx, y: top + h * ny }));
 }
 
-
-// (ScreenHandles, DrawTextComponent, PremiumTooltip imported from ./screenNode/)
-
 /** mousedown target이 Text/SVG 등일 수 있어 Element로 안전하게 변환 */
 function getClickTargetElement(target: EventTarget | null): Element | null {
     if (!target) return null;
@@ -83,6 +81,57 @@ function getClickTargetElement(target: EventTarget | null): Element | null {
     if (target instanceof Node && target.parentElement) return target.parentElement;
     return null;
 }
+
+/** 줌아웃 임계값 — 이 줌 레벨 이하에서는 무거운 편집 UI 대신 경량 Placeholder를 렌더링한다. */
+const SCREEN_ZOOM_THRESHOLD = 0;
+const rfZoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
+
+/** 줌아웃 시 사용되는 초경량 화면 노드.
+ *  5000줄짜리 전체 ScreenNode의 모든 useState/useEffect/store 구독을 건너뛴다. */
+const ScreenNodeLite: React.FC<{ screen: Screen; selected?: boolean }> = memo(({ screen, selected }) => {
+    const MIN_CANVAS_WIDTH = 794;
+    const CANVAS_WIDTH_RATIO = 0.7;
+    const FIXED_TOP_HEIGHT = 162;
+    const FIXED_TOP_HEIGHT_COMPONENT = 88;
+    const ENTITY_CANVAS_GAP = 0;
+    let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+    if (canvasW < MIN_CANVAS_WIDTH) {
+        const scale = MIN_CANVAS_WIDTH / canvasW;
+        canvasW = MIN_CANVAS_WIDTH;
+        canvasH = Math.round(canvasH * scale);
+    }
+    const isComponent = screen.screenId?.startsWith('CMP-');
+    const entityWidth = isComponent
+        ? canvasW + ENTITY_CANVAS_GAP * 2
+        : Math.ceil((canvasW + ENTITY_CANVAS_GAP * 2) / CANVAS_WIDTH_RATIO);
+    const entityHeight = canvasH + ENTITY_CANVAS_GAP * 2 + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
+    const isLocked = screen.isLocked ?? true;
+
+    return (
+        <div
+            className="group relative overflow-visible"
+            style={{ width: entityWidth, height: entityHeight, contain: 'layout style paint' }}
+        >
+            <div
+                className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected
+                    ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
+                    : isLocked
+                        ? 'border-gray-200 shadow-md'
+                        : 'border-[#2c3e7c] shadow-blue-100'
+                    }`}
+            >
+                {/* 헤더만 간략 표시 */}
+                <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[15px]">
+                    <Monitor size={16} className="flex-shrink-0 text-white/90" />
+                    <span className="font-bold text-lg flex-1 truncate">{screen.name || (isComponent ? '컴포넌트명' : '화면명')}</span>
+                </div>
+                {/* 빈 캔버스 영역 */}
+                <div className="flex-1 bg-gray-50" />
+            </div>
+            <ScreenHandles />
+        </div>
+    );
+});
 
 // ── Screen Node ─────────────────────────────────────────────
 interface ScreenNodeData {
@@ -92,6 +141,17 @@ interface ScreenNodeData {
 }
 
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
+    // ── 줌아웃 시 경량 렌더링 (store 구독·이벤트 핸들러 0개) ──
+    const rfZoom = useRFStore(rfZoomSelector);
+    if (rfZoom < SCREEN_ZOOM_THRESHOLD) {
+        return <ScreenNodeLite screen={data.screen} selected={selected} />;
+    }
+
+    // ── 줌인 시 전체 편집 UI ──
+    return <ScreenNodeFull data={data} selected={selected} />;
+};
+
+const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = memo(({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
     const zoom = 'var(--rf-zoom, 1)';
@@ -5472,6 +5532,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             </TooltipPortalContext.Provider>
         </div >
     );
-};
+});
 
 export default memo(ScreenNode);
