@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { DrawElement } from '../../types/screenDesign';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
+import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
 
 interface DrawTextComponentProps {
     element: DrawElement;
@@ -84,11 +85,31 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
         onSelectionChange(null);
     };
 
+    const handlePaste = (e: React.ClipboardEvent) => {
+        const cd = e.clipboardData;
+        if (!cd || !divRef.current) return;
+        const html = cd.getData('text/html');
+        if (html) {
+            e.preventDefault();
+            const sanitized = sanitizePasteHtml(html);
+            document.execCommand('insertHTML', false, sanitized);
+            handleInput();
+            return;
+        }
+        const text = cd.getData('text/plain');
+        if (text) {
+            e.preventDefault();
+            document.execCommand('insertText', false, text);
+            handleInput();
+        }
+    };
+
     return (
         <div
             ref={divRef}
             contentEditable={!isLocked && isSelected && (element.type === 'text' || !element.hasComponentText)}
             onInput={handleInput}
+            onPaste={handlePaste}
             onCompositionEnd={handleCompositionEnd}
             onSelect={handleSelect}
             onMouseUp={handleSelect}
