@@ -175,7 +175,7 @@ import AddScreenModal from './AddScreenModal';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
-import type { Screen, ScreenSection, PageSizeOption, PageOrientation } from '../types/screenDesign';
+import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation } from '../types/screenDesign';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
@@ -651,10 +651,18 @@ const ScreenDesignCanvasContent: React.FC = () => {
     }, [screens, flows, sections, currentProjectId, updateProjectData]);
 
     // 섹션 변경은 딜레이 없이 바로 저장 (서버 프로젝트 전용, state_sync 이후에만)
+    // 전체(screens, flows, sections)를 보내고, state_sync가 스토어를 덮어쓴 경우 projectStore 데이터로 보강해 빈 payload 방지
     useEffect(() => {
         if (!currentProjectId || currentProjectId.startsWith('local_') || !isSynced) return;
-        // 섹션만 즉시 PATCH해서 screenSnapshot.sections 를 바로 갱신
-        updateProjectData(currentProjectId, { sections }, true);
+        const { screens: s, flows: f, sections: sec } = useScreenDesignStore.getState();
+        const proj = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
+        const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
+        const payload = {
+            screens: (s?.length ? s : fallback?.screens) ?? [],
+            flows: (f?.length ? f : fallback?.flows) ?? [],
+            sections: sec ?? [],
+        };
+        updateProjectData(currentProjectId, payload, true);
     }, [sections, currentProjectId, updateProjectData, isSynced]);
 
     // Unmount 시 현재 스토어 기준으로 즉시 저장 (격자 이동 등 직후 새로고침해도 유지)
