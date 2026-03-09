@@ -1319,10 +1319,10 @@ const ERDCanvasContent: React.FC = () => {
             source: r.source,
             target: r.target,
         }));
-        const { nodes: layoutedNodes } = getRelationshipLayoutedElements(
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getRelationshipLayoutedElements(
             layoutInputNodes,
             layoutInputEdges,
-            'TB'
+            'LR'
         );
 
         // Place layout in current viewport so the user sees the result
@@ -1355,12 +1355,23 @@ const ERDCanvasContent: React.FC = () => {
             return pos ? { ...entity, position: pos } : entity;
         });
 
+        const edgeHandlesById = new Map(layoutedEdges.map((e) => [e.id, e]));
+        const updatedRelationships = relationships.map((rel) => {
+            const le = edgeHandlesById.get(rel.id);
+            if (!le) return rel;
+            return {
+                ...rel,
+                sourceHandle: le.sourceHandle || undefined,
+                targetHandle: le.targetHandle || undefined,
+            };
+        });
+
         skipNextEntitySyncRef.current = true;
         setNodes(newNodes);
 
         importData({
             entities: updatedEntities,
-            relationships: relationships,
+            relationships: updatedRelationships,
             sections,
         });
 
@@ -1371,6 +1382,16 @@ const ERDCanvasContent: React.FC = () => {
                 userId: user?.id || 'anonymous',
                 userName: user?.name || 'Anonymous',
                 payload: { position: node.position },
+            });
+        });
+
+        updatedRelationships.forEach((rel) => {
+            sendOperation({
+                type: 'RELATIONSHIP_UPDATE',
+                targetId: rel.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { sourceHandle: rel.sourceHandle, targetHandle: rel.targetHandle },
             });
         });
 
