@@ -1675,8 +1675,9 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         e.stopPropagation();
         const el = drawElements.find(item => item.id === id);
         if (el && (el.type === 'rect' || el.type === 'circle' || el.type === 'text')) {
-            const hasComponentText = el.hasComponentText;
-            if (!hasComponentText) setEditingTextId(id);
+            // 텍스트 상자(type === 'text')는 컴포넌트에서 와도 항상 편집 가능. 도형(rect/circle)만 컴포넌트에 텍스트 있으면 수정 불가
+            if (el.type === 'text') setEditingTextId(id);
+            else if (!el.hasComponentText) setEditingTextId(id);
         }
         // Table double-click is handled at the cell level
     };
