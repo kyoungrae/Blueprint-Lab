@@ -14,7 +14,7 @@ import ReactFlow, {
     ReactFlowProvider,
     PanOnScrollMode,
     useReactFlow,
-    useViewport,
+    useOnViewportChange,
     reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -49,34 +49,56 @@ const edgeTypes = {
 };
 
 const UserCursorsLayer: React.FC = () => {
-    const { x, y, zoom } = useViewport();
     return (
         <div
-            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-            style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})` }}
+            className="erd-viewport-sync absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
+            style={{ transform: 'translate(0px, 0px) scale(1)' }}
         >
             <UserCursors />
         </div>
     );
 };
 
+const GlobalViewportUpdater: React.FC = () => {
+    const { getViewport } = useReactFlow();
+
+    // 초기 마운트 시 (뷰포트 값이 이미 있을 때) 즉시 반영
+    useEffect(() => {
+        const vp = getViewport();
+        const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+        document.querySelectorAll('.erd-viewport-sync').forEach(el => {
+            (el as HTMLElement).style.transform = transform;
+        });
+    }, [getViewport]);
+
+    // 줌/패닝 변경 시마다 클래스 붙은 요소들만 직접 업데이트 (React 상태와 CSS 상속을 우회하여 렉 제로화)
+    useOnViewportChange({
+        onChange: (vp) => {
+            const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+            document.querySelectorAll('.erd-viewport-sync').forEach(el => {
+                (el as HTMLElement).style.transform = transform;
+            });
+        }
+    });
+
+    return null;
+};
+
 /** Reports viewport to parent only when zoom/pan has been idle for VIEWPORT_DEBOUNCE_MS (no parent re-renders during gesture). */
 const VIEWPORT_DEBOUNCE_MS = 200;
 const ViewportDebounceUpdater: React.FC<{ onViewportIdle: (viewport: { x: number; y: number; zoom: number }) => void }> = ({ onViewportIdle }) => {
-    const { x, y, zoom } = useViewport();
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const viewportRef = useRef({ x, y, zoom });
-    viewportRef.current = { x, y, zoom };
-    useEffect(() => {
-        if (debounceRef.current != null) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
-            debounceRef.current = null;
-            onViewportIdle(viewportRef.current);
-        }, VIEWPORT_DEBOUNCE_MS);
-        return () => {
+
+    useOnViewportChange({
+        onChange: (vp) => {
             if (debounceRef.current != null) clearTimeout(debounceRef.current);
-        };
-    }, [x, y, zoom, onViewportIdle]);
+            debounceRef.current = setTimeout(() => {
+                debounceRef.current = null;
+                onViewportIdle(vp);
+            }, VIEWPORT_DEBOUNCE_MS);
+        }
+    });
+
     return null;
 };
 
@@ -98,7 +120,6 @@ interface SectionOverlayLayerProps {
 }
 /** Section overlays (background + headers). Uses useViewport() so only this layer re-renders during zoom/pan; parent stays idle. */
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
-    const { x, y, zoom } = useViewport();
     const {
         sections,
         hoveredSectionId,
@@ -115,13 +136,12 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         sectionHeadersContainerRef,
     } = props;
     if (sections.length === 0) return null;
-    const transform = `translate(${x}px, ${y}px) scale(${zoom})`;
     const sectionList = sections as Section[];
     return (
         <>
             <div
-                className="absolute inset-0 z-[1] overflow-visible pointer-events-none"
-                style={{ transform, transformOrigin: '0 0' }}
+                className="erd-viewport-sync absolute inset-0 z-[1] overflow-visible pointer-events-none"
+                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
             >
                 {sectionList.map((s) => (
                     <div
@@ -133,8 +153,8 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
             </div>
             <div
                 ref={sectionHeadersContainerRef}
-                className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
-                style={{ transform, transformOrigin: '0 0' }}
+                className="erd-viewport-sync absolute inset-0 z-[15] overflow-visible pointer-events-none"
+                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
             >
                 {sectionList.map((s) => {
                     const isEditing = editingSectionId === s.id;
@@ -417,16 +437,33 @@ const ERDCanvasContent: React.FC = () => {
                 while (existingNames.has(`${baseName} ${n}`)) n++;
                 name = `${baseName} ${n}`;
             }
+            const newSectionId = `section_${Date.now()}`;
             addSection({
-                id: `section_${Date.now()}`,
+                id: newSectionId,
                 name,
                 position: { x, y },
                 size: { width, height },
             });
+
+            // newly added section automatically assigns entities inside its bounds
+            const nodes = getNodes().filter(n => n.type === 'entity' || n.type === 'entityPlaceholder');
+            nodes.forEach(n => {
+                const nx = n.position.x;
+                const ny = n.position.y;
+                const nw = n.width || 200; // fallback width
+                const nh = n.height || 100; // fallback height
+                const cx = nx + nw / 2;
+                const cy = ny + nh / 2;
+                // Check if the center of the entity is inside the drawn section
+                if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
+                    updateEntity(n.id, { sectionId: newSectionId }, user);
+                }
+            });
+
             setSectionDrag(null);
             setIsSectionDrawMode(false);
         },
-        [sectionDrag, sections, addSection]
+        [sectionDrag, sections, addSection, getNodes, updateEntity, user]
     );
     const onSectionOverlayMouseLeave = useCallback(() => {
         if (sectionDrag) setSectionDrag(null);
@@ -1390,7 +1427,7 @@ const ERDCanvasContent: React.FC = () => {
             </div>
 
             {/* Main Canvas Area - pr-4 pt-4 prevents edge/handle clipping at boundaries */}
-            <div className="flex-1 min-w-0 h-full relative select-none pr-4 pt-4 pb-4 pl-4" ref={flowWrapper}>
+            <div id="erd-canvas-container" className="flex-1 min-w-0 h-full relative select-none pr-4 pt-4 pb-4 pl-4" ref={flowWrapper}>
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
                 <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
                     <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
@@ -1673,6 +1710,7 @@ const ERDCanvasContent: React.FC = () => {
                         onPaneMouseMove={onPaneMouseMove}
                     >
                         <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
+                        <GlobalViewportUpdater />
                         <SectionOverlayLayer
                             sections={sections}
                             hoveredSectionId={hoveredSectionId}
