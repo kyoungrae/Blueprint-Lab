@@ -20,8 +20,8 @@ interface ScreenDesignStore {
 
     exportData: () => ScreenDesignState;
     importData: (data: ScreenDesignState) => void;
-    /** 다른 프로젝트에서 내보낸 데이터를 현재 프로젝트에 붙여넣기 (ID 충돌 방지용 재매핑) */
-    mergeImportData: (data: ScreenDesignState) => void;
+    /** 다른 프로젝트에서 내보낸 데이터를 현재 프로젝트에 붙여넣기 (ID 충돌 방지용 재매핑). 반환: 병합된 전체 상태(저장용) */
+    mergeImportData: (data: ScreenDesignState) => ScreenDesignState;
 
     // 전역 클립보드 (엔티티 간 복사/붙여넣기)
     canvasClipboard: DrawElement[];
@@ -118,7 +118,7 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
         });
     },
 
-    mergeImportData: (data) => {
+    mergeImportData: (data): ScreenDesignState => {
         const { screens: existingScreens, flows: existingFlows, sections: existingSections } = get();
         const newScreens = data.screens || [];
         const newFlows = data.flows || [];
@@ -153,7 +153,9 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
             if (!mergedScreenIds.has(src) || !mergedScreenIds.has(tgt)) continue;
             mergedFlows.push({ ...f, id: `flow${ts()}`, source: src, target: tgt });
         }
-        set({ screens: mergedScreens, flows: mergedFlows, sections: mergedSections });
+        const next: ScreenDesignState = { screens: mergedScreens, flows: mergedFlows, sections: mergedSections };
+        set(next);
+        return next;
     },
 
     canvasClipboard: [],

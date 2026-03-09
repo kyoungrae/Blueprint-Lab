@@ -576,12 +576,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
         return () => headers.forEach((el) => el.removeEventListener('wheel', handler, opts));
     }, [sections.length, getViewport, setViewport]);
 
-    // 진입 시 현재 프로젝트 데이터로 스토어 초기화 (로컬 프로젝트 전용)
-    // 원격 프로젝트는 state_sync 이벤트로 항상 최신 스냅샷을 받으므로, 여기서 다시 importData 하면
-    // 서버에서 내려온 화면 목록을 currentProject.data(구버전)로 덮어써 버릴 수 있다.
+    // 진입 시 현재 프로젝트 데이터로 스토어 초기화 (로컬 + 원격 공통)
+    // 새로고침 시 state_sync 전에 빈 화면이 보이는 것을 방지: persist/fetchProjects 결과로 먼저 채운 뒤,
+    // state_sync 도착 시 서버 기준으로 다시 덮어쓴다.
     useEffect(() => {
         if (!currentProjectId || !currentProject) return;
-        if (!currentProjectId.startsWith('local_')) return;
         const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
         if (data && Array.isArray(data.screens)) {
             importData({
@@ -591,6 +590,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
             });
         }
     }, [currentProjectId, currentProject?.id, importData]);
+
+    // 원격 프로젝트: 진입 시 서버에서 최신 데이터 fetch (새로고침 후 복원 시 currentProject.data 보강)
+    useEffect(() => {
+        if (currentProjectId && !currentProjectId.startsWith('local_') && typeof fetchProjects === 'function') {
+            fetchProjects();
+        }
+    }, [currentProjectId, fetchProjects]);
 
     // 연결된 컴포넌트 프로젝트 최신 데이터 확보 (스타일 동기화용)
     useEffect(() => {
@@ -1854,8 +1860,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                                             setImportError('화면, 연결, 섹션 데이터가 없습니다.');
                                                             return;
                                                         }
-                                                        mergeImportData({ screens, flows, sections });
-                                                        if (currentProjectId) updateProjectData(currentProjectId, { screens: useScreenDesignStore.getState().screens, flows: useScreenDesignStore.getState().flows, sections: useScreenDesignStore.getState().sections }, true);
+                                                        const merged = mergeImportData({ screens, flows, sections });
+                                                        if (currentProjectId) updateProjectData(currentProjectId, { screens: merged.screens, flows: merged.flows, sections: merged.sections }, true);
                                                         setIsImportModalOpen(false);
                                                         setImportJsonText('');
                                                         alert(`가져오기 완료. 화면 ${screens.length}개, 연결 ${flows.length}개, 섹션 ${sections.length}개가 추가되었습니다.`);
