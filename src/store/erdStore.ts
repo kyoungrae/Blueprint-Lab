@@ -353,8 +353,7 @@ export const useERDStore = create<ERDStore>((set, get) => {
                     entities.some((e: Entity) => e.id === r.source) &&
                     entities.some((e: Entity) => e.id === r.target)
                 );
-                // sections 미전달 시 기존 유지 → 정렬/state_sync 등에서 섹션이 사라지는 버그 방지
-                const nextSections = Array.isArray(data.sections) ? data.sections : state.sections;
+                const nextSections = Array.isArray(data.sections) ? data.sections : [];
                 return {
                     ...state,
                     ...pushHistory(state),

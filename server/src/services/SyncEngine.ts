@@ -176,7 +176,6 @@ export class SyncEngine {
 
             case 'SCREEN_UPDATE':
             case 'SCREEN_MOVE':
-            case 'SCREEN_DRAW_DELETE':
                 newState.screens = (state.screens || []).map(s =>
                     s.id === operation.targetId
                         ? { ...s, ...operation.payload }

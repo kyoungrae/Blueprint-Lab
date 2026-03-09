@@ -76,9 +76,8 @@ app.get('/api', (req, res) => {
     });
 });
 
-// Initialize Socket.io and attach for admin rollback broadcast
-const io = initializeSocketServer(httpServer);
-app.set('io', io);
+// Initialize Socket.io
+initializeSocketServer(httpServer);
 
 // Start server
 async function start() {

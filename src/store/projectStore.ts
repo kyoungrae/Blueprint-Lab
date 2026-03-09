@@ -5,8 +5,8 @@ import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
-/** PATCH 요청 디바운스: 프로젝트별로 마지막 데이터만 일정 시간 후 한 번만 전송 (기능 유지, 체감 지연 완화) */
-const SAVE_DEBOUNCE_MS = 500;
+/** PATCH 요청 디바운스: 프로젝트별로 마지막 데이터만 일정 시간 후 한 번만 전송 */
+const SAVE_DEBOUNCE_MS = 1200;
 const pendingSave: Record<string, { timer: ReturnType<typeof setTimeout>; data: any }> = {};
 
 async function sendProjectDataPatch(id: string, data: any) {
@@ -102,32 +102,18 @@ export const useProjectStore = create<ProjectStore>()(
                                     projData = { components: [], flows: [] };
                                 }
                             } else if (pt === 'SCREEN_DESIGN') {
-                                // 화면 설계: 서버에 screens가 없는데 로컬에 있으면 로컬 유지 (가져오기 후 섹션 추가·새로고침 시 데이터 유지)
+                                // 화면 설계도 마찬가지로 data.screens가 있으면 우선 사용
                                 const serverTs = new Date(p.updatedAt || 0).getTime();
                                 const localTs = new Date(localProject?.updatedAt || 0).getTime();
-                                const serverScreens = (p.data as any)?.screens ?? (p.screenSnapshot as any)?.screens ?? [];
-                                const serverFlows = (p.data as any)?.flows ?? (p.screenSnapshot as any)?.flows ?? [];
-                                const serverSections = (p.screenSnapshot as any)?.sections ?? (p.data as any)?.sections ?? [];
-                                const localScreens = (localProject?.data as any)?.screens;
-                                const localHasScreens = Array.isArray(localScreens) && localScreens.length > 0;
-                                const serverHasScreens = Array.isArray(serverScreens) && serverScreens.length > 0;
-
-                                if (localProject?.data && localHasScreens && !serverHasScreens) {
-                                    // 서버에 화면 목록이 없고 로컬에만 있으면 로컬 screens/flows 유지, 섹션은 서버 것 우선(섹션 추가 반영)
-                                    projData = {
-                                        screens: (localProject.data as any).screens ?? [],
-                                        flows: (localProject.data as any).flows ?? [],
-                                        sections: Array.isArray(serverSections) && serverSections.length > 0 ? serverSections : ((localProject.data as any).sections ?? []),
-                                    };
-                                } else if (localProject?.data && (localProject.data as any).screens && localTs > serverTs) {
+                                if (localProject?.data && (localProject.data as any).screens && localTs > serverTs) {
                                     projData = localProject.data;
                                 } else if (p.data && (p.data as any).screens) {
                                     projData = p.data;
-                                } else if (p.screenSnapshot || serverScreens.length || serverFlows.length || (Array.isArray(serverSections) && serverSections.length)) {
+                                } else if (p.screenSnapshot) {
                                     projData = {
-                                        screens: serverScreens || [],
-                                        flows: serverFlows || [],
-                                        sections: Array.isArray(serverSections) ? serverSections : [],
+                                        screens: p.screenSnapshot.screens || [],
+                                        flows: p.screenSnapshot.flows || [],
+                                        sections: (p.screenSnapshot as any).sections || [],
                                     };
                                 } else {
                                     projData = { screens: [], flows: [], sections: [] };
@@ -148,8 +134,7 @@ export const useProjectStore = create<ProjectStore>()(
                                 id: p._id,
                                 projectType: pt,
                                 author: p.author || '',
-                                linkedErdProjectIds: (p.linkedErdProjectIds && p.linkedErdProjectIds.length) ? p.linkedErdProjectIds : (p.linkedErdProjectId ? [p.linkedErdProjectId] : []),
-                                linkedErdProjectId: p.linkedErdProjectId || (p.linkedErdProjectIds && p.linkedErdProjectIds[0]),
+                                linkedErdProjectId: p.linkedErdProjectId,
                                 linkedComponentProjectId: p.linkedComponentProjectId,
                                 members: p.members?.map((m: any) => ({
                                     id: m.userId?._id || m.userId,
@@ -158,8 +143,7 @@ export const useProjectStore = create<ProjectStore>()(
                                     picture: m.userId?.picture,
                                     role: m.role || 'MEMBER'
                                 })),
-                                data: projData,
-                                bugReports: p.bugReports || []
+                                data: projData
                             };
                         });
                         set({ projects });
@@ -220,7 +204,6 @@ export const useProjectStore = create<ProjectStore>()(
                             role: m.role || 'MEMBER'
                         })),
                         data: { entities: [], relationships: [] },
-                        bugReports: [],
                     };
 
                     set((state) => ({

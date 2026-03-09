@@ -54,22 +54,7 @@ export interface ProjectMember {
     name: string;
     email: string;
     picture?: string;
-    role: 'OWNER' | 'EDITOR' | 'VIEWER' | 'MEMBER';
-}
-
-export interface BugReport {
-    id: string;
-    projectId: string;
-    content: string;
-    reporterId: string;
-    reporterName: string;
-    reporterPicture?: string;
-    createdAt: string;
-    updatedAt: string;
-    isResolved: boolean;
-    resolvedAt?: string;
-    resolvedBy?: string;
-    resolvedByName?: string;
+    role: 'OWNER' | 'MEMBER';
 }
 
 export interface Project {
@@ -83,12 +68,8 @@ export interface Project {
     updatedAt: string;
     members: ProjectMember[];
     data: ERDState | Record<string, unknown>;
-    /** @deprecated 단일 연결은 linkedErdProjectIds 사용. 하위 호환용 유지 */
     linkedErdProjectId?: string;
-    /** 화면 설계 프로젝트에 연결된 ERD 프로젝트 ID 목록 (여러 개 연결 가능) */
-    linkedErdProjectIds?: string[];
     linkedComponentProjectId?: string;
-    bugReports?: BugReport[];
 }
 
 export type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE' | 'PROJECT_SET' | 'IMPORT' | 'MOVE';

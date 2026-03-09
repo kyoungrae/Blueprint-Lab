@@ -22,8 +22,6 @@ interface SectionOverlayLayerProps {
     sections: ScreenSection[];
     hoveredSectionId: string | null;
     setHoveredSectionId: (id: string | null) => void;
-    selectedSectionId: string | null;
-    setSelectedSectionId: (id: string | null) => void;
     editingSectionId: string | null;
     editingSectionName: string;
     setEditingSectionName: (s: string) => void;
@@ -41,8 +39,6 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         sections,
         hoveredSectionId,
         setHoveredSectionId,
-        selectedSectionId,
-        setSelectedSectionId,
         editingSectionId,
         editingSectionName,
         setEditingSectionName,
@@ -146,7 +142,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                     </button>
                                 </PremiumTooltip>
                             </div>
-                            {selectedSectionId === s.id && handles.map((handle) => (
+                            {handles.map((handle) => (
                                 <div
                                     key={handle.key}
                                     className="absolute bg-violet-500 border border-white rounded-sm shadow cursor-pointer hover:bg-violet-600 z-10 pointer-events-auto"
@@ -155,13 +151,10 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         top: handle.top,
                                         width: SECTION_HANDLE_SIZE,
                                         height: SECTION_HANDLE_SIZE,
-                                        transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+                                        transform: 'translate(-50%, -50%)',
                                         cursor: handle.cursor,
                                     }}
-                                    onMouseDown={(ev) => {
-                                        setSelectedSectionId(s.id);
-                                        onSectionResizeMouseDown(ev, s.id, handle.key);
-                                    }}
+                                    onMouseDown={(ev) => onSectionResizeMouseDown(ev, s.id, handle.key)}
                                 />
                             ))}
                         </div>
@@ -182,7 +175,7 @@ import AddScreenModal from './AddScreenModal';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
-import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation } from '../types/screenDesign';
+import type { Screen, ScreenSection, PageSizeOption, PageOrientation } from '../types/screenDesign';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
@@ -194,7 +187,6 @@ import { RecentStyleColorsProvider } from '../contexts/RecentStyleColorsContext'
 import { copyToClipboard } from '../utils/clipboard';
 import { syncComponentStyles } from '../utils/componentStyleSync';
 import { OnlineUsers, UserCursors } from './collaboration';
-import { BugReportButton } from './bug/BugReport';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { useSyncStore } from '../store/syncStore';
@@ -258,7 +250,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         addScreen, updateScreen, deleteScreen,
         addFlow, updateFlow, deleteFlow,
         addSection, updateSection, deleteSection,
-        exportData, importData, mergeImportData
+        importData
     } = useScreenDesignStore();
 
     const { user, logout } = useAuthStore();
@@ -275,11 +267,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const { projects, currentProjectId, setCurrentProject, updateProjectData, fetchProjects } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [sidebarListKey, setSidebarListKey] = useState(0); // 가져오기 후 사이드바 목록 갱신용
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-    const [importJsonText, setImportJsonText] = useState('');
-    const [importError, setImportError] = useState<string | null>(null);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
     const [isAddSpecModalOpen, setIsAddSpecModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
@@ -305,7 +293,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
     const [editingSectionName, setEditingSectionName] = useState('');
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
-    const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
 
     // Broadcast cursor position (ERD와 동일)
     const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
@@ -380,7 +367,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
         (e: React.MouseEvent, sectionId: string) => {
             if (e.button !== 0 || sectionResizeState || editingSectionId) return;
             e.stopPropagation();
-            setSelectedSectionId(sectionId);
             const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
             const sec = sections.find((s) => s.id === sectionId);
             if (!sec) return;
@@ -402,7 +388,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
         (e: React.MouseEvent, sectionId: string, handle: string) => {
             if (e.button !== 0) return;
             e.stopPropagation();
-            setSelectedSectionId(sectionId);
             const sec = sections.find((s) => s.id === sectionId);
             if (!sec) return;
             const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
@@ -467,40 +452,14 @@ const ScreenDesignCanvasContent: React.FC = () => {
             }
             updateSection(sectionResizeState.sectionId, { position: { x, y }, size: { width: w, height: h } });
         };
-        const onUp = () => {
-            const x = sec.position.x;
-            const y = sec.position.y;
-            const width = sec.size.width;
-            const height = sec.size.height;
-
-            const nodes = getNodes();
-            nodes.forEach((node) => {
-                if (node.type !== 'screen' && node.type !== 'spec') return;
-                const nw = typeof node.width === 'number' ? node.width : 200;
-                const nh = typeof node.height === 'number' ? node.height : 100;
-                const cx = node.position.x + nw / 2;
-                const cy = node.position.y + nh / 2;
-                if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
-                    updateScreen(node.id, { sectionId: sec.id });
-                    sendOperation({
-                        type: 'SCREEN_MOVE',
-                        targetId: node.id,
-                        userId: user?.id || 'anonymous',
-                        userName: user?.name || 'Anonymous',
-                        payload: { sectionId: sec.id },
-                    });
-                }
-            });
-
-            setSectionResizeState(null);
-        };
+        const onUp = () => setSectionResizeState(null);
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
         return () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [sectionResizeState, sections, updateSection, screenToFlowPosition, getNodes, updateScreen, sendOperation, user]);
+    }, [sectionResizeState, sections, updateSection, screenToFlowPosition]);
 
     const startEditingSectionName = useCallback((section: ScreenSection) => {
         setEditingSectionId(section.id);
@@ -614,11 +573,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
         return () => headers.forEach((el) => el.removeEventListener('wheel', handler, opts));
     }, [sections.length, getViewport, setViewport]);
 
-    // 진입 시 현재 프로젝트 데이터로 스토어 초기화 (로컬 + 원격 공통)
-    // 새로고침 시 state_sync 전에 빈 화면이 보이는 것을 방지: persist/fetchProjects 결과로 먼저 채운 뒤,
-    // state_sync 도착 시 서버 기준으로 다시 덮어쓴다.
+    // 진입 시 현재 프로젝트 데이터로 스토어 초기화 (로컬 프로젝트 전용)
+    // 원격 프로젝트는 state_sync 이벤트로 항상 최신 스냅샷을 받으므로, 여기서 다시 importData 하면
+    // 서버에서 내려온 화면 목록을 currentProject.data(구버전)로 덮어써 버릴 수 있다.
     useEffect(() => {
         if (!currentProjectId || !currentProject) return;
+        if (!currentProjectId.startsWith('local_')) return;
         const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
         if (data && Array.isArray(data.screens)) {
             importData({
@@ -628,13 +588,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
             });
         }
     }, [currentProjectId, currentProject?.id, importData]);
-
-    // 원격 프로젝트: 진입 시 서버에서 최신 데이터 fetch (새로고침 후 복원 시 currentProject.data 보강)
-    useEffect(() => {
-        if (currentProjectId && !currentProjectId.startsWith('local_') && typeof fetchProjects === 'function') {
-            fetchProjects();
-        }
-    }, [currentProjectId, fetchProjects]);
 
     // 연결된 컴포넌트 프로젝트 최신 데이터 확보 (스타일 동기화용)
     useEffect(() => {
@@ -676,52 +629,33 @@ const ScreenDesignCanvasContent: React.FC = () => {
     }, [screens, projects, currentProject, updateScreen, sendOperation, user]);
 
     // Auto-save to ProjectStore (로컬: 주기적 저장, 원격: 섹션 포함해 PATCH 전송)
-    // 전송 직전에 getState + projectStore fallback 사용해 state_sync로 비워진 뒤 빈 payload가 나가는 것 방지
     useEffect(() => {
         if (!currentProjectId) return;
         const timer = setTimeout(() => {
-            const { screens: s, flows: f, sections: sec } = useScreenDesignStore.getState();
-            const proj = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
-            const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
-            const payload = {
-                screens: (s?.length ? s : fallback?.screens) ?? [],
-                flows: (f?.length ? f : fallback?.flows) ?? [],
-                sections: sec ?? [],
-            };
-            updateProjectData(currentProjectId, payload);
-        }, currentProjectId.startsWith('local_') ? 800 : 400);
+            updateProjectData(currentProjectId, {
+                screens,
+                flows,
+                sections,
+            });
+        }, currentProjectId.startsWith('local_') ? 1000 : 500);
         return () => clearTimeout(timer);
     }, [screens, flows, sections, currentProjectId, updateProjectData]);
 
     // 섹션 변경은 딜레이 없이 바로 저장 (서버 프로젝트 전용, state_sync 이후에만)
-    // 전체(screens, flows, sections)를 보내고, state_sync가 스토어를 덮어쓴 경우 projectStore 데이터로 보강해 빈 payload 방지
     useEffect(() => {
         if (!currentProjectId || currentProjectId.startsWith('local_') || !isSynced) return;
-        const { screens: s, flows: f, sections: sec } = useScreenDesignStore.getState();
-        const proj = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
-        const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
-        const payload = {
-            screens: (s?.length ? s : fallback?.screens) ?? [],
-            flows: (f?.length ? f : fallback?.flows) ?? [],
-            sections: sec ?? [],
-        };
-        updateProjectData(currentProjectId, payload, true);
+        // 섹션만 즉시 PATCH해서 screenSnapshot.sections 를 바로 갱신
+        updateProjectData(currentProjectId, { sections }, true);
     }, [sections, currentProjectId, updateProjectData, isSynced]);
 
-    // Unmount 시 현재 스토어 기준으로 즉시 저장 (빈 payload 방지 위해 fallback 사용)
+    // Unmount 시 현재 스토어 기준으로 즉시 저장 (격자 이동 등 직후 새로고침해도 유지)
     useEffect(() => {
         const projectId = currentProjectId;
         return () => {
             if (projectId) {
                 const { screens: scr, flows: flw, sections: sec } = useScreenDesignStore.getState();
-                const proj = useProjectStore.getState().projects.find((p) => p.id === projectId);
-                const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
-                const payload = {
-                    screens: (scr?.length ? scr : fallback?.screens) ?? [],
-                    flows: (flw?.length ? flw : fallback?.flows) ?? [],
-                    sections: sec ?? [],
-                };
-                useProjectStore.getState().updateProjectData(projectId, payload, true);
+                const { updateProjectData: save } = useProjectStore.getState();
+                save(projectId, { screens: scr, flows: flw, sections: sec });
             }
         };
     }, [currentProjectId]);
@@ -742,72 +676,56 @@ const ScreenDesignCanvasContent: React.FC = () => {
         return { width, height };
     };
 
-    // 노드 생성 헬퍼 (변경된 노드만 새로 만들 때 사용)
-    const createNodeFromScreen = useCallback((screen: Screen, existingNode?: RFNode): RFNode => {
-        const style = computeNodeStyle(screen);
-        const node: RFNode = {
-            id: screen.id,
-            type: screen.variant === 'SPEC' ? 'spec' : 'screen',
-            position: screen.position,
-            data: {
-                screen,
-                onFlushProjectData: () => {
-                    const pid = useProjectStore.getState().currentProjectId;
-                    if (pid) {
-                        const { screens: scr, flows: flw } = useScreenDesignStore.getState();
-                        useProjectStore.getState().updateProjectData(pid, { screens: scr, flows: flw }, true);
-                    }
-                },
-            },
-            selected: existingNode?.selected,
-        };
-        if (style) {
-            node.style = style;
-            node.width = typeof style.width === 'number' ? style.width : undefined;
-            node.height = typeof style.height === 'number' ? style.height : undefined;
-        }
-        return node;
-    }, []);
-
-    // Sync screens → ReactFlow nodes (변경된 screen만 새 노드 생성, 나머지는 prev 노드 재사용 → 해당 노드만 리렌더)
     useEffect(() => {
         setNodes((prevNodes) => {
-            const prevById = new Map(prevNodes.map((n) => [n.id, n]));
             return screens.map((screen) => {
-                const prevNode = prevById.get(screen.id);
-                if (prevNode && prevNode.data?.screen === screen) return prevNode;
-                return createNodeFromScreen(screen, prevNode ?? undefined);
-            });
-        });
-    }, [screens, setNodes, createNodeFromScreen]);
-
-    // Sync flows → edges (변경된 flow만 새 edge 생성, 나머지는 prev 재사용 → 해당 엣지만 리렌더)
-    useEffect(() => {
-        setEdges((prevEdges) => {
-            const prevById = new Map(prevEdges.map((e) => [e.id, e]));
-            return flows.map((flow) => {
-                const prevEdge = prevById.get(flow.id);
-                const flowRef = (prevEdge?.data as { flow?: ScreenFlow })?.flow;
-                if (prevEdge && flowRef === flow) return prevEdge;
-                return {
-                    id: flow.id,
-                    source: flow.source,
-                    target: flow.target,
-                    sourceHandle: flow.sourceHandle,
-                    targetHandle: flow.targetHandle,
-                    label: flow.label,
-                    type: 'screenEdge',
-                    animated: true,
-                    hidden: flow.id === reconnectingEdgeId,
+                const existingNode = prevNodes.find((n) => n.id === screen.id);
+                const style = computeNodeStyle(screen);
+                const node: RFNode = {
+                    id: screen.id,
+                    type: screen.variant === 'SPEC' ? 'spec' : 'screen',
+                    position: screen.position,
                     data: {
-                        flow,
-                        color: flow.label === '팝업' ? '#f59e0b' : // Yellow
-                            (flow.label === '명세서' || flow.label === '명세서 연결') ? '#10b981' : // Green
-                                '#2c3e7c' // Blue (default/paging)
+                        screen,
+                        onFlushProjectData: () => {
+                            const pid = useProjectStore.getState().currentProjectId;
+                            if (pid) {
+                                const { screens: scr, flows: flw } = useScreenDesignStore.getState();
+                                useProjectStore.getState().updateProjectData(pid, { screens: scr, flows: flw }, true);
+                            }
+                        },
                     },
+                    selected: existingNode?.selected,
                 };
+                if (style) {
+                    node.style = style;
+                    node.width = typeof style.width === 'number' ? style.width : undefined;
+                    node.height = typeof style.height === 'number' ? style.height : undefined;
+                }
+                return node;
             });
         });
+    }, [screens, setNodes]);
+
+    useEffect(() => {
+        setEdges(
+            flows.map((flow) => ({
+                id: flow.id,
+                source: flow.source,
+                target: flow.target,
+                sourceHandle: flow.sourceHandle,
+                targetHandle: flow.targetHandle,
+                label: flow.label,
+                type: 'screenEdge',
+                animated: true,
+                hidden: flow.id === reconnectingEdgeId,
+                data: {
+                    color: flow.label === '팝업' ? '#f59e0b' : // Yellow
+                        (flow.label === '명세서' || flow.label === '명세서 연결') ? '#10b981' : // Green
+                            '#2c3e7c' // Blue (default/paging)
+                },
+            }))
+        );
     }, [flows, setEdges, reconnectingEdgeId]);
 
     // ── Auto-update Paging Labels ──────────────────────────────────
@@ -897,27 +815,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
     // Listen for initial Sync from Server
     useEffect(() => {
         const handleSync = (e: CustomEvent) => {
-            const { screens: syncScreens, flows: syncFlows } = e.detail;
-            const syncSections = (e.detail as any).sections;
-            const hasSyncScreens = Array.isArray(syncScreens) && syncScreens.length > 0;
-            const local = useScreenDesignStore.getState();
-            const proj = useProjectStore.getState().projects.find((p) => p.id === useProjectStore.getState().currentProjectId);
-            const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
-            const localHasScreens = (local.screens?.length ?? fallback?.screens?.length) > 0;
+            const { screens, flows } = e.detail;
+            // Always import if data is provided, even if empty
+            if (screens || flows) {
+                const localScreens = useScreenDesignStore.getState().screens || [];
 
-            // 서버 sync가 빈 화면인데 로컬/프로젝트에 화면이 있으면 빈 sync로 덮어쓰지 않음 (가져오기 후 섹션 추가·state_sync 시 데이터 유지)
-            if (!hasSyncScreens && localHasScreens) {
-                importData({
-                    screens: local.screens?.length ? local.screens : (fallback?.screens ?? []),
-                    flows: local.flows?.length ? local.flows : (fallback?.flows ?? []),
-                    sections: Array.isArray(syncSections) && syncSections.length > 0 ? syncSections : (local.sections ?? fallback?.sections ?? []),
-                });
-                return;
-            }
-            if (syncScreens || syncFlows) {
-                const localScreens = local.screens || [];
-
-                const mergedScreens = (syncScreens || []).map((syncScr: any) => {
+                // sync 데이터와 로컬 데이터 병합: 로컬에 guideLines 등이 더 많으면 보존
+                const mergedScreens = (screens || []).map((syncScr: any) => {
                     const localScr = localScreens.find((ls: any) => ls.id === syncScr.id);
                     if (!localScr) return syncScr;
                     const merged: any = { ...syncScr };
@@ -934,7 +838,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     return merged;
                 });
 
-                importData({ screens: mergedScreens, flows: syncFlows || [], sections: Array.isArray(syncSections) ? syncSections : [] });
+                const syncSections = (e.detail as any).sections;
+                importData({ screens: mergedScreens, flows: flows || [], sections: Array.isArray(syncSections) ? syncSections : [] });
             }
         };
         window.addEventListener('erd:state_sync', handleSync as EventListener);
@@ -948,7 +853,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
             if (op.type.startsWith('SCREEN_')) {
                 if (op.type === 'SCREEN_CREATE') addScreen(op.payload as any);
-                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE' || op.type === 'SCREEN_DRAW_DELETE') {
+                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') {
                     setLastRemoteUpdateScreenId(op.targetId);
                     updateScreen(op.targetId, op.payload as any);
                 }
@@ -987,16 +892,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                         if (window.confirm(confirmMsg)) {
                             selectedNodes.forEach(node => {
-                                const screenToRestore = screens.find(s => s.id === node.id);
+                                deleteScreen(node.id);
+
                                 sendOperation({
                                     type: 'SCREEN_DELETE',
                                     targetId: node.id,
                                     userId: user?.id || 'anonymous',
                                     userName: user?.name || 'Anonymous',
-                                    payload: {},
-                                    previousState: screenToRestore ? (screenToRestore as unknown as Record<string, unknown>) : undefined,
+                                    payload: {}
                                 });
-                                deleteScreen(node.id);
                             });
                         }
                     }
@@ -1004,16 +908,14 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     if (selectedEdges.length > 0) {
                         if (window.confirm(`${selectedEdges.length}개의 연결을 삭제하시겠습니까?`)) {
                             selectedEdges.forEach(edge => {
-                                const flowToRestore = flows.find(f => f.id === edge.id);
+                                deleteFlow(edge.id);
                                 sendOperation({
                                     type: 'SCREEN_FLOW_DELETE',
                                     targetId: edge.id,
                                     userId: user?.id || 'anonymous',
                                     userName: user?.name || 'Anonymous',
-                                    payload: {},
-                                    previousState: flowToRestore ? (flowToRestore as unknown as Record<string, unknown>) : undefined,
+                                    payload: {}
                                 });
-                                deleteFlow(edge.id);
                             });
                         }
                     }
@@ -1023,7 +925,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [deleteScreen, deleteFlow, getNodes, edges, screens, flows, user, sendOperation]);
+    }, [deleteScreen, deleteFlow, getNodes, edges, user, sendOperation]);
 
     const onConnect = useCallback((params: any) => {
         if (params.source === params.target) return;
@@ -1065,24 +967,16 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     .filter(line => line.startsWith('•'))
                     .map(line => line.substring(1).trim());
 
-                const linkedErdProjects = currentProject?.linkedErdProjectIds?.length
-                    ? projects.filter(p => currentProject.linkedErdProjectIds!.includes(p.id))
-                    : currentProject?.linkedErdProjectId
-                        ? projects.filter(p => p.id === currentProject.linkedErdProjectId)
-                        : [];
+                const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
+                const erdData = linkedErdProject?.data as { entities?: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] }[] } | undefined;
 
-                if (tableNames.length > 0 && linkedErdProjects.length > 0) {
+                if (tableNames.length > 0 && erdData?.entities) {
                     const existingSpecs = specScreen.specs || [];
                     const existingControlNames = new Set(existingSpecs.map(s => s.controlName));
                     const newSpecs: any[] = [];
 
                     tableNames.forEach(tableName => {
-                        let entity: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] } | undefined;
-                        for (const erdProj of linkedErdProjects) {
-                            const erdData = erdProj?.data as { entities?: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] }[] } | undefined;
-                            entity = erdData?.entities?.find((e: { name: string }) => e.name === tableName);
-                            if (entity) break;
-                        }
+                        const entity = erdData.entities!.find((e: { name: string }) => e.name === tableName);
                         if (entity) {
                             entity.attributes.forEach((attr: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }) => {
                                 if (!existingControlNames.has(attr.name)) {
@@ -1251,15 +1145,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
         setIsAddScreenModalOpen(true);
     }, []);
 
-    const getViewportCenterFlowPosition = useCallback((): { x: number; y: number } => {
-        const wrapper = flowWrapper.current;
-        if (!wrapper) return { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 };
-        const rect = wrapper.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        return screenToFlowPosition({ x: centerX, y: centerY });
-    }, [screenToFlowPosition]);
-
     const handleAddScreenConfirm = useCallback((pageSize: PageSizeOption, pageOrientation: PageOrientation) => {
         const baseName = '새 화면';
         const existingNames = new Set(screens.map(s => s.name));
@@ -1282,7 +1167,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
             pageOrientation: pageOrientation || 'portrait',
         } as Screen);
 
-        const viewportCenter = getViewportCenterFlowPosition();
         const newScreen: Screen = {
             id: `screen_${Date.now()}`,
             systemName: currentProject?.name || '',
@@ -1296,7 +1180,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             initialSettings: '',
             functionDetails: '',
             relatedTables: '',
-            position: viewportCenter,
+            position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
             fields: [],
             isLocked: true,
             pageSize,
@@ -1313,7 +1197,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             userName: user?.name || 'Anonymous',
             payload: newScreen as unknown as Record<string, unknown>
         });
-    }, [screens, addScreen, currentProject, user, sendOperation, getViewportCenterFlowPosition]);
+    }, [screens, addScreen, currentProject, user, sendOperation]);
 
     const handleAddSpecClick = useCallback(() => {
         setIsAddSpecModalOpen(true);
@@ -1341,7 +1225,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
             pageOrientation: pageOrientation || 'portrait',
         } as Screen);
 
-        const viewportCenter = getViewportCenterFlowPosition();
         const newScreen: Screen = {
             id: `spec_${Date.now()}`,
             systemName: currentProject?.name || '',
@@ -1355,7 +1238,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             initialSettings: '',
             functionDetails: '',
             relatedTables: '',
-            position: viewportCenter,
+            position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
             fields: [],
             variant: 'SPEC',
             specs: [],
@@ -1374,7 +1257,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             userName: user?.name || 'Anonymous',
             payload: newScreen as unknown as Record<string, unknown>
         });
-    }, [screens, addScreen, currentProject, user, sendOperation, getViewportCenterFlowPosition]);
+    }, [screens, addScreen, currentProject, user, sendOperation]);
 
     const onNodeDragStop = useCallback(
         (_: React.MouseEvent, node: RFNode) => {
@@ -1608,528 +1491,421 @@ const ScreenDesignCanvasContent: React.FC = () => {
     return (
         <ScreenDesignUndoRedoProvider>
             <RecentTextColorsProvider>
-                <RecentStyleColorsProvider>
-                    <ExportModeContext.Provider value={isExporting}>
-                        <div className="flex w-full h-screen overflow-hidden bg-gray-50">
-                            <div className="relative flex h-full min-w-0">
-                                <div
-                                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
-                                >
-                                    <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
-                                        <ScreenSidebar key={`sidebar-${sidebarListKey}`} screens={screens} sections={sections} />
-                                    </div>
-                                </div>
+            <RecentStyleColorsProvider>
+            <ExportModeContext.Provider value={isExporting}>
+                <div className="flex w-full h-screen overflow-hidden bg-gray-50">
+                    <div className="relative flex h-full min-w-0">
+                        <div
+                            className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
+                        >
+                            <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
+                                <ScreenSidebar />
+                            </div>
+                        </div>
 
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-violet-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'}`}
+                            title={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
+                        >
+                            {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                    </div>
+
+                    <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
+                        <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
                                 <button
-                                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                                    className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-violet-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'}`}
-                                    title={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
+                                    onClick={() => setCurrentProject(null)}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                                 >
-                                    {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                                    <Home size={16} className="text-violet-500 shrink-0" />
+                                </button>
+                            </PremiumTooltip>
+                            <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                            <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
+                                <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
+                                <button
+                                    onClick={async () => {
+                                        if (currentProject?.id) {
+                                            const success = await copyToClipboard(currentProject.id);
+                                            if (success) {
+                                                alert('프로젝트 ID가 복사되었습니다: ' + currentProject.id);
+                                            } else {
+                                                alert('복사에 실패했습니다. 직접 복사해주세요: ' + currentProject.id);
+                                            }
+                                        }
+                                    }}
+                                    className="text-xs font-mono font-bold text-gray-700 hover:text-violet-600 transition-colors text-left truncate max-w-[140px] sm:max-w-[180px]"
+                                >
+                                    {currentProject?.id}
                                 </button>
                             </div>
 
-                            <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
-                                <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
-                                        <button
-                                            onClick={() => setCurrentProject(null)}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                                        >
-                                            <Home size={16} className="text-violet-500 shrink-0" />
-                                        </button>
-                                    </PremiumTooltip>
-                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                                    <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
-                                        <button
-                                            onClick={async () => {
-                                                if (currentProject?.id) {
-                                                    const success = await copyToClipboard(currentProject.id);
-                                                    if (success) {
-                                                        alert('프로젝트 ID가 복사되었습니다: ' + currentProject.id);
-                                                    } else {
-                                                        alert('복사에 실패했습니다. 직접 복사해주세요: ' + currentProject.id);
-                                                    }
-                                                }
-                                            }}
-                                            className="text-xs font-mono font-bold text-gray-700 hover:text-violet-600 transition-colors text-left truncate max-w-[140px] sm:max-w-[180px]"
-                                        >
-                                            {currentProject?.id}
-                                        </button>
-                                    </div>
-
-                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="화면 추가">
-                                        <button
-                                            onClick={handleAddScreenClick}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                                        >
-                                            <Plus size={16} className="shrink-0" />
-                                            <span className="whitespace-nowrap">화면 추가</span>
-                                        </button>
-                                    </PremiumTooltip>
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="명세 추가">
-                                        <button
-                                            onClick={handleAddSpecClick}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                                        >
-                                            <FileText size={16} className="shrink-0" />
-                                            <span className="whitespace-nowrap hidden sm:inline">명세 추가</span>
-                                        </button>
-                                    </PremiumTooltip>
-
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label={isSectionDrawMode ? '캔버스에서 영역을 드래그해 섹션을 만드세요' : '섹션 추가'}>
-                                        <button
-                                            onClick={() => setIsSectionDrawMode((v) => !v)}
-                                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-bold shadow-md shrink-0 ${isSectionDrawMode ? 'bg-violet-600 text-white ring-2 ring-violet-300' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}
-                                        >
-                                            <Square size={16} className="shrink-0" />
-                                            <span className="whitespace-nowrap hidden sm:inline">섹션 추가</span>
-                                        </button>
-                                    </PremiumTooltip>
-
-                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                                    <ToolbarUndoRedo />
-
-                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="내보내기">
-                                        <button
-                                            onClick={() => setIsExportModalOpen(true)}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                                        >
-                                            <Upload size={16} className="text-green-500 shrink-0" />
-                                            <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
-                                        </button>
-                                    </PremiumTooltip>
-
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="데이터 내보내기 (다른 프로젝트에 붙여넣기용)">
-                                        <button
-                                            onClick={() => {
-                                                const data = exportData();
-                                                const json = JSON.stringify(data, null, 2);
-                                                const a = document.createElement('a');
-                                                a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-                                                a.download = `screen-design-${Date.now()}.json`;
-                                                a.click();
-                                                URL.revokeObjectURL(a.href);
-                                                const countMsg = `(화면 ${data.screens?.length ?? 0}개)`;
-                                                if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-                                                    navigator.clipboard.writeText(json).then(
-                                                        () => alert(`데이터가 클립보드에 복사되었고, JSON 파일이 다운로드되었습니다. ${countMsg}`),
-                                                        () => alert(`JSON 파일이 다운로드되었습니다. ${countMsg}\n(클립보드는 HTTPS 환경에서만 사용 가능합니다.)`)
-                                                    );
-                                                } else {
-                                                    alert(`JSON 파일이 다운로드되었습니다. ${countMsg}\n다른 프로젝트에서는 가져오기 시 이 파일을 선택하면 됩니다.`);
-                                                }
-                                            }}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                                        >
-                                            <FileText size={16} className="text-blue-500 shrink-0" />
-                                            <span className="whitespace-nowrap hidden sm:inline">데이터 내보내기</span>
-                                        </button>
-                                    </PremiumTooltip>
-
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="가져오기 (다른 프로젝트에서 내보낸 데이터 붙여넣기)">
-                                        <button
-                                            onClick={() => { setIsImportModalOpen(true); setImportError(null); setImportJsonText(''); }}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                                        >
-                                            <Download size={16} className="text-violet-500 shrink-0" />
-                                            <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
-                                        </button>
-                                    </PremiumTooltip>
-
-                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                                    <div className="shrink-0">
-                                        <OnlineUsers />
-                                    </div>
-
-                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                                    {currentProject && <BugReportButton project={currentProject} />}
-
-                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-
-                                    <div className="flex items-center gap-2 px-1 shrink-0">
-                                        <div className="flex items-center gap-2 pl-2 pr-2 sm:pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100 min-w-0">
-                                            {user?.picture ? (
-                                                <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm shrink-0" />
-                                            ) : (
-                                                <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
-                                                    <UserIcon size={14} />
-                                                </div>
-                                            )}
-                                            <span className="text-sm font-bold text-gray-700 truncate max-w-[80px] sm:max-w-none">{user?.name}</span>
-                                        </div>
-                                        <PremiumTooltip placement="bottom" offsetBottom={30} label="로그아웃">
-                                            <button
-                                                onClick={() => {
-                                                    if (window.confirm('로그아웃 하시겠습니까?')) {
-                                                        setCurrentProject(null);
-                                                        logout();
-                                                    }
-                                                }}
-                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
-                                                title="로그아웃"
-                                            >
-                                                <LogOut size={18} />
-                                            </button>
-                                        </PremiumTooltip>
-                                    </div>
-                                </div>
-
-                                <ReactFlow
-                                    nodes={nodes}
-                                    edges={edges}
-                                    onNodesChange={onNodesChange}
-                                    onEdgesChange={onEdgesChange}
-                                    onNodeDragStop={onNodeDragStop}
-                                    onConnect={onConnect}
-                                    onEdgeUpdateStart={onEdgeUpdateStart}
-                                    onEdgeUpdate={onEdgeUpdate}
-                                    onEdgeUpdateEnd={onEdgeUpdateEnd}
-                                    onEdgeDoubleClick={onEdgeDoubleClick}
-                                    isValidConnection={isValidConnection}
-                                    nodeTypes={nodeTypes}
-                                    edgeTypes={edgeTypes}
-                                    connectionMode={ConnectionMode.Loose}
-                                    panOnScroll={true}
-                                    panOnScrollMode={PanOnScrollMode.Free}
-                                    noPanClassName="no-pan-scroll"
-                                    zoomOnScroll={false}
-                                    zoomOnDoubleClick={false}
-                                    zoomActivationKeyCode="Control"
-                                    minZoom={0.05}
-                                    maxZoom={4}
-                                    fitView
-                                    multiSelectionKeyCode="Shift"
-                                    selectionKeyCode="Shift"
-                                    deleteKeyCode={null}
-                                    onPaneClick={() => {
-                                        // Notify all ScreenNodes to clear selection
-                                        window.dispatchEvent(new CustomEvent('clear-screen-selection'));
-                                        setSelectedSectionId(null);
-                                    }}
-                                    onPaneMouseMove={onPaneMouseMove}
+                            <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label="화면 추가">
+                                <button
+                                    onClick={handleAddScreenClick}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
                                 >
-                                    <SectionOverlayLayer
-                                        sections={sections}
-                                        hoveredSectionId={hoveredSectionId}
-                                        setHoveredSectionId={setHoveredSectionId}
-                                        selectedSectionId={selectedSectionId}
-                                        setSelectedSectionId={setSelectedSectionId}
-                                        editingSectionId={editingSectionId}
-                                        editingSectionName={editingSectionName}
-                                        setEditingSectionName={setEditingSectionName}
-                                        setEditingSectionId={setEditingSectionId}
-                                        startEditingSectionName={startEditingSectionName}
-                                        saveSectionName={saveSectionName}
-                                        deleteSection={deleteSection}
-                                        onSectionBodyMouseDown={onSectionBodyMouseDown}
-                                        onSectionResizeMouseDown={onSectionResizeMouseDown}
-                                        sectionHeadersContainerRef={sectionHeadersContainerRef}
-                                    />
-                                    <UserCursorsLayer />
-                                    <Controls />
-                                    <MiniMap
-                                        nodeColor={() => '#8b5cf6'}
-                                        className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
-                                    />
-                                    <Background
-                                        variant={BackgroundVariant.Dots}
-                                        gap={20}
-                                        size={1.5}
-                                        color="#84878bff"
-                                    />
-                                </ReactFlow>
+                                    <Plus size={16} className="shrink-0" />
+                                    <span className="whitespace-nowrap">화면 추가</span>
+                                </button>
+                            </PremiumTooltip>
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label="명세 추가">
+                                <button
+                                    onClick={handleAddSpecClick}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                                >
+                                    <FileText size={16} className="shrink-0" />
+                                    <span className="whitespace-nowrap hidden sm:inline">명세 추가</span>
+                                </button>
+                            </PremiumTooltip>
 
-                                {/* 섹션 그리기 오버레이 (영역 지정 시에만) */}
-                                {isSectionDrawMode && (
-                                    <div
-                                        className="absolute inset-0 z-[100] cursor-crosshair"
-                                        onMouseDown={onSectionOverlayMouseDown}
-                                        onMouseMove={onSectionOverlayMouseMove}
-                                        onMouseUp={onSectionOverlayMouseUp}
-                                        onMouseLeave={onSectionOverlayMouseLeave}
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label={isSectionDrawMode ? '캔버스에서 영역을 드래그해 섹션을 만드세요' : '섹션 추가'}>
+                                <button
+                                    onClick={() => setIsSectionDrawMode((v) => !v)}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-bold shadow-md shrink-0 ${isSectionDrawMode ? 'bg-violet-600 text-white ring-2 ring-violet-300' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}
+                                >
+                                    <Square size={16} className="shrink-0" />
+                                    <span className="whitespace-nowrap hidden sm:inline">섹션 추가</span>
+                                </button>
+                            </PremiumTooltip>
+
+                            <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                            <ToolbarUndoRedo />
+
+                            <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label="내보내기">
+                                <button
+                                    onClick={() => setIsExportModalOpen(true)}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                                >
+                                    <Upload size={16} className="text-green-500 shrink-0" />
+                                    <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
+                                </button>
+                            </PremiumTooltip>
+
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label="가져오기">
+                                <button
+                                    disabled
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-400 border border-gray-200 rounded-lg text-sm font-bold shadow-sm cursor-not-allowed opacity-60 shrink-0"
+                                    title="가져오기 기능 준비중"
+                                >
+                                    <Download size={16} className="text-gray-400 shrink-0" />
+                                    <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
+                                </button>
+                            </PremiumTooltip>
+
+                            <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                            <div className="shrink-0">
+                                <OnlineUsers />
+                            </div>
+
+                            <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                            <div className="flex items-center gap-2 px-1 shrink-0">
+                                <div className="flex items-center gap-2 pl-2 pr-2 sm:pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100 min-w-0">
+                                    {user?.picture ? (
+                                        <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm shrink-0" />
+                                    ) : (
+                                        <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
+                                            <UserIcon size={14} />
+                                        </div>
+                                    )}
+                                    <span className="text-sm font-bold text-gray-700 truncate max-w-[80px] sm:max-w-none">{user?.name}</span>
+                                </div>
+                                <PremiumTooltip placement="bottom" offsetBottom={30} label="로그아웃">
+                                    <button
+                                        onClick={() => {
+                                            if (window.confirm('로그아웃 하시겠습니까?')) {
+                                                setCurrentProject(null);
+                                                logout();
+                                            }
+                                        }}
+                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95 shrink-0"
+                                        title="로그아웃"
                                     >
-                                        {sectionDrag && flowWrapper.current && (() => {
-                                            const a = flowToScreenPosition(sectionDrag.start);
-                                            const b = flowToScreenPosition(sectionDrag.current);
-                                            const r = flowWrapper.current.getBoundingClientRect();
-                                            const left = Math.min(a.x, b.x) - r.left;
-                                            const top = Math.min(a.y, b.y) - r.top;
-                                            const width = Math.max(1, Math.abs(b.x - a.x));
-                                            const height = Math.max(1, Math.abs(b.y - a.y));
-                                            return (
-                                                <div
-                                                    className="absolute border-2 border-violet-500 bg-violet-500/10 pointer-events-none"
-                                                    style={{ left, top, width, height }}
-                                                />
-                                            );
-                                        })()}
-                                    </div>
-                                )}
+                                        <LogOut size={18} />
+                                    </button>
+                                </PremiumTooltip>
+                            </div>
+                        </div>
 
-                                {/* 그리기 도구 팝업 포털 - 상단 메뉴바/사이드바(z-10001) 아래에 렌더링 */}
-                                <div id="panel-portal-root" className="fixed inset-0 z-[9000] pointer-events-none [&>*]:pointer-events-auto" aria-hidden="true" />
+                        <ReactFlow
+                            nodes={nodes}
+                            edges={edges}
+                            onNodesChange={onNodesChange}
+                            onEdgesChange={onEdgesChange}
+                            onNodeDragStop={onNodeDragStop}
+                            onConnect={onConnect}
+                            onEdgeUpdateStart={onEdgeUpdateStart}
+                            onEdgeUpdate={onEdgeUpdate}
+                            onEdgeUpdateEnd={onEdgeUpdateEnd}
+                            onEdgeDoubleClick={onEdgeDoubleClick}
+                            isValidConnection={isValidConnection}
+                            nodeTypes={nodeTypes}
+                            edgeTypes={edgeTypes}
+                            connectionMode={ConnectionMode.Loose}
+                            panOnScroll={true}
+                            panOnScrollMode={PanOnScrollMode.Free}
+                            noPanClassName="no-pan-scroll"
+                            zoomOnScroll={false}
+                            zoomOnDoubleClick={false}
+                            zoomActivationKeyCode="Control"
+                            minZoom={0.05}
+                            maxZoom={4}
+                            fitView
+                            multiSelectionKeyCode="Shift"
+                            selectionKeyCode="Shift"
+                            deleteKeyCode={null}
+                            onPaneClick={() => {
+                                // Notify all ScreenNodes to clear selection
+                                window.dispatchEvent(new CustomEvent('clear-screen-selection'));
+                            }}
+                            onPaneMouseMove={onPaneMouseMove}
+                        >
+                            <SectionOverlayLayer
+                                sections={sections}
+                                hoveredSectionId={hoveredSectionId}
+                                setHoveredSectionId={setHoveredSectionId}
+                                editingSectionId={editingSectionId}
+                                editingSectionName={editingSectionName}
+                                setEditingSectionName={setEditingSectionName}
+                                setEditingSectionId={setEditingSectionId}
+                                startEditingSectionName={startEditingSectionName}
+                                saveSectionName={saveSectionName}
+                                deleteSection={deleteSection}
+                                onSectionBodyMouseDown={onSectionBodyMouseDown}
+                                onSectionResizeMouseDown={onSectionResizeMouseDown}
+                                sectionHeadersContainerRef={sectionHeadersContainerRef}
+                            />
+                            <UserCursorsLayer />
+                            <Controls />
+                            <MiniMap
+                                nodeColor={() => '#8b5cf6'}
+                                className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
+                            />
+                            <Background
+                                variant={BackgroundVariant.Dots}
+                                gap={20}
+                                size={1.5}
+                                color="#84878bff"
+                            />
+                        </ReactFlow>
 
-                                {isExportModalOpen && (
-                                    <ScreenExportModal
-                                        screens={screens}
-                                        onExport={handleExportImage}
-                                        onClose={() => setIsExportModalOpen(false)}
-                                    />
-                                )}
+                        {/* 섹션 그리기 오버레이 (영역 지정 시에만) */}
+                        {isSectionDrawMode && (
+                            <div
+                                className="absolute inset-0 z-[100] cursor-crosshair"
+                                onMouseDown={onSectionOverlayMouseDown}
+                                onMouseMove={onSectionOverlayMouseMove}
+                                onMouseUp={onSectionOverlayMouseUp}
+                                onMouseLeave={onSectionOverlayMouseLeave}
+                            >
+                                {sectionDrag && flowWrapper.current && (() => {
+                                    const a = flowToScreenPosition(sectionDrag.start);
+                                    const b = flowToScreenPosition(sectionDrag.current);
+                                    const r = flowWrapper.current.getBoundingClientRect();
+                                    const left = Math.min(a.x, b.x) - r.left;
+                                    const top = Math.min(a.y, b.y) - r.top;
+                                    const width = Math.max(1, Math.abs(b.x - a.x));
+                                    const height = Math.max(1, Math.abs(b.y - a.y));
+                                    return (
+                                        <div
+                                            className="absolute border-2 border-violet-500 bg-violet-500/10 pointer-events-none"
+                                            style={{ left, top, width, height }}
+                                        />
+                                    );
+                                })()}
+                            </div>
+                        )}
 
-                                {isAddScreenModalOpen && (
-                                    <AddScreenModal
-                                        onConfirm={handleAddScreenConfirm}
-                                        onClose={() => setIsAddScreenModalOpen(false)}
-                                    />
-                                )}
+                        {/* 그리기 도구 팝업 포털 - 상단 메뉴바/사이드바(z-10001) 아래에 렌더링 */}
+                        <div id="panel-portal-root" className="fixed inset-0 z-[9000] pointer-events-none [&>*]:pointer-events-auto" aria-hidden="true" />
 
-                                {isAddSpecModalOpen && (
-                                    <AddScreenModal
-                                        variant="spec"
-                                        onConfirm={handleAddSpecConfirm}
-                                        onClose={() => setIsAddSpecModalOpen(false)}
-                                    />
-                                )}
+                        {isExportModalOpen && (
+                            <ScreenExportModal
+                                screens={screens}
+                                onExport={handleExportImage}
+                                onClose={() => setIsExportModalOpen(false)}
+                            />
+                        )}
 
-                                {isImportModalOpen && (
+                        {isAddScreenModalOpen && (
+                            <AddScreenModal
+                                onConfirm={handleAddScreenConfirm}
+                                onClose={() => setIsAddScreenModalOpen(false)}
+                            />
+                        )}
+
+                        {isAddSpecModalOpen && (
+                            <AddScreenModal
+                                variant="spec"
+                                onConfirm={handleAddSpecConfirm}
+                                onClose={() => setIsAddSpecModalOpen(false)}
+                            />
+                        )}
+
+                        {/* Relationship Edit Modal */}
+                        {editingFlowId && (
+                            (() => {
+                                const editingFlow = flows.find(f => f.id === editingFlowId);
+                                const sourceNode = screens.find(s => s.id === editingFlow?.source);
+                                const targetNode = screens.find(s => s.id === editingFlow?.target);
+
+                                if (!editingFlow) return null;
+
+                                return (
                                     <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
-                                        <div className="bg-white rounded-[15px] w-full max-w-2xl shadow-2xl overflow-hidden scale-in max-h-[90vh] flex flex-col">
-                                            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-                                                <h3 className="text-lg font-black text-gray-900">데이터 가져오기</h3>
-                                                <button onClick={() => { setIsImportModalOpen(false); setImportError(null); }} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
+                                        <div className="bg-white rounded-[15px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
+                                            {/* Header */}
+                                            <div className="px-8 py-6 flex items-center justify-between border-b border-gray-100">
+                                                <h3 className="text-xl font-black text-gray-900">관계 편집</h3>
+                                                <button
+                                                    onClick={() => setEditingFlowId(null)}
+                                                    className="p-2 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
+                                                >
                                                     <X size={20} />
                                                 </button>
                                             </div>
-                                            <p className="px-6 py-2 text-sm text-gray-500 shrink-0">
-                                                다른 화면 설계 프로젝트에서 <strong>데이터 내보내기</strong>로 저장한 JSON을 붙여넣거나 파일을 선택하세요. 기존 데이터에 추가됩니다.
-                                            </p>
-                                            {importError && (
-                                                <div className="mx-6 mb-2 p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium shrink-0">{importError}</div>
-                                            )}
-                                            <div className="px-6 py-2 flex-1 min-h-0 flex flex-col">
-                                                <textarea
-                                                    value={importJsonText}
-                                                    onChange={(e) => { setImportJsonText(e.target.value); setImportError(null); }}
-                                                    placeholder='{"screens":[...],"flows":[...],"sections":[...]}'
-                                                    className="flex-1 min-h-[200px] w-full p-4 border border-gray-200 rounded-xl font-mono text-sm resize-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
-                                                />
-                                                <div className="flex items-center gap-3 mt-3 shrink-0">
-                                                    <label className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-bold text-gray-700 cursor-pointer transition-colors">
-                                                        <Download size={16} />
-                                                        파일 선택
+
+                                            <div className="p-8">
+                                                {/* Connection Info */}
+                                                <div className="bg-blue-50/50 rounded-2xl p-5 border border-blue-100 mb-8">
+                                                    <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">연결 정보</span>
+                                                    <div className="flex items-center gap-3 text-sm font-black text-gray-700">
+                                                        <span className="truncate max-w-[140px]">{sourceNode?.name || 'Unknown'}</span>
+                                                        <ArrowLeft size={14} className="text-gray-400 rotate-180" />
+                                                        <span className="truncate max-w-[140px]">{targetNode?.name || 'Unknown'}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Relationship Type Options */}
+                                                <div className="space-y-3">
+                                                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">관계 유형</span>
+
+                                                    {[
+                                                        { id: '페이징', label: '페이징', desc: '페이지 이동' },
+                                                        { id: '팝업', label: '팝업', desc: '팝업/모달 호출' },
+                                                        { id: '명세서 연결', label: '명세서 연결', desc: '화면-명세 연결' }
+                                                    ].map((opt) => (
+                                                        <label
+                                                            key={opt.id}
+                                                            className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${editingFlow.label === opt.id
+                                                                ? 'border-blue-500 bg-blue-50/30'
+                                                                : 'border-gray-100 hover:border-blue-200'
+                                                                }`}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${editingFlow.label === opt.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                                                                    }`}>
+                                                                    {editingFlow.label === opt.id && <div className="w-2 h-2 bg-white rounded-full" />}
+                                                                </div>
+                                                                <span className="text-sm font-black text-gray-800">{opt.label}</span>
+                                                            </div>
+                                                            <span className="text-[11px] font-bold text-gray-400">{opt.desc}</span>
+                                                            <input
+                                                                type="radio"
+                                                                className="hidden"
+                                                                name="relType"
+                                                                checked={editingFlow.label === opt.id}
+                                                                onChange={() => {
+                                                                    updateFlow(editingFlow.id, { label: opt.id });
+                                                                    sendOperation({
+                                                                        type: 'SCREEN_FLOW_UPDATE',
+                                                                        targetId: editingFlow.id,
+                                                                        userId: user?.id || 'anonymous',
+                                                                        userName: user?.name || 'Anonymous',
+                                                                        payload: { label: opt.id }
+                                                                    });
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    ))}
+
+                                                    {/* Custom Input */}
+                                                    <div className="mt-4">
                                                         <input
-                                                            type="file"
-                                                            accept=".json"
-                                                            className="sr-only"
+                                                            type="text"
+                                                            value={flowLabelComposing !== null ? flowLabelComposing : (editingFlow.label || '')}
                                                             onChange={(e) => {
-                                                                const f = e.target.files?.[0];
-                                                                e.target.value = '';
-                                                                if (!f) return;
-                                                                const r = new FileReader();
-                                                                r.onload = () => { setImportJsonText(String(r.result ?? '')); setImportError(null); };
-                                                                r.readAsText(f);
-                                                            }}
-                                                        />
-                                                    </label>
-                                                    <button
-                                                        onClick={() => {
-                                                            setImportError(null);
-                                                            try {
-                                                                const parsed = JSON.parse(importJsonText.trim());
-                                                                const screens = Array.isArray(parsed?.screens) ? parsed.screens : [];
-                                                                const flows = Array.isArray(parsed?.flows) ? parsed.flows : [];
-                                                                const sections = Array.isArray(parsed?.sections) ? parsed.sections : [];
-                                                                if (!screens.length && !flows.length && !sections.length) {
-                                                                    setImportError('화면, 연결, 섹션 데이터가 없습니다.');
+                                                                const val = e.target.value;
+                                                                if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                                                    setFlowLabelComposing(val);
                                                                     return;
                                                                 }
-                                                                const merged = mergeImportData({ screens, flows, sections });
-                                                                if (currentProjectId) updateProjectData(currentProjectId, { screens: merged.screens, flows: merged.flows, sections: merged.sections }, true);
-                                                                setSidebarListKey((k) => k + 1);
-                                                                setIsImportModalOpen(false);
-                                                                setImportJsonText('');
-                                                                alert(`가져오기 완료. 화면 ${screens.length}개, 연결 ${flows.length}개, 섹션 ${sections.length}개가 추가되었습니다.`);
-                                                            } catch (err: any) {
-                                                                setImportError(err?.message || 'JSON 형식이 올바르지 않습니다.');
-                                                            }
-                                                        }}
-                                                        disabled={!importJsonText.trim()}
-                                                        className="px-5 py-2 bg-violet-600 text-white rounded-lg font-bold text-sm hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                                setFlowLabelComposing(null);
+                                                                updateFlow(editingFlow.id, { label: val });
+                                                                sendOperation({
+                                                                    type: 'SCREEN_FLOW_UPDATE',
+                                                                    targetId: editingFlow.id,
+                                                                    userId: user?.id || 'anonymous',
+                                                                    userName: user?.name || 'Anonymous',
+                                                                    payload: { label: val }
+                                                                });
+                                                            }}
+                                                            onCompositionEnd={(e) => {
+                                                                const val = (e.target as HTMLInputElement).value;
+                                                                setFlowLabelComposing(null);
+                                                                updateFlow(editingFlow.id, { label: val });
+                                                                sendOperation({
+                                                                    type: 'SCREEN_FLOW_UPDATE',
+                                                                    targetId: editingFlow.id,
+                                                                    userId: user?.id || 'anonymous',
+                                                                    userName: user?.name || 'Anonymous',
+                                                                    payload: { label: val }
+                                                                });
+                                                            }}
+                                                            placeholder="직접 입력..."
+                                                            className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-xl outline-none text-sm font-bold text-gray-700 transition-all"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Footer */}
+                                            <div className="px-8 py-6 bg-gray-50 flex items-center justify-between">
+                                                <button
+                                                    onClick={() => {
+                                                        if (window.confirm('정말로 이 관계를 삭제하시겠습니까?')) {
+                                                            deleteFlow(editingFlow.id);
+                                                            sendOperation({
+                                                                type: 'SCREEN_FLOW_DELETE',
+                                                                targetId: editingFlow.id,
+                                                                userId: user?.id || 'anonymous',
+                                                                userName: user?.name || 'Anonymous',
+                                                                payload: {}
+                                                            });
+                                                            setEditingFlowId(null);
+                                                        }
+                                                    }}
+                                                    className="px-4 py-2 text-sm bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 transition-all font-semibold active:scale-95"
+                                                >
+                                                    관계 삭제
+                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => setEditingFlowId(null)}
+                                                        className="px-8 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
                                                     >
-                                                        가져오기
+                                                        닫기
                                                     </button>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                )}
-
-                                {/* Relationship Edit Modal */}
-                                {editingFlowId && (
-                                    (() => {
-                                        const editingFlow = flows.find(f => f.id === editingFlowId);
-                                        const sourceNode = screens.find(s => s.id === editingFlow?.source);
-                                        const targetNode = screens.find(s => s.id === editingFlow?.target);
-
-                                        if (!editingFlow) return null;
-
-                                        return (
-                                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
-                                                <div className="bg-white rounded-[15px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
-                                                    {/* Header */}
-                                                    <div className="px-8 py-6 flex items-center justify-between border-b border-gray-100">
-                                                        <h3 className="text-xl font-black text-gray-900">관계 편집</h3>
-                                                        <button
-                                                            onClick={() => setEditingFlowId(null)}
-                                                            className="p-2 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
-                                                        >
-                                                            <X size={20} />
-                                                        </button>
-                                                    </div>
-
-                                                    <div className="p-8">
-                                                        {/* Connection Info */}
-                                                        <div className="bg-blue-50/50 rounded-2xl p-5 border border-blue-100 mb-8">
-                                                            <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">연결 정보</span>
-                                                            <div className="flex items-center gap-3 text-sm font-black text-gray-700">
-                                                                <span className="truncate max-w-[140px]">{sourceNode?.name || 'Unknown'}</span>
-                                                                <ArrowLeft size={14} className="text-gray-400 rotate-180" />
-                                                                <span className="truncate max-w-[140px]">{targetNode?.name || 'Unknown'}</span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Relationship Type Options */}
-                                                        <div className="space-y-3">
-                                                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">관계 유형</span>
-
-                                                            {[
-                                                                { id: '페이징', label: '페이징', desc: '페이지 이동' },
-                                                                { id: '팝업', label: '팝업', desc: '팝업/모달 호출' },
-                                                                { id: '명세서 연결', label: '명세서 연결', desc: '화면-명세 연결' }
-                                                            ].map((opt) => (
-                                                                <label
-                                                                    key={opt.id}
-                                                                    className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${editingFlow.label === opt.id
-                                                                        ? 'border-blue-500 bg-blue-50/30'
-                                                                        : 'border-gray-100 hover:border-blue-200'
-                                                                        }`}
-                                                                >
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${editingFlow.label === opt.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
-                                                                            }`}>
-                                                                            {editingFlow.label === opt.id && <div className="w-2 h-2 bg-white rounded-full" />}
-                                                                        </div>
-                                                                        <span className="text-sm font-black text-gray-800">{opt.label}</span>
-                                                                    </div>
-                                                                    <span className="text-[11px] font-bold text-gray-400">{opt.desc}</span>
-                                                                    <input
-                                                                        type="radio"
-                                                                        className="hidden"
-                                                                        name="relType"
-                                                                        checked={editingFlow.label === opt.id}
-                                                                        onChange={() => {
-                                                                            updateFlow(editingFlow.id, { label: opt.id });
-                                                                            sendOperation({
-                                                                                type: 'SCREEN_FLOW_UPDATE',
-                                                                                targetId: editingFlow.id,
-                                                                                userId: user?.id || 'anonymous',
-                                                                                userName: user?.name || 'Anonymous',
-                                                                                payload: { label: opt.id }
-                                                                            });
-                                                                        }}
-                                                                    />
-                                                                </label>
-                                                            ))}
-
-                                                            {/* Custom Input */}
-                                                            <div className="mt-4">
-                                                                <input
-                                                                    type="text"
-                                                                    value={flowLabelComposing !== null ? flowLabelComposing : (editingFlow.label || '')}
-                                                                    onChange={(e) => {
-                                                                        const val = e.target.value;
-                                                                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-                                                                            setFlowLabelComposing(val);
-                                                                            return;
-                                                                        }
-                                                                        setFlowLabelComposing(null);
-                                                                        updateFlow(editingFlow.id, { label: val });
-                                                                        sendOperation({
-                                                                            type: 'SCREEN_FLOW_UPDATE',
-                                                                            targetId: editingFlow.id,
-                                                                            userId: user?.id || 'anonymous',
-                                                                            userName: user?.name || 'Anonymous',
-                                                                            payload: { label: val }
-                                                                        });
-                                                                    }}
-                                                                    onCompositionEnd={(e) => {
-                                                                        const val = (e.target as HTMLInputElement).value;
-                                                                        setFlowLabelComposing(null);
-                                                                        updateFlow(editingFlow.id, { label: val });
-                                                                        sendOperation({
-                                                                            type: 'SCREEN_FLOW_UPDATE',
-                                                                            targetId: editingFlow.id,
-                                                                            userId: user?.id || 'anonymous',
-                                                                            userName: user?.name || 'Anonymous',
-                                                                            payload: { label: val }
-                                                                        });
-                                                                    }}
-                                                                    placeholder="직접 입력..."
-                                                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-xl outline-none text-sm font-bold text-gray-700 transition-all"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Footer */}
-                                                    <div className="px-8 py-6 bg-gray-50 flex items-center justify-between">
-                                                        <button
-                                                            onClick={() => {
-                                                                if (window.confirm('정말로 이 관계를 삭제하시겠습니까?')) {
-                                                                    sendOperation({
-                                                                        type: 'SCREEN_FLOW_DELETE',
-                                                                        targetId: editingFlow.id,
-                                                                        userId: user?.id || 'anonymous',
-                                                                        userName: user?.name || 'Anonymous',
-                                                                        payload: {},
-                                                                        previousState: editingFlow as unknown as Record<string, unknown>,
-                                                                    });
-                                                                    deleteFlow(editingFlow.id);
-                                                                    setEditingFlowId(null);
-                                                                }
-                                                            }}
-                                                            className="px-4 py-2 text-sm bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 transition-all font-semibold active:scale-95"
-                                                        >
-                                                            관계 삭제
-                                                        </button>
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                onClick={() => setEditingFlowId(null)}
-                                                                className="px-8 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
-                                                            >
-                                                                닫기
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })()
-                                )}
-                            </div>
-                        </div>
-                    </ExportModeContext.Provider>
-                </RecentStyleColorsProvider>
+                                );
+                            })()
+                        )}
+                    </div>
+                </div>
+            </ExportModeContext.Provider>
+            </RecentStyleColorsProvider>
             </RecentTextColorsProvider>
         </ScreenDesignUndoRedoProvider>
     );

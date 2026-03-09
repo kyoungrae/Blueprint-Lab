@@ -1,10 +1,10 @@
-import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback, startTransition } from 'react';
+import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { type NodeProps, useReactFlow, useOnViewportChange, useStore as useRFStore } from 'reactflow';
+import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
 
-import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
+import { Plus, Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Combine, Split, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
 import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -18,7 +18,7 @@ import { ExportModeContext } from '../contexts/ExportModeContext';
 import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { TooltipPortalContext } from '../contexts/TooltipPortalContext';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
-import DrawTextComponent, { FONT_SIZE_OVERRIDE_EVENT } from './screenNode/DrawTextComponent';
+import DrawTextComponent from './screenNode/DrawTextComponent';
 import EditableTableCell from './screenNode/EditableTableCell';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
@@ -39,11 +39,9 @@ import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
 import CanvasRulers from './screenNode/CanvasRulers';
-import TablePanelFloating from './screenNode/TablePanelFloating';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 import { resolveFontFamilyCSS } from '../utils/fontFamily';
-import { Monitor } from 'lucide-react';
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 /** 다각형 프리셋에 따른 정규화된 꼭짓점 (0~1). [x,y] 배열 */
@@ -74,6 +72,9 @@ function getPolygonPointsForPreset(preset: PolygonPreset, left: number, top: num
     return POLYGON_PRESET_NORM[preset].map(([nx, ny]) => ({ x: left + w * nx, y: top + h * ny }));
 }
 
+
+// (ScreenHandles, DrawTextComponent, PremiumTooltip imported from ./screenNode/)
+
 /** mousedown target이 Text/SVG 등일 수 있어 Element로 안전하게 변환 */
 function getClickTargetElement(target: EventTarget | null): Element | null {
     if (!target) return null;
@@ -81,57 +82,6 @@ function getClickTargetElement(target: EventTarget | null): Element | null {
     if (target instanceof Node && target.parentElement) return target.parentElement;
     return null;
 }
-
-/** 줌아웃 임계값 — 이 줌 레벨 이하에서는 무거운 편집 UI 대신 경량 Placeholder를 렌더링한다. */
-const SCREEN_ZOOM_THRESHOLD = 0;
-const rfZoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
-
-/** 줌아웃 시 사용되는 초경량 화면 노드.
- *  5000줄짜리 전체 ScreenNode의 모든 useState/useEffect/store 구독을 건너뛴다. */
-const ScreenNodeLite: React.FC<{ screen: Screen; selected?: boolean }> = memo(({ screen, selected }) => {
-    const MIN_CANVAS_WIDTH = 794;
-    const CANVAS_WIDTH_RATIO = 0.7;
-    const FIXED_TOP_HEIGHT = 162;
-    const FIXED_TOP_HEIGHT_COMPONENT = 88;
-    const ENTITY_CANVAS_GAP = 0;
-    let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
-    if (canvasW < MIN_CANVAS_WIDTH) {
-        const scale = MIN_CANVAS_WIDTH / canvasW;
-        canvasW = MIN_CANVAS_WIDTH;
-        canvasH = Math.round(canvasH * scale);
-    }
-    const isComponent = screen.screenId?.startsWith('CMP-');
-    const entityWidth = isComponent
-        ? canvasW + ENTITY_CANVAS_GAP * 2
-        : Math.ceil((canvasW + ENTITY_CANVAS_GAP * 2) / CANVAS_WIDTH_RATIO);
-    const entityHeight = canvasH + ENTITY_CANVAS_GAP * 2 + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
-    const isLocked = screen.isLocked ?? true;
-
-    return (
-        <div
-            className="group relative overflow-visible"
-            style={{ width: entityWidth, height: entityHeight, contain: 'layout style paint' }}
-        >
-            <div
-                className={`relative h-full w-full bg-white rounded-[15px] shadow-xl border-2 flex flex-col overflow-hidden ${selected
-                    ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
-                    : isLocked
-                        ? 'border-gray-200 shadow-md'
-                        : 'border-[#2c3e7c] shadow-blue-100'
-                    }`}
-            >
-                {/* 헤더만 간략 표시 */}
-                <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[15px]">
-                    <Monitor size={16} className="flex-shrink-0 text-white/90" />
-                    <span className="font-bold text-lg flex-1 truncate">{screen.name || (isComponent ? '컴포넌트명' : '화면명')}</span>
-                </div>
-                {/* 빈 캔버스 영역 */}
-                <div className="flex-1 bg-gray-50" />
-            </div>
-            <ScreenHandles />
-        </div>
-    );
-});
 
 // ── Screen Node ─────────────────────────────────────────────
 interface ScreenNodeData {
@@ -141,27 +91,9 @@ interface ScreenNodeData {
 }
 
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
-    // ── 줌아웃 시 경량 렌더링 (store 구독·이벤트 핸들러 0개) ──
-    const rfZoom = useRFStore(rfZoomSelector);
-    if (rfZoom < SCREEN_ZOOM_THRESHOLD) {
-        return <ScreenNodeLite screen={data.screen} selected={selected} />;
-    }
-
-    // ── 줌인 시 전체 편집 UI ──
-    return <ScreenNodeFull data={data} selected={selected} />;
-};
-
-const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = memo(({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
-    const zoom = 'var(--rf-zoom, 1)';
-
-    useOnViewportChange({
-        onChange: (viewport) => {
-            document.documentElement.style.setProperty('--rf-zoom', viewport.zoom.toString());
-        }
-    });
-
+    const { zoom } = useViewport();
     const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
     const { setHandlers } = useScreenDesignUndoRedo();
     const { screen } = data;
@@ -221,29 +153,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const screenOptionsRef = useRef<HTMLDivElement>(null);
     const rightPaneRef = useRef<HTMLDivElement>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
-    const pendingSyncDrawElementsRef = useRef<DrawElement[] | null>(null);
-    const pendingSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    /** 폰트 크기만 변경 시 전체 리렌더 지연: 디바운스 후 한 번만 스토어 반영 */
-    const pendingFontSizeRef = useRef<{ elementId: string; px: number } | null>(null);
-    const pendingFontSizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const PENDING_FONT_SIZE_DEBOUNCE_MS = 380;
 
     const { projects, currentProjectId } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
-    const linkedErdProjects = React.useMemo(() => {
-        if (!currentProject) return [];
-        const ids = currentProject.linkedErdProjectIds?.length ? currentProject.linkedErdProjectIds : (currentProject.linkedErdProjectId ? [currentProject.linkedErdProjectId] : []);
-        return projects.filter(p => ids.includes(p.id));
-    }, [currentProject, projects]);
+    const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
     const linkedComponentProject = projects.find(p => p.id === currentProject?.linkedComponentProjectId);
     const erdTables = React.useMemo(() => {
-        const names = new Set<string>();
-        linkedErdProjects.forEach((erdProj) => {
-            const data = erdProj?.data as { entities?: { name: string }[] } | undefined;
-            data?.entities?.forEach((e: { name: string }) => names.add(e.name));
-        });
-        return Array.from(names).sort();
-    }, [linkedErdProjects]);
+        const data = linkedErdProject?.data as { entities?: { name: string }[] } | undefined;
+        if (!data?.entities) return [];
+        return data.entities.map((e: { name: string }) => e.name).sort();
+    }, [linkedErdProject]);
     const componentList = React.useMemo(() => {
         // 연결된 프로젝트가 COMPONENT 타입일 때만 컴포넌트 목록 사용 (화면 설계 프로젝트의 screens와 혼동 방지)
         if (linkedComponentProject?.projectType !== 'COMPONENT') return [];
@@ -278,15 +197,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (window.confirm(`화면 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
+            deleteScreen(screen.id);
             sendOperation({
                 type: 'SCREEN_DELETE',
                 targetId: screen.id,
                 userId: user?.id || 'anonymous',
                 userName: user?.name || 'Anonymous',
-                payload: {},
-                previousState: screen as unknown as Record<string, unknown>,
+                payload: {}
             });
-            deleteScreen(screen.id);
         }
     };
 
@@ -330,10 +248,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const snapStateRef = useRef<SnapState>({});
     const resizeSnapStateRef = useRef<SnapState>({});
     const [dragPreviewPositions, setDragPreviewPositions] = useState<Record<string, { x: number; y: number }> | null>(null);
-    /** rAF throttle refs — 드래그·리사이즈 중 setState 호출 빈도를 requestAnimationFrame으로 제한 */
-    const dragRafIdRef = useRef<number | undefined>(undefined);
-    const resizeRafIdRef = useRef<number | undefined>(undefined);
-    const groupResizeRafIdRef = useRef<number | undefined>(undefined);
     const [showGridPanel, setShowGridPanel] = useState(false);
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
     const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
@@ -482,7 +396,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const MAX_HISTORY = 100;
     const restoringHistoryRef = useRef(false);
 
-    const HISTORY_DEDUPE_SIZE_THRESHOLD = 50;
     const saveHistory = (elements: DrawElement[], position = screen.position, subComponents?: Screen['subComponents']) => {
         const snapshot: HistorySnapshot = {
             drawElements: elements,
@@ -490,14 +403,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             subComponents: subComponents ?? screen.subComponents,
         };
         setHistory(prev => {
-            if (prev.past.length > 0 && elements.length <= HISTORY_DEDUPE_SIZE_THRESHOLD) {
-                const last = prev.past[prev.past.length - 1];
-                if (JSON.stringify(last) === JSON.stringify(snapshot)) return prev;
+            // If the last state is the same as current, don't save
+            if (prev.past.length > 0 && JSON.stringify(prev.past[prev.past.length - 1]) === JSON.stringify(snapshot)) {
+                return prev;
             }
             const newPast = [...prev.past, snapshot].slice(-MAX_HISTORY);
             return {
                 past: newPast,
-                future: []
+                future: [] // Clear future when a new action is performed
             };
         });
     };
@@ -619,15 +532,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         return { minX, minY, maxX, maxY, centerX: (minX + maxX) / 2, topY: minY };
     }, [selectedElementIds, screen.drawElements, dragPreviewPositions]);
 
-    const isUnifiedGroupSelection = React.useMemo(() => {
-        if (selectedElementIds.length < 2) return false;
-        const elements = screen.drawElements || [];
-        const selected = elements.filter((el) => selectedElementIds.includes(el.id));
-        const firstGroupId = selected[0]?.groupId;
-        if (!firstGroupId) return false;
-        return selected.every((el) => el.groupId === firstGroupId);
-    }, [selectedElementIds, screen.drawElements]);
-
     const insertComponent = useCallback((component: Screen, subComponentId?: string) => {
         let elements: DrawElement[];
         if (subComponentId) {
@@ -673,8 +577,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 }
                 if (tableCellLockedIndices.length === 0) tableCellLockedIndices = undefined;
             }
-            const hasComponentText = false;
-            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, hasComponentText: undefined, tableCellLockedIndices };
+            const hasComponentText = (el.type === 'rect' || el.type === 'circle' || el.type === 'text') && (el.text || '').trim().length > 0;
             return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, hasComponentText: hasComponentText || undefined, tableCellLockedIndices };
         });
         newElements.forEach((el) => {
@@ -712,33 +615,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             });
         }
     }, []);
-
-    useEffect(() => {
-        return () => {
-            if (pendingFontSizeTimerRef.current) {
-                clearTimeout(pendingFontSizeTimerRef.current);
-                pendingFontSizeTimerRef.current = null;
-            }
-            if (pendingFontSizeRef.current) {
-                const pending = pendingFontSizeRef.current;
-                pendingFontSizeRef.current = null;
-                const current = getScreenById(screen.id)?.drawElements ?? [];
-                const next = current.map((el) => el.id === pending.elementId ? { ...el, fontSize: pending.px } : el);
-                update({ drawElements: next });
-                saveHistory(next);
-                sendOperation({ type: 'SCREEN_UPDATE', targetId: screen.id, userId: user?.id || 'anonymous', userName: user?.name || 'Anonymous', payload: { drawElements: next } });
-            }
-            if (pendingSyncTimerRef.current) {
-                clearTimeout(pendingSyncTimerRef.current);
-                pendingSyncTimerRef.current = null;
-            }
-            const toSend = pendingSyncDrawElementsRef.current;
-            if (toSend) {
-                pendingSyncDrawElementsRef.current = null;
-                sendOperation({ type: 'SCREEN_UPDATE', targetId: screen.id, userId: user?.id || 'anonymous', userName: user?.name || 'Anonymous', payload: { drawElements: toSend } });
-            }
-        };
-    }, [screen.id, sendOperation, user?.id, user?.name, getScreenById, update, saveHistory]);
 
     // 엔티티 이동(position)도 undo/redo 히스토리에 포함 (원격 유저의 수정은 히스토리에 넣지 않음)
     useEffect(() => {
@@ -799,7 +675,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
     const [textSelectionFromTable, setTextSelectionFromTable] = useState<{ tableId: string; cellIndex: number } | null>(null);
     const tableCellSelectionRestoreRef = useRef<{ tableId: string; cellIndex: number } | null>(null);
-
+    const [textStyleToolbarRefresh, setTextStyleToolbarRefresh] = useState(0);
     const [showFontStylePanel, setShowFontStylePanel] = useState(false);
     const [fontStylePanelPos, setFontStylePanelPos] = useState({ x: 0, y: 0 });
 
@@ -1214,165 +1090,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         dir: string, id: string
     } | null>(null);
 
-    const groupResizeStartRef = useRef<{
-        clientX: number;
-        clientY: number;
-        minX: number;
-        minY: number;
-        maxX: number;
-        maxY: number;
-        dir: string;
-        groupId: string;
-        elements: Array<{ id: string; x: number; y: number; width: number; height: number; polygonPoints?: { x: number; y: number }[]; lineX1?: number; lineY1?: number; lineX2?: number; lineY2?: number }>;
-    } | null>(null);
-
-    const handleGroupResizeStart = (groupId: string, dir: string, e: React.MouseEvent) => {
-        if (isLocked) return;
-        e.stopPropagation();
-        e.preventDefault();
-        const groupEls = drawElements.filter((el) => el.groupId === groupId);
-        if (groupEls.length === 0) return;
-        const minX = Math.min(...groupEls.map((el) => el.x));
-        const minY = Math.min(...groupEls.map((el) => el.y));
-        const maxX = Math.max(...groupEls.map((el) => el.x + el.width));
-        const maxY = Math.max(...groupEls.map((el) => el.y + el.height));
-        const elements = groupEls.map((el) => ({
-            id: el.id,
-            x: el.x,
-            y: el.y,
-            width: el.width,
-            height: el.height,
-            polygonPoints: el.polygonPoints ? el.polygonPoints.map((p) => ({ ...p })) : undefined,
-            lineX1: el.lineX1,
-            lineY1: el.lineY1,
-            lineX2: el.lineX2,
-            lineY2: el.lineY2,
-        }));
-        groupResizeStartRef.current = {
-            clientX: e.clientX,
-            clientY: e.clientY,
-            minX,
-            minY,
-            maxX,
-            maxY,
-            dir,
-            groupId,
-            elements,
-        };
-        const handleMove = (moveEvent: MouseEvent) => {
-            const ref = groupResizeStartRef.current;
-            if (!ref || !canvasRef.current) return;
-            const cRect = canvasRef.current.getBoundingClientRect();
-            const sX = canvasRef.current.clientWidth / cRect.width;
-            const sY = canvasRef.current.clientHeight / cRect.height;
-            const dx = (moveEvent.clientX - ref.clientX) * sX;
-            const dy = (moveEvent.clientY - ref.clientY) * sY;
-            let nextMinX = ref.minX;
-            let nextMinY = ref.minY;
-            let nextMaxX = ref.maxX;
-            let nextMaxY = ref.maxY;
-            const w = ref.maxX - ref.minX;
-            const h = ref.maxY - ref.minY;
-            if (dir.includes('e')) nextMaxX = ref.maxX + dx;
-            if (dir.includes('w')) nextMinX = ref.minX + dx;
-            if (dir.includes('s')) nextMaxY = ref.maxY + dy;
-            if (dir.includes('n')) nextMinY = ref.minY + dy;
-            const RESIZE_MIN = 16;
-            let newW = Math.max(RESIZE_MIN, nextMaxX - nextMinX);
-            let newH = Math.max(RESIZE_MIN, nextMaxY - nextMinY);
-            const isCorner = (dir.includes('n') || dir.includes('s')) && (dir.includes('e') || dir.includes('w'));
-            const shiftLockAspect = moveEvent.shiftKey && isCorner && h > 0;
-            if (shiftLockAspect) {
-                const aspectRatio = w / h;
-                let fitW = Math.max(newW, newH * aspectRatio);
-                let fitH = fitW / aspectRatio;
-                if (fitH < RESIZE_MIN) {
-                    fitH = RESIZE_MIN;
-                    fitW = fitH * aspectRatio;
-                }
-                if (fitW < RESIZE_MIN) {
-                    fitW = RESIZE_MIN;
-                    fitH = fitW / aspectRatio;
-                }
-                newW = fitW;
-                newH = fitH;
-                if (dir.includes('e') && dir.includes('s')) {
-                    nextMinX = ref.minX;
-                    nextMinY = ref.minY;
-                    nextMaxX = nextMinX + newW;
-                    nextMaxY = nextMinY + newH;
-                } else if (dir.includes('w') && dir.includes('s')) {
-                    nextMaxX = ref.maxX;
-                    nextMinY = ref.minY;
-                    nextMinX = nextMaxX - newW;
-                    nextMaxY = nextMinY + newH;
-                } else if (dir.includes('e') && dir.includes('n')) {
-                    nextMinX = ref.minX;
-                    nextMaxY = ref.maxY;
-                    nextMaxX = nextMinX + newW;
-                    nextMinY = nextMaxY - newH;
-                } else if (dir.includes('w') && dir.includes('n')) {
-                    nextMaxX = ref.maxX;
-                    nextMaxY = ref.maxY;
-                    nextMinX = nextMaxX - newW;
-                    nextMinY = nextMaxY - newH;
-                }
-            } else {
-                if (dir.includes('w')) nextMinX = nextMaxX - newW;
-                if (dir.includes('n')) nextMinY = nextMaxY - newH;
-            }
-            const currentElements = getScreenById(screen.id)?.drawElements || [];
-            const updated = currentElements.map((it) => {
-                const snap = ref.elements.find((s) => s.id === it.id);
-                if (!snap) return it;
-                const relX = (snap.x - ref.minX) / w;
-                const relY = (snap.y - ref.minY) / h;
-                const relW = snap.width / w;
-                const relH = snap.height / h;
-                const newX = nextMinX + relX * newW;
-                const newY = nextMinY + relY * newH;
-                const newWidth = relW * newW;
-                const newHeight = relH * newH;
-                const base = { ...it, x: newX, y: newY, width: newWidth, height: newHeight };
-                if (it.type === 'polygon' && it.polygonPoints?.length && snap.polygonPoints?.length) {
-                    base.polygonPoints = snap.polygonPoints.map((p) => ({
-                        x: nextMinX + ((p.x - ref.minX) / w) * newW,
-                        y: nextMinY + ((p.y - ref.minY) / h) * newH,
-                    }));
-                }
-                if (it.type === 'line' && snap.lineX1 != null && snap.lineY1 != null && snap.lineX2 != null && snap.lineY2 != null) {
-                    base.lineX1 = nextMinX + ((snap.lineX1 - ref.minX) / w) * newW;
-                    base.lineY1 = nextMinY + ((snap.lineY1 - ref.minY) / h) * newH;
-                    base.lineX2 = nextMinX + ((snap.lineX2 - ref.minX) / w) * newW;
-                    base.lineY2 = nextMinY + ((snap.lineY2 - ref.minY) / h) * newH;
-                }
-                return base;
-            });
-            // rAF throttle: 그룹 리사이즈 중 Zustand 업데이트를 60fps로 제한
-            if (groupResizeRafIdRef.current !== undefined) cancelAnimationFrame(groupResizeRafIdRef.current);
-            groupResizeRafIdRef.current = requestAnimationFrame(() => {
-                groupResizeRafIdRef.current = undefined;
-                update({ drawElements: updated });
-            });
-        };
-        const handleUp = () => {
-            if (groupResizeRafIdRef.current !== undefined) {
-                cancelAnimationFrame(groupResizeRafIdRef.current);
-                groupResizeRafIdRef.current = undefined;
-            }
-            if (groupResizeStartRef.current) {
-                const currentElements = getScreenById(screen.id)?.drawElements || [];
-                syncUpdate({ drawElements: currentElements });
-                saveHistory(currentElements);
-            }
-            groupResizeStartRef.current = null;
-            window.removeEventListener('mousemove', handleMove);
-            window.removeEventListener('mouseup', handleUp);
-        };
-        window.addEventListener('mousemove', handleMove);
-        window.addEventListener('mouseup', handleUp);
-    };
-
     const handleElementResizeStart = (id: string, dir: string, e: React.MouseEvent) => {
         if (isLocked) return;
         e.stopPropagation();
@@ -1577,19 +1294,10 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 }
                 return base;
             });
-            // rAF throttle: 리사이즈 중 Zustand 업데이트를 60fps로 제한
-            if (resizeRafIdRef.current !== undefined) cancelAnimationFrame(resizeRafIdRef.current);
-            resizeRafIdRef.current = requestAnimationFrame(() => {
-                resizeRafIdRef.current = undefined;
-                update({ drawElements: updated });
-            });
+            update({ drawElements: updated });
         };
 
         const handleWindowMouseUp = () => {
-            if (resizeRafIdRef.current !== undefined) {
-                cancelAnimationFrame(resizeRafIdRef.current);
-                resizeRafIdRef.current = undefined;
-            }
             if (elementResizeStartRef.current) {
                 const currentElements = getScreenById(screen.id)?.drawElements || [];
                 syncUpdate({ drawElements: currentElements });
@@ -1807,9 +1515,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         e.stopPropagation();
         const el = drawElements.find(item => item.id === id);
         if (el && (el.type === 'rect' || el.type === 'circle' || el.type === 'text')) {
-            // 텍스트 상자(type === 'text')는 컴포넌트에서 와도 항상 편집 가능. 도형(rect/circle)만 컴포넌트에 텍스트 있으면 수정 불가
-            if (el.type === 'text') setEditingTextId(id);
-            else if (!el.hasComponentText) setEditingTextId(id);
+            const hasComponentText = el.hasComponentText;
+            if (!hasComponentText) setEditingTextId(id);
         }
         // Table double-click is handled at the cell level
     };
@@ -2047,13 +1754,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     preview[el.id] = { x: el.x, y: el.y };
                 }
             });
-            // rAF throttle: 60fps로 setState 제한 (매 mousemove마다 리렌더 방지)
-            if (dragRafIdRef.current !== undefined) cancelAnimationFrame(dragRafIdRef.current);
-            dragRafIdRef.current = requestAnimationFrame(() => {
-                dragRafIdRef.current = undefined;
-                setDragPreviewPositions(preview);
-                setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
-            });
+            setDragPreviewPositions(preview);
+            setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
         }
     };
 
@@ -2138,11 +1840,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             }
             setDrawingPolygonPreset(null);
         } else if (draggingElementIds.length > 0) {
-            // 진행 중인 rAF를 먼저 취소 (commit 후 stale preview setState 방지)
-            if (dragRafIdRef.current !== undefined) {
-                cancelAnimationFrame(dragRafIdRef.current);
-                dragRafIdRef.current = undefined;
-            }
             // Finalize move: 드래그 중에는 프리뷰만 갱신하고, mouseup 시점에 한 번만 커밋
             const committedElements = dragPreviewPositions
                 ? drawElements.map((el) => {
@@ -2192,64 +1889,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         if (activeTool !== 'select') setActiveTool('select');
     };
 
-    const flushPendingFontSize = useCallback(() => {
-        const pending = pendingFontSizeRef.current;
-        if (!pending) return;
-        pendingFontSizeRef.current = null;
-        if (pendingFontSizeTimerRef.current) {
-            clearTimeout(pendingFontSizeTimerRef.current);
-            pendingFontSizeTimerRef.current = null;
-        }
-        const current = getScreenById(screen.id)?.drawElements ?? [];
-        const next = current.map((el) => el.id === pending.elementId ? { ...el, fontSize: pending.px } : el);
-        update({ drawElements: next });
-        saveHistory(next);
-        pendingSyncDrawElementsRef.current = next;
-        if (pendingSyncTimerRef.current) clearTimeout(pendingSyncTimerRef.current);
-        pendingSyncTimerRef.current = setTimeout(() => {
-            pendingSyncTimerRef.current = null;
-            const toSend = pendingSyncDrawElementsRef.current;
-            if (toSend) {
-                pendingSyncDrawElementsRef.current = null;
-                syncUpdate({ drawElements: toSend });
-            }
-        }, 100);
-    }, [screen.id, getScreenById, update, saveHistory, syncUpdate]);
-
     const updateElement = (id: string, updates: Partial<DrawElement>) => {
-        const isFontSizeOnly = Object.keys(updates).length === 1 && 'fontSize' in updates && updates.fontSize != null;
-        if (isFontSizeOnly) {
-            pendingFontSizeRef.current = { elementId: id, px: updates.fontSize! };
-            if (pendingFontSizeTimerRef.current) clearTimeout(pendingFontSizeTimerRef.current);
-            pendingFontSizeTimerRef.current = setTimeout(() => {
-                pendingFontSizeTimerRef.current = null;
-                flushPendingFontSize();
-            }, PENDING_FONT_SIZE_DEBOUNCE_MS);
-            return;
-        }
-        let elements = drawElements;
-        if (pendingFontSizeRef.current) {
-            const { elementId, px } = pendingFontSizeRef.current;
-            pendingFontSizeRef.current = null;
-            if (pendingFontSizeTimerRef.current) {
-                clearTimeout(pendingFontSizeTimerRef.current);
-                pendingFontSizeTimerRef.current = null;
-            }
-            elements = elements.map((el) => el.id === elementId ? { ...el, fontSize: px } : el);
-        }
-        const nextElements = elements.map((el) => el.id === id ? { ...el, ...updates } : el);
+        const nextElements = drawElements.map(el => el.id === id ? { ...el, ...updates } : el);
         update({ drawElements: nextElements });
+        syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
-        pendingSyncDrawElementsRef.current = nextElements;
-        if (pendingSyncTimerRef.current) clearTimeout(pendingSyncTimerRef.current);
-        pendingSyncTimerRef.current = setTimeout(() => {
-            pendingSyncTimerRef.current = null;
-            const toSend = pendingSyncDrawElementsRef.current;
-            if (toSend) {
-                pendingSyncDrawElementsRef.current = null;
-                syncUpdate({ drawElements: toSend });
-            }
-        }, 100);
     };
 
     const handlePolygonVertexDragStart = (id: string, pointIndex: number, e: React.MouseEvent) => {
@@ -2368,15 +2012,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             }))
             .filter((sub) => sub.elementIds.length > 0);
 
-        sendOperation({
-            type: 'SCREEN_DRAW_DELETE',
-            targetId: screen.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: { drawElements: nextElements, subComponents: nextSubComponents },
-            previousState: { drawElements: drawElements },
-        });
         update({ drawElements: nextElements, subComponents: nextSubComponents });
+        syncUpdate({ drawElements: nextElements, subComponents: nextSubComponents });
         saveHistory(nextElements, screen.position, nextSubComponents);
         setSelectedElementIds([]);
     };
@@ -3284,7 +2921,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 style={{
                                                                     left: screenPos.x,
                                                                     top: screenPos.y,
-                                                                    transform: `scale(calc(0.85 * ${zoom}))`,
+                                                                    transform: `scale(${0.85 * zoom})`,
                                                                 }}
                                                                 onMouseLeave={() => setTablePickerHover(null)}
                                                             >
@@ -3507,7 +3144,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     style={{
                                                                         left: screenPos.x,
                                                                         top: screenPos.y,
-                                                                        transform: `scale(calc(0.85 * ${zoom}))`,
+                                                                        transform: `scale(${0.85 * zoom})`,
                                                                     }}
                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                 >
@@ -3567,7 +3204,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     style={{
                                                                         left: screenPos.x,
                                                                         top: screenPos.y,
-                                                                        transform: `scale(calc(0.85 * ${zoom}))`,
+                                                                        transform: `scale(${0.85 * zoom})`,
                                                                     }}
                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                 >
@@ -3751,7 +3388,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     style={{
                                                                         left: screenPos.x,
                                                                         top: screenPos.y,
-                                                                        transform: `scale(calc(0.85 * ${zoom}))`,
+                                                                        transform: `scale(${0.85 * zoom})`,
                                                                     }}
                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                 >
@@ -4207,12 +3844,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             const displayFontSize = fromTable && tableCellFontSize != null
                                 ? tableCellFontSize
                                 : (getFontSizeFromSelection() ?? defaultFontSize);
-                            const onBeforeFontSizeApply = (elementId: string, px: number) => {
-                                window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId, px } }));
-                                requestAnimationFrame(() => {
-                                    startTransition(() => updateElement(elementId, { fontSize: px }));
-                                });
-                            };
                             const applyToSelection = (fn: () => void): boolean => {
                                 const sel = window.getSelection();
                                 if (sel && !sel.isCollapsed) {
@@ -4259,7 +3890,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                     style={{
                                         left: screenPos.x,
                                         top: screenPos.y,
-                                        transform: `scale(calc(0.9 * ${zoom}))`,
+                                        transform: `scale(${0.9 * zoom})`,
                                         transformOrigin: 'top left',
                                     }}
                                     onMouseDown={(e) => {
@@ -4281,15 +3912,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         </button>
                                     </div>
                                     <TextStyleToolbar
+                                        key={`toolbar-${textStyleToolbarRefresh}`}
                                         el={el}
                                         fromTable={fromTable}
                                         defaultColor={defaultColor}
                                         defaultFontSize={defaultFontSize}
                                         displayFontSize={displayFontSize}
-                                        onBeforeFontSizeApply={onBeforeFontSizeApply}
                                         updateElement={updateElement}
                                         applyToSelection={applyToSelection}
                                         applyFontSizePx={applyFontSizePx}
+                                        setTextStyleToolbarRefresh={setTextStyleToolbarRefresh}
                                         drawElements={drawElements}
                                         update={update}
                                         syncUpdate={syncUpdate}
@@ -4397,49 +4029,49 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             style={commonStyle}
                                                                             onMouseDown={(e) => handleElementMouseDown(el.id, e)}
                                                                             onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
-                                                                            className={`group-canvas-element ${isSelected && !(isUnifiedGroupSelection && selectedElementIds.length > 1) ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
+                                                                            className={`group-canvas-element ${isSelected ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
                                                                             data-element-id={el.id}
                                                                         >
                                                                             {el.type === 'rect' && (() => {
                                                                                 const isCompact = (el.width ?? 0) < 48 && (el.height ?? 0) < 48;
                                                                                 return (
-                                                                                    <div className={`w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
-                                                                                        } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
-                                                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius ?? 0 }}>
-                                                                                        {(el.text || editingTextId === el.id) && (
-                                                                                            <DrawTextComponent
-                                                                                                element={el}
-                                                                                                isLocked={isLocked}
-                                                                                                isSelected={isSelected}
-                                                                                                onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                                                onSelectionChange={handleElementTextSelectionChange}
-                                                                                                autoFocus={editingTextId === el.id}
-                                                                                                className={isCompact ? 'px-0' : 'px-2'}
-                                                                                                compact={isCompact}
-                                                                                            />
-                                                                                        )}
-                                                                                    </div>
+                                                                                <div className={`w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
+                                                                                    } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
+                                                                                    }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius ?? 0 }}>
+                                                                                    {(el.text || editingTextId === el.id) && (
+                                                                                        <DrawTextComponent
+                                                                                            element={el}
+                                                                                            isLocked={isLocked}
+                                                                                            isSelected={isSelected}
+                                                                                            onUpdate={(updates) => updateElement(el.id, updates)}
+                                                                                            onSelectionChange={handleElementTextSelectionChange}
+                                                                                            autoFocus={editingTextId === el.id}
+                                                                                            className={isCompact ? 'px-0' : 'px-2'}
+                                                                                            compact={isCompact}
+                                                                                        />
+                                                                                    )}
+                                                                                </div>
                                                                                 );
                                                                             })()}
                                                                             {el.type === 'circle' && (() => {
                                                                                 const isCompact = (el.width ?? 0) < 48 && (el.height ?? 0) < 48;
                                                                                 return (
-                                                                                    <div className={`w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
-                                                                                        } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
-                                                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius !== undefined ? el.borderRadius : '50%' }}>
-                                                                                        {(el.text || editingTextId === el.id) && (
-                                                                                            <DrawTextComponent
-                                                                                                element={el}
-                                                                                                isLocked={isLocked}
-                                                                                                isSelected={isSelected}
-                                                                                                onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                                                onSelectionChange={handleElementTextSelectionChange}
-                                                                                                autoFocus={editingTextId === el.id}
-                                                                                                className={isCompact ? 'px-0' : 'px-4'}
-                                                                                                compact={isCompact}
-                                                                                            />
-                                                                                        )}
-                                                                                    </div>
+                                                                                <div className={`w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
+                                                                                    } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
+                                                                                    }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius !== undefined ? el.borderRadius : '50%' }}>
+                                                                                    {(el.text || editingTextId === el.id) && (
+                                                                                        <DrawTextComponent
+                                                                                            element={el}
+                                                                                            isLocked={isLocked}
+                                                                                            isSelected={isSelected}
+                                                                                            onUpdate={(updates) => updateElement(el.id, updates)}
+                                                                                            onSelectionChange={handleElementTextSelectionChange}
+                                                                                            autoFocus={editingTextId === el.id}
+                                                                                            className={isCompact ? 'px-0' : 'px-4'}
+                                                                                            compact={isCompact}
+                                                                                        />
+                                                                                    )}
+                                                                                </div>
                                                                                 );
                                                                             })()}
                                                                             {el.type === 'polygon' && (() => {
@@ -4535,12 +4167,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                         userSelect: editingTableId === el.id ? 'none' : 'auto',
                                                                                         borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
                                                                                     }}
-                                                                                    onMouseDown={(e) => {
-                                                                                        // 표 편집 모드(editingTableId === el.id)일 때는 셀/텍스트를 잡아도 엔티티(노드)가 드래그되지 않도록 막아준다.
-                                                                                        if (editingTableId === el.id) {
-                                                                                            e.stopPropagation();
-                                                                                        }
-                                                                                    }}
                                                                                     onDoubleClick={(e) => {
                                                                                         if (isLocked) return;
                                                                                         e.stopPropagation();
@@ -4597,7 +4223,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                                 const cellColor = el.tableCellColors?.[cellIndex];
                                                                                                 const cellStyle = el.tableCellStyles?.[cellIndex] || {};
                                                                                                 const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
-                                                                                                const hasComponentText = !!(el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex));
+                                                                                                const hasComponentText = (el.tableCellLockedIndices?.includes(cellIndex)) ?? false;
                                                                                                 const isCellEditing = !hasComponentText && editingTableId === el.id && editingCellIndex === cellIndex;
                                                                                                 const isHeaderRow = r === 0;
 
@@ -4709,7 +4335,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                                         onDoubleClick={(e) => {
                                                                                                             if (isLocked) return;
                                                                                                             if (editingTableId !== el.id) return;
-                                                                                                            if (el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex)) return;
+                                                                                                            if (el.tableCellLockedIndices?.includes(cellIndex)) return;
                                                                                                             e.stopPropagation();
                                                                                                             setEditingCellIndex(cellIndex);
                                                                                                         }}
@@ -4748,7 +4374,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                                                     if (e.key === 'Tab') {
                                                                                                                         e.preventDefault();
                                                                                                                         syncUpdate({ drawElements });
-                                                                                                                        const locked = el.fromComponentId ? (el.tableCellLockedIndices ?? []) : [];
+                                                                                                                        const locked = el.tableCellLockedIndices ?? [];
                                                                                                                         const findNext = (start: number, dir: 1 | -1) => {
                                                                                                                             for (let k = 1; k <= totalCells; k++) {
                                                                                                                                 const i = (start + k * dir + totalCells) % totalCells;
@@ -4772,7 +4398,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                                                     fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
                                                                                                                     color: cellStyle.color ?? el.color ?? '#333333',
                                                                                                                 }}
-                                                                                                            />
+                                                                            />
                                                                                                         ) : (
                                                                                                             <div
                                                                                                                 dir="ltr"
@@ -5036,7 +4662,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                     )}
                                                                                 </div>
                                                                             )}
-                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && !isUnifiedGroupSelection && (
+                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && (
                                                                                 <button
                                                                                     onClick={(e) => {
                                                                                         e.stopPropagation();
@@ -5049,8 +4675,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                 </button>
                                                                             )}
 
-                                                                            {/* Resize Handles (단일 선택 시에만; 그룹일 때는 그룹 아웃라인 쪽에서 처리) */}
-                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && !isUnifiedGroupSelection && !(el.type === 'image' && imageCropMode) && (
+                                                                            {/* Resize Handles (이미지 직접 크롭 모드에서는 ImageElement 크롭 핸들 사용) / 선은 끝점 핸들만, 다각형은 8방+꼭짓점 */}
+                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && !(el.type === 'image' && imageCropMode) && (
                                                                                 <>
                                                                                     {el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null ? (
                                                                                         <>
@@ -5083,32 +4709,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         </div>
                                                                     );
                                                                 })}
-
-                                                                {/* 그룹 단일 아웃라인 + 리사이즈 핸들 (2개 이상 그룹 선택 시 하나의 박스로 표시, 리사이즈 시 그룹 전체 스케일) */}
-                                                                {isUnifiedGroupSelection && selectionBounds && !isLocked && (() => {
-                                                                    const gid = drawElements.find((el) => selectedElementIds.includes(el.id))?.groupId;
-                                                                    if (!gid) return null;
-                                                                    const left = selectionBounds.minX;
-                                                                    const top = selectionBounds.minY;
-                                                                    const width = selectionBounds.maxX - selectionBounds.minX;
-                                                                    const height = selectionBounds.maxY - selectionBounds.minY;
-                                                                    return (
-                                                                        <div
-                                                                            className="absolute pointer-events-none border-2 border-blue-500 z-[125]"
-                                                                            style={{ left, top, width, height }}
-                                                                        >
-                                                                            <div className="absolute inset-0 pointer-events-none" />
-                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-nw-resize pointer-events-auto z-[130]" />
-                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-ne-resize pointer-events-auto z-[130]" />
-                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-sw-resize pointer-events-auto z-[130]" />
-                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-se-resize pointer-events-auto z-[130]" />
-                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-n-resize pointer-events-auto z-[130]" />
-                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-s-resize pointer-events-auto z-[130]" />
-                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-w-resize pointer-events-auto z-[130]" />
-                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-e-resize pointer-events-auto z-[130]" />
-                                                                        </div>
-                                                                    );
-                                                                })()}
 
                                                                 {/* 부분 컴포넌트화 버튼 (컴포넌트 캔버스, 선택 시 상단 - 등록/해제 모드 토글) */}
                                                                 {screen.screenId?.startsWith('CMP-') && selectionBounds && selectedElementIds.length >= 1 && !isLocked && (() => {
@@ -5423,7 +5023,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                     tableListRef={tableListRef}
                                     isTableListOpen={isTableListOpen}
                                     setIsTableListOpen={setIsTableListOpen}
-                                    linkedErdProject={linkedErdProjects[0]}
+                                    linkedErdProject={linkedErdProject}
                                     erdTables={erdTables}
                                     drawElements={drawElements}
                                     zoom={zoom}
@@ -5475,40 +5075,909 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                     const tablePanelElements = getScreenById(screen.id)?.drawElements ?? drawElements;
                                     const selectedEl = tablePanelElements.find(el => el.id === selectedElementIds[0]);
                                     if (!selectedEl || selectedEl.type !== 'table') return null;
-                                    return (
-                                        <TablePanelFloating
-                                            show={showTablePanel}
-                                            selectedEl={selectedEl}
-                                            drawElements={drawElements}
-                                            tablePanelPos={tablePanelPos}
-                                            setTablePanelPos={setTablePanelPos}
-                                            zoom={zoom}
-                                            isLocked={isLocked}
-                                            editingTableId={editingTableId}
-                                            selectedCellIndices={selectedCellIndices}
-                                            setSelectedCellIndices={setSelectedCellIndices}
-                                            setEditingCellIndex={setEditingCellIndex}
-                                            showSplitDialog={showSplitDialog}
-                                            setShowSplitDialog={setShowSplitDialog}
-                                            splitTarget={splitTarget}
-                                            splitRows={splitRows}
-                                            setSplitRows={setSplitRows}
-                                            splitCols={splitCols}
-                                            setSplitCols={setSplitCols}
-                                            screenToFlowPosition={screenToFlowPosition}
-                                            flowToScreenPosition={flowToScreenPosition}
-                                            update={update as (updates: Record<string, unknown>) => void}
-                                            syncUpdate={syncUpdate as (updates: Record<string, unknown>) => void}
-                                            handleMergeCells={handleMergeCells}
-                                            handleSplitCells={handleSplitCells}
-                                            handleEqualizeRowHeights={handleEqualizeRowHeights}
-                                            handleEqualizeColWidths={handleEqualizeColWidths}
-                                            handleExecSplit={handleExecSplit}
-                                            saveV2Cells={saveV2Cells}
-                                            getScreenById={getScreenById as (id: string) => { drawElements: DrawElement[] } | undefined}
-                                            screenId={screen.id}
-                                            onClose={() => setShowTablePanel(false)}
-                                        />
+                                    const rows = selectedEl.tableRows || 3;
+                                    const cols = selectedEl.tableCols || 3;
+                                    const totalCells = rows * cols;
+                                    const cellColorPresets = [
+                                        'transparent', '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0',
+                                        '#fee2e2', '#fef3c7', '#dcfce7', '#dbeafe', '#ede9fe',
+                                        '#2c3e7c', '#1e40af', '#059669', '#d97706', '#dc2626'
+                                    ];
+                                    const handleTablePanelHeaderMouseDown = (e: React.MouseEvent) => {
+                                        if (isLocked) return;
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        isDraggingTablePanelRef.current = true;
+                                        const flowAtClick = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+                                        const offsetFlowX = flowAtClick.x - tablePanelPos.x;
+                                        const offsetFlowY = flowAtClick.y - tablePanelPos.y;
+                                        const onMove = (me: MouseEvent) => {
+                                            if (!isDraggingTablePanelRef.current) return;
+                                            me.stopImmediatePropagation();
+                                            const flowAtMove = screenToFlowPosition({ x: me.clientX, y: me.clientY });
+                                            setTablePanelPos({ x: flowAtMove.x - offsetFlowX, y: flowAtMove.y - offsetFlowY });
+                                        };
+                                        const onUp = () => {
+                                            isDraggingTablePanelRef.current = false;
+                                            window.removeEventListener('mousemove', onMove, true);
+                                            window.removeEventListener('mouseup', onUp);
+                                        };
+                                        window.addEventListener('mousemove', onMove, true);
+                                        window.addEventListener('mouseup', onUp);
+                                    };
+                                    const tablePanelScreenPos = flowToScreenPosition({ x: tablePanelPos.x, y: tablePanelPos.y });
+                                    return createPortal(
+                                        <div
+                                            data-table-panel
+                                            className="nodrag floating-panel fixed z-[9000] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in origin-top-left"
+                                            style={{
+                                                left: tablePanelScreenPos.x,
+                                                top: tablePanelScreenPos.y,
+                                                transform: `scale(${0.85 * zoom})`,
+                                            }}
+                                        >
+                                            {/* Header */}
+                                            <div
+                                                className="flex items-center justify-between border-b border-gray-100 pb-2 cursor-grab active:cursor-grabbing group/header"
+                                                onMouseDown={handleTablePanelHeaderMouseDown}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
+                                                    <Settings2 size={14} className="text-[#2c3e7c]" />
+                                                    <span className="text-[12px] font-bold text-gray-700">표 설정</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setShowTablePanel(false);
+                                                        setSelectedCellIndices([]);
+                                                        setEditingCellIndex(null);
+                                                    }}
+                                                    onMouseDown={e => e.stopPropagation()}
+                                                    className="p-1 rounded-md hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                                                >
+                                                    <X size={13} />
+                                                </button>
+                                            </div>
+
+                                            {/* Row / Col controls */}
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] text-gray-600 font-medium">행 수</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <button
+                                                            onMouseDown={e => e.stopPropagation()}
+                                                            onClick={() => {
+                                                                const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                                                const el = currentElements.find(e => e.id === selectedEl.id);
+                                                                if (!el || el.type !== 'table') return;
+                                                                const r = el.tableRows ?? 3;
+                                                                const c = el.tableCols ?? 3;
+                                                                if (r <= 1) return;
+                                                                const newRows = r - 1;
+                                                                const v2Cells = getV2Cells(el);
+                                                                const adjustedCols = c;
+                                                                const total = r * adjustedCols;
+                                                                const paddedV2 = [...v2Cells];
+                                                                while (paddedV2.length < total) {
+                                                                    paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                }
+                                                                const newTotal = newRows * adjustedCols;
+                                                                const newV2 = paddedV2.slice(0, newTotal);
+                                                                const newRowHeights = Array(newRows).fill(100 / newRows);
+                                                                const locked = el.tableCellLockedIndices ?? [];
+                                                                const newLocked = locked.filter(idx => idx < newTotal);
+
+                                                                saveV2Cells(el.id, newV2, {
+                                                                    tableRows: newRows,
+                                                                    tableRowHeights: newRowHeights,
+                                                                    tableRowColWidths: undefined,
+                                                                    tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                                                });
+                                                                setSelectedCellIndices([]);
+                                                                setEditingCellIndex(null);
+                                                            }}
+                                                            className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
+                                                        >−</button>
+                                                        <span className="w-8 text-center text-[13px] font-bold text-[#2c3e7c]">{rows}</span>
+                                                        <button
+                                                            onMouseDown={e => e.stopPropagation()}
+                                                            onClick={() => {
+                                                                const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                                                const el = currentElements.find(e => e.id === selectedEl.id);
+                                                                if (!el || el.type !== 'table') return;
+                                                                const r = el.tableRows ?? 3;
+                                                                const c = el.tableCols ?? 3;
+                                                                const newRows = r + 1;
+                                                                const v2Cells = getV2Cells(el);
+                                                                const adjustedCols = c;
+                                                                const total = r * adjustedCols;
+                                                                const paddedV2 = [...v2Cells];
+                                                                while (paddedV2.length < total) {
+                                                                    paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                }
+                                                                const newTotal = newRows * adjustedCols;
+                                                                const newV2 = [...paddedV2];
+                                                                while (newV2.length < newTotal) {
+                                                                    newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                }
+                                                                const newRowHeights = Array(newRows).fill(100 / newRows);
+                                                                const locked = el.tableCellLockedIndices ?? [];
+                                                                const newLocked = locked.slice(); // 행 추가는 기존 인덱스 유지
+
+                                                                saveV2Cells(el.id, newV2, {
+                                                                    tableRows: newRows,
+                                                                    tableRowHeights: newRowHeights,
+                                                                    tableRowColWidths: undefined,
+                                                                    tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                                                });
+                                                                setSelectedCellIndices([]);
+                                                                setEditingCellIndex(null);
+                                                            }}
+                                                            className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
+                                                        >+</button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] text-gray-600 font-medium">열 수</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <button
+                                                            onMouseDown={e => e.stopPropagation()}
+                                                            onClick={() => {
+                                                                const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                                                const el = currentElements.find(e => e.id === selectedEl.id);
+                                                                if (!el || el.type !== 'table') return;
+                                                                const numRows = el.tableRows ?? 3;
+                                                                const numCols = el.tableCols ?? 3;
+                                                                if (numCols <= 1) return;
+                                                                const newCols = numCols - 1;
+                                                                const v2Cells = getV2Cells(el);
+                                                                const adjustedRows = numRows;
+                                                                const total = adjustedRows * numCols;
+                                                                const paddedV2 = [...v2Cells];
+                                                                while (paddedV2.length < total) {
+                                                                    paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                }
+                                                                const newV2: TableCellData[] = [];
+                                                                for (let ri = 0; ri < numRows; ri++) {
+                                                                    for (let ci = 0; ci < newCols; ci++) {
+                                                                        const oldIdx = ri * numCols + ci;
+                                                                        const v2 = paddedV2[oldIdx];
+                                                                        newV2.push(v2 || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                    }
+                                                                }
+                                                                const newColWidths = Array(newCols).fill(100 / newCols);
+                                                                const locked = el.tableCellLockedIndices ?? [];
+                                                                const newLocked = locked
+                                                                    .map(idx => {
+                                                                        const { r, c } = flatIdxToRowCol(idx, numCols);
+                                                                        if (c >= newCols) return -1;
+                                                                        return r * newCols + c;
+                                                                    })
+                                                                    .filter(idx => idx >= 0);
+
+                                                                saveV2Cells(el.id, newV2, {
+                                                                    tableCols: newCols,
+                                                                    tableColWidths: newColWidths,
+                                                                    tableRowColWidths: undefined,
+                                                                    tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                                                });
+                                                                setSelectedCellIndices([]);
+                                                                setEditingCellIndex(null);
+                                                            }}
+                                                            className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
+                                                        >−</button>
+                                                        <span className="w-8 text-center text-[13px] font-bold text-[#2c3e7c]">{cols}</span>
+                                                        <button
+                                                            onMouseDown={e => e.stopPropagation()}
+                                                            onClick={() => {
+                                                                const currentElements = getScreenById(screen.id)?.drawElements ?? drawElements;
+                                                                const el = currentElements.find(e => e.id === selectedEl.id);
+                                                                if (!el || el.type !== 'table') return;
+                                                                const numRows = el.tableRows ?? 3;
+                                                                const numCols = el.tableCols ?? 3;
+                                                                const newCols = numCols + 1;
+                                                                console.log('[열 추가 DEBUG] el.tableCellDataV2:', JSON.stringify(el.tableCellDataV2));
+                                                                console.log('[열 추가 DEBUG] el.tableCellData:', JSON.stringify(el.tableCellData));
+                                                                console.log('[열 추가 DEBUG] numRows:', numRows, 'numCols:', numCols);
+                                                                const v2Cells = getV2Cells(el);
+                                                                console.log('[열 추가 DEBUG] getV2Cells 결과:', JSON.stringify(v2Cells));
+                                                                const adjustedRows = numRows;
+                                                                const total = adjustedRows * numCols;
+                                                                const paddedV2 = [...v2Cells];
+                                                                while (paddedV2.length < total) {
+                                                                    paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                }
+                                                                const newV2: TableCellData[] = [];
+                                                                for (let ri = 0; ri < numRows; ri++) {
+                                                                    for (let ci = 0; ci < newCols; ci++) {
+                                                                        if (ci < numCols) {
+                                                                            const oldIdx = ri * numCols + ci;
+                                                                            const v2 = paddedV2[oldIdx];
+                                                                            newV2.push(v2 || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                        } else {
+                                                                            newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                                                        }
+                                                                    }
+                                                                }
+                                                                console.log('[열 추가 DEBUG] 저장할 newV2:', JSON.stringify(newV2));
+                                                                const newColWidths = Array(newCols).fill(100 / newCols);
+                                                                const locked = el.tableCellLockedIndices ?? [];
+                                                                const newLocked = locked.map(idx => {
+                                                                    const { r, c } = flatIdxToRowCol(idx, numCols);
+                                                                    return r * newCols + c;
+                                                                });
+
+                                                                saveV2Cells(el.id, newV2, {
+                                                                    tableCols: newCols,
+                                                                    tableColWidths: newColWidths,
+                                                                    tableRowColWidths: undefined,
+                                                                    tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                                                });
+                                                                setSelectedCellIndices([]);
+                                                                setEditingCellIndex(null);
+                                                            }}
+                                                            className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
+                                                        >+</button>
+                                                    </div>
+                                                </div>
+                                                {/* Merge / Split Buttons */}
+                                                {editingTableId === selectedEl.id && (
+                                                    <div className="flex flex-col gap-2 p-1.5 bg-gray-50/50 rounded-xl border border-gray-100">
+                                                        <div className="flex items-center gap-1.5 px-1 mb-1">
+                                                            <Combine size={12} className="text-blue-500" />
+                                                            <span className="text-[11px] font-bold text-gray-600">셀 편집</span>
+                                                        </div>
+                                                        <div className="flex gap-1.5">
+                                                            <button
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                onClick={() => handleMergeCells(selectedEl)}
+                                                                disabled={selectedCellIndices.length < 2}
+                                                                className={`flex-1 flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length >= 2 ? 'bg-white shadow-sm text-blue-600 border border-blue-100 hover:bg-blue-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
+                                                            >
+                                                                <Combine size={16} />
+                                                                <span className="text-[10px] font-bold">합치기</span>
+                                                            </button>
+                                                            <div className="flex-1 relative">
+                                                                <button
+                                                                    onMouseDown={e => e.stopPropagation()}
+                                                                    onClick={() => handleSplitCells(selectedEl)}
+                                                                    disabled={selectedCellIndices.length === 0}
+                                                                    className={`w-full flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length > 0 ? 'bg-white shadow-sm text-gray-600 border border-gray-100 hover:bg-gray-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
+                                                                >
+                                                                    <Split size={16} />
+                                                                    <span className="text-[10px] font-bold">나누기</span>
+                                                                </button>
+
+                                                                {/* Step Id: 251 - Popover Split Dialog */}
+                                                                {showSplitDialog && splitTarget && splitTarget.elId === selectedEl.id && (
+                                                                    <div
+                                                                        className="absolute top-full right-0 mt-2 z-[300] bg-white rounded-xl shadow-2xl border border-gray-200 p-4 min-w-[220px] animate-in slide-in-from-top-2 duration-200"
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                    >
+                                                                        <div className="flex items-center justify-between mb-4">
+                                                                            <span className="text-[12px] font-bold text-gray-700">셀 분할 설정</span>
+                                                                            <button onClick={() => setShowSplitDialog(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50">
+                                                                                <X size={14} />
+                                                                            </button>
+                                                                        </div>
+
+                                                                        <div className="space-y-3 mb-4">
+                                                                            <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                                                                <span className="text-[11px] text-gray-600 font-bold ml-1">행</span>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <button onClick={() => setSplitRows(prev => Math.max(1, prev - 1))} className="w-6 h-6 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-600 hover:bg-red-50 hover:text-red-500 transition-colors"><Minus size={10} /></button>
+                                                                                    <span className="w-4 text-center text-[12px] font-bold text-blue-600">{splitRows}</span>
+                                                                                    <button onClick={() => setSplitRows(prev => Math.min(10, prev + 1))} className="w-6 h-6 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"><Plus size={10} /></button>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                                                                <span className="text-[11px] text-gray-600 font-bold ml-1">열</span>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <button onClick={() => setSplitCols(prev => Math.max(1, prev - 1))} className="w-6 h-6 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-600 hover:bg-red-50 hover:text-red-500 transition-colors"><Minus size={10} /></button>
+                                                                                    <span className="w-4 text-center text-[12px] font-bold text-blue-600">{splitCols}</span>
+                                                                                    <button onClick={() => setSplitCols(prev => Math.min(10, prev + 1))} className="w-6 h-6 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"><Plus size={10} /></button>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                handleExecSplit(selectedEl, splitTarget.cellIdx, splitRows, splitCols);
+                                                                                setShowSplitDialog(false);
+                                                                            }}
+                                                                            className="w-full py-2 bg-[#2c3e7c] text-white rounded-lg text-[11px] font-bold hover:bg-[#1e2d5e] transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                                                                        >
+                                                                            <Split size={12} />
+                                                                            <span>분할 실행</span>
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* 셀 높이/너비 같게 (2개 이상 셀 선택 시, 먼저 선택한 셀 기준) */}
+                                                {editingTableId === selectedEl.id && (
+                                                    <div className="flex flex-col gap-2 p-1.5 bg-gray-50/50 rounded-xl border border-gray-100">
+                                                        <div className="flex items-center gap-1.5 px-1 mb-1">
+                                                            <AlignVerticalDistributeCenter size={12} className="text-blue-500" />
+                                                            <span className="text-[11px] font-bold text-gray-600">셀 크기 맞춤</span>
+                                                        </div>
+                                                        <div className="flex gap-1.5">
+                                                            <div className="flex-1 min-w-0">
+                                                                <PremiumTooltip label="선택한 셀들의 행 높이를 먼저 선택한 셀의 높이로 맞춥니다" wrapperClassName="w-full" offsetBottom={50}>
+                                                                    <button
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        onClick={() => handleEqualizeRowHeights(selectedEl)}
+                                                                        disabled={selectedCellIndices.length < 2}
+                                                                        className={`w-full flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length >= 2 ? 'bg-white shadow-sm text-blue-600 border border-blue-100 hover:bg-blue-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
+                                                                    >
+                                                                        <AlignVerticalDistributeCenter size={16} />
+                                                                        <span className="text-[10px] font-bold">셀 높이 같게</span>
+                                                                    </button>
+                                                                </PremiumTooltip>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <PremiumTooltip label="선택한 셀들의 열 너비를 먼저 선택한 셀의 너비로 맞춥니다" wrapperClassName="w-full" offsetBottom={50}>
+                                                                    <button
+                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                        onClick={() => handleEqualizeColWidths(selectedEl)}
+                                                                        disabled={selectedCellIndices.length < 2}
+                                                                        className={`w-full flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${selectedCellIndices.length >= 2 ? 'bg-white shadow-sm text-gray-600 border border-gray-100 hover:bg-gray-50' : 'bg-gray-50/50 text-gray-300 border border-transparent cursor-not-allowed'}`}
+                                                                    >
+                                                                        <AlignHorizontalDistributeCenter size={16} />
+                                                                        <span className="text-[10px] font-bold">셀 너비 같게</span>
+                                                                    </button>
+                                                                </PremiumTooltip>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Table Border Settings */}
+                                                <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
+                                                    <div className="flex items-center gap-1.5 text-gray-700">
+                                                        <Square size={12} className="text-gray-400" />
+                                                        <span className="text-[11px] font-bold">테두리 설정</span>
+                                                    </div>
+
+                                                    {/* All Borders Control */}
+                                                    <div className="flex flex-col gap-1.5 pb-3 border-b border-dashed border-gray-100">
+                                                        <span className="text-[10px] text-gray-500 font-medium pl-0.5">전체</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                                                <input
+                                                                    type="color"
+                                                                    value={(selectedCellIndices.length > 0 && editingTableId === selectedEl.id)
+                                                                        ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderTop || selectedEl.stroke || '#cbd5e1')
+                                                                        : (selectedEl.tableBorderTop || selectedEl.stroke || '#cbd5e1')}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        if (selectedCellIndices.length > 0 && editingTableId === selectedEl.id) {
+                                                                            const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                            const tableCols = selectedEl.tableCols || 3;
+                                                                            selectedCellIndices.forEach(idx => {
+                                                                                const { r, c } = flatIdxToRowCol(idx, tableCols);
+                                                                                const nextStyle = { ...(newStyles[idx] || {}), borderBottom: val, borderRight: val };
+                                                                                if (r === 0) nextStyle.borderTop = val;
+                                                                                if (c === 0) nextStyle.borderLeft = val;
+                                                                                newStyles[idx] = nextStyle;
+                                                                            });
+                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                        } else {
+                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? {
+                                                                                ...it,
+                                                                                tableBorderTop: val, tableBorderBottom: val, tableBorderLeft: val, tableBorderRight: val
+                                                                            } : it);
+                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                        }
+                                                                    }}
+                                                                    onMouseDown={e => e.stopPropagation()}
+                                                                    className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                                />
+                                                                <div className="w-full h-full" style={{
+                                                                    backgroundColor: (selectedCellIndices.length > 0 && editingTableId === selectedEl.id)
+                                                                        ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderTop || selectedEl.stroke || '#cbd5e1')
+                                                                        : (selectedEl.tableBorderTop || selectedEl.stroke || '#cbd5e1')
+                                                                }} />
+                                                            </div>
+                                                            <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="10"
+                                                                    value={(selectedCellIndices.length > 0 && editingTableId === selectedEl.id)
+                                                                        ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.borderTopWidth ?? 1)
+                                                                        : (selectedEl.tableBorderTopWidth ?? selectedEl.strokeWidth ?? 1)}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value) || 0;
+                                                                        if (selectedCellIndices.length > 0 && editingTableId === selectedEl.id) {
+                                                                            const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                            const tableCols = selectedEl.tableCols || 3;
+                                                                            selectedCellIndices.forEach(idx => {
+                                                                                const { r, c } = flatIdxToRowCol(idx, tableCols);
+                                                                                const nextStyle = { ...(newStyles[idx] || {}), borderBottomWidth: val, borderRightWidth: val };
+                                                                                if (r === 0) nextStyle.borderTopWidth = val;
+                                                                                if (c === 0) nextStyle.borderLeftWidth = val;
+                                                                                newStyles[idx] = nextStyle;
+                                                                            });
+                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                        } else {
+                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? {
+                                                                                ...it,
+                                                                                tableBorderTopWidth: val, tableBorderBottomWidth: val, tableBorderLeftWidth: val, tableBorderRightWidth: val,
+                                                                                strokeWidth: val
+                                                                            } : it);
+                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                        }
+                                                                    }}
+                                                                    onMouseDown={e => e.stopPropagation()}
+                                                                    className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                                />
+                                                                <span className="text-[9px] text-gray-400">px</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                                                        {(['Top', 'Bottom', 'Left', 'Right'] as const).map(direction => {
+                                                            const colorKey = `tableBorder${direction}` as keyof DrawElement;
+                                                            const widthKey = `tableBorder${direction}Width` as keyof DrawElement;
+                                                            const styleKey = `tableBorder${direction}Style` as keyof DrawElement;
+                                                            const styleColorKey = `border${direction}`;
+                                                            const styleWidthKey = `border${direction}Width`;
+                                                            const label = direction === 'Top' ? '위' : direction === 'Bottom' ? '아래' : direction === 'Left' ? '왼쪽' : '오른쪽';
+
+                                                            const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                            const firstCellOverride = isAnyCellSelected ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]] || {}) : {};
+
+                                                            const currentColor = isAnyCellSelected
+                                                                ? (firstCellOverride[styleColorKey] || selectedEl[colorKey] || selectedEl.stroke || '#cbd5e1')
+                                                                : ((selectedEl[colorKey] as string) || (selectedEl.stroke || '#cbd5e1'));
+
+                                                            const currentWidth = isAnyCellSelected
+                                                                ? (firstCellOverride[styleWidthKey] !== undefined ? firstCellOverride[styleWidthKey] : (selectedEl[widthKey] ?? selectedEl.strokeWidth ?? 1))
+                                                                : (selectedEl[widthKey] !== undefined ? (selectedEl[widthKey] as number) : (selectedEl.strokeWidth ?? 1));
+
+                                                            const borderStyles = ['solid', 'dashed', 'dotted', 'double', 'none'] as const;
+                                                            const currentStyle = (selectedEl[styleKey] as typeof borderStyles[number]) ?? 'solid';
+
+                                                            return (
+                                                                <div key={direction} className="flex flex-col gap-1.5">
+                                                                    <span className="text-[10px] text-gray-500 font-medium pl-0.5">{label}</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                                                            <input
+                                                                                type="color"
+                                                                                value={currentColor}
+                                                                                onChange={(e) => {
+                                                                                    const val = e.target.value;
+                                                                                    if (isAnyCellSelected) {
+                                                                                        const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                        const tableCols = selectedEl.tableCols || 3;
+                                                                                        selectedCellIndices.forEach(idx => {
+                                                                                            const { r, c } = flatIdxToRowCol(idx, tableCols);
+                                                                                            let targetIdx = idx;
+                                                                                            let targetKey = styleColorKey;
+                                                                                            if (direction === 'Top' && r > 0) {
+                                                                                                targetIdx = rowColToFlatIdx(r - 1, c, tableCols);
+                                                                                                targetKey = 'borderBottom';
+                                                                                            } else if (direction === 'Left' && c > 0) {
+                                                                                                targetIdx = rowColToFlatIdx(r, c - 1, tableCols);
+                                                                                                targetKey = 'borderRight';
+                                                                                            }
+                                                                                            newStyles[targetIdx] = { ...(newStyles[targetIdx] || {}), [targetKey]: val };
+                                                                                        });
+                                                                                        const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                    } else {
+                                                                                        const next = drawElements.map(item => item.id === selectedEl.id ? { ...item, [colorKey]: val } : item);
+                                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                    }
+                                                                                }}
+                                                                                onMouseDown={e => e.stopPropagation()}
+                                                                                className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                                            />
+                                                                            <div className="w-full h-full" style={{ backgroundColor: currentColor }} />
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
+                                                                            <input
+                                                                                type="number"
+                                                                                min="0"
+                                                                                max="10"
+                                                                                value={currentWidth}
+                                                                                onChange={(e) => {
+                                                                                    const val = parseInt(e.target.value) || 0;
+                                                                                    if (isAnyCellSelected) {
+                                                                                        const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                        const tableCols = selectedEl.tableCols || 3;
+                                                                                        selectedCellIndices.forEach(idx => {
+                                                                                            const { r, c } = flatIdxToRowCol(idx, tableCols);
+                                                                                            let targetIdx = idx;
+                                                                                            let targetKey = styleWidthKey;
+                                                                                            if (direction === 'Top' && r > 0) {
+                                                                                                targetIdx = rowColToFlatIdx(r - 1, c, tableCols);
+                                                                                                targetKey = 'borderBottomWidth';
+                                                                                            } else if (direction === 'Left' && c > 0) {
+                                                                                                targetIdx = rowColToFlatIdx(r, c - 1, tableCols);
+                                                                                                targetKey = 'borderRightWidth';
+                                                                                            }
+                                                                                            newStyles[targetIdx] = { ...(newStyles[targetIdx] || {}), [targetKey]: val };
+                                                                                        });
+                                                                                        const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                    } else {
+                                                                                        const next = drawElements.map(item => item.id === selectedEl.id ? { ...item, [widthKey]: val } : item);
+                                                                                        update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                    }
+                                                                                }}
+                                                                                onMouseDown={e => e.stopPropagation()}
+                                                                                className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                                            />
+                                                                            <span className="text-[9px] text-gray-400">px</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    {!isAnyCellSelected && (
+                                                                        <div className="flex items-center gap-1 flex-wrap">
+                                                                            {borderStyles.map((value) => {
+                                                                                const isSelected = currentStyle === value;
+                                                                                return (
+                                                                                    <button
+                                                                                        key={value}
+                                                                                        type="button"
+                                                                                        title={value === 'solid' ? '실선' : value === 'dashed' ? '대시' : value === 'dotted' ? '점선' : value === 'double' ? '이중선' : '없음'}
+                                                                                        onMouseDown={e => e.stopPropagation()}
+                                                                                        onClick={() => {
+                                                                                            const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, [styleKey]: value } : it);
+                                                                                            update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                        }}
+                                                                                        className={`flex items-center justify-center w-7 h-7 rounded border transition-all shrink-0 ${isSelected ? 'border-[#2c3e7c] bg-blue-50 ring-1 ring-[#2c3e7c]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                                                                    >
+                                                                                        {value === 'none' ? (
+                                                                                            <div className="w-3.5 h-3.5 rounded bg-gray-200" />
+                                                                                        ) : (
+                                                                                            <div
+                                                                                                className="w-3.5 h-3.5 rounded bg-white"
+                                                                                                style={{ borderWidth: 1.5, borderStyle: value, borderColor: isSelected ? '#2c3e7c' : '#94a3b8' }}
+                                                                                            />
+                                                                                        )}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                        {!(selectedCellIndices.length > 0 && editingTableId === selectedEl.id) && (<>
+                                                            <div className="flex flex-col gap-1.5">
+                                                                <span className="text-[10px] text-gray-500 font-medium pl-0.5">안쪽 가로선</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                                                        <input
+                                                                            type="color"
+                                                                            value={selectedEl.tableBorderInsideH || selectedEl.stroke || '#cbd5e1'}
+                                                                            onChange={(e) => { const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideH: e.target.value } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                                        />
+                                                                        <div className="w-full h-full" style={{ backgroundColor: selectedEl.tableBorderInsideH || selectedEl.stroke || '#cbd5e1' }} />
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            max="10"
+                                                                            value={selectedEl.tableBorderInsideHWidth ?? selectedEl.strokeWidth ?? 1}
+                                                                            onChange={(e) => { const val = parseInt(e.target.value) || 0; const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideHWidth: val } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                                        />
+                                                                        <span className="text-[9px] text-gray-400">px</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1 flex-wrap">
+                                                                    {(['solid', 'dashed', 'dotted', 'double', 'none'] as const).map((value) => {
+                                                                        const isSelected = (selectedEl.tableBorderInsideHStyle ?? 'solid') === value;
+                                                                        return (
+                                                                            <button
+                                                                                key={value}
+                                                                                type="button"
+                                                                                title={value === 'solid' ? '실선' : value === 'dashed' ? '대시' : value === 'dotted' ? '점선' : value === 'double' ? '이중선' : '없음'}
+                                                                                onMouseDown={e => e.stopPropagation()}
+                                                                                onClick={() => { const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideHStyle: value } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                                className={`flex items-center justify-center w-7 h-7 rounded border transition-all shrink-0 ${isSelected ? 'border-[#2c3e7c] bg-blue-50 ring-1 ring-[#2c3e7c]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                                                            >
+                                                                                {value === 'none' ? (
+                                                                                    <div className="w-3.5 h-3.5 rounded bg-gray-200" />
+                                                                                ) : (
+                                                                                    <div className="w-3.5 h-3.5 rounded bg-white" style={{ borderWidth: 1.5, borderStyle: value, borderColor: isSelected ? '#2c3e7c' : '#94a3b8' }} />
+                                                                                )}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-col gap-1.5">
+                                                                <span className="text-[10px] text-gray-500 font-medium pl-0.5">안쪽 세로선</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                                                        <input
+                                                                            type="color"
+                                                                            value={selectedEl.tableBorderInsideV || selectedEl.stroke || '#cbd5e1'}
+                                                                            onChange={(e) => { const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideV: e.target.value } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                                                        />
+                                                                        <div className="w-full h-full" style={{ backgroundColor: selectedEl.tableBorderInsideV || selectedEl.stroke || '#cbd5e1' }} />
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100 flex-1">
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            max="10"
+                                                                            value={selectedEl.tableBorderInsideVWidth ?? selectedEl.strokeWidth ?? 1}
+                                                                            onChange={(e) => { const val = parseInt(e.target.value) || 0; const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideVWidth: val } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                                                        />
+                                                                        <span className="text-[9px] text-gray-400">px</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1 flex-wrap">
+                                                                    {(['solid', 'dashed', 'dotted', 'double', 'none'] as const).map((value) => {
+                                                                        const isSelected = (selectedEl.tableBorderInsideVStyle ?? 'solid') === value;
+                                                                        return (
+                                                                            <button
+                                                                                key={value}
+                                                                                type="button"
+                                                                                title={value === 'solid' ? '실선' : value === 'dashed' ? '대시' : value === 'dotted' ? '점선' : value === 'double' ? '이중선' : '없음'}
+                                                                                onMouseDown={e => e.stopPropagation()}
+                                                                                onClick={() => { const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableBorderInsideVStyle: value } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                                                                className={`flex items-center justify-center w-7 h-7 rounded border transition-all shrink-0 ${isSelected ? 'border-[#2c3e7c] bg-blue-50 ring-1 ring-[#2c3e7c]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                                                            >
+                                                                                {value === 'none' ? (
+                                                                                    <div className="w-3.5 h-3.5 rounded bg-gray-200" />
+                                                                                ) : (
+                                                                                    <div className="w-3.5 h-3.5 rounded bg-white" style={{ borderWidth: 1.5, borderStyle: value, borderColor: isSelected ? '#2c3e7c' : '#94a3b8' }} />
+                                                                                )}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        </>)}
+                                                    </div>
+
+                                                    {/* Border Radius Settings */}
+                                                    {!(selectedCellIndices.length > 0 && editingTableId === selectedEl.id) && (
+                                                        <div className="flex flex-col gap-2 pt-3 border-t border-gray-100">
+                                                            <div className="flex items-center gap-1.5 text-gray-700">
+                                                                <Circle size={10} className="text-gray-400" />
+                                                                <span className="text-[10px] font-medium pl-0.5">테두리 곡률</span>
+                                                            </div>
+
+                                                            <div className="flex flex-col gap-2">
+                                                                <div className="flex items-center gap-2 bg-gray-50 rounded px-2 py-1.5 border border-gray-100">
+                                                                    <div className="w-2.5 h-2.5 border-2 border-gray-400 rounded-md" />
+                                                                    <div className="flex-1 flex gap-2 items-center">
+                                                                        <input
+                                                                            type="range"
+                                                                            min="0"
+                                                                            max="20"
+                                                                            step="1"
+                                                                            value={selectedEl.tableBorderRadius ?? 0}
+                                                                            onChange={(e) => {
+                                                                                const val = parseInt(e.target.value) || 0;
+                                                                                const next = drawElements.map(it => it.id === selectedEl.id ? {
+                                                                                    ...it,
+                                                                                    tableBorderRadius: val,
+                                                                                    tableBorderRadiusTopLeft: val,
+                                                                                    tableBorderRadiusTopRight: val,
+                                                                                    tableBorderRadiusBottomLeft: val,
+                                                                                    tableBorderRadiusBottomRight: val
+                                                                                } : it);
+                                                                                update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                            }}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            className="flex-1 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                                                        />
+                                                                        <span className="text-[10px] text-gray-700 font-mono w-4 text-right">{selectedEl.tableBorderRadius ?? 0}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    {[
+                                                                        { key: 'tableBorderRadiusTopLeft', iconClass: 'border-t-2 border-l-2 rounded-tl-md' },
+                                                                        { key: 'tableBorderRadiusTopRight', iconClass: 'border-t-2 border-r-2 rounded-tr-md' },
+                                                                        { key: 'tableBorderRadiusBottomLeft', iconClass: 'border-b-2 border-l-2 rounded-bl-md' },
+                                                                        { key: 'tableBorderRadiusBottomRight', iconClass: 'border-b-2 border-r-2 rounded-br-md' },
+                                                                    ].map(({ key, iconClass }) => (
+                                                                        <div key={key} className="flex items-center gap-2 bg-gray-50 rounded px-2 py-1.5 border border-gray-100">
+                                                                            <div className={`w-2.5 h-2.5 border-gray-400 ${iconClass}`} />
+                                                                            <input
+                                                                                type="number"
+                                                                                min="0"
+                                                                                max="100"
+                                                                                value={(selectedEl[key as keyof DrawElement] as number) ?? selectedEl.tableBorderRadius ?? 0}
+                                                                                onChange={(e) => {
+                                                                                    const val = parseInt(e.target.value) || 0;
+                                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, [key]: val } : it);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                }}
+                                                                                onMouseDown={e => e.stopPropagation()}
+                                                                                className="w-full bg-transparent text-[11px] text-gray-700 outline-none text-right font-mono"
+                                                                            />
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Alignment Settings */}
+                                                <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
+                                                    <div className="flex items-center gap-1.5 text-gray-700">
+                                                        <AlignHorizontalJustifyCenter size={12} className="text-gray-400" />
+                                                        <span className="text-[11px] font-bold">텍스트 정렬 설정</span>
+                                                    </div>
+                                                    <div className="flex flex-col gap-3">
+                                                        {/* Horizontal Alignment */}
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <span className="text-[10px] text-gray-500 font-medium pl-0.5">가로 정렬</span>
+                                                            <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
+                                                                {[
+                                                                    { id: 'left', icon: <AlignHorizontalJustifyStart size={14} />, label: '왼쪽' },
+                                                                    { id: 'center', icon: <AlignHorizontalJustifyCenter size={14} />, label: '가운데' },
+                                                                    { id: 'right', icon: <AlignHorizontalJustifyEnd size={14} />, label: '오른쪽' }
+                                                                ].map((opt) => {
+                                                                    const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                                    const activeVal = isAnyCellSelected
+                                                                        ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.textAlign || selectedEl.textAlign || 'center')
+                                                                        : (selectedEl.textAlign || 'center');
+                                                                    const isActive = activeVal === opt.id;
+
+                                                                    return (
+                                                                        <button
+                                                                            key={opt.id}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            onClick={() => {
+                                                                                if (isAnyCellSelected) {
+                                                                                    const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                    selectedCellIndices.forEach(idx => {
+                                                                                        newStyles[idx] = { ...(newStyles[idx] || {}), textAlign: opt.id };
+                                                                                    });
+                                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                } else {
+                                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, textAlign: opt.id as any } : it);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                }
+                                                                            }}
+                                                                            className={`flex-1 flex items-center justify-center py-1.5 rounded-lg transition-all ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                                                            title={opt.label}
+                                                                        >
+                                                                            {opt.icon}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Vertical Alignment */}
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <span className="text-[10px] text-gray-500 font-medium pl-0.5">세로 정렬</span>
+                                                            <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
+                                                                {[
+                                                                    { id: 'top', icon: <AlignVerticalJustifyStart size={14} />, label: '상단' },
+                                                                    { id: 'middle', icon: <AlignVerticalJustifyCenter size={14} />, label: '중단' },
+                                                                    { id: 'bottom', icon: <AlignVerticalJustifyEnd size={14} />, label: '하단' }
+                                                                ].map((opt) => {
+                                                                    const isAnyCellSelected = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                                    const activeVal = isAnyCellSelected
+                                                                        ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.verticalAlign || selectedEl.verticalAlign || 'middle')
+                                                                        : (selectedEl.verticalAlign || 'middle');
+                                                                    const isActive = activeVal === opt.id;
+
+                                                                    return (
+                                                                        <button
+                                                                            key={opt.id}
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            onClick={() => {
+                                                                                if (isAnyCellSelected) {
+                                                                                    const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                                                    selectedCellIndices.forEach(idx => {
+                                                                                        newStyles[idx] = { ...(newStyles[idx] || {}), verticalAlign: opt.id };
+                                                                                    });
+                                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, tableCellStyles: newStyles } : it);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                } else {
+                                                                                    const next = drawElements.map(it => it.id === selectedEl.id ? { ...it, verticalAlign: opt.id as any } : it);
+                                                                                    update({ drawElements: next }); syncUpdate({ drawElements: next });
+                                                                                }
+                                                                            }}
+                                                                            className={`flex-1 flex items-center justify-center py-1.5 rounded-lg transition-all ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                                                            title={opt.label}
+                                                                        >
+                                                                            {opt.icon}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Cell color picker */}
+                                                <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[11px] font-bold text-gray-700">배경색</span>
+                                                        {selectedCellIndices.length > 0 && editingTableId === selectedEl.id && (
+                                                            <span className="text-[10px] text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded-full">
+                                                                {selectedCellIndices.length}개 선택
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="flex gap-1.5 flex-wrap">
+                                                            {cellColorPresets.map(color => (
+                                                                <button
+                                                                    key={color}
+                                                                    onMouseDown={e => e.stopPropagation()}
+                                                                    onClick={() => {
+                                                                        if (selectedCellIndices.length > 0) {
+                                                                            // Update selected cells
+                                                                            const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                                                                            selectedCellIndices.forEach(idx => { newCellColors[idx] = color === 'transparent' ? undefined : color; });
+                                                                            const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
+                                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                                        } else {
+                                                                            // Update the entire table stroke/fill or all cells
+                                                                            const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, fill: color === 'transparent' ? undefined : color } : el);
+                                                                            update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                                        }
+                                                                    }}
+                                                                    className="w-5 h-5 rounded-full border-2 border-gray-200 hover:border-blue-400 hover:scale-125 transition-all flex items-center justify-center overflow-hidden shadow-sm"
+                                                                    style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
+                                                                    title={color === 'transparent' ? '색 없음' : color}
+                                                                >
+                                                                    {color === 'transparent' && <div className="w-full h-[1.5px] bg-red-400 rotate-45" />}
+                                                                </button>
+                                                            ))}
+                                                            <label className="w-5 h-5 rounded-full border-2 border-dashed border-gray-300 hover:border-blue-400 hover:scale-125 transition-all flex items-center justify-center overflow-hidden cursor-pointer relative shadow-sm" title="직접 선택">
+                                                                <Plus size={9} className="text-gray-400 pointer-events-none" />
+                                                                <input
+                                                                    type="color"
+                                                                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                                                                    onMouseDown={e => e.stopPropagation()}
+                                                                    onChange={(e) => {
+                                                                        const color = e.target.value;
+                                                                        const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                                                                        selectedCellIndices.forEach(idx => { newCellColors[idx] = color; });
+                                                                        const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
+                                                                        update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                                    }}
+                                                                />
+                                                            </label>
+                                                        </div>
+                                                        <button
+                                                            onMouseDown={e => e.stopPropagation()}
+                                                            onClick={() => {
+                                                                const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                                                                selectedCellIndices.forEach(idx => { newCellColors[idx] = undefined; });
+                                                                const nextElements = drawElements.map(el => el.id === selectedEl.id ? { ...el, tableCellColors: newCellColors } : el);
+                                                                update({ drawElements: nextElements }); syncUpdate({ drawElements: nextElements });
+                                                            }}
+                                                            className="text-[10px] text-gray-400 hover:text-red-500 transition-colors text-left"
+                                                        >색상 초기화</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>,
+                                        getPanelPortalRoot()
                                     );
                                 })()}
 
@@ -5537,6 +6006,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             </TooltipPortalContext.Provider>
         </div >
     );
-});
+};
 
 export default memo(ScreenNode);

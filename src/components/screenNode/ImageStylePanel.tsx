@@ -8,7 +8,7 @@ interface ImageStylePanelProps {
     onClose: () => void;
     position: { x: number; y: number };
     onPositionChange: (pos: { x: number; y: number }) => void;
-    zoom: number | string;
+    zoom: number;
     screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     onDragStart?: () => void;
@@ -112,7 +112,7 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
             style={{
                 left: flowToScreenPosition({ x: position.x, y: position.y }).x,
                 top: flowToScreenPosition({ x: position.x, y: position.y }).y,
-                transform: `scale(calc(0.85 * ${zoom}))`,
+                transform: `scale(${0.85 * zoom})`,
             }}
         >
             <div
@@ -143,8 +143,9 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                         <button
                             key={deg}
                             onClick={() => handleRotate(deg)}
-                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${rotation === deg ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'
-                                }`}
+                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
+                                rotation === deg ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'
+                            }`}
                         >
                             {deg}°
                         </button>
@@ -189,16 +190,18 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                 <div className="flex gap-2">
                     <button
                         onClick={handleFlipX}
-                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors ${flipX ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                            }`}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors ${
+                            flipX ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                        }`}
                     >
                         <FlipHorizontal size={16} />
                         <span className="text-xs">좌우</span>
                     </button>
                     <button
                         onClick={handleFlipY}
-                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors ${flipY ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                            }`}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors ${
+                            flipY ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                        }`}
                     >
                         <FlipVertical size={16} />
                         <span className="text-xs">상하</span>
@@ -223,8 +226,9 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                 <button
                     onClick={() => onCropModeToggle?.(!isCropMode)}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border transition-colors mb-2 ${isCropMode ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                        }`}
+                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border transition-colors mb-2 ${
+                        isCropMode ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                    }`}
                 >
                     <Crop size={16} />
                     <span className="text-xs font-medium">직접 크롭</span>

@@ -128,7 +128,7 @@ interface StylePanelProps {
     drawElements: DrawElement[];
     stylePanelPos: { x: number; y: number };
     onPositionChange: (pos: { x: number; y: number }) => void;
-    zoom: number | string;
+    zoom: number;
     screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     editingTableId: string | null;
@@ -275,7 +275,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
             style={{
                 left: flowToScreenPosition({ x: stylePanelPos.x, y: stylePanelPos.y }).x,
                 top: flowToScreenPosition({ x: stylePanelPos.x, y: stylePanelPos.y }).y,
-                transform: `scale(calc(0.85 * ${zoom}))`,
+                transform: `scale(${0.85 * zoom})`,
             }}
         >
             <div
@@ -416,54 +416,54 @@ const StylePanel: React.FC<StylePanelProps> = ({
                             const baseFonts = [...SYSTEM_FONTS, ...fonts.map(f => f.name)];
                             const allFonts = baseFonts.includes(currentFont) ? baseFonts : [currentFont, ...baseFonts];
                             return (
-                                <div
-                                    data-font-dropdown
-                                    className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9100] max-h-40 overflow-y-auto overflow-x-hidden overscroll-contain"
-                                    onWheel={(e) => e.stopPropagation()}
-                                >
-                                    {allFonts.map(f => (
-                                        <button
-                                            key={f}
-                                            type="button"
-                                            onClick={() => {
-                                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontFamily: f } : el);
-                                                update({ drawElements: next });
-                                                syncUpdate({ drawElements: next });
-                                                setFontDropdownOpen(false);
-                                            }}
-                                            className={`w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 first:rounded-t-lg ${currentFont === f ? 'bg-blue-50 text-blue-700' : ''}`}
-                                            style={{ fontFamily: resolveFontFamilyCSS(f) }}
-                                        >
-                                            {f}
-                                        </button>
-                                    ))}
-                                    <div className="border-t border-gray-100 p-1">
-                                        <input ref={fontInputRef} type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={async (e) => {
-                                            const file = e.target.files?.[0];
-                                            if (!file) return;
-                                            const fd = new FormData();
-                                            fd.append('font', file);
-                                            try {
-                                                const res = await fetchWithAuth(`${API_BASE}/api/fonts`, { method: 'POST', body: fd });
-                                                if (!res.ok) throw new Error();
-                                                const data = await res.json();
-                                                setFonts(prev => [...prev, data]);
-                                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontFamily: data.name } : el);
-                                                update({ drawElements: next });
-                                                syncUpdate({ drawElements: next });
-                                            } catch (err) { console.error(err); }
-                                            e.target.value = '';
-                                        }} />
-                                        <button
-                                            type="button"
-                                            onClick={() => fontInputRef.current?.click()}
-                                            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] text-blue-600 hover:bg-blue-50 rounded"
-                                        >
-                                            <Plus size={12} />
-                                            폰트 추가
-                                        </button>
-                                    </div>
+                            <div
+                                data-font-dropdown
+                                className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9100] max-h-40 overflow-y-auto overflow-x-hidden overscroll-contain"
+                                onWheel={(e) => e.stopPropagation()}
+                            >
+                                {allFonts.map(f => (
+                                    <button
+                                        key={f}
+                                        type="button"
+                                        onClick={() => {
+                                            const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontFamily: f } : el);
+                                            update({ drawElements: next });
+                                            syncUpdate({ drawElements: next });
+                                            setFontDropdownOpen(false);
+                                        }}
+                                        className={`w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 first:rounded-t-lg ${currentFont === f ? 'bg-blue-50 text-blue-700' : ''}`}
+                                        style={{ fontFamily: resolveFontFamilyCSS(f) }}
+                                    >
+                                        {f}
+                                    </button>
+                                ))}
+                                <div className="border-t border-gray-100 p-1">
+                                    <input ref={fontInputRef} type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const fd = new FormData();
+                                        fd.append('font', file);
+                                        try {
+                                            const res = await fetchWithAuth(`${API_BASE}/api/fonts`, { method: 'POST', body: fd });
+                                            if (!res.ok) throw new Error();
+                                            const data = await res.json();
+                                            setFonts(prev => [...prev, data]);
+                                            const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontFamily: data.name } : el);
+                                            update({ drawElements: next });
+                                            syncUpdate({ drawElements: next });
+                                        } catch (err) { console.error(err); }
+                                        e.target.value = '';
+                                    }} />
+                                    <button
+                                        type="button"
+                                        onClick={() => fontInputRef.current?.click()}
+                                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] text-blue-600 hover:bg-blue-50 rounded"
+                                    >
+                                        <Plus size={12} />
+                                        폰트 추가
+                                    </button>
                                 </div>
+                            </div>
                             );
                         })()}
                     </div>
@@ -651,10 +651,11 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                     update({ drawElements: nextElements });
                                     syncUpdate({ drawElements: nextElements });
                                 }}
-                                className={`flex items-center justify-center w-9 h-9 rounded-lg border-2 transition-all shrink-0 ${isSelected
+                                className={`flex items-center justify-center w-9 h-9 rounded-lg border-2 transition-all shrink-0 ${
+                                    isSelected
                                         ? 'border-[#2c3e7c] bg-blue-50 ring-2 ring-[#2c3e7c] ring-offset-1'
                                         : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                                    }`}
+                                }`}
                             >
                                 {value === 'none' ? (
                                     <div className="w-5 h-5 rounded bg-gray-100" title="테두리 없음" />

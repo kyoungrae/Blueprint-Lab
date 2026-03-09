@@ -20,8 +20,6 @@ interface ScreenDesignStore {
 
     exportData: () => ScreenDesignState;
     importData: (data: ScreenDesignState) => void;
-    /** 다른 프로젝트에서 내보낸 데이터를 현재 프로젝트에 붙여넣기 (ID 충돌 방지용 재매핑). 반환: 병합된 전체 상태(저장용) */
-    mergeImportData: (data: ScreenDesignState) => ScreenDesignState;
 
     // 전역 클립보드 (엔티티 간 복사/붙여넣기)
     canvasClipboard: DrawElement[];
@@ -116,46 +114,6 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
             flows: data.flows || [],
             sections: Array.isArray(data.sections) ? data.sections : [],
         });
-    },
-
-    mergeImportData: (data): ScreenDesignState => {
-        const { screens: existingScreens, flows: existingFlows, sections: existingSections } = get();
-        const newScreens = data.screens || [];
-        const newFlows = data.flows || [];
-        const newSections = Array.isArray(data.sections) ? data.sections : [];
-        const existingScreenIds = new Set(existingScreens.map((s) => s.id));
-        const existingSectionIds = new Set(existingSections.map((s) => s.id));
-        const screenIdMap = new Map<string, string>();
-        const sectionIdMap = new Map<string, string>();
-        const ts = () => `_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-        const mergedScreens: Screen[] = [...existingScreens];
-        const mergedSections: ScreenSection[] = [...existingSections];
-        for (const sec of newSections) {
-            const newId = existingSectionIds.has(sec.id) ? `section${ts()}` : sec.id;
-            if (newId !== sec.id) sectionIdMap.set(sec.id, newId);
-            existingSectionIds.add(newId);
-            mergedSections.push({ ...sec, id: newId });
-        }
-        for (const sc of newScreens) {
-            const newId = existingScreenIds.has(sc.id) ? `screen${ts()}` : sc.id;
-            if (newId !== sc.id) screenIdMap.set(sc.id, newId);
-            existingScreenIds.add(newId);
-            const sectionId = sc.sectionId && sectionIdMap.has(sc.sectionId)
-                ? sectionIdMap.get(sc.sectionId)!
-                : sc.sectionId;
-            mergedScreens.push({ ...sc, id: newId, sectionId });
-        }
-        const mergedFlows: ScreenFlow[] = [...existingFlows];
-        const mergedScreenIds = new Set(mergedScreens.map((s) => s.id));
-        for (const f of newFlows) {
-            const src = screenIdMap.get(f.source) ?? f.source;
-            const tgt = screenIdMap.get(f.target) ?? f.target;
-            if (!mergedScreenIds.has(src) || !mergedScreenIds.has(tgt)) continue;
-            mergedFlows.push({ ...f, id: `flow${ts()}`, source: src, target: tgt });
-        }
-        const next: ScreenDesignState = { screens: mergedScreens, flows: mergedFlows, sections: mergedSections };
-        set(next);
-        return next;
     },
 
     canvasClipboard: [],

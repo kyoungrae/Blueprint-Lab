@@ -136,7 +136,7 @@ export interface ComponentPickerButtonProps {
     onShowChange: (show: boolean) => void;
     position: { x: number; y: number };
     onPositionChange: (pos: { x: number; y: number }) => void;
-    zoom: number | string;
+    zoom: number;
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     componentList: Screen[];
@@ -232,52 +232,52 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                             style={{
                                 left: screenPos.x,
                                 top: screenPos.y,
-                                transform: `scale(calc(0.85 * ${zoom}))`,
+                                transform: `scale(${0.85 * zoom})`,
                             }}
                         >
-                            <PremiumTooltip label="드래그하여 이동">
-                                <div
-                                    className="w-full flex items-center justify-start -mx-3 px-3 border-b border-gray-100 pb-2 mb-2 cursor-grab active:cursor-grabbing group/header"
-                                    onMouseDown={handleHeaderMouseDown}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
-                                        <Box size={12} className="text-teal-600" />
-                                        <span className="text-[11px] font-bold text-gray-600">컴포넌트 추가</span>
-                                    </div>
-                                </div>
-                            </PremiumTooltip>
-                            <div className="flex gap-3 py-2 overflow-x-auto">
-                                {!linkedComponentProject ? (
-                                    <div className="px-3 py-4 text-center text-[11px] text-gray-500 w-full">
-                                        컴포넌트 프로젝트를 연결해 주세요
-                                    </div>
-                                ) : componentList.length === 0 ? (
-                                    <div className="px-3 py-4 text-center text-[11px] text-gray-500 w-full">
-                                        컴포넌트가 없습니다
-                                    </div>
-                                ) : (
-                                    componentList.map((c) => {
-                                        const drawIds = new Set((c.drawElements ?? []).map((e) => e.id));
-                                        const validSubs = (c.subComponents ?? []).filter((sub) =>
-                                            sub.elementIds?.length > 0 && sub.elementIds.every((eid) => drawIds.has(eid))
-                                        );
-                                        return (
-                                            <ComponentCard
-                                                key={c.id}
-                                                c={c}
-                                                validSubs={validSubs}
-                                                hoveredSub={hoveredSub}
-                                                setHoveredSub={setHoveredSub}
-                                                onInsert={onInsert}
-                                            />
-                                        );
-                                    })
-                                )}
+                        <PremiumTooltip label="드래그하여 이동">
+                        <div
+                            className="w-full flex items-center justify-start -mx-3 px-3 border-b border-gray-100 pb-2 mb-2 cursor-grab active:cursor-grabbing group/header"
+                            onMouseDown={handleHeaderMouseDown}
+                        >
+                            <div className="flex items-center gap-2">
+                                <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
+                                <Box size={12} className="text-teal-600" />
+                                <span className="text-[11px] font-bold text-gray-600">컴포넌트 추가</span>
                             </div>
-                        </div>,
-                        getPanelPortalRoot()
-                    );
+                        </div>
+                        </PremiumTooltip>
+                        <div className="flex gap-3 py-2 overflow-x-auto">
+                            {!linkedComponentProject ? (
+                                <div className="px-3 py-4 text-center text-[11px] text-gray-500 w-full">
+                                    컴포넌트 프로젝트를 연결해 주세요
+                                </div>
+                            ) : componentList.length === 0 ? (
+                                <div className="px-3 py-4 text-center text-[11px] text-gray-500 w-full">
+                                    컴포넌트가 없습니다
+                                </div>
+                            ) : (
+                                componentList.map((c) => {
+                                    const drawIds = new Set((c.drawElements ?? []).map((e) => e.id));
+                                    const validSubs = (c.subComponents ?? []).filter((sub) =>
+                                        sub.elementIds?.length > 0 && sub.elementIds.every((eid) => drawIds.has(eid))
+                                    );
+                                    return (
+                                        <ComponentCard
+                                            key={c.id}
+                                            c={c}
+                                            validSubs={validSubs}
+                                            hoveredSub={hoveredSub}
+                                            setHoveredSub={setHoveredSub}
+                                            onInsert={onInsert}
+                                        />
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>,
+                    getPanelPortalRoot()
+                );
                 })()}
         </div>
     );

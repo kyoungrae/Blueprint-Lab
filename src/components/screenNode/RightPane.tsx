@@ -21,7 +21,7 @@ interface RightPaneProps {
     linkedErdProject: any;
     erdTables: string[];
     drawElements: DrawElement[];
-    zoom: number | string;
+    zoom: number;
     tableListPanelPos: { x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null;
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
 }
@@ -286,69 +286,69 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 <span>직접 입력</span>
                             </button>
                             {linkedErdProject && (
-                                <div className="relative" ref={tableListRef}>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); setIsTableListOpen(!isTableListOpen); }}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        className="nodrag flex items-center gap-1 text-[9px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors"
-                                    >
-                                        <Database size={10} />
-                                        <span>추가</span>
-                                    </button>
-                                    {isTableListOpen && tableListPanelPos && createPortal(
-                                        (() => {
-                                            const stored = tableListPanelPos;
-                                            const screenPos = flowToScreenPosition({ x: stored.x, y: stored.y });
-                                            return (
-                                                <div
-                                                    data-table-list-portal
-                                                    className="nodrag nopan nowheel floating-panel fixed w-48 max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
-                                                    style={{
-                                                        left: screenPos.x,
-                                                        ...(stored.openUpward ? { bottom: window.innerHeight - screenPos.y } : { top: screenPos.y }),
-                                                        maxHeight: Math.max(100, Math.min(280, stored.openUpward ? stored.spaceAbove : stored.spaceBelow, window.innerHeight * 0.7)),
-                                                        transform: `scale(calc(0.85 * ${zoom}))`,
-                                                        transformOrigin: stored.openUpward ? 'bottom left' : 'top left',
-                                                    }}
-                                                    onWheel={(e) => {
-                                                        e.stopPropagation();
-                                                    }}
-                                                    onWheelCapture={(e) => {
-                                                        e.stopPropagation();
-                                                    }}
-                                                    onPointerDown={(e) => e.stopPropagation()}
-                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                >
-                                                    <div className="p-1">
-                                                        {erdTables.length > 0 ? erdTables.map(table => (
-                                                            <button
-                                                                key={table}
-                                                                className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    const current = screen.relatedTables || '';
-                                                                    const toAdd = `• ${table}`;
-                                                                    if (!current.includes(table)) {
-                                                                        const newValue = current ? `${current}\n${toAdd}` : toAdd;
-                                                                        update({ relatedTables: newValue });
-                                                                        syncUpdate({ relatedTables: newValue });
-                                                                    }
-                                                                    setIsTableListOpen(false);
-                                                                }}
-                                                                onMouseDown={(e) => e.stopPropagation()}
-                                                            >
-                                                                {table}
-                                                            </button>
-                                                        )) : (
-                                                            <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })(),
-                                        getPanelPortalRoot()
-                                    )}
-                                </div>
+                        <div className="relative" ref={tableListRef}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setIsTableListOpen(!isTableListOpen); }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="nodrag flex items-center gap-1 text-[9px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors"
+                            >
+                                <Database size={10} />
+                                <span>추가</span>
+                            </button>
+                            {isTableListOpen && tableListPanelPos && createPortal(
+                                (() => {
+                                    const stored = tableListPanelPos;
+                                    const screenPos = flowToScreenPosition({ x: stored.x, y: stored.y });
+                                    return (
+                                        <div
+                                            data-table-list-portal
+                                            className="nodrag nopan nowheel floating-panel fixed w-48 max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
+                                            style={{
+                                                left: screenPos.x,
+                                                ...(stored.openUpward ? { bottom: window.innerHeight - screenPos.y } : { top: screenPos.y }),
+                                                maxHeight: Math.max(100, Math.min(280, stored.openUpward ? stored.spaceAbove : stored.spaceBelow, window.innerHeight * 0.7)),
+                                                transform: `scale(${0.85 * zoom})`,
+                                                transformOrigin: stored.openUpward ? 'bottom left' : 'top left',
+                                            }}
+                                            onWheel={(e) => {
+                                                e.stopPropagation();
+                                            }}
+                                            onWheelCapture={(e) => {
+                                                e.stopPropagation();
+                                            }}
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                        >
+                                            <div className="p-1">
+                                                {erdTables.length > 0 ? erdTables.map(table => (
+                                                    <button
+                                                        key={table}
+                                                        className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const current = screen.relatedTables || '';
+                                                            const toAdd = `• ${table}`;
+                                                            if (!current.includes(table)) {
+                                                                const newValue = current ? `${current}\n${toAdd}` : toAdd;
+                                                                update({ relatedTables: newValue });
+                                                                syncUpdate({ relatedTables: newValue });
+                                                            }
+                                                            setIsTableListOpen(false);
+                                                        }}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                    >
+                                                        {table}
+                                                    </button>
+                                                )) : (
+                                                    <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })(),
+                                getPanelPortalRoot()
+                            )}
+                        </div>
                             )}
                         </div>
                     )}

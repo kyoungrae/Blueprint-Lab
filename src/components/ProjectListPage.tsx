@@ -10,12 +10,6 @@ import PremiumTooltip from './screenNode/PremiumTooltip';
 
 const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2 };
 
-/** 화면 설계에 연결된 ERD 프로젝트 ID 목록 (단일/다중 모두 지원) */
-function getLinkedErdIds(project: Project): string[] {
-    if (project.linkedErdProjectIds?.length) return project.linkedErdProjectIds;
-    return project.linkedErdProjectId ? [project.linkedErdProjectId] : [];
-}
-
 const ProjectListPage: React.FC = () => {
     const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, currentProjectId, updateProjectMembers, updateProjectMetadata, inviteMember, joinWithCode } = useProjectStore();
     const { user, logout } = useAuthStore();
@@ -124,7 +118,7 @@ const ProjectListPage: React.FC = () => {
         const connections: { fromId: string; toId: string }[] = [];
         projects.forEach((p) => {
             if (p.projectType === 'SCREEN_DESIGN') {
-                getLinkedErdIds(p).forEach((erdId) => connections.push({ fromId: p.id, toId: erdId }));
+                if (p.linkedErdProjectId) connections.push({ fromId: p.id, toId: p.linkedErdProjectId });
                 if (p.linkedComponentProjectId) connections.push({ fromId: p.id, toId: p.linkedComponentProjectId });
             }
         });
@@ -620,15 +614,15 @@ const ProjectListPage: React.FC = () => {
                                                             setLinkingProjectId(project.id);
                                                             setLinkingMode('erd');
                                                         }}
-                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${getLinkedErdIds(project).length > 0
+                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${project.linkedErdProjectId
                                                             ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                                             : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
                                                             }`}
                                                         title="ERD 프로젝트 연결"
                                                     >
                                                         <Database size={10} />
-                                                        {getLinkedErdIds(project).length > 0
-                                                            ? `ERD 연결 (${getLinkedErdIds(project).length}개)`
+                                                        {project.linkedErdProjectId
+                                                            ? (projects.find(p => p.id === project.linkedErdProjectId)?.name || 'ERD 연결됨')
                                                             : 'ERD 연결'}
                                                     </button>
                                                     <button
@@ -1124,146 +1118,57 @@ const ProjectListPage: React.FC = () => {
                 </div>
             )}
 
-            {linkingProjectId && linkingMode && (() => {
-                const linkingProject = projects.find(p => p.id === linkingProjectId);
-                const linkedErdIds = linkingProject ? getLinkedErdIds(linkingProject) : [];
-                const erdProjects = projects.filter(p => p.projectType === 'ERD');
-                const unlinkedErdProjects = erdProjects.filter(p => !linkedErdIds.includes(p.id));
-
-                return (
-                    <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
-                            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-xl font-black text-gray-900 mb-1">
-                                        {linkingMode === 'erd' ? 'ERD 프로젝트 연결' : '컴포넌트 프로젝트 연결'}
-                                    </h3>
-                                    <p className="text-gray-500 font-medium text-xs">
-                                        {linkingMode === 'erd' ? '연결된 ERD를 관리하거나 추가하세요. (여러 개 연결 가능)' : '연동할 컴포넌트 프로젝트를 선택하세요.'}
-                                    </p>
-                                </div>
-                                <button onClick={() => { setLinkingProjectId(null); setLinkingMode(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400">
-                                    <X size={20} />
-                                </button>
+            {linkingProjectId && linkingMode && (
+                <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
+                        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-xl font-black text-gray-900 mb-1">
+                                    {linkingMode === 'erd' ? 'ERD 프로젝트 연결' : '컴포넌트 프로젝트 연결'}
+                                </h3>
+                                <p className="text-gray-500 font-medium text-xs">
+                                    {linkingMode === 'erd' ? '연동할 ERD 프로젝트를 선택하세요.' : '연동할 컴포넌트 프로젝트를 선택하세요.'}
+                                </p>
                             </div>
-                            {linkingMode === 'erd' ? (
-                                <>
-                                    <div className="p-4 border-b border-gray-100">
-                                        <p className="text-xs font-bold text-gray-500 mb-2">연결된 ERD 프로젝트</p>
-                                        {linkedErdIds.length === 0 ? (
-                                            <p className="text-sm text-gray-400">연결된 ERD가 없습니다.</p>
-                                        ) : (
-                                            <ul className="space-y-2 max-h-[180px] overflow-y-auto">
-                                                {linkedErdIds.map((erdId) => {
-                                                    const proj = projects.find(p => p.id === erdId);
-                                                    return (
-                                                        <li key={erdId} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-blue-50 border border-blue-100">
-                                                            <div className="flex items-center gap-3 min-w-0">
-                                                                <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
-                                                                    <Database size={16} />
-                                                                </div>
-                                                                <span className="font-bold text-gray-900 truncate">{proj?.name || erdId}</span>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={async () => {
-                                                                    const next = linkedErdIds.filter(id => id !== erdId);
-                                                                    await updateProjectMetadata(linkingProjectId, { linkedErdProjectIds: next });
-                                                                }}
-                                                                className="flex-shrink-0 px-2 py-1 text-xs font-bold text-red-500 hover:bg-red-100 rounded-lg"
-                                                            >
-                                                                제거
-                                                            </button>
-                                                        </li>
-                                                    );
-                                                })}
-                                            </ul>
-                                        )}
+                            <button onClick={() => { setLinkingProjectId(null); setLinkingMode(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-2 max-h-[400px] overflow-y-auto">
+                            {projects.filter(p => p.projectType === (linkingMode === 'erd' ? 'ERD' : 'COMPONENT')).map((proj) => (
+                                <button
+                                    key={proj.id}
+                                    onClick={async () => {
+                                        await updateProjectMetadata(linkingProjectId, linkingMode === 'erd' ? { linkedErdProjectId: proj.id } : { linkedComponentProjectId: proj.id });
+                                        setLinkingProjectId(null);
+                                        setLinkingMode(null);
+                                    }}
+                                    className={`w-full p-4 rounded-xl flex items-center gap-4 text-left ${linkingMode === 'erd' ? 'hover:bg-blue-50' : 'hover:bg-teal-50'}`}
+                                >
+                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${linkingMode === 'erd' ? 'bg-blue-100 text-blue-600' : 'bg-teal-100 text-teal-600'}`}>
+                                        {linkingMode === 'erd' ? <Database size={18} /> : <Box size={18} />}
                                     </div>
-                                    <div className="p-4">
-                                        <p className="text-xs font-bold text-gray-500 mb-2">ERD 프로젝트 추가</p>
-                                        {unlinkedErdProjects.length === 0 ? (
-                                            <p className="text-sm text-gray-400">추가할 수 있는 ERD 프로젝트가 없습니다.</p>
-                                        ) : (
-                                            <ul className="space-y-1 max-h-[200px] overflow-y-auto">
-                                                {unlinkedErdProjects.map((proj) => (
-                                                    <button
-                                                        key={proj.id}
-                                                        type="button"
-                                                        onClick={async () => {
-                                                            const next = [...linkedErdIds, proj.id];
-                                                            await updateProjectMetadata(linkingProjectId, { linkedErdProjectIds: next });
-                                                        }}
-                                                        className="w-full p-3 rounded-xl flex items-center gap-3 text-left hover:bg-blue-50 border border-transparent hover:border-blue-100"
-                                                    >
-                                                        <div className="w-9 h-9 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">
-                                                            <Database size={16} />
-                                                        </div>
-                                                        <span className="font-bold text-gray-900 truncate">{proj.name}</span>
-                                                    </button>
-                                                ))}
-                                            </ul>
-                                        )}
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="font-bold text-gray-900 truncate">{proj.name}</h4>
                                     </div>
-                                    <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
-                                        <button
-                                            onClick={async () => {
-                                                await updateProjectMetadata(linkingProjectId, { linkedErdProjectIds: [] });
-                                                setLinkingProjectId(null);
-                                                setLinkingMode(null);
-                                            }}
-                                            className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg"
-                                        >
-                                            전체 연결 해제
-                                        </button>
-                                        <button
-                                            onClick={() => { setLinkingProjectId(null); setLinkingMode(null); }}
-                                            className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-lg"
-                                        >
-                                            닫기
-                                        </button>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="p-2 max-h-[400px] overflow-y-auto">
-                                        {projects.filter(p => p.projectType === 'COMPONENT').map((proj) => (
-                                            <button
-                                                key={proj.id}
-                                                onClick={async () => {
-                                                    await updateProjectMetadata(linkingProjectId, { linkedComponentProjectId: proj.id });
-                                                    setLinkingProjectId(null);
-                                                    setLinkingMode(null);
-                                                }}
-                                                className="w-full p-4 rounded-xl flex items-center gap-4 text-left hover:bg-teal-50"
-                                            >
-                                                <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-teal-100 text-teal-600">
-                                                    <Box size={18} />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <h4 className="font-bold text-gray-900 truncate">{proj.name}</h4>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
-                                        <button
-                                            onClick={async () => {
-                                                await updateProjectMetadata(linkingProjectId, { linkedComponentProjectId: undefined });
-                                                setLinkingProjectId(null);
-                                                setLinkingMode(null);
-                                            }}
-                                            className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg"
-                                        >
-                                            연결 해제
-                                        </button>
-                                    </div>
-                                </>
-                            )}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+                            <button
+                                onClick={async () => {
+                                    await updateProjectMetadata(linkingProjectId, linkingMode === 'erd' ? { linkedErdProjectId: undefined } : { linkedComponentProjectId: undefined });
+                                    setLinkingProjectId(null);
+                                    setLinkingMode(null);
+                                }}
+                                className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg"
+                            >
+                                연결 해제
+                            </button>
                         </div>
                     </div>
-                );
-            })()}
+                </div>
+            )}
 
             <footer className="py-10 text-center text-gray-400 text-xs font-bold uppercase tracking-widest">
                 © 2026 Blue Print Lab. 모든 권리 보유.

@@ -401,15 +401,10 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         });
     };
 
-    // Linked ERD Project Data (여러 개 연결 시 첫 번째 기준)
+    // Linked ERD Project Data
     const { projects, currentProjectId } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
-    const linkedErdProjects = React.useMemo(() => {
-        if (!currentProject) return [];
-        const ids = currentProject.linkedErdProjectIds?.length ? currentProject.linkedErdProjectIds : (currentProject.linkedErdProjectId ? [currentProject.linkedErdProjectId] : []);
-        return projects.filter(p => ids.includes(p.id));
-    }, [currentProject, projects]);
-    const linkedErdProject = linkedErdProjects[0];
+    const linkedErdProject = projects.find(p => p.id === currentProject?.linkedErdProjectId);
 
     // DB Types for Format column
     const dbFieldTypes = React.useMemo(() => {
@@ -570,15 +565,14 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (window.confirm(`기능명세서 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
+            deleteScreen(screen.id);
             sendOperation({
                 type: 'SCREEN_DELETE',
                 targetId: screen.id,
                 userId: user?.id || 'anonymous',
                 userName: user?.name || 'Anonymous',
-                payload: {},
-                previousState: screen as unknown as Record<string, unknown>,
+                payload: {}
             });
-            deleteScreen(screen.id);
         }
     };
 
