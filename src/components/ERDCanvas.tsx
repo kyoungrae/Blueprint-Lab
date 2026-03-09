@@ -736,22 +736,17 @@ const ERDCanvasContent: React.FC = () => {
         }
         setNodes((prevNodes) => {
             const duringDrag = isDraggingRef.current;
-            const allInView = visibleNodeIds.size === 0;
-            // [수정 1] O(n²) → O(n): Map으로 기존 노드를 O(1) 탐색
+            // 항상 'entity' 타입만 사용하여 줌인/줌아웃 시 노드 키·타입이 바뀌지 않도록 함
             const prevNodeMap = new Map(prevNodes.map((n) => [n.id, n]));
             return deferredEntities.map((entity) => {
                 const existingNode = prevNodeMap.get(entity.id);
-                const inView = allInView || visibleNodeIds.has(entity.id);
                 const position = duringDrag && existingNode ? existingNode.position : entity.position;
-                // [수정 5] data 참조 안정화: 타입·entityId가 같으면 기존 data 객체 재사용 → EntityNode memo 활성화
                 const sameShape = existingNode &&
                     existingNode.data?.entityId === entity.id &&
-                    (existingNode.type === 'entity') === inView;
+                    existingNode.type === 'entity';
                 const data = sameShape
                     ? existingNode!.data
-                    : inView
-                        ? { entityId: entity.id, inView: true as const }
-                        : { entityId: entity.id, entity };
+                    : { entityId: entity.id, inView: true as const };
                 if (sameShape &&
                     existingNode!.position.x === position.x &&
                     existingNode!.position.y === position.y) {
@@ -759,14 +754,14 @@ const ERDCanvasContent: React.FC = () => {
                 }
                 return {
                     id: entity.id,
-                    type: inView ? 'entity' : 'entityPlaceholder',
+                    type: 'entity',
                     position,
                     data,
                     selected: existingNode?.selected,
                 };
             });
         });
-    }, [deferredEntities, visibleNodeIds, setNodes]);
+    }, [deferredEntities, setNodes]);
 
     // Keyboard shortcuts for Undo/Redo and Deletion
     useEffect(() => {
