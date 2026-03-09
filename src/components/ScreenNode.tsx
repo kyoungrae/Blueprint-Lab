@@ -4,12 +4,10 @@ import { type NodeProps, useReactFlow, useOnViewportChange, useStore as useRFSto
 import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
 
-import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, Table2, Settings2, Undo2, Redo2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
-import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
+import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, Table2, Settings2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
-import { useSyncStore } from '../store/syncStore';
-import { useAuthStore } from '../store/authStore';
 import { consumeLastRemoteUpdateScreenIdIfMatch } from '../store/screenUndoRemoteFlag';
+import { useScreenLockAndSync } from './screenNode/useScreenLockAndSync';
 
 // ── Sub-Components ────────────────────────────────────────────
 
@@ -30,7 +28,7 @@ import ImageElement from './screenNode/ImageElement';
 import { ImageStylePanel } from './screenNode/ImageStylePanel';
 import { normalizeImageUrlForStorage } from '../utils/imageUrl';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
-import { EntityLockBadge, useEntityLock } from './collaboration';
+import { EntityLockBadge } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
 import { getSmartGuidesAndSnap, SNAP_THRESHOLD, type AlignmentGuides, type SnapState } from './screenNode/smartGuides';
 import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
@@ -44,6 +42,10 @@ import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
 import { resolveFontFamilyCSS } from '../utils/fontFamily';
 import { Monitor } from 'lucide-react';
+import UndoRedoControls from './screenNode/UndoRedoControls';
+import CanvasAlignToolbar from './screenNode/CanvasAlignToolbar';
+import GuideClipboardControls from './screenNode/GuideClipboardControls';
+import ObjectAlignToolbar from './screenNode/ObjectAlignToolbar';
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 /** 다각형 프리셋에 따른 정규화된 꼭짓점 (0~1). [x,y] 배열 */
@@ -150,7 +152,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     // ── 줌인 시 전체 편집 UI ──
     return <ScreenNodeFull data={data} selected={selected} />;
 };
-
 const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = memo(({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
@@ -166,8 +167,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const { setHandlers } = useScreenDesignUndoRedo();
     const { screen } = data;
     const {
+        isLocked,
+        isLockedByOther,
+        lockedBy,
+        update,
         updateScreen,
-        deleteScreen,
+        syncUpdate,
+        handleToggleLock,
+        handleDelete,
         canvasClipboard,
         setCanvasClipboard,
         gridClipboard,
@@ -176,9 +183,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         setLastInteractedScreenId,
         getScreenById,
         getPasteTargetScreenId,
-    } = useScreenNodeStore();
-    const { sendOperation } = useSyncStore();
-    const { user } = useAuthStore();
+        sendOperation,
+        user,
+    } = useScreenLockAndSync(screen);
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
     const uploadImage = async (file: File): Promise<string> => {
@@ -201,19 +208,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         return normalizeImageUrlForStorage(json.url) ?? json.url;
     };
 
-    const syncUpdate = (updates: Partial<Screen>) => {
-        sendOperation({
-            type: 'SCREEN_UPDATE',
-            targetId: screen.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: updates
-        });
-    };
-
-    const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
-    const isLocalLocked = screen.isLocked ?? true;
-    const isLocked = isLocalLocked || isLockedByOther;
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
     const [tableListPanelPos, setTableListPanelPos] = React.useState<{ x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
@@ -253,42 +247,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             .filter((c) => (c.drawElements?.length ?? 0) > 0); // drawElements가 있는 컴포넌트만 표시 (캔버스에 그린 내용이 없으면 제외)
     }, [linkedComponentProject]);
 
-
-    const update = (updates: Partial<Screen>) => {
-        if (isLocked) return;
-        updateScreen(screen.id, updates);
-    };
-
-    const handleToggleLock = (e?: React.MouseEvent) => {
-        e?.stopPropagation();
-        if (isLockedByOther) {
-            alert(`${lockedBy}님이 수정 중입니다.`);
-            return;
-        }
-        const newLockedState = !isLocalLocked;
-        updateScreen(screen.id, { isLocked: newLockedState });
-        syncUpdate({ isLocked: newLockedState });
-        if (!newLockedState) {
-            requestLock();
-        } else {
-            releaseLock();
-        }
-    };
-
-    const handleDelete = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (window.confirm(`화면 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
-            sendOperation({
-                type: 'SCREEN_DELETE',
-                targetId: screen.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: {},
-                previousState: screen as unknown as Record<string, unknown>,
-            });
-            deleteScreen(screen.id);
-        }
-    };
 
 
 
@@ -3224,27 +3182,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                 >
                                     <div className="flex flex-nowrap items-center gap-1 flex-1 min-w-max px-1">
                                         {/* Undo/Redo Controls */}
-                                        <div className="flex items-center gap-0.5 border-l border-gray-200 ml-1">
-                                            <PremiumTooltip label="되돌리기 (Ctrl+Z)">
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); undo(); }}
-                                                    disabled={history.past.length <= 1}
-                                                    className={`p-2 rounded-lg transition-colors ${history.past.length <= 1 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                >
-                                                    <Undo2 size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                            <PremiumTooltip label="다시실행 (Ctrl+Y)">
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); redo(); }}
-                                                    disabled={history.future.length === 0}
-                                                    className={`p-2 rounded-lg transition-colors ${history.future.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-100 text-gray-500'}`}
-                                                >
-                                                    <Redo2 size={18} />
-                                                </button>
-                                            </PremiumTooltip>
-                                        </div>
-
+                                        <UndoRedoControls
+                                            undo={undo}
+                                            redo={redo}
+                                            pastLength={history.past.length}
+                                            futureLength={history.future.length}
+                                        />
                                         <div className="flex flex-nowrap items-center gap-1 animate-in slide-in-from-left-1 duration-200">
                                             <div className="flex flex-nowrap items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
                                                 <PremiumTooltip label="선택" dotColor="#3b82f6">
@@ -3849,39 +3792,13 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         </div>
                                                                     </div>
                                                                     {screen.guideLinesVisible !== false && (
-                                                                        <div className="flex flex-col gap-1 pt-1 mt-1 border-t border-gray-100">
-                                                                            <span className="text-[10px] font-medium text-gray-500">격자 복사 · 붙여넣기</span>
-                                                                            <div className="flex items-center gap-1">
-                                                                                <PremiumTooltip label="현재 격자를 복사해 다른 화면에 붙여넣을 수 있습니다">
-                                                                                    <button
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            setGridClipboard({
-                                                                                                vertical: [...(guideLines.vertical ?? [])],
-                                                                                                horizontal: [...(guideLines.horizontal ?? [])],
-                                                                                            });
-                                                                                        }}
-                                                                                        className="px-2 py-1 text-[11px] rounded-md bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600"
-                                                                                    >
-                                                                                        격자 복사
-                                                                                    </button>
-                                                                                </PremiumTooltip>
-                                                                                <PremiumTooltip label={gridClipboard ? '복사한 격자를 이 화면에 적용합니다' : '먼저 다른 화면에서 격자를 복사하세요'}>
-                                                                                    <button
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            if (!gridClipboard) return;
-                                                                                            update({ guideLines: { vertical: [...gridClipboard.vertical], horizontal: [...gridClipboard.horizontal] } });
-                                                                                            syncUpdate({ guideLines: { vertical: [...gridClipboard.vertical], horizontal: [...gridClipboard.horizontal] } });
-                                                                                        }}
-                                                                                        disabled={!gridClipboard}
-                                                                                        className="px-2 py-1 text-[11px] rounded-md bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                                    >
-                                                                                        격자 붙여넣기
-                                                                                    </button>
-                                                                                </PremiumTooltip>
-                                                                            </div>
-                                                                        </div>
+                                                                        <GuideClipboardControls
+                                                                            guideLines={guideLines}
+                                                                            gridClipboard={gridClipboard}
+                                                                            setGridClipboard={setGridClipboard}
+                                                                            update={update}
+                                                                            syncUpdate={syncUpdate}
+                                                                        />
                                                                     )}
                                                                 </div>
                                                             );
@@ -3892,201 +3809,22 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             </div>
                                         </div>
 
-                                        {selectedElementIds.length > 0 && (
-                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
-                                                <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
-                                                    {(['left', 'center', 'right'] as const).map((align) => (
-                                                        <PremiumTooltip key={align} label={textSelectionRect ? `텍스트 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬` : `캔버스 ${align === 'left' ? '왼쪽' : align === 'right' ? '오른쪽' : '중앙'} 정렬`}>
-                                                            <button
-                                                                onMouseDown={(e) => e.preventDefault()}
-                                                                onClick={() => {
-                                                                    if (textSelectionRect) {
-                                                                        const nextElements = drawElements.map(el =>
-                                                                            selectedElementIds.includes(el.id) ? { ...el, textAlign: align } : el
-                                                                        );
-                                                                        update({ drawElements: nextElements });
-                                                                        syncUpdate({ drawElements: nextElements });
-                                                                    } else {
-                                                                        const selectedEls = drawElements.filter(el => selectedElementIds.includes(el.id));
-                                                                        if (selectedEls.length === 0) return;
-
-                                                                        // groupId 기준으로 논리 그룹 구성 (group 없는 요소는 단일 그룹으로 취급)
-                                                                        type ElGroup = { id: string; elements: typeof drawElements };
-                                                                        const groupMap = new Map<string, ElGroup>();
-                                                                        const groups: ElGroup[] = [];
-
-                                                                        for (const el of selectedEls) {
-                                                                            const gid = el.groupId ?? el.id;
-                                                                            let grp = groupMap.get(gid);
-                                                                            if (!grp) {
-                                                                                grp = { id: gid, elements: [] };
-                                                                                groupMap.set(gid, grp);
-                                                                                groups.push(grp);
-                                                                            }
-                                                                            grp.elements.push(el);
-                                                                        }
-
-                                                                        // 각 그룹에 대해 바운딩 박스 계산 후, 캔버스 기준 정렬 위치(targetX)로 이동량 dx 계산
-                                                                        const groupOffsets = new Map<string, number>();
-
-                                                                        for (const grp of groups) {
-                                                                            const left = Math.min(...grp.elements.map(e => e.x));
-                                                                            const right = Math.max(...grp.elements.map(e => e.x + e.width));
-                                                                            const groupCenter = (left + right) / 2;
-
-                                                                            let targetCenter = groupCenter;
-                                                                            let targetLeft = left;
-
-                                                                            if (align === 'left') {
-                                                                                targetLeft = 10;
-                                                                                targetCenter = targetLeft + (right - left) / 2;
-                                                                            } else if (align === 'center') {
-                                                                                targetCenter = canvasW / 2;
-                                                                            } else if (align === 'right') {
-                                                                                targetLeft = canvasW - (right - left) - 10;
-                                                                                targetCenter = targetLeft + (right - left) / 2;
-                                                                            }
-
-                                                                            const dx = targetCenter - groupCenter;
-                                                                            groupOffsets.set(grp.id, dx);
-                                                                        }
-
-                                                                        const nextElements = drawElements.map(el => {
-                                                                            if (!selectedElementIds.includes(el.id)) return el;
-                                                                            const gid = el.groupId ?? el.id;
-                                                                            const dx = groupOffsets.get(gid) ?? 0;
-                                                                            return { ...el, x: el.x + dx };
-                                                                        });
-
-                                                                        update({ drawElements: nextElements });
-                                                                        syncUpdate({ drawElements: nextElements });
-                                                                    }
-                                                                }}
-                                                                className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.textAlign === align || (align === 'center' && !drawElements.find(el => el.id === selectedElementIds[0])?.textAlign)))
-                                                                    ? 'bg-white shadow-sm text-blue-600'
-                                                                    : 'text-gray-400 hover:text-gray-600'
-                                                                    }`}
-                                                            >
-                                                                {align === 'left' ? <AlignHorizontalJustifyStart size={16} /> : align === 'right' ? <AlignHorizontalJustifyEnd size={16} /> : <AlignHorizontalJustifyCenter size={16} />}
-                                                            </button>
-                                                        </PremiumTooltip>
-                                                    ))}
-                                                </div>
-                                                <div className="flex gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-100">
-                                                    {(['top', 'middle', 'bottom'] as const).map((vAlign) => (
-                                                        <PremiumTooltip key={vAlign} label={textSelectionRect ? `텍스트 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬` : `캔버스 ${vAlign === 'top' ? '상단' : vAlign === 'bottom' ? '하단' : '중앙'} 정렬`}>
-                                                            <button
-                                                                onMouseDown={(e) => e.preventDefault()}
-                                                                onClick={() => {
-                                                                    if (textSelectionRect) {
-                                                                        const nextElements = drawElements.map(el =>
-                                                                            selectedElementIds.includes(el.id) ? { ...el, verticalAlign: vAlign } : el
-                                                                        );
-                                                                        update({ drawElements: nextElements });
-                                                                        syncUpdate({ drawElements: nextElements });
-                                                                    } else {
-                                                                        const nextElements = drawElements.map(el => {
-                                                                            if (!selectedElementIds.includes(el.id)) return el;
-                                                                            let ny = el.y;
-                                                                            if (vAlign === 'top') ny = 10;
-                                                                            else if (vAlign === 'middle') ny = (canvasH / 2) - (el.height / 2);
-                                                                            else if (vAlign === 'bottom') ny = canvasH - el.height - 10;
-                                                                            return { ...el, y: ny };
-                                                                        });
-                                                                        update({ drawElements: nextElements });
-                                                                        syncUpdate({ drawElements: nextElements });
-                                                                    }
-                                                                }}
-                                                                className={`p-1.5 rounded-md transition-all ${(textSelectionRect && (drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign === vAlign || (vAlign === 'middle' && !drawElements.find(el => el.id === selectedElementIds[0])?.verticalAlign)))
-                                                                    ? 'bg-white shadow-sm text-blue-600'
-                                                                    : 'text-gray-400 hover:text-gray-600'
-                                                                    }`}
-                                                            >
-                                                                {vAlign === 'top' ? <AlignVerticalJustifyStart size={16} /> : vAlign === 'bottom' ? <AlignVerticalJustifyEnd size={16} /> : <AlignVerticalJustifyCenter size={16} />}
-                                                            </button>
-                                                        </PremiumTooltip>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
+                                        <CanvasAlignToolbar
+                                            selectedElementIds={selectedElementIds}
+                                            textSelectionRect={textSelectionRect}
+                                            drawElements={drawElements}
+                                            canvasW={canvasW}
+                                            canvasH={canvasH}
+                                            update={update}
+                                            syncUpdate={syncUpdate}
+                                        />
 
                                         {/* Object-to-Object Alignment (2+ selected) */}
-                                        {selectedElementIds.length >= 2 && (
-                                            <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
-                                                <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
-                                                    <PremiumTooltip label="객체 왼쪽 정렬">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-left')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        >
-                                                            <AlignHorizontalJustifyStart size={16} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                    <PremiumTooltip label="객체 가로 중앙 정렬">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-center-h')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        >
-                                                            <AlignHorizontalJustifyCenter size={16} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                    <PremiumTooltip label="객체 오른쪽 정렬">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-right')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        >
-                                                            <AlignHorizontalJustifyEnd size={16} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                </div>
-                                                <div className="flex gap-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 p-0.5 rounded-lg border border-indigo-100">
-                                                    <PremiumTooltip label="객체 상단 정렬">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-top')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        >
-                                                            <AlignVerticalJustifyStart size={16} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                    <PremiumTooltip label="객체 세로 중앙 정렬">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-center-v')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        >
-                                                            <AlignVerticalJustifyCenter size={16} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                    <PremiumTooltip label="객체 하단 정렬">
-                                                        <button
-                                                            onClick={() => handleObjectAlign('align-bottom')}
-                                                            className="p-1.5 rounded-md transition-all text-indigo-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm"
-                                                        >
-                                                            <AlignVerticalJustifyEnd size={16} />
-                                                        </button>
-                                                    </PremiumTooltip>
-                                                </div>
-                                                {selectedElementIds.length >= 3 && (
-                                                    <div className="flex gap-0.5 bg-gradient-to-r from-purple-50 to-pink-50 p-0.5 rounded-lg border border-purple-100">
-                                                        <PremiumTooltip label="가로 균등 분배">
-                                                            <button
-                                                                onClick={() => handleObjectAlign('distribute-h')}
-                                                                className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
-                                                            >
-                                                                <AlignHorizontalDistributeCenter size={16} />
-                                                            </button>
-                                                        </PremiumTooltip>
-                                                        <PremiumTooltip label="세로 균등 분배">
-                                                            <button
-                                                                onClick={() => handleObjectAlign('distribute-v')}
-                                                                className="p-1.5 rounded-md transition-all text-purple-400 hover:text-purple-600 hover:bg-white hover:shadow-sm"
-                                                            >
-                                                                <AlignVerticalDistributeCenter size={16} />
-                                                            </button>
-                                                        </PremiumTooltip>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                        <ObjectAlignToolbar
+                                            selectedElementIds={selectedElementIds}
+                                            drawElements={drawElements}
+                                            onAlign={handleObjectAlign}
+                                        />
 
                                         {/* 그룹화 / 그룹화 해제 */}
                                         {selectedElementIds.length >= 1 && (() => {
