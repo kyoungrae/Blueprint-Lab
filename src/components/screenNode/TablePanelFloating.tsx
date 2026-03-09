@@ -19,7 +19,7 @@ export interface TablePanelFloatingProps {
     drawElements: DrawElement[];
     tablePanelPos: { x: number; y: number };
     setTablePanelPos: (pos: { x: number; y: number }) => void;
-    zoom: number;
+    zoom: number | string;
     isLocked: boolean;
     editingTableId: string | null;
     selectedCellIndices: number[];
@@ -132,7 +132,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
             style={{
                 left: tablePanelScreenPos.x,
                 top: tablePanelScreenPos.y,
-                transform: `scale(${0.85 * zoom})`,
+                transform: `scale(calc(0.85 * ${zoom}))`,
             }}
         >
             {/* Header */}

@@ -1,6 +1,6 @@
 import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback, startTransition } from 'react';
 import { createPortal } from 'react-dom';
-import { type NodeProps, useStore, useReactFlow } from 'reactflow';
+import { type NodeProps, useReactFlow, useOnViewportChange } from 'reactflow';
 import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
 
@@ -94,7 +94,14 @@ interface ScreenNodeData {
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
-    const zoom = useStore((s) => s.transform[2]);
+    const zoom = 'var(--rf-zoom, 1)';
+
+    useOnViewportChange({
+        onChange: (viewport) => {
+            document.documentElement.style.setProperty('--rf-zoom', viewport.zoom.toString());
+        }
+    });
+
     const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
     const { setHandlers } = useScreenDesignUndoRedo();
     const { screen } = data;
@@ -3216,7 +3223,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                 style={{
                                                                     left: screenPos.x,
                                                                     top: screenPos.y,
-                                                                    transform: `scale(${0.85 * zoom})`,
+                                                                    transform: `scale(calc(0.85 * ${zoom}))`,
                                                                 }}
                                                                 onMouseLeave={() => setTablePickerHover(null)}
                                                             >
@@ -3439,7 +3446,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     style={{
                                                                         left: screenPos.x,
                                                                         top: screenPos.y,
-                                                                        transform: `scale(${0.85 * zoom})`,
+                                                                        transform: `scale(calc(0.85 * ${zoom}))`,
                                                                     }}
                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                 >
@@ -3499,7 +3506,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     style={{
                                                                         left: screenPos.x,
                                                                         top: screenPos.y,
-                                                                        transform: `scale(${0.85 * zoom})`,
+                                                                        transform: `scale(calc(0.85 * ${zoom}))`,
                                                                     }}
                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                 >
@@ -3683,7 +3690,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                     style={{
                                                                         left: screenPos.x,
                                                                         top: screenPos.y,
-                                                                        transform: `scale(${0.85 * zoom})`,
+                                                                        transform: `scale(calc(0.85 * ${zoom}))`,
                                                                     }}
                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                 >
@@ -4191,7 +4198,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                     style={{
                                         left: screenPos.x,
                                         top: screenPos.y,
-                                        transform: `scale(${0.9 * zoom})`,
+                                        transform: `scale(calc(0.9 * ${zoom}))`,
                                         transformOrigin: 'top left',
                                     }}
                                     onMouseDown={(e) => {
