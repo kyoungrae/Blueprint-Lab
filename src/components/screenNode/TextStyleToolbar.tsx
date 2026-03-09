@@ -29,6 +29,7 @@ interface TextStyleToolbarProps {
     drawElements: DrawElement[];
     update: (updates: any) => void;
     syncUpdate: (updates: any) => void;
+    saveHistory: (elements: DrawElement[]) => void;
     textSelectionFromTable: { tableId: string; cellIndex: number } | null;
     selectedCellIndices: number[];
     editingTableId: string | null;
@@ -60,6 +61,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     drawElements,
     update,
     syncUpdate,
+    saveHistory,
     textSelectionFromTable,
     selectedCellIndices,
     editingTableId,
@@ -101,6 +103,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                     pendingTableFontSizeRef.current = null;
                     update({ drawElements: pending });
                     syncUpdate({ drawElements: pending });
+                    saveHistory(pending);
                 }
             }
         };
@@ -135,6 +138,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                     update({ drawElements: toApply });
                 });
                 syncUpdate({ drawElements: toApply });
+                saveHistory(toApply);
             }, TABLE_FONT_SIZE_DEBOUNCE_MS);
         } else if (!fromTable) {
             if (onBeforeFontSizeApply) {

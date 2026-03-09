@@ -56,10 +56,18 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     // Sync content with element.text (undo/remote 등). 편집 중(포커스 있음)이면 덮어쓰지 않아 커서 유지·역순 입력 버그 방지
     useEffect(() => {
         const el = divRef.current;
-        if (!el || el.innerHTML === (element.text || '')) return;
-        if (document.activeElement && el.contains(document.activeElement)) return;
-        el.innerHTML = element.text || '';
-        lastSentTextRef.current = element.text || null;
+        const incomingText = element.text || '';
+        if (!el || el.innerHTML === incomingText) return;
+
+        // 내가 마지막으로 보낸 텍스트(lastSentTextRef)와 들어오는 텍스트가 다르다면
+        // (즉, Undo, Redo, 원격 동기화 등으로 값이 덮어씌워져야 하는 경우)
+        // 포커스가 있더라도 무조건 업데이트를 허용한다.
+        const isExternalUpdate = lastSentTextRef.current !== null && incomingText !== lastSentTextRef.current;
+
+        if (!isExternalUpdate && document.activeElement && el.contains(document.activeElement)) return;
+
+        el.innerHTML = incomingText;
+        lastSentTextRef.current = incomingText;
     }, [element.text]);
 
     useEffect(() => {

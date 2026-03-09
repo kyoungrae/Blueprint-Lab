@@ -3482,6 +3482,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         drawElements={drawElements}
                                         update={update}
                                         syncUpdate={syncUpdate}
+                                        saveHistory={saveHistory}
                                         textSelectionFromTable={textSelectionFromTable}
                                         selectedCellIndices={selectedCellIndices}
                                         editingTableId={editingTableId}

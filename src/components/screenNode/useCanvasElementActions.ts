@@ -58,6 +58,12 @@ export function useCanvasElementActions({
                 updates.fontSize != null;
 
             if (isFontSizeOnly) {
+                // UI 즉각 반영 (히스토리/동기화만 디바운스 적용하여 부하 방지)
+                const nextElements = drawElements.map((el) =>
+                    el.id === id ? { ...el, ...updates } : el
+                );
+                update({ drawElements: nextElements });
+
                 pendingFontSizeRef.current = { elementId: id, px: updates.fontSize! };
                 if (pendingFontSizeTimerRef.current)
                     clearTimeout(pendingFontSizeTimerRef.current);
