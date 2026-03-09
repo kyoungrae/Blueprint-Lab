@@ -281,20 +281,30 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
     sendOperation: (operationData) => {
         const { socket, currentProjectId } = get();
         if (socket && currentProjectId && !currentProjectId.startsWith('local_')) {
-            const operation: CRDTOperation = {
-                ...operationData,
-                id: `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                lamportClock: get()._incrementClock(),
-                wallClock: Date.now(),
-            };
-            socket.emit('operation', operation);
+            const lamportClock = get()._incrementClock();
+            const wallClock = Date.now();
+            const opId = `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+            // 소켓 통신 및 대용량 데이터 직렬화 작업을 비동기로 분리하여 UI 블로킹 방지
+            setTimeout(() => {
+                const operation: CRDTOperation = {
+                    ...operationData,
+                    id: opId,
+                    lamportClock,
+                    wallClock,
+                };
+                socket.emit('operation', operation);
+            }, 0);
         }
     },
 
     updateCursor: (position) => {
         const { socket, currentProjectId } = get();
         if (socket && currentProjectId && !currentProjectId.startsWith('local_')) {
-            socket.emit('cursor_move', position);
+            // 커서 이동도 비동기로 처리하여 메인 스레드 부담 경감
+            setTimeout(() => {
+                socket.emit('cursor_move', position);
+            }, 0);
         }
     },
 

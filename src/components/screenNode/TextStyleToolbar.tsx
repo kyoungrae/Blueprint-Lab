@@ -134,11 +134,19 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 const toApply = pendingTableFontSizeRef.current;
                 if (!toApply) return;
                 pendingTableFontSizeRef.current = null;
+
+                // Zustand state update (debounced)
                 startTransition(() => {
                     update({ drawElements: toApply });
                 });
-                syncUpdate({ drawElements: toApply });
-                saveHistory(toApply);
+
+                // Heavy history and sync tasks moved to separate ticks to keep UI snappy
+                setTimeout(() => {
+                    syncUpdate({ drawElements: toApply });
+                }, 0);
+                setTimeout(() => {
+                    saveHistory(toApply);
+                }, 0);
             }, TABLE_FONT_SIZE_DEBOUNCE_MS);
         } else if (!fromTable) {
             if (onBeforeFontSizeApply) {

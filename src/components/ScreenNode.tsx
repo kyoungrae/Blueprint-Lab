@@ -1813,6 +1813,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     // ── Element Actions (extracted to useCanvasElementActions) ──────────────
     const {
         updateElement,
+        updateElements,
         deleteElements,
         handleLayerAction,
         handleObjectAlign,
@@ -4649,8 +4650,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         flowToScreenPosition={flowToScreenPosition}
                                         editingTableId={editingTableId}
                                         selectedCellIndices={selectedCellIndices}
-                                        update={update}
-                                        syncUpdate={syncUpdate}
+                                        updateElements={updateElements}
                                         onClose={() => setShowStylePanel(false)}
                                         onDragStart={() => { isDraggingStylePanelRef.current = true; }}
                                         onDragEnd={() => { isDraggingStylePanelRef.current = false; }}

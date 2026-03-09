@@ -10,9 +10,8 @@ const normalizeRotationAngle = (deg: number) => ((deg % 360) + 360) % 360;
 const RotationSection: React.FC<{
     selectedElementIds: string[];
     drawElements: DrawElement[];
-    update: (u: any) => void;
-    syncUpdate: (u: any) => void;
-}> = ({ selectedElementIds, drawElements, update, syncUpdate }) => {
+    updateElements: (ids: string[], updates: Partial<DrawElement> | ((el: DrawElement) => Partial<DrawElement>)) => void;
+}> = ({ selectedElementIds, drawElements, updateElements }) => {
     const [rotationInputStr, setRotationInputStr] = useState<string | null>(null);
     const rotationDialRef = useRef<HTMLDivElement>(null);
     const el = drawElements.find(e => selectedElementIds.includes(e.id));
@@ -21,12 +20,9 @@ const RotationSection: React.FC<{
 
     const applyRotation = (deg: number) => {
         const val = normalizeRotationAngle(deg);
-        const nextElements = drawElements.map(el => {
-            if (!selectedElementIds.includes(el.id)) return el;
-            return el.type === 'image' ? { ...el, imageRotation: val } : { ...el, rotation: val };
+        updateElements(selectedElementIds, (el) => {
+            return el.type === 'image' ? { imageRotation: val } : { rotation: val };
         });
-        update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
     };
 
     const handleRotationDialMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -133,8 +129,7 @@ interface StylePanelProps {
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     editingTableId: string | null;
     selectedCellIndices: number[];
-    update: (updates: any) => void;
-    syncUpdate: (updates: any) => void;
+    updateElements: (ids: string[], updates: Partial<DrawElement> | ((el: DrawElement) => Partial<DrawElement>)) => void;
     onClose: () => void;
     onDragStart?: () => void;
     onDragEnd?: () => void;
@@ -151,8 +146,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
     flowToScreenPosition,
     editingTableId,
     selectedCellIndices,
-    update,
-    syncUpdate,
+    updateElements,
     onClose,
     onDragStart,
     onDragEnd,
@@ -166,9 +160,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
 
     // Helper: apply background color with table-aware logic
     const applyBgColor = (color: string) => {
-        const nextElements = drawElements.map(el => {
-            if (!selectedElementIds.includes(el.id)) return el;
-
+        updateElements(selectedElementIds, (el) => {
             const isThisTable = el.type === 'table';
             if (isThisTable) {
                 const rows = el.tableRows || 3;
@@ -181,22 +173,16 @@ const StylePanel: React.FC<StylePanelProps> = ({
                     selectedCellIndices.forEach(idx => {
                         newCellColors[idx] = color;
                     });
-                    return { ...el, tableCellColors: newCellColors };
+                    return { tableCellColors: newCellColors };
                 } else {
-                    // Global table selection: Update fill AND clear/update all cell colors to match
-                    // We fill tableCellColors to ensure it takes priority as intended, or we can just set fill.
-                    // Let's set both for maximum compatibility with current rendering logic.
+                    // Global table selection
                     const newCellColors = Array(totalCells).fill(color) as (string | undefined)[];
-                    return { ...el, fill: color, tableCellColors: newCellColors };
+                    return { fill: color, tableCellColors: newCellColors };
                 }
             } else {
-                // Non-table element
-                return { ...el, fill: color };
+                return { fill: color };
             }
         });
-
-        update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
     };
 
     // Get current background color display value
@@ -367,9 +353,9 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         <button
                             type="button"
                             onClick={() => {
-                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontWeight: (el.fontWeight === 'bold' ? 'normal' : 'bold') as any } : el);
-                                update({ drawElements: next });
-                                syncUpdate({ drawElements: next });
+                                updateElements(selectedElementIds, (el) => ({
+                                    fontWeight: el.fontWeight === 'bold' ? 'normal' : 'bold'
+                                }));
                             }}
                             className={`p-2 rounded-lg border transition-colors ${selectedEl.fontWeight === 'bold' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
                             title="굵게"
@@ -379,9 +365,9 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         <button
                             type="button"
                             onClick={() => {
-                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontStyle: (el.fontStyle === 'italic' ? 'normal' : 'italic') as any } : el);
-                                update({ drawElements: next });
-                                syncUpdate({ drawElements: next });
+                                updateElements(selectedElementIds, (el) => ({
+                                    fontStyle: el.fontStyle === 'italic' ? 'normal' : 'italic'
+                                }));
                             }}
                             className={`p-2 rounded-lg border transition-colors ${selectedEl.fontStyle === 'italic' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
                             title="기울임"
@@ -391,9 +377,9 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         <button
                             type="button"
                             onClick={() => {
-                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, textDecoration: (el.textDecoration === 'underline' ? 'none' : 'underline') as any } : el);
-                                update({ drawElements: next });
-                                syncUpdate({ drawElements: next });
+                                updateElements(selectedElementIds, (el) => ({
+                                    textDecoration: el.textDecoration === 'underline' ? 'none' : 'underline'
+                                }));
                             }}
                             className={`p-2 rounded-lg border transition-colors ${selectedEl.textDecoration === 'underline' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
                             title="밑줄"
@@ -426,9 +412,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                             key={f}
                                             type="button"
                                             onClick={() => {
-                                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontFamily: f } : el);
-                                                update({ drawElements: next });
-                                                syncUpdate({ drawElements: next });
+                                                updateElements(selectedElementIds, { fontFamily: f });
                                                 setFontDropdownOpen(false);
                                             }}
                                             className={`w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 first:rounded-t-lg ${currentFont === f ? 'bg-blue-50 text-blue-700' : ''}`}
@@ -448,9 +432,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                                 if (!res.ok) throw new Error();
                                                 const data = await res.json();
                                                 setFonts(prev => [...prev, data]);
-                                                const next = drawElements.map(el => selectedElementIds.includes(el.id) ? { ...el, fontFamily: data.name } : el);
-                                                update({ drawElements: next });
-                                                syncUpdate({ drawElements: next });
+                                                updateElements(selectedElementIds, { fontFamily: data.name });
                                             } catch (err) { console.error(err); }
                                             e.target.value = '';
                                         }} />
@@ -482,11 +464,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                 value={drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000'}
                                 onChange={(e) => {
                                     const color = e.target.value;
-                                    const nextElements = drawElements.map(el =>
-                                        selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
-                                    );
-                                    update({ drawElements: nextElements });
-                                    syncUpdate({ drawElements: nextElements });
+                                    updateElements(selectedElementIds, { stroke: color });
                                     addRecentStrokeColor(color);
                                     (e.target as HTMLInputElement).blur();
                                 }}
@@ -501,11 +479,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                             key={color}
                             type="button"
                             onClick={() => {
-                                const nextElements = drawElements.map(el =>
-                                    selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
-                                );
-                                update({ drawElements: nextElements });
-                                syncUpdate({ drawElements: nextElements });
+                                updateElements(selectedElementIds, { stroke: color });
                                 addRecentStrokeColor(color);
                             }}
                             className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden`}
@@ -524,11 +498,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                     key={color}
                                     type="button"
                                     onClick={() => {
-                                        const nextElements = drawElements.map(el =>
-                                            selectedElementIds.includes(el.id) ? { ...el, stroke: color } : el
-                                        );
-                                        update({ drawElements: nextElements });
-                                        syncUpdate({ drawElements: nextElements });
+                                        updateElements(selectedElementIds, { stroke: color });
                                         addRecentStrokeColor(color);
                                     }}
                                     className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden ${(drawElements.find(el => selectedElementIds.includes(el.id))?.stroke || '#000000').toLowerCase() === color ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
@@ -556,13 +526,12 @@ const StylePanel: React.FC<StylePanelProps> = ({
                             value={selectedEl?.width ?? 0}
                             onChange={(e) => {
                                 const num = Math.max(1, Math.min(9999, parseInt(e.target.value, 10) || 1));
-                                const nextElements = drawElements.map(el => {
-                                    if (!selectedElementIds.includes(el.id)) return el;
+                                updateElements(selectedElementIds, (el) => {
                                     const w = el.width || 1;
                                     if (el.type === 'polygon' && el.polygonPoints?.length && w > 0) {
                                         const sx = num / w;
                                         const newPoints = el.polygonPoints.map(p => ({ x: el.x + (p.x - el.x) * sx, y: p.y }));
-                                        return { ...el, width: num, polygonPoints: newPoints };
+                                        return { width: num, polygonPoints: newPoints };
                                     }
                                     if (el.type === 'line' && el.lineX1 != null && el.lineX2 != null && w > 0) {
                                         const sx = num / w;
@@ -570,12 +539,10 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                         const lineX2 = el.x + (el.lineX2 - el.x) * sx;
                                         const minX = Math.min(lineX1, lineX2);
                                         const maxX = Math.max(lineX1, lineX2);
-                                        return { ...el, x: minX, width: maxX - minX || 1, lineX1, lineX2 };
+                                        return { x: minX, width: maxX - minX || 1, lineX1, lineX2 };
                                     }
-                                    return { ...el, width: num };
+                                    return { width: num };
                                 });
-                                update({ drawElements: nextElements });
-                                syncUpdate({ drawElements: nextElements });
                             }}
                             className="w-full px-2 py-1.5 text-[11px] font-medium border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
                         />
@@ -590,13 +557,12 @@ const StylePanel: React.FC<StylePanelProps> = ({
                             value={selectedEl?.height ?? 0}
                             onChange={(e) => {
                                 const num = Math.max(1, Math.min(9999, parseInt(e.target.value, 10) || 1));
-                                const nextElements = drawElements.map(el => {
-                                    if (!selectedElementIds.includes(el.id)) return el;
+                                updateElements(selectedElementIds, (el) => {
                                     const h = el.height || 1;
                                     if (el.type === 'polygon' && el.polygonPoints?.length && h > 0) {
                                         const sy = num / h;
                                         const newPoints = el.polygonPoints.map(p => ({ x: p.x, y: el.y + (p.y - el.y) * sy }));
-                                        return { ...el, height: num, polygonPoints: newPoints };
+                                        return { height: num, polygonPoints: newPoints };
                                     }
                                     if (el.type === 'line' && el.lineY1 != null && el.lineY2 != null && h > 0) {
                                         const sy = num / h;
@@ -604,12 +570,10 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                         const lineY2 = el.y + (el.lineY2 - el.y) * sy;
                                         const minY = Math.min(lineY1, lineY2);
                                         const maxY = Math.max(lineY1, lineY2);
-                                        return { ...el, y: minY, height: maxY - minY || 1, lineY1, lineY2 };
+                                        return { y: minY, height: maxY - minY || 1, lineY1, lineY2 };
                                     }
-                                    return { ...el, height: num };
+                                    return { height: num };
                                 });
-                                update({ drawElements: nextElements });
-                                syncUpdate({ drawElements: nextElements });
                             }}
                             className="w-full px-2 py-1.5 text-[11px] font-medium border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
                         />
@@ -622,8 +586,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
             <RotationSection
                 selectedElementIds={selectedElementIds}
                 drawElements={drawElements}
-                update={update}
-                syncUpdate={syncUpdate}
+                updateElements={updateElements}
             />
 
             {/* Stroke Style (Border style) - 그림으로 표시 */}
@@ -645,15 +608,11 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                 type="button"
                                 title={value === 'solid' ? '실선' : value === 'dashed' ? '대시' : value === 'dotted' ? '점선' : value === 'double' ? '이중선' : '없음'}
                                 onClick={() => {
-                                    const nextElements = drawElements.map(el =>
-                                        selectedElementIds.includes(el.id) ? { ...el, strokeStyle: value } : el
-                                    );
-                                    update({ drawElements: nextElements });
-                                    syncUpdate({ drawElements: nextElements });
+                                    updateElements(selectedElementIds, { strokeStyle: value });
                                 }}
                                 className={`flex items-center justify-center w-9 h-9 rounded-lg border-2 transition-all shrink-0 ${isSelected
-                                        ? 'border-[#2c3e7c] bg-blue-50 ring-2 ring-[#2c3e7c] ring-offset-1'
-                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                                    ? 'border-[#2c3e7c] bg-blue-50 ring-2 ring-[#2c3e7c] ring-offset-1'
+                                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                                     }`}
                             >
                                 {value === 'none' ? (
@@ -690,11 +649,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                     value={drawElements.find(el => el.id === selectedElementIds[0])?.strokeWidth ?? 2}
                     onChange={(e) => {
                         const val = parseInt(e.target.value);
-                        const nextElements = drawElements.map(el =>
-                            selectedElementIds.includes(el.id) ? { ...el, strokeWidth: val } : el
-                        );
-                        update({ drawElements: nextElements });
-                        syncUpdate({ drawElements: nextElements });
+                        updateElements(selectedElementIds, { strokeWidth: val });
                     }}
                     className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
                 />
@@ -716,11 +671,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                     value={drawElements.find(el => el.id === selectedElementIds[0])?.borderRadius ?? 0}
                     onChange={(e) => {
                         const val = parseInt(e.target.value);
-                        const nextElements = drawElements.map(el =>
-                            selectedElementIds.includes(el.id) ? { ...el, borderRadius: val } : el
-                        );
-                        update({ drawElements: nextElements });
-                        syncUpdate({ drawElements: nextElements });
+                        updateElements(selectedElementIds, { borderRadius: val });
                     }}
                     className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
                 />
@@ -743,11 +694,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         value={Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.fillOpacity ?? 1) * 100)}
                         onChange={(e) => {
                             const val = parseInt(e.target.value) / 100;
-                            const nextElements = drawElements.map(el =>
-                                selectedElementIds.includes(el.id) ? { ...el, fillOpacity: val } : el
-                            );
-                            update({ drawElements: nextElements });
-                            syncUpdate({ drawElements: nextElements });
+                            updateElements(selectedElementIds, { fillOpacity: val });
                         }}
                         className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
                     />
@@ -769,11 +716,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         value={Math.round((drawElements.find(el => el.id === selectedElementIds[0])?.strokeOpacity ?? 1) * 100)}
                         onChange={(e) => {
                             const val = parseInt(e.target.value) / 100;
-                            const nextElements = drawElements.map(el =>
-                                selectedElementIds.includes(el.id) ? { ...el, strokeOpacity: val } : el
-                            );
-                            update({ drawElements: nextElements });
-                            syncUpdate({ drawElements: nextElements });
+                            updateElements(selectedElementIds, { strokeOpacity: val });
                         }}
                         className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
                     />

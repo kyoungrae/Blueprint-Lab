@@ -91,9 +91,8 @@ export function useCanvasElementActions({
                 el.id === id ? { ...el, ...updates } : el
             );
             update({ drawElements: nextElements });
-            saveHistory(nextElements);
 
-            // Debounced sync
+            // Debounced sync & history to prevent lag during continuous updates
             pendingSyncDrawElementsRef.current = nextElements;
             if (pendingSyncTimerRef.current) clearTimeout(pendingSyncTimerRef.current);
             pendingSyncTimerRef.current = setTimeout(() => {
@@ -101,7 +100,10 @@ export function useCanvasElementActions({
                 const toSend = pendingSyncDrawElementsRef.current;
                 if (toSend) {
                     pendingSyncDrawElementsRef.current = null;
-                    syncUpdate({ drawElements: toSend });
+
+                    // Separate tasks to allow UI thread breathing room
+                    setTimeout(() => saveHistory(toSend), 0);
+                    setTimeout(() => syncUpdate({ drawElements: toSend }), 0);
                 }
             }, 100);
         },
@@ -109,6 +111,37 @@ export function useCanvasElementActions({
         // captures the latest via closure inside the callbacks.
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [drawElements, update, syncUpdate, saveHistory, flushPendingFontSize, PENDING_FONT_SIZE_DEBOUNCE_MS]
+    );
+
+    // ── updateElements (Bulk) ────────────────────────────────────────────────
+    const updateElements = useCallback(
+        (ids: string[], updates: Partial<DrawElement> | ((el: DrawElement) => Partial<DrawElement>)) => {
+            const idsSet = new Set(ids);
+            const nextElements = drawElements.map((el) => {
+                if (!idsSet.has(el.id)) return el;
+                const partial = typeof updates === 'function' ? updates(el) : updates;
+                return { ...el, ...partial };
+            });
+
+            // UI 즉각 반영 (Zustand)
+            update({ drawElements: nextElements });
+
+            // 히스토리 & 동기화는 디바운스 적용
+            pendingSyncDrawElementsRef.current = nextElements;
+            if (pendingSyncTimerRef.current) clearTimeout(pendingSyncTimerRef.current);
+            pendingSyncTimerRef.current = setTimeout(() => {
+                pendingSyncTimerRef.current = null;
+                const toSend = pendingSyncDrawElementsRef.current;
+                if (toSend) {
+                    pendingSyncDrawElementsRef.current = null;
+
+                    // Separate tasks
+                    setTimeout(() => saveHistory(toSend), 0);
+                    setTimeout(() => syncUpdate({ drawElements: toSend }), 0);
+                }
+            }, 100);
+        },
+        [drawElements, update, syncUpdate, saveHistory]
     );
 
     // ── deleteElements ───────────────────────────────────────────────────────
@@ -331,11 +364,13 @@ export function useCanvasElementActions({
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
+        // saveHistory is now handled by syncUpdate when it eventually executes
         setSelectedElementIds((prev) => prev.filter((id) => toUngroup.includes(id)));
-    }, [drawElements, selectedElementIds, update, syncUpdate, saveHistory, setSelectedElementIds]);
+    }, [drawElements, selectedElementIds, update, syncUpdate, setSelectedElementIds]);
 
     return {
         updateElement,
+        updateElements,
         deleteElements,
         handleLayerAction,
         handleObjectAlign,
