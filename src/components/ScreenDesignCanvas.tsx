@@ -250,7 +250,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         addScreen, updateScreen, deleteScreen,
         addFlow, updateFlow, deleteFlow,
         addSection, updateSection, deleteSection,
-        importData
+        exportData, importData, mergeImportData
     } = useScreenDesignStore();
 
     const { user, logout } = useAuthStore();
@@ -268,6 +268,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [importJsonText, setImportJsonText] = useState('');
+    const [importError, setImportError] = useState<string | null>(null);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
     const [isAddSpecModalOpen, setIsAddSpecModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
@@ -1611,13 +1614,33 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                 </button>
                             </PremiumTooltip>
 
-                            <PremiumTooltip placement="bottom" offsetBottom={30} label="가져오기">
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label="데이터 내보내기 (다른 프로젝트에 붙여넣기용)">
                                 <button
-                                    disabled
-                                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-400 border border-gray-200 rounded-lg text-sm font-bold shadow-sm cursor-not-allowed opacity-60 shrink-0"
-                                    title="가져오기 기능 준비중"
+                                    onClick={() => {
+                                        const data = exportData();
+                                        const json = JSON.stringify(data, null, 2);
+                                        navigator.clipboard.writeText(json).then(() => {
+                                            const a = document.createElement('a');
+                                            a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+                                            a.download = `screen-design-${Date.now()}.json`;
+                                            a.click();
+                                            URL.revokeObjectURL(a.href);
+                                            alert(`데이터가 클립보드에 복사되었고, JSON 파일이 다운로드되었습니다. (화면 ${data.screens?.length ?? 0}개)`);
+                                        }).catch(() => alert('클립보드 복사에 실패했습니다.'));
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                                 >
-                                    <Download size={16} className="text-gray-400 shrink-0" />
+                                    <FileText size={16} className="text-blue-500 shrink-0" />
+                                    <span className="whitespace-nowrap hidden sm:inline">데이터 내보내기</span>
+                                </button>
+                            </PremiumTooltip>
+
+                            <PremiumTooltip placement="bottom" offsetBottom={30} label="가져오기 (다른 프로젝트에서 내보낸 데이터 붙여넣기)">
+                                <button
+                                    onClick={() => { setIsImportModalOpen(true); setImportError(null); setImportJsonText(''); }}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                                >
+                                    <Download size={16} className="text-violet-500 shrink-0" />
                                     <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
                                 </button>
                             </PremiumTooltip>
@@ -1771,6 +1794,78 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                 onConfirm={handleAddSpecConfirm}
                                 onClose={() => setIsAddSpecModalOpen(false)}
                             />
+                        )}
+
+                        {isImportModalOpen && (
+                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
+                                <div className="bg-white rounded-[15px] w-full max-w-2xl shadow-2xl overflow-hidden scale-in max-h-[90vh] flex flex-col">
+                                    <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+                                        <h3 className="text-lg font-black text-gray-900">데이터 가져오기</h3>
+                                        <button onClick={() => { setIsImportModalOpen(false); setImportError(null); }} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+                                    <p className="px-6 py-2 text-sm text-gray-500 shrink-0">
+                                        다른 화면 설계 프로젝트에서 <strong>데이터 내보내기</strong>로 저장한 JSON을 붙여넣거나 파일을 선택하세요. 기존 데이터에 추가됩니다.
+                                    </p>
+                                    {importError && (
+                                        <div className="mx-6 mb-2 p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium shrink-0">{importError}</div>
+                                    )}
+                                    <div className="px-6 py-2 flex-1 min-h-0 flex flex-col">
+                                        <textarea
+                                            value={importJsonText}
+                                            onChange={(e) => { setImportJsonText(e.target.value); setImportError(null); }}
+                                            placeholder='{"screens":[...],"flows":[...],"sections":[...]}'
+                                            className="flex-1 min-h-[200px] w-full p-4 border border-gray-200 rounded-xl font-mono text-sm resize-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+                                        />
+                                        <div className="flex items-center gap-3 mt-3 shrink-0">
+                                            <label className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-bold text-gray-700 cursor-pointer transition-colors">
+                                                <Download size={16} />
+                                                파일 선택
+                                                <input
+                                                    type="file"
+                                                    accept=".json"
+                                                    className="sr-only"
+                                                    onChange={(e) => {
+                                                        const f = e.target.files?.[0];
+                                                        e.target.value = '';
+                                                        if (!f) return;
+                                                        const r = new FileReader();
+                                                        r.onload = () => { setImportJsonText(String(r.result ?? '')); setImportError(null); };
+                                                        r.readAsText(f);
+                                                    }}
+                                                />
+                                            </label>
+                                            <button
+                                                onClick={() => {
+                                                    setImportError(null);
+                                                    try {
+                                                        const parsed = JSON.parse(importJsonText.trim());
+                                                        const screens = Array.isArray(parsed?.screens) ? parsed.screens : [];
+                                                        const flows = Array.isArray(parsed?.flows) ? parsed.flows : [];
+                                                        const sections = Array.isArray(parsed?.sections) ? parsed.sections : [];
+                                                        if (!screens.length && !flows.length && !sections.length) {
+                                                            setImportError('화면, 연결, 섹션 데이터가 없습니다.');
+                                                            return;
+                                                        }
+                                                        mergeImportData({ screens, flows, sections });
+                                                        if (currentProjectId) updateProjectData(currentProjectId, { screens: useScreenDesignStore.getState().screens, flows: useScreenDesignStore.getState().flows, sections: useScreenDesignStore.getState().sections }, true);
+                                                        setIsImportModalOpen(false);
+                                                        setImportJsonText('');
+                                                        alert(`가져오기 완료. 화면 ${screens.length}개, 연결 ${flows.length}개, 섹션 ${sections.length}개가 추가되었습니다.`);
+                                                    } catch (err: any) {
+                                                        setImportError(err?.message || 'JSON 형식이 올바르지 않습니다.');
+                                                    }
+                                                }}
+                                                disabled={!importJsonText.trim()}
+                                                className="px-5 py-2 bg-violet-600 text-white rounded-lg font-bold text-sm hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                            >
+                                                가져오기
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         )}
 
                         {/* Relationship Edit Modal */}
