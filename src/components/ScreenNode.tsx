@@ -263,6 +263,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const snapStateRef = useRef<SnapState>({});
     const resizeSnapStateRef = useRef<SnapState>({});
     const [dragPreviewPositions, setDragPreviewPositions] = useState<Record<string, { x: number; y: number }> | null>(null);
+    /** rAF throttle refs — 드래그·리사이즈 중 setState 호출 빈도를 requestAnimationFrame으로 제한 */
+    const dragRafIdRef = useRef<number | undefined>(undefined);
+    const resizeRafIdRef = useRef<number | undefined>(undefined);
+    const groupResizeRafIdRef = useRef<number | undefined>(undefined);
     const [showGridPanel, setShowGridPanel] = useState(false);
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
     const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
@@ -1276,9 +1280,18 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 }
                 return base;
             });
-            update({ drawElements: updated });
+            // rAF throttle: 그룹 리사이즈 중 Zustand 업데이트를 60fps로 제한
+            if (groupResizeRafIdRef.current !== undefined) cancelAnimationFrame(groupResizeRafIdRef.current);
+            groupResizeRafIdRef.current = requestAnimationFrame(() => {
+                groupResizeRafIdRef.current = undefined;
+                update({ drawElements: updated });
+            });
         };
         const handleUp = () => {
+            if (groupResizeRafIdRef.current !== undefined) {
+                cancelAnimationFrame(groupResizeRafIdRef.current);
+                groupResizeRafIdRef.current = undefined;
+            }
             if (groupResizeStartRef.current) {
                 const currentElements = getScreenById(screen.id)?.drawElements || [];
                 syncUpdate({ drawElements: currentElements });
@@ -1496,10 +1509,19 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 }
                 return base;
             });
-            update({ drawElements: updated });
+            // rAF throttle: 리사이즈 중 Zustand 업데이트를 60fps로 제한
+            if (resizeRafIdRef.current !== undefined) cancelAnimationFrame(resizeRafIdRef.current);
+            resizeRafIdRef.current = requestAnimationFrame(() => {
+                resizeRafIdRef.current = undefined;
+                update({ drawElements: updated });
+            });
         };
 
         const handleWindowMouseUp = () => {
+            if (resizeRafIdRef.current !== undefined) {
+                cancelAnimationFrame(resizeRafIdRef.current);
+                resizeRafIdRef.current = undefined;
+            }
             if (elementResizeStartRef.current) {
                 const currentElements = getScreenById(screen.id)?.drawElements || [];
                 syncUpdate({ drawElements: currentElements });
@@ -1957,8 +1979,13 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                     preview[el.id] = { x: el.x, y: el.y };
                 }
             });
-            setDragPreviewPositions(preview);
-            setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
+            // rAF throttle: 60fps로 setState 제한 (매 mousemove마다 리렌더 방지)
+            if (dragRafIdRef.current !== undefined) cancelAnimationFrame(dragRafIdRef.current);
+            dragRafIdRef.current = requestAnimationFrame(() => {
+                dragRafIdRef.current = undefined;
+                setDragPreviewPositions(preview);
+                setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
+            });
         }
     };
 
@@ -2043,6 +2070,11 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             }
             setDrawingPolygonPreset(null);
         } else if (draggingElementIds.length > 0) {
+            // 진행 중인 rAF를 먼저 취소 (commit 후 stale preview setState 방지)
+            if (dragRafIdRef.current !== undefined) {
+                cancelAnimationFrame(dragRafIdRef.current);
+                dragRafIdRef.current = undefined;
+            }
             // Finalize move: 드래그 중에는 프리뷰만 갱신하고, mouseup 시점에 한 번만 커밋
             const committedElements = dragPreviewPositions
                 ? drawElements.map((el) => {
