@@ -799,7 +799,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [textSelectionRect, setTextSelectionRect] = useState<DOMRect | null>(null);
     const [textSelectionFromTable, setTextSelectionFromTable] = useState<{ tableId: string; cellIndex: number } | null>(null);
     const tableCellSelectionRestoreRef = useRef<{ tableId: string; cellIndex: number } | null>(null);
-    const [textStyleToolbarRefresh, setTextStyleToolbarRefresh] = useState(0);
+
     const [showFontStylePanel, setShowFontStylePanel] = useState(false);
     const [fontStylePanelPos, setFontStylePanelPos] = useState({ x: 0, y: 0 });
 
@@ -4281,7 +4281,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         </button>
                                     </div>
                                     <TextStyleToolbar
-                                        key={`toolbar-${textStyleToolbarRefresh}`}
                                         el={el}
                                         fromTable={fromTable}
                                         defaultColor={defaultColor}
@@ -4291,7 +4290,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         updateElement={updateElement}
                                         applyToSelection={applyToSelection}
                                         applyFontSizePx={applyFontSizePx}
-                                        setTextStyleToolbarRefresh={setTextStyleToolbarRefresh}
                                         drawElements={drawElements}
                                         update={update}
                                         syncUpdate={syncUpdate}

@@ -3,6 +3,7 @@ import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
 
 const TEXT_UPDATE_DEBOUNCE_MS = 120;
 
+
 interface EditableTableCellProps {
     tableId: string;
     value: string;
@@ -160,6 +161,7 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     const handleInput = (e?: React.FormEvent) => {
         if (!divRef.current) return;
         if (e?.nativeEvent && (e.nativeEvent as { isComposing?: boolean }).isComposing) return;
+        if ((window as any)._isFormattingCell) return; // 폰트 사이즈/스타일 버튼 클릭으로 발생한 input 이벤트는 스토어 갱신을 우회
         scheduleTextUpdate();
     };
 
