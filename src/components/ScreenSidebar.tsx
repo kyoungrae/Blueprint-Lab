@@ -5,8 +5,19 @@ import { getImageDisplayUrl } from '../utils/imageUrl';
 import { useReactFlow } from 'reactflow';
 import type { Screen, ScreenSection } from '../types/screenDesign';
 
-const ScreenSidebar: React.FC = () => {
-    const { screens, sections, updateSection } = useScreenDesignStore();
+export interface ScreenSidebarProps {
+    /** 부모에서 전달 시 목록이 캔버스와 항상 동기화됨 (가져오기/히드레이션 직후에도 즉시 반영) */
+    screens?: Screen[];
+    sections?: ScreenSection[];
+}
+
+const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
+    // 목록은 스토어를 선택자로 직접 구독해, 히드레이션/가져오기/추가 시 항상 갱신되도록 함
+    const storeScreens = useScreenDesignStore((s) => s.screens);
+    const storeSections = useScreenDesignStore((s) => s.sections);
+    const updateSection = useScreenDesignStore((s) => s.updateSection);
+    const screens = props.screens ?? storeScreens;
+    const sections = props.sections ?? storeSections;
     const { fitView, setNodes } = useReactFlow();
     const [search, setSearch] = useState('');
     const [composing, setComposing] = useState<string | null>(null);
@@ -19,7 +30,9 @@ const ScreenSidebar: React.FC = () => {
         s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.screenId.toLowerCase().includes(search.toLowerCase())
     );
-    const rootScreens = filteredScreens.filter((s) => !s.sectionId);
+    const sectionIds = new Set(sections.map((sec) => sec.id));
+    // 섹션 없음: sectionId가 없거나, 해당 섹션이 sections 목록에 없는 화면 (데이터 있어도 목록에 항상 표시)
+    const rootScreens = filteredScreens.filter((s) => !s.sectionId || !sectionIds.has(s.sectionId));
 
     const handleFocusNode = (e: React.MouseEvent, nodeId: string) => {
         e.stopPropagation();
@@ -225,11 +238,10 @@ const ScreenSidebar: React.FC = () => {
                         })}
                         {rootScreens.length > 0 && (
                             <div className="space-y-0.5">
-                                {sections.length > 0 && (
-                                    <div className="flex items-center gap-2 px-2 py-1 text-gray-500">
-                                        <span className="text-[10px] font-bold uppercase">섹션 없음</span>
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-2 px-2 py-1 text-gray-500">
+                                    <span className="text-[10px] font-bold uppercase">섹션 없음</span>
+                                    <span className="text-[10px] text-gray-400">({rootScreens.length})</span>
+                                </div>
                                 {rootScreens.map((screen) => renderScreenItem(screen))}
                             </div>
                         )}

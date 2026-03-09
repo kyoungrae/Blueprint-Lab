@@ -267,6 +267,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const { projects, currentProjectId, setCurrentProject, updateProjectData, fetchProjects } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [sidebarListKey, setSidebarListKey] = useState(0); // 가져오기 후 사이드바 목록 갱신용
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [importJsonText, setImportJsonText] = useState('');
@@ -638,14 +639,19 @@ const ScreenDesignCanvasContent: React.FC = () => {
     }, [screens, projects, currentProject, updateScreen, sendOperation, user]);
 
     // Auto-save to ProjectStore (로컬: 주기적 저장, 원격: 섹션 포함해 PATCH 전송)
+    // 전송 직전에 getState + projectStore fallback 사용해 state_sync로 비워진 뒤 빈 payload가 나가는 것 방지
     useEffect(() => {
         if (!currentProjectId) return;
         const timer = setTimeout(() => {
-            updateProjectData(currentProjectId, {
-                screens,
-                flows,
-                sections,
-            });
+            const { screens: s, flows: f, sections: sec } = useScreenDesignStore.getState();
+            const proj = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
+            const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
+            const payload = {
+                screens: (s?.length ? s : fallback?.screens) ?? [],
+                flows: (f?.length ? f : fallback?.flows) ?? [],
+                sections: sec ?? [],
+            };
+            updateProjectData(currentProjectId, payload);
         }, currentProjectId.startsWith('local_') ? 1000 : 500);
         return () => clearTimeout(timer);
     }, [screens, flows, sections, currentProjectId, updateProjectData]);
@@ -665,14 +671,20 @@ const ScreenDesignCanvasContent: React.FC = () => {
         updateProjectData(currentProjectId, payload, true);
     }, [sections, currentProjectId, updateProjectData, isSynced]);
 
-    // Unmount 시 현재 스토어 기준으로 즉시 저장 (격자 이동 등 직후 새로고침해도 유지)
+    // Unmount 시 현재 스토어 기준으로 즉시 저장 (빈 payload 방지 위해 fallback 사용)
     useEffect(() => {
         const projectId = currentProjectId;
         return () => {
             if (projectId) {
                 const { screens: scr, flows: flw, sections: sec } = useScreenDesignStore.getState();
-                const { updateProjectData: save } = useProjectStore.getState();
-                save(projectId, { screens: scr, flows: flw, sections: sec });
+                const proj = useProjectStore.getState().projects.find((p) => p.id === projectId);
+                const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
+                const payload = {
+                    screens: (scr?.length ? scr : fallback?.screens) ?? [],
+                    flows: (flw?.length ? flw : fallback?.flows) ?? [],
+                    sections: sec ?? [],
+                };
+                useProjectStore.getState().updateProjectData(projectId, payload, true);
             }
         };
     }, [currentProjectId]);
@@ -832,13 +844,27 @@ const ScreenDesignCanvasContent: React.FC = () => {
     // Listen for initial Sync from Server
     useEffect(() => {
         const handleSync = (e: CustomEvent) => {
-            const { screens, flows } = e.detail;
-            // Always import if data is provided, even if empty
-            if (screens || flows) {
-                const localScreens = useScreenDesignStore.getState().screens || [];
+            const { screens: syncScreens, flows: syncFlows } = e.detail;
+            const syncSections = (e.detail as any).sections;
+            const hasSyncScreens = Array.isArray(syncScreens) && syncScreens.length > 0;
+            const local = useScreenDesignStore.getState();
+            const proj = useProjectStore.getState().projects.find((p) => p.id === useProjectStore.getState().currentProjectId);
+            const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
+            const localHasScreens = (local.screens?.length ?? fallback?.screens?.length) > 0;
 
-                // sync 데이터와 로컬 데이터 병합: 로컬에 guideLines 등이 더 많으면 보존
-                const mergedScreens = (screens || []).map((syncScr: any) => {
+            // 서버 sync가 빈 화면인데 로컬/프로젝트에 화면이 있으면 빈 sync로 덮어쓰지 않음 (가져오기 후 섹션 추가·state_sync 시 데이터 유지)
+            if (!hasSyncScreens && localHasScreens) {
+                importData({
+                    screens: local.screens?.length ? local.screens : (fallback?.screens ?? []),
+                    flows: local.flows?.length ? local.flows : (fallback?.flows ?? []),
+                    sections: Array.isArray(syncSections) && syncSections.length > 0 ? syncSections : (local.sections ?? fallback?.sections ?? []),
+                });
+                return;
+            }
+            if (syncScreens || syncFlows) {
+                const localScreens = local.screens || [];
+
+                const mergedScreens = (syncScreens || []).map((syncScr: any) => {
                     const localScr = localScreens.find((ls: any) => ls.id === syncScr.id);
                     if (!localScr) return syncScr;
                     const merged: any = { ...syncScr };
@@ -855,8 +881,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     return merged;
                 });
 
-                const syncSections = (e.detail as any).sections;
-                importData({ screens: mergedScreens, flows: flows || [], sections: Array.isArray(syncSections) ? syncSections : [] });
+                importData({ screens: mergedScreens, flows: syncFlows || [], sections: Array.isArray(syncSections) ? syncSections : [] });
             }
         };
         window.addEventListener('erd:state_sync', handleSync as EventListener);
@@ -1538,7 +1563,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                             className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
                         >
                             <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
-                                <ScreenSidebar />
+                                <ScreenSidebar key={`sidebar-${sidebarListKey}`} screens={screens} sections={sections} />
                             </div>
                         </div>
 
@@ -1870,6 +1895,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                                         }
                                                         const merged = mergeImportData({ screens, flows, sections });
                                                         if (currentProjectId) updateProjectData(currentProjectId, { screens: merged.screens, flows: merged.flows, sections: merged.sections }, true);
+                                                        setSidebarListKey((k) => k + 1);
                                                         setIsImportModalOpen(false);
                                                         setImportJsonText('');
                                                         alert(`가져오기 완료. 화면 ${screens.length}개, 연결 ${flows.length}개, 섹션 ${sections.length}개가 추가되었습니다.`);

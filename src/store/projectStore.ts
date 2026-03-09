@@ -102,18 +102,32 @@ export const useProjectStore = create<ProjectStore>()(
                                     projData = { components: [], flows: [] };
                                 }
                             } else if (pt === 'SCREEN_DESIGN') {
-                                // 화면 설계도 마찬가지로 data.screens가 있으면 우선 사용
+                                // 화면 설계: 서버에 screens가 없는데 로컬에 있으면 로컬 유지 (가져오기 후 섹션 추가·새로고침 시 데이터 유지)
                                 const serverTs = new Date(p.updatedAt || 0).getTime();
                                 const localTs = new Date(localProject?.updatedAt || 0).getTime();
-                                if (localProject?.data && (localProject.data as any).screens && localTs > serverTs) {
+                                const serverScreens = (p.data as any)?.screens ?? (p.screenSnapshot as any)?.screens ?? [];
+                                const serverFlows = (p.data as any)?.flows ?? (p.screenSnapshot as any)?.flows ?? [];
+                                const serverSections = (p.screenSnapshot as any)?.sections ?? (p.data as any)?.sections ?? [];
+                                const localScreens = (localProject?.data as any)?.screens;
+                                const localHasScreens = Array.isArray(localScreens) && localScreens.length > 0;
+                                const serverHasScreens = Array.isArray(serverScreens) && serverScreens.length > 0;
+
+                                if (localProject?.data && localHasScreens && !serverHasScreens) {
+                                    // 서버에 화면 목록이 없고 로컬에만 있으면 로컬 screens/flows 유지, 섹션은 서버 것 우선(섹션 추가 반영)
+                                    projData = {
+                                        screens: (localProject.data as any).screens ?? [],
+                                        flows: (localProject.data as any).flows ?? [],
+                                        sections: Array.isArray(serverSections) && serverSections.length > 0 ? serverSections : ((localProject.data as any).sections ?? []),
+                                    };
+                                } else if (localProject?.data && (localProject.data as any).screens && localTs > serverTs) {
                                     projData = localProject.data;
                                 } else if (p.data && (p.data as any).screens) {
                                     projData = p.data;
-                                } else if (p.screenSnapshot) {
+                                } else if (p.screenSnapshot || serverScreens.length || serverFlows.length || (Array.isArray(serverSections) && serverSections.length)) {
                                     projData = {
-                                        screens: p.screenSnapshot.screens || [],
-                                        flows: p.screenSnapshot.flows || [],
-                                        sections: (p.screenSnapshot as any).sections || [],
+                                        screens: serverScreens || [],
+                                        flows: serverFlows || [],
+                                        sections: Array.isArray(serverSections) ? serverSections : [],
                                     };
                                 } else {
                                     projData = { screens: [], flows: [], sections: [] };
