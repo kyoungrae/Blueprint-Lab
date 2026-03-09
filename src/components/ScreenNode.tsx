@@ -533,6 +533,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         return { minX, minY, maxX, maxY, centerX: (minX + maxX) / 2, topY: minY };
     }, [selectedElementIds, screen.drawElements, dragPreviewPositions]);
 
+    const isUnifiedGroupSelection = React.useMemo(() => {
+        if (selectedElementIds.length < 2) return false;
+        const elements = screen.drawElements || [];
+        const selected = elements.filter((el) => selectedElementIds.includes(el.id));
+        const firstGroupId = selected[0]?.groupId;
+        if (!firstGroupId) return false;
+        return selected.every((el) => el.groupId === firstGroupId);
+    }, [selectedElementIds, screen.drawElements]);
+
     const insertComponent = useCallback((component: Screen, subComponentId?: string) => {
         let elements: DrawElement[];
         if (subComponentId) {
@@ -1090,6 +1099,117 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         w: number, h: number,
         dir: string, id: string
     } | null>(null);
+
+    const groupResizeStartRef = useRef<{
+        clientX: number;
+        clientY: number;
+        minX: number;
+        minY: number;
+        maxX: number;
+        maxY: number;
+        dir: string;
+        groupId: string;
+        elements: Array<{ id: string; x: number; y: number; width: number; height: number; polygonPoints?: { x: number; y: number }[]; lineX1?: number; lineY1?: number; lineX2?: number; lineY2?: number }>;
+    } | null>(null);
+
+    const handleGroupResizeStart = (groupId: string, dir: string, e: React.MouseEvent) => {
+        if (isLocked) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const groupEls = drawElements.filter((el) => el.groupId === groupId);
+        if (groupEls.length === 0) return;
+        const minX = Math.min(...groupEls.map((el) => el.x));
+        const minY = Math.min(...groupEls.map((el) => el.y));
+        const maxX = Math.max(...groupEls.map((el) => el.x + el.width));
+        const maxY = Math.max(...groupEls.map((el) => el.y + el.height));
+        const elements = groupEls.map((el) => ({
+            id: el.id,
+            x: el.x,
+            y: el.y,
+            width: el.width,
+            height: el.height,
+            polygonPoints: el.polygonPoints ? el.polygonPoints.map((p) => ({ ...p })) : undefined,
+            lineX1: el.lineX1,
+            lineY1: el.lineY1,
+            lineX2: el.lineX2,
+            lineY2: el.lineY2,
+        }));
+        groupResizeStartRef.current = {
+            clientX: e.clientX,
+            clientY: e.clientY,
+            minX,
+            minY,
+            maxX,
+            maxY,
+            dir,
+            groupId,
+            elements,
+        };
+        const handleMove = (moveEvent: MouseEvent) => {
+            const ref = groupResizeStartRef.current;
+            if (!ref || !canvasRef.current) return;
+            const cRect = canvasRef.current.getBoundingClientRect();
+            const sX = canvasRef.current.clientWidth / cRect.width;
+            const sY = canvasRef.current.clientHeight / cRect.height;
+            const dx = (moveEvent.clientX - ref.clientX) * sX;
+            const dy = (moveEvent.clientY - ref.clientY) * sY;
+            let nextMinX = ref.minX;
+            let nextMinY = ref.minY;
+            let nextMaxX = ref.maxX;
+            let nextMaxY = ref.maxY;
+            const w = ref.maxX - ref.minX;
+            const h = ref.maxY - ref.minY;
+            if (dir.includes('e')) nextMaxX = ref.maxX + dx;
+            if (dir.includes('w')) nextMinX = ref.minX + dx;
+            if (dir.includes('s')) nextMaxY = ref.maxY + dy;
+            if (dir.includes('n')) nextMinY = ref.minY + dy;
+            const RESIZE_MIN = 16;
+            const newW = Math.max(RESIZE_MIN, nextMaxX - nextMinX);
+            const newH = Math.max(RESIZE_MIN, nextMaxY - nextMinY);
+            if (dir.includes('w')) nextMinX = nextMaxX - newW;
+            if (dir.includes('n')) nextMinY = nextMaxY - newH;
+            const currentElements = getScreenById(screen.id)?.drawElements || [];
+            const updated = currentElements.map((it) => {
+                const snap = ref.elements.find((s) => s.id === it.id);
+                if (!snap) return it;
+                const relX = (snap.x - ref.minX) / w;
+                const relY = (snap.y - ref.minY) / h;
+                const relW = snap.width / w;
+                const relH = snap.height / h;
+                const newX = nextMinX + relX * newW;
+                const newY = nextMinY + relY * newH;
+                const newWidth = relW * newW;
+                const newHeight = relH * newH;
+                const base = { ...it, x: newX, y: newY, width: newWidth, height: newHeight };
+                if (it.type === 'polygon' && it.polygonPoints?.length && snap.polygonPoints?.length) {
+                    base.polygonPoints = snap.polygonPoints.map((p) => ({
+                        x: nextMinX + ((p.x - ref.minX) / w) * newW,
+                        y: nextMinY + ((p.y - ref.minY) / h) * newH,
+                    }));
+                }
+                if (it.type === 'line' && snap.lineX1 != null && snap.lineY1 != null && snap.lineX2 != null && snap.lineY2 != null) {
+                    base.lineX1 = nextMinX + ((snap.lineX1 - ref.minX) / w) * newW;
+                    base.lineY1 = nextMinY + ((snap.lineY1 - ref.minY) / h) * newH;
+                    base.lineX2 = nextMinX + ((snap.lineX2 - ref.minX) / w) * newW;
+                    base.lineY2 = nextMinY + ((snap.lineY2 - ref.minY) / h) * newH;
+                }
+                return base;
+            });
+            update({ drawElements: updated });
+        };
+        const handleUp = () => {
+            if (groupResizeStartRef.current) {
+                const currentElements = getScreenById(screen.id)?.drawElements || [];
+                syncUpdate({ drawElements: currentElements });
+                saveHistory(currentElements);
+            }
+            groupResizeStartRef.current = null;
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+        };
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleUp);
+    };
 
     const handleElementResizeStart = (id: string, dir: string, e: React.MouseEvent) => {
         if (isLocked) return;
@@ -4037,7 +4157,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                             style={commonStyle}
                                                                             onMouseDown={(e) => handleElementMouseDown(el.id, e)}
                                                                             onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
-                                                                            className={`group-canvas-element ${isSelected ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
+                                                                            className={`group-canvas-element ${isSelected && !(isUnifiedGroupSelection && selectedElementIds.length > 1) ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
                                                                             data-element-id={el.id}
                                                                         >
                                                                             {el.type === 'rect' && (() => {
@@ -4670,7 +4790,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                     )}
                                                                                 </div>
                                                                             )}
-                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && (
+                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && !isUnifiedGroupSelection && (
                                                                                 <button
                                                                                     onClick={(e) => {
                                                                                         e.stopPropagation();
@@ -4683,8 +4803,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                 </button>
                                                                             )}
 
-                                                                            {/* Resize Handles (이미지 직접 크롭 모드에서는 ImageElement 크롭 핸들 사용) / 선은 끝점 핸들만, 다각형은 8방+꼭짓점 */}
-                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && !(el.type === 'image' && imageCropMode) && (
+                                                                            {/* Resize Handles (단일 선택 시에만; 그룹일 때는 그룹 아웃라인 쪽에서 처리) */}
+                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && !isUnifiedGroupSelection && !(el.type === 'image' && imageCropMode) && (
                                                                                 <>
                                                                                     {el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null ? (
                                                                                         <>
@@ -4717,6 +4837,32 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                         </div>
                                                                     );
                                                                 })}
+
+                                                                {/* 그룹 단일 아웃라인 + 리사이즈 핸들 (2개 이상 그룹 선택 시 하나의 박스로 표시, 리사이즈 시 그룹 전체 스케일) */}
+                                                                {isUnifiedGroupSelection && selectionBounds && !isLocked && (() => {
+                                                                    const gid = drawElements.find((el) => selectedElementIds.includes(el.id))?.groupId;
+                                                                    if (!gid) return null;
+                                                                    const left = selectionBounds.minX;
+                                                                    const top = selectionBounds.minY;
+                                                                    const width = selectionBounds.maxX - selectionBounds.minX;
+                                                                    const height = selectionBounds.maxY - selectionBounds.minY;
+                                                                    return (
+                                                                        <div
+                                                                            className="absolute pointer-events-none border-2 border-blue-500 z-[125]"
+                                                                            style={{ left, top, width, height }}
+                                                                        >
+                                                                            <div className="absolute inset-0 pointer-events-none" />
+                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-nw-resize pointer-events-auto z-[130]" />
+                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-ne-resize pointer-events-auto z-[130]" />
+                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-sw-resize pointer-events-auto z-[130]" />
+                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-se-resize pointer-events-auto z-[130]" />
+                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-n-resize pointer-events-auto z-[130]" />
+                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-s-resize pointer-events-auto z-[130]" />
+                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-w-resize pointer-events-auto z-[130]" />
+                                                                            <div onMouseDown={(e) => handleGroupResizeStart(gid, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-e-resize pointer-events-auto z-[130]" />
+                                                                        </div>
+                                                                    );
+                                                                })()}
 
                                                                 {/* 부분 컴포넌트화 버튼 (컴포넌트 캔버스, 선택 시 상단 - 등록/해제 모드 토글) */}
                                                                 {screen.screenId?.startsWith('CMP-') && selectionBounds && selectedElementIds.length >= 1 && !isLocked && (() => {
