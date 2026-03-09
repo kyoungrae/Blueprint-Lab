@@ -2113,7 +2113,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 pendingSyncDrawElementsRef.current = null;
                 syncUpdate({ drawElements: toSend });
             }
-        }, 200);
+        }, 100);
     }, [screen.id, getScreenById, update, saveHistory, syncUpdate]);
 
     const updateElement = (id: string, updates: Partial<DrawElement>) => {
@@ -2149,7 +2149,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 pendingSyncDrawElementsRef.current = null;
                 syncUpdate({ drawElements: toSend });
             }
-        }, 200);
+        }, 100);
     };
 
     const handlePolygonVertexDragStart = (id: string, pointIndex: number, e: React.MouseEvent) => {

@@ -5,8 +5,8 @@ import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
-/** PATCH 요청 디바운스: 프로젝트별로 마지막 데이터만 일정 시간 후 한 번만 전송 */
-const SAVE_DEBOUNCE_MS = 1200;
+/** PATCH 요청 디바운스: 프로젝트별로 마지막 데이터만 일정 시간 후 한 번만 전송 (기능 유지, 체감 지연 완화) */
+const SAVE_DEBOUNCE_MS = 500;
 const pendingSave: Record<string, { timer: ReturnType<typeof setTimeout>; data: any }> = {};
 
 async function sendProjectDataPatch(id: string, data: any) {

@@ -652,7 +652,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 sections: sec ?? [],
             };
             updateProjectData(currentProjectId, payload);
-        }, currentProjectId.startsWith('local_') ? 1000 : 500);
+        }, currentProjectId.startsWith('local_') ? 800 : 400);
         return () => clearTimeout(timer);
     }, [screens, flows, sections, currentProjectId, updateProjectData]);
 
