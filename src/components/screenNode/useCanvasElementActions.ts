@@ -102,8 +102,8 @@ export function useCanvasElementActions({
                     pendingSyncDrawElementsRef.current = null;
 
                     // Separate tasks to allow UI thread breathing room
-                    setTimeout(() => saveHistory(toSend), 0);
-                    setTimeout(() => syncUpdate({ drawElements: toSend }), 0);
+                    // setTimeout(() => saveHistory(toSend), 0); // 히스토리 저장 비활성화 - 딜레이 최소화
+                    // setTimeout(() => syncUpdate({ drawElements: toSend }), 0); // 실시간 동기화 비활성화 - 딜레이 최소화
                 }
             }, 100);
         },
@@ -136,8 +136,8 @@ export function useCanvasElementActions({
                     pendingSyncDrawElementsRef.current = null;
 
                     // Separate tasks
-                    setTimeout(() => saveHistory(toSend), 0);
-                    setTimeout(() => syncUpdate({ drawElements: toSend }), 0);
+                    // setTimeout(() => saveHistory(toSend), 0); // 히스토리 저장 비활성화 - 딜레이 최소화
+                    // setTimeout(() => syncUpdate({ drawElements: toSend }), 0); // 실시간 동기화 비활성화 - 딜레이 최소화
                 }
             }, 100);
         },

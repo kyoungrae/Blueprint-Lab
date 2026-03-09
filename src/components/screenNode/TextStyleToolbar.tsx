@@ -24,7 +24,6 @@ interface TextStyleToolbarProps {
     displayFontSize: number;
     onBeforeFontSizeApply?: (elementId: string, px: number) => void;
     updateElement: (id: string, updates: Partial<DrawElement>) => void;
-    applyToSelection: (fn: () => void) => boolean;
     applyFontSizePx: (px: number) => boolean;
     drawElements: DrawElement[];
     update: (updates: any) => void;
@@ -56,12 +55,9 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     displayFontSize,
     onBeforeFontSizeApply,
     updateElement,
-    applyToSelection,
     applyFontSizePx,
     drawElements,
     update,
-    syncUpdate,
-    saveHistory,
     textSelectionFromTable,
     selectedCellIndices,
     editingTableId,
@@ -83,7 +79,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     /** 디바운스 중 최신 nextElements를 보관 */
     const pendingTableFontSizeRef = useRef<DrawElement[] | null>(null);
     /** 로컬 강제 리렌더 (ScreenNode 전체 리렌더 우회) */
-    const [refresh, setRefresh] = useState(0);
+    // const [refresh, setRefresh] = useState(0);
 
     const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(optimisticFontSize ?? displayFontSize);
 
@@ -102,8 +98,8 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 if (pending) {
                     pendingTableFontSizeRef.current = null;
                     update({ drawElements: pending });
-                    syncUpdate({ drawElements: pending });
-                    saveHistory(pending);
+                    // syncUpdate({ drawElements: pending }); // 실시간 동기화 비활성화 - 딜레이 최소화
+                    // saveHistory(pending); // 히스토리 저장 비활성화 - 딜레이 최소화
                 }
             }
         };
@@ -141,12 +137,12 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 });
 
                 // Heavy history and sync tasks moved to separate ticks to keep UI snappy
-                setTimeout(() => {
-                    syncUpdate({ drawElements: toApply });
-                }, 0);
-                setTimeout(() => {
-                    saveHistory(toApply);
-                }, 0);
+                // setTimeout(() => {
+                //     syncUpdate({ drawElements: toApply });
+                // }, 0); // 실시간 동기화 비활성화 - 딜레이 최소화
+                // setTimeout(() => {
+                //     saveHistory(toApply);
+                // }, 0); // 히스토리 저장 비활성화 - 딜레이 최소화
             }, TABLE_FONT_SIZE_DEBOUNCE_MS);
         } else if (!fromTable) {
             if (onBeforeFontSizeApply) {
@@ -156,7 +152,6 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 updateElement(el.id, { fontSize: clamped });
             }
         }
-        setRefresh(r => r + 1);
     };
 
     useEffect(() => {
@@ -235,96 +230,99 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     const allFonts = baseFonts.includes(currentFont) ? baseFonts : [currentFont, ...baseFonts];
 
     const applyBold = () => {
-        const needFallback = applyToSelection(() => document.execCommand('bold', false));
-        if (needFallback) updateElement(el.id, { fontWeight: (el.fontWeight === 'bold' ? 'normal' : 'bold') as any });
+        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
-            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
-                if (!indices.includes(i)) return s;
-                const current = s || {};
-                const nextBold = current.fontWeight === 'bold' ? 'normal' : 'bold';
-                return { ...current, fontWeight: nextBold };
+
+            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
+            indices.forEach(idx => {
+                if (idx >= 0 && idx < totalCells) {
+                    const current = newStyles[idx] || {};
+                    newStyles[idx] = { ...current, fontWeight: current.fontWeight === 'bold' ? 'normal' : 'bold' };
+                }
             });
+
             const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+        } else {
+            updateElement(el.id, { fontWeight: (el.fontWeight === 'bold' ? 'normal' : 'bold') as any });
         }
-        setRefresh(r => r + 1);
     };
 
     const applyItalic = () => {
-        const needFallback = applyToSelection(() => document.execCommand('italic', false));
-        if (needFallback) updateElement(el.id, { fontStyle: (el.fontStyle === 'italic' ? 'normal' : 'italic') as any });
+        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
-            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
-                if (!indices.includes(i)) return s;
-                const current = s || {};
-                const nextItalic = current.fontStyle === 'italic' ? 'normal' : 'italic';
-                return { ...current, fontStyle: nextItalic };
+
+            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
+            indices.forEach(idx => {
+                if (idx >= 0 && idx < totalCells) {
+                    const current = newStyles[idx] || {};
+                    newStyles[idx] = { ...current, fontStyle: current.fontStyle === 'italic' ? 'normal' : 'italic' };
+                }
             });
+
             const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+        } else {
+            updateElement(el.id, { fontStyle: (el.fontStyle === 'italic' ? 'normal' : 'italic') as any });
         }
-        setRefresh(r => r + 1);
     };
 
     const applyUnderline = () => {
-        const needFallback = applyToSelection(() => document.execCommand('underline', false));
-        if (needFallback) updateElement(el.id, { textDecoration: (el.textDecoration === 'underline' ? 'none' : 'underline') as any });
+        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
-            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
-                if (!indices.includes(i)) return s;
-                const current = s || {};
-                const nextUnderline = current.textDecoration === 'underline' ? 'none' : 'underline';
-                return { ...current, textDecoration: nextUnderline };
+
+            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
+            indices.forEach(idx => {
+                if (idx >= 0 && idx < totalCells) {
+                    const current = newStyles[idx] || {};
+                    newStyles[idx] = { ...current, textDecoration: current.textDecoration === 'underline' ? 'none' : 'underline' };
+                }
             });
+
             const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+        } else {
+            updateElement(el.id, { textDecoration: (el.textDecoration === 'underline' ? 'none' : 'underline') as any });
         }
-        setRefresh(r => r + 1);
     };
 
     const applyFont = (fontName: string) => {
-        const needFallback = applyToSelection(() => {
-            document.execCommand('fontName', false, fontName);
-        });
-        if (needFallback) updateElement(el.id, { fontFamily: fontName });
+        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
-            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
-                if (!indices.includes(i)) return s;
-                return { ...(s || {}), fontFamily: fontName };
+
+            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
+            indices.forEach(idx => {
+                if (idx >= 0 && idx < totalCells) {
+                    newStyles[idx] = { ...(newStyles[idx] || {}), fontFamily: fontName };
+                }
             });
+
             const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+        } else {
+            updateElement(el.id, { fontFamily: fontName });
         }
         setFontDropdownOpen(false);
-        setRefresh(r => r + 1);
     };
 
     const handleFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -358,25 +356,35 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         : el.textDecoration === 'underline';
 
     const applyColor = (color: string, closePickerInput?: HTMLInputElement | null) => {
-        const needFallback = applyToSelection(() => document.execCommand('foreColor', false, color));
-        if (needFallback) updateElement(el.id, { color: color });
+        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
+            // 테이블 셀 색상 변경 최적화
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
             const cols = el.tableCols || 3;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
-            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
-                if (!indices.includes(i)) return s;
-                return { ...(s || {}), color };
+
+            // 효율적인 셀 스타일 업데이트
+            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
+            indices.forEach(idx => {
+                if (idx >= 0 && idx < totalCells) {
+                    newStyles[idx] = { ...(newStyles[idx] || {}), color };
+                }
             });
-            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
+
+            const nextElements = drawElements.map(it =>
+                it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
+            );
+
+            // 직접 update 호출로 디바운싱 우회
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+        } else {
+            // 일반 텍스트 요소 색상 변경
+            updateElement(el.id, { color });
         }
+
         addRecentTextColor(color);
-        setRefresh(r => r + 1);
         if (closePickerInput) closePickerInput.blur();
     };
 

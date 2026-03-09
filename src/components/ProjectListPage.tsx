@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil } from 'lucide-react';
 import './ProjectListPage.css';
+import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
@@ -320,6 +321,14 @@ const ProjectListPage: React.FC = () => {
                 newProjectDesc,
                 selectedProjectType
             );
+
+            // 새로운 프로젝트 생성 시 screenDesignStore 클리어 (이전 데이터 잔재 방지)
+            if (selectedProjectType === 'SCREEN_DESIGN') {
+                const { setCanvasClipboard, setGridClipboard, setLastInteractedScreenId } = useScreenDesignStore.getState();
+                setCanvasClipboard([]);
+                setGridClipboard(null);
+                setLastInteractedScreenId(null);
+            }
 
             setNewProjectName('');
             setNewProjectDesc('');

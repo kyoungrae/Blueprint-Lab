@@ -182,6 +182,7 @@ import AddScreenModal from './AddScreenModal';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
+import { useDatabasePolling } from '../hooks/useDatabasePolling';
 import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation } from '../types/screenDesign';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
@@ -274,6 +275,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     const { projects, currentProjectId, setCurrentProject, updateProjectData, fetchProjects } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
+    
+    // 데이터베이스 폴링으로 실시간 동기화 대체 (5초 간격)
+    const { isPolling } = useDatabasePolling({ 
+        projectId: currentProjectId || '', 
+        interval: 5000 
+    });
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [sidebarListKey, setSidebarListKey] = useState(0); // 가져오기 후 사이드바 목록 갱신용
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -619,12 +626,26 @@ const ScreenDesignCanvasContent: React.FC = () => {
     // state_sync 도착 시 서버 기준으로 다시 덮어쓴다.
     useEffect(() => {
         if (!currentProjectId || !currentProject) return;
+
+        // 프로젝트 변경 시 이전 데이터 클리어 (새 프로젝트 생성 시 이전 데이터 잔재 방지)
+        const { setCanvasClipboard, setGridClipboard, setLastInteractedScreenId } = useScreenDesignStore.getState();
+        setCanvasClipboard([]);
+        setGridClipboard(null);
+        setLastInteractedScreenId(null);
+
         const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
         if (data && Array.isArray(data.screens)) {
             importData({
                 screens: data.screens || [],
                 flows: data.flows || [],
                 sections: Array.isArray((data as any).sections) ? (data as any).sections : [],
+            });
+        } else {
+            // 새로운 빈 프로젝트의 경우 모든 데이터 클리어
+            importData({
+                screens: [],
+                flows: [],
+                sections: [],
             });
         }
     }, [currentProjectId, currentProject?.id, importData]);
