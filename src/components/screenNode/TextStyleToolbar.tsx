@@ -25,6 +25,7 @@ interface TextStyleToolbarProps {
     onBeforeFontSizeApply?: (elementId: string, px: number) => void;
     updateElement: (id: string, updates: Partial<DrawElement>) => void;
     applyFontSizePx: (px: number) => boolean;
+    applyToSelection: (fn: () => void) => boolean;
     drawElements: DrawElement[];
     update: (updates: any) => void;
     syncUpdate: (updates: any) => void;
@@ -56,6 +57,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     onBeforeFontSizeApply,
     updateElement,
     applyFontSizePx,
+    applyToSelection,
     drawElements,
     update,
     textSelectionFromTable,
@@ -230,7 +232,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     const allFonts = baseFonts.includes(currentFont) ? baseFonts : [currentFont, ...baseFonts];
 
     const applyBold = () => {
-        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
+        const sel = window.getSelection();
+        const hasSelection = sel && !sel.isCollapsed;
+        applyToSelection(() => {
+            document.execCommand('bold', false);
+        });
+        if (hasSelection) return;
+
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
@@ -254,7 +262,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     };
 
     const applyItalic = () => {
-        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
+        const sel = window.getSelection();
+        const hasSelection = sel && !sel.isCollapsed;
+        applyToSelection(() => {
+            document.execCommand('italic', false);
+        });
+        if (hasSelection) return;
+
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
@@ -278,7 +292,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     };
 
     const applyUnderline = () => {
-        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
+        const sel = window.getSelection();
+        const hasSelection = sel && !sel.isCollapsed;
+        applyToSelection(() => {
+            document.execCommand('underline', false);
+        });
+        if (hasSelection) return;
+
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
@@ -302,7 +322,16 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     };
 
     const applyFont = (fontName: string) => {
-        // DOM 조작 제거 - 직접 상태 업데이트로 최적화
+        const sel = window.getSelection();
+        const hasSelection = sel && !sel.isCollapsed;
+        applyToSelection(() => {
+            document.execCommand('fontName', false, fontName);
+        });
+        if (hasSelection) {
+            setFontDropdownOpen(false);
+            return;
+        }
+
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 3;
@@ -356,6 +385,17 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         : el.textDecoration === 'underline';
 
     const applyColor = (color: string, closePickerInput?: HTMLInputElement | null) => {
+        const sel = window.getSelection();
+        const hasSelection = sel && !sel.isCollapsed;
+        applyToSelection(() => {
+            document.execCommand('foreColor', false, color);
+        });
+        if (hasSelection) {
+            addRecentTextColor(color);
+            if (closePickerInput) closePickerInput.blur();
+            return;
+        }
+
         // DOM 조작 제거 - 직접 상태 업데이트로 최적화
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             // 테이블 셀 색상 변경 최적화
