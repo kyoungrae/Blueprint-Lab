@@ -1619,14 +1619,20 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     onClick={() => {
                                         const data = exportData();
                                         const json = JSON.stringify(data, null, 2);
-                                        navigator.clipboard.writeText(json).then(() => {
-                                            const a = document.createElement('a');
-                                            a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-                                            a.download = `screen-design-${Date.now()}.json`;
-                                            a.click();
-                                            URL.revokeObjectURL(a.href);
-                                            alert(`데이터가 클립보드에 복사되었고, JSON 파일이 다운로드되었습니다. (화면 ${data.screens?.length ?? 0}개)`);
-                                        }).catch(() => alert('클립보드 복사에 실패했습니다.'));
+                                        const a = document.createElement('a');
+                                        a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+                                        a.download = `screen-design-${Date.now()}.json`;
+                                        a.click();
+                                        URL.revokeObjectURL(a.href);
+                                        const countMsg = `(화면 ${data.screens?.length ?? 0}개)`;
+                                        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                                            navigator.clipboard.writeText(json).then(
+                                                () => alert(`데이터가 클립보드에 복사되었고, JSON 파일이 다운로드되었습니다. ${countMsg}`),
+                                                () => alert(`JSON 파일이 다운로드되었습니다. ${countMsg}\n(클립보드는 HTTPS 환경에서만 사용 가능합니다.)`)
+                                            );
+                                        } else {
+                                            alert(`JSON 파일이 다운로드되었습니다. ${countMsg}\n다른 프로젝트에서는 가져오기 시 이 파일을 선택하면 됩니다.`);
+                                        }
                                     }}
                                     className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
                                 >
