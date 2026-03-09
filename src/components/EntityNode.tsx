@@ -324,9 +324,11 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
     const entity = useERDStore((s) => s.entitiesById[entityId]);
     if (!entity) return null;
     const isLocked = entity.isLocked ?? true;
+
+    // 이 노드는 EntityNodeFull의 isLocked 상태(또는 렌더링 구조)와 레이아웃(높이)이 완전히 동일해야 덜컹거리지 않습니다.
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] relative overflow-visible ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] group relative overflow-visible ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
@@ -334,43 +336,104 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
                 }`}
             style={{ contain: 'layout style paint' }}
         >
+            <EntityLockBadge entityId={entityId} />
+
             <div className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${isLocked ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
                 <Database size={16} className="flex-shrink-0" />
-                <span className="font-bold text-lg flex-1 truncate">{entity.name}</span>
+                {/* Full의 input과 동일한 구조/크기 */}
+                <span className={`${!isLocked ? 'nodrag bg-blue-400/20' : 'bg-transparent'} border-none font-bold text-lg w-full p-0 block truncate`}>
+                    {entity.name}
+                </span>
+                <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0' : ''}`}>
+                    <div className="nodrag p-1 rounded-md text-white pointer-events-none">
+                        {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                    </div>
+                </div>
             </div>
-            {entity.comment && (
+
+            {(!isLocked || entity.comment) && (
                 <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
                     <MessageSquare size={12} className="text-gray-400 shrink-0" />
-                    <span className="text-[11px] italic text-gray-400 truncate">{entity.comment}</span>
+                    <span className={`text-[11px] w-full bg-transparent p-0 italic block truncate ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
+                        {entity.comment}
+                    </span>
                 </div>
             )}
+
             <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
                 {entity.attributes.map((attr) => (
-                    <div key={attr.id} className={`flex items-center gap-1 py-1 px-2 rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
+                    <div key={attr.id} className={`flex items-center gap-1 py-1 px-2 rounded group/attr relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'}`}>
+                        {/* PK Icon/Toggle */}
                         <div className="w-8 flex-shrink-0 flex justify-center">
-                            <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}><Key size={14} /></span>
+                            <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
+                                <Key size={14} />
+                            </span>
                         </div>
+
+                        {/* Name Input equivalent */}
                         <div className="flex-1 min-w-0 mx-1">
-                            <span className={`text-sm px-1.5 py-0.5 block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>{attr.name}</span>
+                            <span className={`w-full text-sm px-1.5 py-0.5 rounded block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
+                                {attr.name}
+                            </span>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            <div className="w-16 flex-shrink-0"><span className={`text-[10px] ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>{attr.type.split('(')[0]}{attr.length ? `(${attr.length})` : ''}</span></div>
+
+                        <div className="flex flex-nowrap items-center gap-2 flex-shrink-0">
+                            {/* Type Column equivalent */}
+                            <div className="w-16 flex-shrink-0 flex items-center h-4">
+                                <span className={`text-[10px] w-full block truncate ${!isLocked ? 'text-blue-600' : 'text-gray-400'}`}>
+                                    {attr.type.split('(')[0]}
+                                </span>
+                            </div>
+
+                            {/* Length Column equivalent (렌더링은 input과 동일한 높이/크기로 빈공간 유지) */}
+                            <div className="w-10 flex-shrink-0">
+                                <span className={`block w-full text-[9px] px-1 py-0.5 border border-transparent truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                                    {attr.length || ''}
+                                </span>
+                            </div>
+
+                            {/* NN Toggle equivalent */}
                             <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
-                                <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'}`}><div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} /></div>
+                                <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
+                                    <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                                </div>
                                 <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                             </div>
-                            <div className="w-24 flex-shrink-0 flex items-center gap-1 px-1">
-                                {attr.comment && <><MessageSquare size={11} className="shrink-0 text-blue-400" /><span className="text-[9px] text-blue-500 italic truncate">{attr.comment}</span></>}
+
+                            {/* Comment Column equivalent */}
+                            <div className="w-24 flex-shrink-0 flex items-center gap-1 bg-gray-50/30 px-1 rounded h-[18px]">
+                                <MessageSquare size={11} className={`shrink-0 ${attr.comment ? 'text-blue-400' : 'text-gray-200'}`} />
+                                <span className={`text-[9px] p-0 italic w-full truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                                    {attr.comment}
+                                </span>
                             </div>
-                            <div className="w-8 flex-shrink-0 flex justify-center"><span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}><Link size={14} /></span></div>
+
+                            {/* FK Toggle equivalent */}
+                            <div className="w-8 flex-shrink-0 flex justify-center">
+                                <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
+                                    <Link size={14} />
+                                </span>
+                            </div>
+
+                            {/* Delete Column padding equivalent to maintain layout */}
+                            {!isLocked && (
+                                <div className="w-[20px]" />
+                            )}
                         </div>
                     </div>
                 ))}
             </div>
-            <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ top: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
-            <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ bottom: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
-            <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ left: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
-            <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ right: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+
+            {!isLocked && (
+                <div className="px-2 pb-2">
+                    <div className="w-full flex items-center justify-center gap-2 py-1.5 border-2 border-dashed border-gray-200 rounded text-gray-400 text-xs font-medium">
+                        <Plus size={14} />
+                        컬럼 추가
+                    </div>
+                </div>
+            )}
+
+            <PrivHandles />
         </div>
     );
 });
