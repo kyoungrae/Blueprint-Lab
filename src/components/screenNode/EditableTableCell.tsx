@@ -61,7 +61,6 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     restoreSelectionRef,
     autoFocus,
     isComposing,
-    composingValue,
     onComposingChange,
     onValueChange,
     onSelectionChange,
