@@ -673,7 +673,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 }
                 if (tableCellLockedIndices.length === 0) tableCellLockedIndices = undefined;
             }
-            const hasComponentText = (el.type === 'rect' || el.type === 'circle' || el.type === 'text') && (el.text || '').trim().length > 0;
+            const hasComponentText = false;
+            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, hasComponentText: undefined, tableCellLockedIndices };
             return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, hasComponentText: hasComponentText || undefined, tableCellLockedIndices };
         });
         newElements.forEach((el) => {
@@ -4592,7 +4593,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                                 const cellColor = el.tableCellColors?.[cellIndex];
                                                                                                 const cellStyle = el.tableCellStyles?.[cellIndex] || {};
                                                                                                 const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
-                                                                                                const hasComponentText = (el.tableCellLockedIndices?.includes(cellIndex)) ?? false;
+                                                                                                const hasComponentText = !!(el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex));
                                                                                                 const isCellEditing = !hasComponentText && editingTableId === el.id && editingCellIndex === cellIndex;
                                                                                                 const isHeaderRow = r === 0;
 
@@ -4704,7 +4705,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                                         onDoubleClick={(e) => {
                                                                                                             if (isLocked) return;
                                                                                                             if (editingTableId !== el.id) return;
-                                                                                                            if (el.tableCellLockedIndices?.includes(cellIndex)) return;
+                                                                                                            if (el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex)) return;
                                                                                                             e.stopPropagation();
                                                                                                             setEditingCellIndex(cellIndex);
                                                                                                         }}
@@ -4743,7 +4744,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                                                     if (e.key === 'Tab') {
                                                                                                                         e.preventDefault();
                                                                                                                         syncUpdate({ drawElements });
-                                                                                                                        const locked = el.tableCellLockedIndices ?? [];
+                                                                                                                        const locked = el.fromComponentId ? (el.tableCellLockedIndices ?? []) : [];
                                                                                                                         const findNext = (start: number, dir: 1 | -1) => {
                                                                                                                             for (let k = 1; k <= totalCells; k++) {
                                                                                                                                 const i = (start + k * dir + totalCells) % totalCells;

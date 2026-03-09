@@ -164,7 +164,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     return (
         <div
             ref={divRef}
-            contentEditable={!isLocked && isSelected && (element.type === 'text' || !element.hasComponentText)}
+            contentEditable={!isLocked && isSelected}
             onInput={handleInput}
             onPaste={handlePaste}
             onCompositionEnd={handleCompositionEnd}
