@@ -421,29 +421,29 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
         e.stopPropagation();
         if (isLocked) return;
         const newAttributes = entity.attributes.filter((attr) => attr.id !== attrId);
-        updateEntity(entity.id, { attributes: newAttributes });
-
         sendOperation({
             type: 'ATTRIBUTE_DELETE',
             targetId: entity.id,
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
-            payload: { attributes: newAttributes }
+            payload: { attributes: newAttributes },
+            previousState: { attributes: entity.attributes },
         });
+        updateEntity(entity.id, { attributes: newAttributes });
     };
 
     const handleDeleteEntity = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (window.confirm(`Delete entity "${entity.name}"?`)) {
-            deleteEntity(entity.id);
-
             sendOperation({
                 type: 'ENTITY_DELETE',
                 targetId: entity.id,
                 userId: user?.id || 'anonymous',
                 userName: user?.name || 'Anonymous',
-                payload: {}
+                payload: {},
+                previousState: entity as unknown as Record<string, unknown>,
             });
+            deleteEntity(entity.id);
         }
     };
 

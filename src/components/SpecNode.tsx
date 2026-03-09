@@ -565,14 +565,15 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (window.confirm(`기능명세서 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
-            deleteScreen(screen.id);
             sendOperation({
                 type: 'SCREEN_DELETE',
                 targetId: screen.id,
                 userId: user?.id || 'anonymous',
                 userName: user?.name || 'Anonymous',
-                payload: {}
+                payload: {},
+                previousState: screen as unknown as Record<string, unknown>,
             });
+            deleteScreen(screen.id);
         }
     };
 

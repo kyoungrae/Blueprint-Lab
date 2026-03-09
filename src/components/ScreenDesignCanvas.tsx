@@ -853,7 +853,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
             if (op.type.startsWith('SCREEN_')) {
                 if (op.type === 'SCREEN_CREATE') addScreen(op.payload as any);
-                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') {
+                else                 if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE' || op.type === 'SCREEN_DRAW_DELETE') {
                     setLastRemoteUpdateScreenId(op.targetId);
                     updateScreen(op.targetId, op.payload as any);
                 }
@@ -892,15 +892,16 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                         if (window.confirm(confirmMsg)) {
                             selectedNodes.forEach(node => {
-                                deleteScreen(node.id);
-
+                                const screenToRestore = screens.find(s => s.id === node.id);
                                 sendOperation({
                                     type: 'SCREEN_DELETE',
                                     targetId: node.id,
                                     userId: user?.id || 'anonymous',
                                     userName: user?.name || 'Anonymous',
-                                    payload: {}
+                                    payload: {},
+                                    previousState: screenToRestore ? (screenToRestore as unknown as Record<string, unknown>) : undefined,
                                 });
+                                deleteScreen(node.id);
                             });
                         }
                     }
@@ -908,14 +909,16 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     if (selectedEdges.length > 0) {
                         if (window.confirm(`${selectedEdges.length}개의 연결을 삭제하시겠습니까?`)) {
                             selectedEdges.forEach(edge => {
-                                deleteFlow(edge.id);
+                                const flowToRestore = flows.find(f => f.id === edge.id);
                                 sendOperation({
                                     type: 'SCREEN_FLOW_DELETE',
                                     targetId: edge.id,
                                     userId: user?.id || 'anonymous',
                                     userName: user?.name || 'Anonymous',
-                                    payload: {}
+                                    payload: {},
+                                    previousState: flowToRestore ? (flowToRestore as unknown as Record<string, unknown>) : undefined,
                                 });
+                                deleteFlow(edge.id);
                             });
                         }
                     }
@@ -925,7 +928,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [deleteScreen, deleteFlow, getNodes, edges, user, sendOperation]);
+    }, [deleteScreen, deleteFlow, getNodes, edges, screens, flows, user, sendOperation]);
 
     const onConnect = useCallback((params: any) => {
         if (params.source === params.target) return;
@@ -1145,6 +1148,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
         setIsAddScreenModalOpen(true);
     }, []);
 
+    const getViewportCenterFlowPosition = useCallback((): { x: number; y: number } => {
+        const wrapper = flowWrapper.current;
+        if (!wrapper) return { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 };
+        const rect = wrapper.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        return screenToFlowPosition({ x: centerX, y: centerY });
+    }, [screenToFlowPosition]);
+
     const handleAddScreenConfirm = useCallback((pageSize: PageSizeOption, pageOrientation: PageOrientation) => {
         const baseName = '새 화면';
         const existingNames = new Set(screens.map(s => s.name));
@@ -1167,6 +1179,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             pageOrientation: pageOrientation || 'portrait',
         } as Screen);
 
+        const viewportCenter = getViewportCenterFlowPosition();
         const newScreen: Screen = {
             id: `screen_${Date.now()}`,
             systemName: currentProject?.name || '',
@@ -1180,7 +1193,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             initialSettings: '',
             functionDetails: '',
             relatedTables: '',
-            position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
+            position: viewportCenter,
             fields: [],
             isLocked: true,
             pageSize,
@@ -1197,7 +1210,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             userName: user?.name || 'Anonymous',
             payload: newScreen as unknown as Record<string, unknown>
         });
-    }, [screens, addScreen, currentProject, user, sendOperation]);
+    }, [screens, addScreen, currentProject, user, sendOperation, getViewportCenterFlowPosition]);
 
     const handleAddSpecClick = useCallback(() => {
         setIsAddSpecModalOpen(true);
@@ -1225,6 +1238,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             pageOrientation: pageOrientation || 'portrait',
         } as Screen);
 
+        const viewportCenter = getViewportCenterFlowPosition();
         const newScreen: Screen = {
             id: `spec_${Date.now()}`,
             systemName: currentProject?.name || '',
@@ -1238,7 +1252,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             initialSettings: '',
             functionDetails: '',
             relatedTables: '',
-            position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
+            position: viewportCenter,
             fields: [],
             variant: 'SPEC',
             specs: [],
@@ -1257,7 +1271,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             userName: user?.name || 'Anonymous',
             payload: newScreen as unknown as Record<string, unknown>
         });
-    }, [screens, addScreen, currentProject, user, sendOperation]);
+    }, [screens, addScreen, currentProject, user, sendOperation, getViewportCenterFlowPosition]);
 
     const onNodeDragStop = useCallback(
         (_: React.MouseEvent, node: RFNode) => {
@@ -1873,14 +1887,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                                 <button
                                                     onClick={() => {
                                                         if (window.confirm('정말로 이 관계를 삭제하시겠습니까?')) {
-                                                            deleteFlow(editingFlow.id);
                                                             sendOperation({
                                                                 type: 'SCREEN_FLOW_DELETE',
                                                                 targetId: editingFlow.id,
                                                                 userId: user?.id || 'anonymous',
                                                                 userName: user?.name || 'Anonymous',
-                                                                payload: {}
+                                                                payload: {},
+                                                                previousState: editingFlow as unknown as Record<string, unknown>,
                                                             });
+                                                            deleteFlow(editingFlow.id);
                                                             setEditingFlowId(null);
                                                         }
                                                     }}

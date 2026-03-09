@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2 } from 'lucide-react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
 
@@ -33,7 +33,21 @@ interface AdminProject {
     memberCount: number;
 }
 
-type AdminTab = 'members' | 'projects';
+type AdminTab = 'members' | 'projects' | 'rollback';
+
+interface AdminHistoryEntry {
+    id: string;
+    projectId: string;
+    userId: string;
+    userName: string;
+    userPicture?: string;
+    operationType: string;
+    targetType: string;
+    targetId: string;
+    targetName: string;
+    details: string;
+    timestamp: string;
+}
 
 const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { user, updateUser } = useAuthStore();
@@ -47,6 +61,14 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [deletePassword, setDeletePassword] = useState('');
     const [deleteLoading, setDeleteLoading] = useState(false);
 
+    const [rollbackProjects, setRollbackProjects] = useState<AdminProject[]>([]);
+    const [rollbackProjectSearch, setRollbackProjectSearch] = useState('');
+    const [rollbackSelectedProjectId, setRollbackSelectedProjectId] = useState<string | null>(null);
+    const [rollbackHistory, setRollbackHistory] = useState<AdminHistoryEntry[]>([]);
+    const [rollbackHistoryLoading, setRollbackHistoryLoading] = useState(false);
+    const [rollbackEntryToRollback, setRollbackEntryToRollback] = useState<AdminHistoryEntry | null>(null);
+    const [rollbackSubmitLoading, setRollbackSubmitLoading] = useState(false);
+
     useEffect(() => {
         fetchUsers();
     }, []);
@@ -58,6 +80,24 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             setUserProjects([]);
         }
     }, [activeTab, selectedUserId]);
+
+    useEffect(() => {
+        if (activeTab === 'rollback') {
+            fetchRollbackProjects();
+        } else {
+            setRollbackProjects([]);
+            setRollbackSelectedProjectId(null);
+            setRollbackHistory([]);
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'rollback' && rollbackSelectedProjectId) {
+            fetchRollbackHistory(rollbackSelectedProjectId);
+        } else {
+            setRollbackHistory([]);
+        }
+    }, [activeTab, rollbackSelectedProjectId]);
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -158,6 +198,67 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         }
     };
 
+    const fetchRollbackProjects = async () => {
+        setError(null);
+        try {
+            const url = `${API_BASE}/admin/projects${rollbackProjectSearch.trim() ? `?q=${encodeURIComponent(rollbackProjectSearch.trim())}` : ''}`;
+            const res = await fetchWithAuth(url);
+            if (!res.ok) {
+                if (res.status === 403) setError('관리자 권한이 없습니다.');
+                else throw new Error('프로젝트 목록을 불러오지 못했습니다.');
+                return;
+            }
+            const data = await res.json();
+            setRollbackProjects(data);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+            if (err.message?.includes('세션')) onBack();
+        }
+    };
+
+    const fetchRollbackHistory = async (projectId: string) => {
+        setRollbackHistoryLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/projects/${projectId}/history?hours=24&limit=200`);
+            if (!res.ok) {
+                if (res.status === 403) setError('관리자 권한이 없습니다.');
+                else throw new Error('히스토리를 불러오지 못했습니다.');
+                return;
+            }
+            const data = await res.json();
+            setRollbackHistory(data);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+            setRollbackHistory([]);
+        } finally {
+            setRollbackHistoryLoading(false);
+        }
+    };
+
+    const handleRollbackConfirm = async () => {
+        if (!rollbackEntryToRollback || !rollbackSelectedProjectId) return;
+        setRollbackSubmitLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/projects/${rollbackSelectedProjectId}/rollback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ historyId: rollbackEntryToRollback.id }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '원복에 실패했습니다.');
+            }
+            setRollbackEntryToRollback(null);
+            await fetchRollbackHistory(rollbackSelectedProjectId);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+        } finally {
+            setRollbackSubmitLoading(false);
+        }
+    };
+
     const formatDate = (d: string) => {
         if (!d) return '-';
         const date = new Date(d);
@@ -213,6 +314,15 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         >
                             <FolderOpen size={16} className="inline-block mr-2 align-middle" />
                             회원 프로젝트 목록
+                        </button>
+                        <button
+                            onClick={() => { setActiveTab('rollback'); setRollbackEntryToRollback(null); }}
+                            className={`px-4 py-2.5 rounded-t-lg font-bold text-sm transition-all ${activeTab === 'rollback'
+                                ? 'bg-white border border-b-0 border-gray-200 text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                        >
+                            <RotateCcw size={16} className="inline-block mr-2 align-middle" />
+                            작업 원복
                         </button>
                     </div>
                 </div>
@@ -371,6 +481,101 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         회원 프로젝트 목록을 보려면 먼저 회원관리 탭에서 회원 목록을 불러오세요.
                     </div>
                 )}
+
+                {!loading && activeTab === 'rollback' && (
+                    <div className="space-y-4">
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 font-bold text-sm text-gray-700">
+                                프로젝트 선택 (최근 24시간 삭제 이력 · 원복 시 해당 항목만 복원)
+                            </div>
+                            <div className="p-4 flex flex-wrap items-center gap-2">
+                                <div className="flex flex-1 min-w-[200px] flex-wrap items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={rollbackProjectSearch}
+                                        onChange={(e) => setRollbackProjectSearch(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && fetchRollbackProjects()}
+                                        placeholder="프로젝트 이름 검색"
+                                        className="flex-1 min-w-[180px] px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-sm"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={fetchRollbackProjects}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700"
+                                    >
+                                        <Search size={16} /> 검색
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="border-t border-gray-100 max-h-[220px] overflow-y-auto">
+                                {rollbackProjects.length === 0 ? (
+                                    <div className="p-4 text-sm text-gray-500">검색 버튼을 눌러 프로젝트 목록을 불러오세요.</div>
+                                ) : (
+                                    <ul className="divide-y divide-gray-100">
+                                        {rollbackProjects.map((p) => (
+                                            <li key={p.id}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRollbackSelectedProjectId(p.id)}
+                                                    className={`w-full px-4 py-3 text-left flex items-center gap-2 transition-colors ${rollbackSelectedProjectId === p.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'}`}
+                                                >
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        {projectTypeIcon(p.projectType)}
+                                                        {p.projectType}
+                                                    </span>
+                                                    <span className="font-medium text-gray-900 truncate">{p.name}</span>
+                                                    <span className="text-xs text-gray-500 ml-auto shrink-0">{formatDate(p.updatedAt)}</span>
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+
+                        {rollbackSelectedProjectId && (
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                                    <div className="font-bold text-sm text-gray-700">최근 24시간 삭제 이력</div>
+                                    <div className="text-xs text-gray-500 mt-0.5">테이블, 관계, 화면, 연결선, 컬럼, 표·그리기 요소(화면 내) 삭제만 표시됩니다.</div>
+                                </div>
+                                {rollbackHistoryLoading ? (
+                                    <div className="flex items-center justify-center py-12">
+                                        <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+                                    </div>
+                                ) : (
+                                    <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+                                        {rollbackHistory.length === 0 ? (
+                                            <div className="p-8 text-center text-gray-500 text-sm">이 기간 내 삭제된 항목이 없습니다.</div>
+                                        ) : (
+                                            rollbackHistory.map((entry) => (
+                                                <div
+                                                    key={entry.id}
+                                                    className="px-4 py-3 flex flex-wrap items-center gap-2 sm:gap-4"
+                                                >
+                                                    <span className="text-xs text-gray-500 shrink-0 w-20 sm:w-24">
+                                                        {formatDate(entry.timestamp)}
+                                                    </span>
+                                                    <span className="text-sm font-medium text-gray-700 shrink-0">{entry.userName}</span>
+                                                    <span className="text-sm font-medium text-gray-900 truncate min-w-0 flex-1" title={entry.details}>
+                                                        {entry.details}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setRollbackEntryToRollback(entry)}
+                                                        className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200"
+                                                    >
+                                                        <RotateCcw size={14} /> 원복
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
             </main>
 
             {/* 회원 삭제 확인 모달 */}
@@ -406,6 +611,37 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {deleteLoading ? '처리 중...' : '삭제'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 작업 원복 확인 모달 */}
+            {rollbackEntryToRollback && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                        <h3 className="text-lg font-bold text-gray-900 mb-2">삭제 항목 원복</h3>
+                        <p className="text-gray-600 text-sm mb-2">
+                            삭제된 항목만 복원합니다. 다른 데이터에는 영향을 주지 않고, 해당 항목만 다시 추가됩니다.
+                        </p>
+                        <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
+                            <div className="font-medium text-gray-700">{rollbackEntryToRollback.details}</div>
+                            <div className="text-gray-500 mt-1">{rollbackEntryToRollback.userName} · {formatDate(rollbackEntryToRollback.timestamp)}</div>
+                        </div>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setRollbackEntryToRollback(null)}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleRollbackConfirm}
+                                disabled={rollbackSubmitLoading}
+                                className="px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {rollbackSubmitLoading ? '처리 중...' : '원복 실행'}
                             </button>
                         </div>
                     </div>

@@ -197,14 +197,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (window.confirm(`화면 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
-            deleteScreen(screen.id);
             sendOperation({
                 type: 'SCREEN_DELETE',
                 targetId: screen.id,
                 userId: user?.id || 'anonymous',
                 userName: user?.name || 'Anonymous',
-                payload: {}
+                payload: {},
+                previousState: screen as unknown as Record<string, unknown>,
             });
+            deleteScreen(screen.id);
         }
     };
 
@@ -2012,8 +2013,15 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             }))
             .filter((sub) => sub.elementIds.length > 0);
 
+        sendOperation({
+            type: 'SCREEN_DRAW_DELETE',
+            targetId: screen.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: { drawElements: nextElements, subComponents: nextSubComponents },
+            previousState: { drawElements: drawElements },
+        });
         update({ drawElements: nextElements, subComponents: nextSubComponents });
-        syncUpdate({ drawElements: nextElements, subComponents: nextSubComponents });
         saveHistory(nextElements, screen.position, nextSubComponents);
         setSelectedElementIds([]);
     };

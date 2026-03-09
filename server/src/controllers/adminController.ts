@@ -4,7 +4,12 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import { User } from '../models/User';
 import { Project } from '../models/Project';
 import { Invitation } from '../models/Invitation';
+import { History } from '../models';
 import { Types } from 'mongoose';
+import { projectStateManager, presenceManager } from '../services/PresenceManager';
+import { lockManager } from '../services/LockManager';
+import type { IEntity, IRelationship, IScreen, IScreenFlow, IERDSnapshot, IScreenSnapshot } from '../models/Project';
+import type { OperationType } from '../models/History';
 
 export const getAdminUsers = async (req: AuthRequest, res: Response) => {
     try {
@@ -138,5 +143,281 @@ export const getUserProjects = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Get user projects error:', error);
         res.status(500).json({ message: '프로젝트 목록을 가져오는 중 오류가 발생했습니다.' });
+    }
+};
+
+/** Admin: list projects (for rollback tab project selector) */
+export const getAdminProjects = async (req: AuthRequest, res: Response) => {
+    try {
+        const q = (req.query.q as string) || '';
+        const filter: any = {};
+        if (q.trim()) {
+            filter.name = { $regex: q.trim(), $options: 'i' };
+        }
+        const projects = await Project.find(filter)
+            .select('name projectType dbType updatedAt')
+            .sort({ updatedAt: -1 })
+            .limit(100)
+            .lean();
+
+        const data = projects.map((p: any) => ({
+            id: p._id?.toString?.() || p._id,
+            name: p.name,
+            projectType: p.projectType || 'ERD',
+            dbType: p.dbType,
+            updatedAt: p.updatedAt,
+        }));
+
+        res.json(data);
+    } catch (error) {
+        console.error('Get admin projects error:', error);
+        res.status(500).json({ message: '프로젝트 목록을 가져오는 중 오류가 발생했습니다.' });
+    }
+};
+
+/** Admin: get recent project history (e.g. last 24h) */
+export const getProjectHistory = async (req: AuthRequest, res: Response) => {
+    try {
+        const { projectId } = req.params;
+        const hours = Math.min(24 * 7, Math.max(1, parseInt(String(req.query.hours || '24'), 10) || 24));
+        const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || '200'), 10) || 200));
+
+        if (!projectId || !Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({ message: '유효한 프로젝트 ID가 필요합니다.' });
+        }
+
+        const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+        const deleteTypes = ['ENTITY_DELETE', 'RELATIONSHIP_DELETE', 'SCREEN_DELETE', 'FLOW_DELETE', 'SCREEN_FLOW_DELETE', 'ATTRIBUTE_DELETE', 'SCREEN_DRAW_DELETE'];
+        const list = await History.find({
+            projectId: new Types.ObjectId(projectId),
+            timestamp: { $gte: since },
+            operationType: { $in: deleteTypes },
+        })
+            .sort({ timestamp: -1 })
+            .limit(limit)
+            .lean();
+
+        const data = list.map((h: any) => ({
+            id: h._id.toString(),
+            projectId: h.projectId?.toString(),
+            userId: h.userId?.toString(),
+            userName: h.userName,
+            userPicture: h.userPicture,
+            operationType: h.operationType,
+            targetType: h.targetType,
+            targetId: h.targetId,
+            targetName: h.targetName,
+            details: h.details,
+            timestamp: h.timestamp?.toISOString?.(),
+        }));
+
+        res.json(data);
+    } catch (error) {
+        console.error('Get project history error:', error);
+        res.status(500).json({ message: '히스토리를 가져오는 중 오류가 발생했습니다.' });
+    }
+};
+
+/** Apply inverse of one history operation to snapshot (ERD or screen). Mutates snap. */
+function applyInverseToSnapshot(
+    operationType: OperationType,
+    targetId: string,
+    previousState: Record<string, unknown> | undefined,
+    erdSnap: IERDSnapshot | null,
+    screenSnap: IScreenSnapshot | null
+): void {
+    const createTypes: OperationType[] = [
+        'ENTITY_CREATE', 'RELATIONSHIP_CREATE', 'SCREEN_CREATE', 'FLOW_CREATE', 'SCREEN_FLOW_CREATE',
+    ];
+    const updateMoveTypes: OperationType[] = [
+        'ENTITY_UPDATE', 'ENTITY_MOVE', 'ATTRIBUTE_ADD', 'ATTRIBUTE_UPDATE', 'ATTRIBUTE_DELETE',
+        'RELATIONSHIP_UPDATE', 'SCREEN_UPDATE', 'SCREEN_MOVE', 'FLOW_UPDATE', 'SCREEN_FLOW_UPDATE',
+    ];
+    const deleteTypes: OperationType[] = [
+        'ENTITY_DELETE', 'RELATIONSHIP_DELETE', 'SCREEN_DELETE', 'FLOW_DELETE', 'SCREEN_FLOW_DELETE',
+    ];
+    const drawDeleteType: OperationType = 'SCREEN_DRAW_DELETE';
+
+    if (createTypes.includes(operationType)) {
+        if (operationType === 'ENTITY_CREATE' && erdSnap) {
+            erdSnap.entities = (erdSnap.entities || []).filter((e: IEntity) => e.id !== targetId);
+            erdSnap.relationships = (erdSnap.relationships || []).filter(
+                (r: IRelationship) => r.source !== targetId && r.target !== targetId
+            );
+        } else if (operationType === 'RELATIONSHIP_CREATE' && erdSnap) {
+            erdSnap.relationships = (erdSnap.relationships || []).filter((r: IRelationship) => r.id !== targetId);
+        } else if ((operationType === 'SCREEN_CREATE' || operationType === 'SCREEN_FLOW_CREATE') && screenSnap) {
+            if (operationType === 'SCREEN_CREATE') {
+                screenSnap.screens = (screenSnap.screens || []).filter((s: IScreen) => s.id !== targetId);
+                screenSnap.flows = (screenSnap.flows || []).filter(
+                    (f: IScreenFlow) => f.source !== targetId && f.target !== targetId
+                );
+            } else {
+                screenSnap.flows = (screenSnap.flows || []).filter((f: IScreenFlow) => f.id !== targetId);
+            }
+        } else if ((operationType === 'FLOW_CREATE') && screenSnap) {
+            screenSnap.flows = (screenSnap.flows || []).filter((f: IScreenFlow) => f.id !== targetId);
+        }
+    } else if (updateMoveTypes.includes(operationType) && previousState) {
+        if (operationType.startsWith('ENTITY_') || operationType.startsWith('ATTRIBUTE_')) {
+            if (erdSnap?.entities) {
+                const idx = erdSnap.entities.findIndex((e: IEntity) => e.id === targetId);
+                if (idx >= 0) erdSnap.entities[idx] = { ...erdSnap.entities[idx], ...previousState } as IEntity;
+            }
+        } else if (operationType.startsWith('RELATIONSHIP_')) {
+            if (erdSnap?.relationships) {
+                const idx = erdSnap.relationships.findIndex((r: IRelationship) => r.id === targetId);
+                if (idx >= 0) erdSnap.relationships[idx] = { ...erdSnap.relationships[idx], ...previousState } as IRelationship;
+            }
+        } else if (operationType.startsWith('SCREEN_') && !operationType.includes('FLOW')) {
+            if (screenSnap?.screens) {
+                const idx = screenSnap.screens.findIndex((s: IScreen) => s.id === targetId);
+                if (idx >= 0) screenSnap.screens[idx] = { ...screenSnap.screens[idx], ...previousState } as IScreen;
+            }
+        } else if (operationType.startsWith('FLOW_') || operationType.startsWith('SCREEN_FLOW_')) {
+            if (screenSnap?.flows) {
+                const idx = screenSnap.flows.findIndex((f: IScreenFlow) => f.id === targetId);
+                if (idx >= 0) screenSnap.flows[idx] = { ...screenSnap.flows[idx], ...previousState } as IScreenFlow;
+            }
+        }
+    } else if (deleteTypes.includes(operationType) && previousState) {
+        if (operationType === 'ENTITY_DELETE' && erdSnap) {
+            const entity = previousState as unknown as IEntity;
+            if (entity.id) erdSnap.entities = [...(erdSnap.entities || []), entity];
+        } else if (operationType === 'RELATIONSHIP_DELETE' && erdSnap) {
+            const rel = previousState as unknown as IRelationship;
+            if (rel.id) erdSnap.relationships = [...(erdSnap.relationships || []), rel];
+        } else if (operationType === 'SCREEN_DELETE' && screenSnap) {
+            const screen = previousState as unknown as IScreen;
+            if (screen.id) screenSnap.screens = [...(screenSnap.screens || []), screen];
+        } else if ((operationType === 'FLOW_DELETE' || operationType === 'SCREEN_FLOW_DELETE') && screenSnap) {
+            const flow = previousState as unknown as IScreenFlow;
+            if (flow.id) screenSnap.flows = [...(screenSnap.flows || []), flow];
+        }
+    } else if (operationType === drawDeleteType && screenSnap && previousState) {
+        const prevDraw = previousState.drawElements as IScreen['drawElements'];
+        if (Array.isArray(prevDraw)) {
+            const idx = (screenSnap.screens || []).findIndex((s: IScreen) => s.id === targetId);
+            if (idx >= 0) {
+                const screen = screenSnap.screens![idx] as any;
+                screenSnap.screens![idx] = { ...screen, drawElements: prevDraw };
+            }
+        }
+    }
+}
+
+/** Admin: rollback a single history entry (inverse op + update snapshot + Redis + optional broadcast) */
+export const rollbackProjectHistory = async (req: AuthRequest, res: Response) => {
+    try {
+        const { projectId } = req.params;
+        const { historyId } = req.body || {};
+
+        if (!projectId || !Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({ message: '유효한 프로젝트 ID가 필요합니다.' });
+        }
+        if (!historyId || !Types.ObjectId.isValid(historyId)) {
+            return res.status(400).json({ message: '유효한 히스토리 ID가 필요합니다.' });
+        }
+
+        const historyDoc = await History.findById(historyId).lean();
+        if (!historyDoc) {
+            return res.status(404).json({ message: '해당 히스토리를 찾을 수 없습니다.' });
+        }
+        if (historyDoc.projectId.toString() !== projectId) {
+            return res.status(400).json({ message: '해당 히스토리는 이 프로젝트의 것이 아닙니다.' });
+        }
+        const deleteTypes = ['ENTITY_DELETE', 'RELATIONSHIP_DELETE', 'SCREEN_DELETE', 'FLOW_DELETE', 'SCREEN_FLOW_DELETE', 'ATTRIBUTE_DELETE', 'SCREEN_DRAW_DELETE'];
+        if (!deleteTypes.includes(historyDoc.operationType)) {
+            return res.status(400).json({ message: '삭제된 항목만 원복할 수 있습니다.' });
+        }
+
+        const project = await Project.findById(projectId).lean();
+        if (!project) {
+            return res.status(404).json({ message: '프로젝트를 찾을 수 없습니다.' });
+        }
+
+        const projAny = project as any;
+        const projectType = projAny.projectType || 'ERD';
+        let erdSnap: IERDSnapshot | null = null;
+        if (projectType === 'ERD') {
+            const snap = projAny.currentSnapshot || { version: 1, entities: [], relationships: [], savedAt: new Date() };
+            erdSnap = JSON.parse(JSON.stringify(snap)) as IERDSnapshot;
+        }
+        let screenSnap: IScreenSnapshot | null = null;
+        if (projectType === 'SCREEN_DESIGN') {
+            screenSnap = projAny.screenSnapshot
+                ? (JSON.parse(JSON.stringify(projAny.screenSnapshot)) as IScreenSnapshot)
+                : ({ version: 1, screens: [], flows: [], savedAt: new Date() } as IScreenSnapshot);
+        }
+
+        const prev = historyDoc.operation?.previousState;
+        if (!prev) {
+            return res.status(400).json({
+                message: '이 삭제 이력은 복원할 수 없습니다. (저장 시점에 복원 데이터가 없었습니다. 최근에 삭제된 항목부터 복원 데이터가 저장됩니다.)',
+            });
+        }
+        applyInverseToSnapshot(
+            historyDoc.operationType as OperationType,
+            historyDoc.targetId,
+            prev,
+            erdSnap,
+            screenSnap
+        );
+
+        const update: any = { updatedAt: new Date() };
+        if (erdSnap) {
+            update.currentSnapshot = {
+                ...erdSnap,
+                version: (erdSnap.version || 1) + 1,
+                savedAt: new Date(),
+            };
+        }
+        if (screenSnap) {
+            update.screenSnapshot = {
+                ...screenSnap,
+                version: (screenSnap.version || 1) + 1,
+                savedAt: new Date(),
+            };
+        }
+
+        await Project.updateOne({ _id: new Types.ObjectId(projectId) }, { $set: update });
+
+        const entities = erdSnap?.entities ?? projAny.currentSnapshot?.entities ?? [];
+        const relationships = erdSnap?.relationships ?? projAny.currentSnapshot?.relationships ?? [];
+        const screens = screenSnap?.screens ?? projAny.screenSnapshot?.screens ?? [];
+        const flows = screenSnap?.flows ?? projAny.screenSnapshot?.flows ?? [];
+        const sections = erdSnap?.sections ?? projAny.currentSnapshot?.sections ?? screenSnap?.sections ?? projAny.screenSnapshot?.sections ?? [];
+        const version = (erdSnap?.version ?? screenSnap?.version ?? 1) + 1;
+
+        await projectStateManager.saveState(
+            projectId,
+            entities,
+            relationships,
+            version,
+            screens,
+            flows,
+            sections
+        );
+
+        const io = (req.app as any)?.get?.('io');
+        if (io) {
+            const state = await projectStateManager.getState(projectId);
+            const onlineUsers = await presenceManager.getOnlineUsers(projectId);
+            const locks = await lockManager.getAllLocks(projectId);
+            const locksObject: Record<string, { userId: string; userName: string }> = {};
+            locks.forEach((lock, entityId) => {
+                locksObject[entityId] = { userId: lock.userId, userName: lock.userName };
+            });
+            io.to(`project:${projectId}`).emit('state_sync', {
+                state: state || { entities, relationships, screens, flows, sections, version },
+                onlineUsers,
+                locks: locksObject,
+            });
+        }
+
+        res.json({ message: '해당 작업이 원복되었습니다.' });
+    } catch (error) {
+        console.error('Rollback project history error:', error);
+        res.status(500).json({ message: '작업 원복 중 오류가 발생했습니다.' });
     }
 };
