@@ -19,6 +19,7 @@ interface TextStyleToolbarProps {
     defaultColor: string;
     defaultFontSize: number;
     displayFontSize: number;
+    onBeforeFontSizeApply?: (elementId: string, px: number) => void;
     updateElement: (id: string, updates: Partial<DrawElement>) => void;
     applyToSelection: (fn: () => void) => boolean;
     applyFontSizePx: (px: number) => boolean;
@@ -50,6 +51,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     fromTable,
     defaultColor,
     displayFontSize,
+    onBeforeFontSizeApply,
     updateElement,
     applyToSelection,
     applyFontSizePx,
@@ -68,11 +70,17 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     const [uploadingFont, setUploadingFont] = useState(false);
     /** px 입력 중 로컬 문자열 (숫자만 입력 가능, 블러/Enter 시 반영) */
     const [fontSizeInputStr, setFontSizeInputStr] = useState<string | null>(null);
+    /** +/- 클릭 시 부모 리렌더 전에 숫자만 즉시 표시 (1.5초 지연 방지) */
+    const [optimisticFontSize, setOptimisticFontSize] = useState<number | null>(null);
     const fontInputRef = useRef<HTMLInputElement>(null);
     const colorInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(displayFontSize);
+    const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(optimisticFontSize ?? displayFontSize);
+
+    useEffect(() => {
+        if (optimisticFontSize != null && displayFontSize === optimisticFontSize) setOptimisticFontSize(null);
+    }, [displayFontSize, optimisticFontSize]);
 
     const applyFontSize = (px: number) => {
         const clamped = Math.min(72, Math.max(8, px));
@@ -91,7 +99,12 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
             update({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
             syncUpdate({ drawElements: drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it) });
         } else if (!fromTable) {
-            updateElement(el.id, { fontSize: clamped });
+            if (onBeforeFontSizeApply) {
+                setOptimisticFontSize(clamped);
+                onBeforeFontSizeApply(el.id, clamped);
+            } else {
+                updateElement(el.id, { fontSize: clamped });
+            }
         }
         setTextStyleToolbarRefresh(r => r + 1);
     };
@@ -349,7 +362,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                             type="text"
                             inputMode="numeric"
                             value={displayValue}
-                            onFocus={() => setFontSizeInputStr(String(displayFontSize))}
+                            onFocus={() => setFontSizeInputStr(String(optimisticFontSize ?? displayFontSize))}
                             onChange={(e) => {
                                 const v = e.target.value.replace(/[^0-9]/g, '');
                                 if (v === '' || v.length <= 3) setFontSizeInputStr(v || '');
@@ -371,7 +384,8 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                                 onMouseDown={(e) => {
                                     e.preventDefault();
                                     setFontSizeInputStr(null);
-                                    applyFontSize(displayFontSize + 1);
+                                    const current = optimisticFontSize ?? displayFontSize;
+                                    applyFontSize(current + 1);
                                 }}
                                 className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center"
                                 title="크게"
@@ -383,7 +397,8 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                                 onMouseDown={(e) => {
                                     e.preventDefault();
                                     setFontSizeInputStr(null);
-                                    applyFontSize(displayFontSize - 1);
+                                    const current = optimisticFontSize ?? displayFontSize;
+                                    applyFontSize(current - 1);
                                 }}
                                 className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center border-t border-gray-200"
                                 title="작게"

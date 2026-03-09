@@ -1,5 +1,7 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
+
+const TEXT_UPDATE_DEBOUNCE_MS = 120;
 
 interface EditableTableCellProps {
     tableId: string;
@@ -73,13 +75,27 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     const divRef = useRef<HTMLDivElement>(null);
     const blurFromToolbarRef = useRef(false);
     const lastSelectionRef = useRef({ start: 0, end: 0 });
+    const textUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastSentTextRef = useRef<string | null>(null);
 
+    // value → DOM 동기화(undo/원격 등). 편집 중(포커스 있음)이면 덮어쓰지 않아 커서 유지·역순 입력 버그 방지
     useEffect(() => {
         if (isComposing) return;
-        if (divRef.current && divRef.current.innerHTML !== (value || '')) {
-            divRef.current.innerHTML = value || '';
-        }
+        const el = divRef.current;
+        if (!el || el.innerHTML === (value || '')) return;
+        if (document.activeElement && el.contains(document.activeElement)) return;
+        el.innerHTML = value || '';
+        lastSentTextRef.current = value || null;
     }, [value, isComposing]);
+
+    useEffect(() => {
+        return () => {
+            if (textUpdateTimerRef.current) {
+                clearTimeout(textUpdateTimerRef.current);
+                textUpdateTimerRef.current = null;
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (autoFocus && divRef.current) {
@@ -116,17 +132,41 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
         });
     });
 
-    const handleInput = (e?: React.FormEvent) => {
-        if (divRef.current) {
-            if (e?.nativeEvent && (e.nativeEvent as { isComposing?: boolean }).isComposing) return;
-            onValueChange(divRef.current.innerHTML);
+    const flushTextUpdate = useCallback(() => {
+        if (textUpdateTimerRef.current) {
+            clearTimeout(textUpdateTimerRef.current);
+            textUpdateTimerRef.current = null;
         }
+        if (!divRef.current) return;
+        const html = divRef.current.innerHTML;
+        if (lastSentTextRef.current === html) return;
+        lastSentTextRef.current = html;
+        onValueChange(html);
+    }, [onValueChange]);
+
+    const scheduleTextUpdate = useCallback(() => {
+        if (!divRef.current) return;
+        if (textUpdateTimerRef.current) clearTimeout(textUpdateTimerRef.current);
+        textUpdateTimerRef.current = setTimeout(() => {
+            textUpdateTimerRef.current = null;
+            if (!divRef.current) return;
+            const html = divRef.current.innerHTML;
+            if (lastSentTextRef.current === html) return;
+            lastSentTextRef.current = html;
+            onValueChange(html);
+        }, TEXT_UPDATE_DEBOUNCE_MS);
+    }, [onValueChange]);
+
+    const handleInput = (e?: React.FormEvent) => {
+        if (!divRef.current) return;
+        if (e?.nativeEvent && (e.nativeEvent as { isComposing?: boolean }).isComposing) return;
+        scheduleTextUpdate();
     };
 
     const handleCompositionEnd = () => {
         if (divRef.current) {
             onComposingChange(null);
-            onValueChange(divRef.current.innerHTML);
+            flushTextUpdate();
         }
     };
 
@@ -157,14 +197,14 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
             e.preventDefault();
             const sanitized = sanitizePasteHtml(html);
             document.execCommand('insertHTML', false, sanitized);
-            handleInput();
+            flushTextUpdate();
             return;
         }
         const text = cd.getData('text/plain');
         if (text) {
             e.preventDefault();
             document.execCommand('insertText', false, text);
-            handleInput();
+            flushTextUpdate();
         }
     };
 
@@ -208,7 +248,7 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
                     if (active instanceof Element && active.closest('[data-text-style-toolbar], [data-style-panel], [data-font-style-panel], [data-font-style-trigger]')) return;
                     onSelectionChange(null);
                 });
-                handleInput();
+                flushTextUpdate();
                 onBlur();
             }}
             onKeyDown={onKeyDown}

@@ -1,6 +1,6 @@
-import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback } from 'react';
+import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback, startTransition } from 'react';
 import { createPortal } from 'react-dom';
-import { type NodeProps, useViewport, useReactFlow } from 'reactflow';
+import { type NodeProps, useStore, useReactFlow } from 'reactflow';
 import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
 
@@ -93,7 +93,7 @@ interface ScreenNodeData {
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
-    const { zoom } = useViewport();
+    const zoom = useStore((s) => s.transform[2]);
     const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
     const { setHandlers } = useScreenDesignUndoRedo();
     const { screen } = data;
@@ -153,6 +153,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const screenOptionsRef = useRef<HTMLDivElement>(null);
     const rightPaneRef = useRef<HTMLDivElement>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
+    const pendingSyncDrawElementsRef = useRef<DrawElement[] | null>(null);
+    const pendingSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const { projects, currentProjectId } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
@@ -404,6 +406,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const MAX_HISTORY = 100;
     const restoringHistoryRef = useRef(false);
 
+    const HISTORY_DEDUPE_SIZE_THRESHOLD = 50;
     const saveHistory = (elements: DrawElement[], position = screen.position, subComponents?: Screen['subComponents']) => {
         const snapshot: HistorySnapshot = {
             drawElements: elements,
@@ -411,14 +414,14 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
             subComponents: subComponents ?? screen.subComponents,
         };
         setHistory(prev => {
-            // If the last state is the same as current, don't save
-            if (prev.past.length > 0 && JSON.stringify(prev.past[prev.past.length - 1]) === JSON.stringify(snapshot)) {
-                return prev;
+            if (prev.past.length > 0 && elements.length <= HISTORY_DEDUPE_SIZE_THRESHOLD) {
+                const last = prev.past[prev.past.length - 1];
+                if (JSON.stringify(last) === JSON.stringify(snapshot)) return prev;
             }
             const newPast = [...prev.past, snapshot].slice(-MAX_HISTORY);
             return {
                 past: newPast,
-                future: [] // Clear future when a new action is performed
+                future: []
             };
         });
     };
@@ -633,6 +636,36 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         }
     }, []);
 
+    useEffect(() => {
+        return () => {
+            if (pendingSyncTimerRef.current) {
+                clearTimeout(pendingSyncTimerRef.current);
+                pendingSyncTimerRef.current = null;
+            }
+            const toSend = pendingSyncDrawElementsRef.current;
+            if (toSend) {
+                pendingSyncDrawElementsRef.current = null;
+                sendOperation({ type: 'SCREEN_UPDATE', targetId: screen.id, userId: user?.id || 'anonymous', userName: user?.name || 'Anonymous', payload: { drawElements: toSend } });
+            }
+        };
+    }, [screen.id, sendOperation, user?.id, user?.name]);
+
+    useEffect(() => {
+        const elements = screen.drawElements || [];
+        setFontSizeOverrides(prev => {
+            let changed = false;
+            const next = { ...prev };
+            Object.keys(next).forEach(id => {
+                const el = elements.find(e => e.id === id);
+                if (el && (el.fontSize ?? 14) === next[id]) {
+                    delete next[id];
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [screen.drawElements]);
+
     // 엔티티 이동(position)도 undo/redo 히스토리에 포함 (원격 유저의 수정은 히스토리에 넣지 않음)
     useEffect(() => {
         if (restoringHistoryRef.current) return;
@@ -694,6 +727,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const tableCellSelectionRestoreRef = useRef<{ tableId: string; cellIndex: number } | null>(null);
     const [textStyleToolbarRefresh, setTextStyleToolbarRefresh] = useState(0);
     const [showFontStylePanel, setShowFontStylePanel] = useState(false);
+    const [fontSizeOverrides, setFontSizeOverrides] = useState<Record<string, number>>({});
     const [fontStylePanelPos, setFontStylePanelPos] = useState({ x: 0, y: 0 });
 
     const handleElementTextSelectionChange = useCallback((rect: DOMRect | null) => {
@@ -2060,8 +2094,17 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const updateElement = (id: string, updates: Partial<DrawElement>) => {
         const nextElements = drawElements.map(el => el.id === id ? { ...el, ...updates } : el);
         update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
+        pendingSyncDrawElementsRef.current = nextElements;
+        if (pendingSyncTimerRef.current) clearTimeout(pendingSyncTimerRef.current);
+        pendingSyncTimerRef.current = setTimeout(() => {
+            pendingSyncTimerRef.current = null;
+            const toSend = pendingSyncDrawElementsRef.current;
+            if (toSend) {
+                pendingSyncDrawElementsRef.current = null;
+                syncUpdate({ drawElements: toSend });
+            }
+        }, 200);
     };
 
     const handlePolygonVertexDragStart = (id: string, pointIndex: number, e: React.MouseEvent) => {
@@ -4019,6 +4062,14 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             const displayFontSize = fromTable && tableCellFontSize != null
                                 ? tableCellFontSize
                                 : (getFontSizeFromSelection() ?? defaultFontSize);
+                            const effectiveDisplayFontSize = fontSizeOverrides[el.id] ?? displayFontSize;
+                            const onBeforeFontSizeApply = (elementId: string, px: number) => {
+                                setFontSizeOverrides(prev => ({ ...prev, [elementId]: px }));
+                                // 지연 적용: 낙관적 숫자/캔버스가 먼저 그려진 뒤, 무거운 update/히스토리 작업 실행
+                                requestAnimationFrame(() => {
+                                    startTransition(() => updateElement(elementId, { fontSize: px }));
+                                });
+                            };
                             const applyToSelection = (fn: () => void): boolean => {
                                 const sel = window.getSelection();
                                 if (sel && !sel.isCollapsed) {
@@ -4092,7 +4143,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         fromTable={fromTable}
                                         defaultColor={defaultColor}
                                         defaultFontSize={defaultFontSize}
-                                        displayFontSize={displayFontSize}
+                                        displayFontSize={effectiveDisplayFontSize}
+                                        onBeforeFontSizeApply={onBeforeFontSizeApply}
                                         updateElement={updateElement}
                                         applyToSelection={applyToSelection}
                                         applyFontSizePx={applyFontSizePx}
@@ -4223,6 +4275,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                             autoFocus={editingTextId === el.id}
                                                                                             className={isCompact ? 'px-0' : 'px-2'}
                                                                                             compact={isCompact}
+                                                                                            fontSizeOverride={fontSizeOverrides[el.id]}
                                                                                         />
                                                                                     )}
                                                                                 </div>
@@ -4244,6 +4297,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                             autoFocus={editingTextId === el.id}
                                                                                             className={isCompact ? 'px-0' : 'px-4'}
                                                                                             compact={isCompact}
+                                                                                            fontSizeOverride={fontSizeOverrides[el.id]}
                                                                                         />
                                                                                     )}
                                                                                 </div>
@@ -4320,6 +4374,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                     onUpdate={(updates) => updateElement(el.id, updates)}
                                                                                     onSelectionChange={handleElementTextSelectionChange}
                                                                                     autoFocus={editingTextId === el.id}
+                                                                                    fontSizeOverride={fontSizeOverrides[el.id]}
                                                                                 />
                                                                             )}
                                                                             {el.type === 'image' && (

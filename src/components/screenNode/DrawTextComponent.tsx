@@ -1,7 +1,9 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import type { DrawElement } from '../../types/screenDesign';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
+
+const TEXT_UPDATE_DEBOUNCE_MS = 120;
 
 interface DrawTextComponentProps {
     element: DrawElement;
@@ -13,6 +15,8 @@ interface DrawTextComponentProps {
     className?: string;
     /** 작은 도형 안에서 텍스트를 도형 기준 중앙 정렬 (lineHeight: 1.5, padding: 0, 100% 채워서 flex 중앙 정렬) */
     compact?: boolean;
+    /** 낙관적 폰트 크기 표시 (툴바 +/- 클릭 시 즉시 반영) */
+    fontSizeOverride?: number;
 }
 
 const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
@@ -23,17 +27,31 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     onSelectionChange,
     autoFocus,
     className,
-    compact = false
+    compact = false,
+    fontSizeOverride
 }) => {
     const divRef = useRef<HTMLDivElement>(null);
     const blurFromToolbarRef = useRef(false);
+    const textUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastSentTextRef = useRef<string | null>(null);
 
-    // Sync content with element.text (using innerHTML for rich text support)
+    // Sync content with element.text (undo/remote 등). 편집 중(포커스 있음)이면 덮어쓰지 않아 커서 유지·역순 입력 버그 방지
     useEffect(() => {
-        if (divRef.current && divRef.current.innerHTML !== (element.text || '')) {
-            divRef.current.innerHTML = element.text || '';
-        }
+        const el = divRef.current;
+        if (!el || el.innerHTML === (element.text || '')) return;
+        if (document.activeElement && el.contains(document.activeElement)) return;
+        el.innerHTML = element.text || '';
+        lastSentTextRef.current = element.text || null;
     }, [element.text]);
+
+    useEffect(() => {
+        return () => {
+            if (textUpdateTimerRef.current) {
+                clearTimeout(textUpdateTimerRef.current);
+                textUpdateTimerRef.current = null;
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (autoFocus && divRef.current) {
@@ -58,18 +76,39 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
         return () => document.removeEventListener('mousedown', handleMouseDownCapture, true);
     }, []);
 
-    const handleInput = (e?: React.FormEvent) => {
-        if (divRef.current) {
-            // Check if we are in the middle of IME composition (Korean, Japanese, etc.)
-            if (e?.nativeEvent && (e.nativeEvent as any).isComposing) return;
-            onUpdate({ text: divRef.current.innerHTML });
+    const flushTextUpdate = useCallback(() => {
+        if (textUpdateTimerRef.current) {
+            clearTimeout(textUpdateTimerRef.current);
+            textUpdateTimerRef.current = null;
         }
+        if (!divRef.current) return;
+        const html = divRef.current.innerHTML;
+        if (lastSentTextRef.current === html) return;
+        lastSentTextRef.current = html;
+        onUpdate({ text: html });
+    }, [onUpdate]);
+
+    const scheduleTextUpdate = useCallback(() => {
+        if (!divRef.current) return;
+        if (textUpdateTimerRef.current) clearTimeout(textUpdateTimerRef.current);
+        textUpdateTimerRef.current = setTimeout(() => {
+            textUpdateTimerRef.current = null;
+            if (!divRef.current) return;
+            const html = divRef.current.innerHTML;
+            if (lastSentTextRef.current === html) return;
+            lastSentTextRef.current = html;
+            onUpdate({ text: html });
+        }, TEXT_UPDATE_DEBOUNCE_MS);
+    }, [onUpdate]);
+
+    const handleInput = (e?: React.FormEvent) => {
+        if (!divRef.current) return;
+        if (e?.nativeEvent && (e.nativeEvent as any).isComposing) return;
+        scheduleTextUpdate();
     };
 
     const handleCompositionEnd = () => {
-        if (divRef.current) {
-            onUpdate({ text: divRef.current.innerHTML });
-        }
+        if (divRef.current) flushTextUpdate();
     };
 
     const handleSelect = () => {
@@ -93,14 +132,14 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             e.preventDefault();
             const sanitized = sanitizePasteHtml(html);
             document.execCommand('insertHTML', false, sanitized);
-            handleInput();
+            flushTextUpdate();
             return;
         }
         const text = cd.getData('text/plain');
         if (text) {
             e.preventDefault();
             document.execCommand('insertText', false, text);
-            handleInput();
+            flushTextUpdate();
         }
     };
 
@@ -115,7 +154,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             onMouseUp={handleSelect}
             onKeyUp={handleSelect}
             onBlur={() => {
-                handleInput();
+                flushTextUpdate();
                 // 포커스가 텍스트 스타일 툴바(글자 크기 등)로 이동한 경우 툴바가 사라지지 않도록
                 // 한 프레임 뒤 activeElement 확인 (blur 시점에는 아직 갱신 안 됨)
                 requestAnimationFrame(() => {
@@ -136,7 +175,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             }}
             className={`outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0' : 'p-0 min-h-[1.4em] w-full'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
             style={{
-                fontSize: `${element.fontSize || 14}px`,
+                fontSize: `${fontSizeOverride ?? element.fontSize ?? 14}px`,
                 color: element.color || '#333333',
                 fontWeight: element.fontWeight || 'normal',
                 fontStyle: element.fontStyle || 'normal',

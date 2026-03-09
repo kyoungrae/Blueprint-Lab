@@ -705,56 +705,72 @@ const ScreenDesignCanvasContent: React.FC = () => {
         return { width, height };
     };
 
+    // 노드 생성 헬퍼 (변경된 노드만 새로 만들 때 사용)
+    const createNodeFromScreen = useCallback((screen: Screen, existingNode?: RFNode): RFNode => {
+        const style = computeNodeStyle(screen);
+        const node: RFNode = {
+            id: screen.id,
+            type: screen.variant === 'SPEC' ? 'spec' : 'screen',
+            position: screen.position,
+            data: {
+                screen,
+                onFlushProjectData: () => {
+                    const pid = useProjectStore.getState().currentProjectId;
+                    if (pid) {
+                        const { screens: scr, flows: flw } = useScreenDesignStore.getState();
+                        useProjectStore.getState().updateProjectData(pid, { screens: scr, flows: flw }, true);
+                    }
+                },
+            },
+            selected: existingNode?.selected,
+        };
+        if (style) {
+            node.style = style;
+            node.width = typeof style.width === 'number' ? style.width : undefined;
+            node.height = typeof style.height === 'number' ? style.height : undefined;
+        }
+        return node;
+    }, []);
+
+    // Sync screens → ReactFlow nodes (변경된 screen만 새 노드 생성, 나머지는 prev 노드 재사용 → 해당 노드만 리렌더)
     useEffect(() => {
         setNodes((prevNodes) => {
+            const prevById = new Map(prevNodes.map((n) => [n.id, n]));
             return screens.map((screen) => {
-                const existingNode = prevNodes.find((n) => n.id === screen.id);
-                const style = computeNodeStyle(screen);
-                const node: RFNode = {
-                    id: screen.id,
-                    type: screen.variant === 'SPEC' ? 'spec' : 'screen',
-                    position: screen.position,
-                    data: {
-                        screen,
-                        onFlushProjectData: () => {
-                            const pid = useProjectStore.getState().currentProjectId;
-                            if (pid) {
-                                const { screens: scr, flows: flw } = useScreenDesignStore.getState();
-                                useProjectStore.getState().updateProjectData(pid, { screens: scr, flows: flw }, true);
-                            }
-                        },
-                    },
-                    selected: existingNode?.selected,
-                };
-                if (style) {
-                    node.style = style;
-                    node.width = typeof style.width === 'number' ? style.width : undefined;
-                    node.height = typeof style.height === 'number' ? style.height : undefined;
-                }
-                return node;
+                const prevNode = prevById.get(screen.id);
+                if (prevNode && prevNode.data?.screen === screen) return prevNode;
+                return createNodeFromScreen(screen, prevNode ?? undefined);
             });
         });
-    }, [screens, setNodes]);
+    }, [screens, setNodes, createNodeFromScreen]);
 
+    // Sync flows → edges (변경된 flow만 새 edge 생성, 나머지는 prev 재사용 → 해당 엣지만 리렌더)
     useEffect(() => {
-        setEdges(
-            flows.map((flow) => ({
-                id: flow.id,
-                source: flow.source,
-                target: flow.target,
-                sourceHandle: flow.sourceHandle,
-                targetHandle: flow.targetHandle,
-                label: flow.label,
-                type: 'screenEdge',
-                animated: true,
-                hidden: flow.id === reconnectingEdgeId,
-                data: {
-                    color: flow.label === '팝업' ? '#f59e0b' : // Yellow
-                        (flow.label === '명세서' || flow.label === '명세서 연결') ? '#10b981' : // Green
-                            '#2c3e7c' // Blue (default/paging)
-                },
-            }))
-        );
+        setEdges((prevEdges) => {
+            const prevById = new Map(prevEdges.map((e) => [e.id, e]));
+            return flows.map((flow) => {
+                const prevEdge = prevById.get(flow.id);
+                const flowRef = (prevEdge?.data as { flow?: ScreenFlow })?.flow;
+                if (prevEdge && flowRef === flow) return prevEdge;
+                return {
+                    id: flow.id,
+                    source: flow.source,
+                    target: flow.target,
+                    sourceHandle: flow.sourceHandle,
+                    targetHandle: flow.targetHandle,
+                    label: flow.label,
+                    type: 'screenEdge',
+                    animated: true,
+                    hidden: flow.id === reconnectingEdgeId,
+                    data: {
+                        flow,
+                        color: flow.label === '팝업' ? '#f59e0b' : // Yellow
+                            (flow.label === '명세서' || flow.label === '명세서 연결') ? '#10b981' : // Green
+                                '#2c3e7c' // Blue (default/paging)
+                    },
+                };
+            });
+        });
     }, [flows, setEdges, reconnectingEdgeId]);
 
     // ── Auto-update Paging Labels ──────────────────────────────────
