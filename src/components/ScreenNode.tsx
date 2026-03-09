@@ -4537,6 +4537,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                         userSelect: editingTableId === el.id ? 'none' : 'auto',
                                                                                         borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
                                                                                     }}
+                                                                                    onMouseDown={(e) => {
+                                                                                        // 표 편집 모드(editingTableId === el.id)일 때는 셀/텍스트를 잡아도 엔티티(노드)가 드래그되지 않도록 막아준다.
+                                                                                        if (editingTableId === el.id) {
+                                                                                            e.stopPropagation();
+                                                                                        }
+                                                                                    }}
                                                                                     onDoubleClick={(e) => {
                                                                                         if (isLocked) return;
                                                                                         e.stopPropagation();

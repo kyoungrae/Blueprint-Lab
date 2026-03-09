@@ -191,7 +191,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                     e.stopPropagation();
                 }
             }}
-            className={`outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0' : 'p-0 min-h-[1.4em] w-full'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
+            className={`nodrag nopan outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0' : 'p-0 min-h-[1.4em] w-full'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
             style={{
                 fontSize: `${localFontSizeOverride ?? fontSizeOverride ?? element.fontSize ?? 14}px`,
                 color: element.color || '#333333',
