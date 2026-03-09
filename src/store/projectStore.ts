@@ -158,7 +158,8 @@ export const useProjectStore = create<ProjectStore>()(
                                     picture: m.userId?.picture,
                                     role: m.role || 'MEMBER'
                                 })),
-                                data: projData
+                                data: projData,
+                                bugReports: p.bugReports || []
                             };
                         });
                         set({ projects });
@@ -219,6 +220,7 @@ export const useProjectStore = create<ProjectStore>()(
                             role: m.role || 'MEMBER'
                         })),
                         data: { entities: [], relationships: [] },
+                        bugReports: [],
                     };
 
                     set((state) => ({

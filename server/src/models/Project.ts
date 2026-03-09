@@ -143,6 +143,21 @@ export interface IComponentSnapshot {
 }
 
 // Project Document Interface
+export interface IBugReport {
+    id: string;
+    projectId: string;
+    content: string;
+    reporterId: string;
+    reporterName: string;
+    reporterPicture?: string;
+    createdAt: Date;
+    updatedAt: Date;
+    isResolved: boolean;
+    resolvedAt?: Date;
+    resolvedBy?: string;
+    resolvedByName?: string;
+}
+
 export interface IProject extends Document {
     name: string;
     projectType: 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT';
@@ -160,6 +175,7 @@ export interface IProject extends Document {
     /** 화면 설계에 연결된 ERD 프로젝트 ID 배열 (여러 개 연결 가능) */
     linkedErdProjectIds?: string[];
     linkedComponentProjectId?: string;
+    bugReports?: IBugReport[];
 }
 
 const AttributeSchema = new Schema<IAttribute>({
@@ -295,6 +311,21 @@ const ERDSnapshotSchema = new Schema<IERDSnapshot>({
     savedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
+const BugReportSchema = new Schema<IBugReport>({
+    id: { type: String, required: true },
+    projectId: { type: String, required: true },
+    content: { type: String, required: true },
+    reporterId: { type: String, required: true },
+    reporterName: { type: String, required: true },
+    reporterPicture: { type: String },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+    isResolved: { type: Boolean, default: false },
+    resolvedAt: { type: Date },
+    resolvedBy: { type: String },
+    resolvedByName: { type: String },
+}, { _id: false });
+
 const ProjectSchema = new Schema<IProject>({
     name: { type: String, required: true },
     projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN', 'COMPONENT'], default: 'ERD' },
@@ -308,6 +339,7 @@ const ProjectSchema = new Schema<IProject>({
     linkedErdProjectId: { type: String },
     linkedErdProjectIds: [{ type: String }],
     linkedComponentProjectId: { type: String },
+    bugReports: { type: [BugReportSchema], default: [] },
 }, {
     timestamps: true, // createdAt, updatedAt 자동 생성
 });

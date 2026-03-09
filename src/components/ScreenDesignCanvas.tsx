@@ -194,6 +194,7 @@ import { RecentStyleColorsProvider } from '../contexts/RecentStyleColorsContext'
 import { copyToClipboard } from '../utils/clipboard';
 import { syncComponentStyles } from '../utils/componentStyleSync';
 import { OnlineUsers, UserCursors } from './collaboration';
+import { BugReportButton } from './bug/BugReport';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { useSyncStore } from '../store/syncStore';
@@ -1747,6 +1748,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     <div className="shrink-0">
                                         <OnlineUsers />
                                     </div>
+
+                                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                                    {currentProject && <BugReportButton project={currentProject} />}
 
                                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 

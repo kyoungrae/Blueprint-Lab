@@ -38,7 +38,7 @@ import { getForceLayoutedElements } from '../utils/forceLayout';
 import { getRelationshipLayoutedElements } from '../utils/relationshipLayout';
 import { generateSQLFromERD } from '../utils/sqlGenerator';
 import { copyToClipboard } from '../utils/clipboard';
-
+import { BugReportButton } from './bug/BugReport';
 const nodeTypes: NodeTypes = {
     entity: EntityNode,
     entityPlaceholder: EntityNodePlaceholder,
@@ -1697,6 +1697,10 @@ const ERDCanvasContent: React.FC = () => {
                     <div className="flex items-center gap-2 px-1 shrink-0">
                         <OnlineUsers />
                     </div>
+
+                    <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                    {currentProject && <BugReportButton project={currentProject} />}
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 

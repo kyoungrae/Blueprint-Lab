@@ -54,7 +54,22 @@ export interface ProjectMember {
     name: string;
     email: string;
     picture?: string;
-    role: 'OWNER' | 'MEMBER';
+    role: 'OWNER' | 'EDITOR' | 'VIEWER' | 'MEMBER';
+}
+
+export interface BugReport {
+    id: string;
+    projectId: string;
+    content: string;
+    reporterId: string;
+    reporterName: string;
+    reporterPicture?: string;
+    createdAt: string;
+    updatedAt: string;
+    isResolved: boolean;
+    resolvedAt?: string;
+    resolvedBy?: string;
+    resolvedByName?: string;
 }
 
 export interface Project {
@@ -73,6 +88,7 @@ export interface Project {
     /** 화면 설계 프로젝트에 연결된 ERD 프로젝트 ID 목록 (여러 개 연결 가능) */
     linkedErdProjectIds?: string[];
     linkedComponentProjectId?: string;
+    bugReports?: BugReport[];
 }
 
 export type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE' | 'PROJECT_SET' | 'IMPORT' | 'MOVE';

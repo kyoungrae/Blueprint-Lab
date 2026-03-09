@@ -28,9 +28,11 @@ interface PremiumTooltipProps {
     zIndex?: number;
     /** 래퍼 div에 붙일 클래스 (예: w-full로 부모 너비 채우기) */
     wrapperClassName?: string;
+    /** true면 항상 document.body에 툴팁 렌더 (overflow로 잘림 방지) */
+    forceBodyPortal?: boolean;
 }
 
-const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement = 'bottom', offsetBottom, zIndex = DEFAULT_TOOLTIP_Z_INDEX, wrapperClassName }) => {
+const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement = 'bottom', offsetBottom, zIndex = DEFAULT_TOOLTIP_Z_INDEX, wrapperClassName, forceBodyPortal: forceBodyPortalProp }) => {
     const [visible, setVisible] = useState(false);
     const [portalPos, setPortalPos] = useState({ left: 0, top: 0 });
     const [viewportPos, setViewportPos] = useState({ left: 0, top: 0 });
@@ -45,6 +47,12 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
         if (!el) return;
         const tr = el.getBoundingClientRect();
         const centerX = tr.left + tr.width / 2;
+
+        if (forceBodyPortalProp) {
+            setViewportPos({ left: centerX, top: placement === 'top' ? tr.top - gap : tr.bottom + gap });
+            setUseBodyPortal(true);
+            return;
+        }
 
         // 플로팅 패널 안이면 인라인 렌더 → 패널 transform/줌에 따라 툴팁 크기·위치가 버튼에 맞게 유지
         const isInsideFloatingPanel = el.closest(FLOATING_PANEL_SELECTOR) != null;
@@ -81,7 +89,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
         }
         // 컨텍스트 없음(ERD 캔버스 등) → 인라인으로 줌/패닝 시 레이블에 붙어서 스케일되도록
         setUseBodyPortal(false);
-    }, [placement, gap, portalRootRef]);
+    }, [placement, gap, portalRootRef, forceBodyPortalProp]);
 
     const handleMouseEnter = useCallback(() => {
         updatePosition();
