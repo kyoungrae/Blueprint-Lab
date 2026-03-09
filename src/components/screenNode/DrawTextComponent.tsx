@@ -1,9 +1,12 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import type { DrawElement } from '../../types/screenDesign';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
 
 const TEXT_UPDATE_DEBOUNCE_MS = 120;
+
+/** 툴바 +/- 클릭 시 캔버스에 즉시 반영하기 위한 커스텀 이벤트 (ScreenNode 전체 리렌더 없이 해당 텍스트만 갱신) */
+export const FONT_SIZE_OVERRIDE_EVENT = 'font-size-override';
 
 interface DrawTextComponentProps {
     element: DrawElement;
@@ -34,6 +37,21 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     const blurFromToolbarRef = useRef(false);
     const textUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSentTextRef = useRef<string | null>(null);
+    /** 툴바 +/- 클릭 시 즉시 표시 (이벤트로만 갱신해 ScreenNode 리렌더 없음) */
+    const [localFontSizeOverride, setLocalFontSizeOverride] = useState<number | null>(null);
+
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const { elementId, px } = (e as CustomEvent<{ elementId: string; px: number }>).detail;
+            if (elementId === element.id) setLocalFontSizeOverride(px);
+        };
+        window.addEventListener(FONT_SIZE_OVERRIDE_EVENT, handler);
+        return () => window.removeEventListener(FONT_SIZE_OVERRIDE_EVENT, handler);
+    }, [element.id]);
+
+    useEffect(() => {
+        if (localFontSizeOverride != null && (element.fontSize ?? 14) === localFontSizeOverride) setLocalFontSizeOverride(null);
+    }, [element.fontSize, localFontSizeOverride]);
 
     // Sync content with element.text (undo/remote 등). 편집 중(포커스 있음)이면 덮어쓰지 않아 커서 유지·역순 입력 버그 방지
     useEffect(() => {
@@ -175,7 +193,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             }}
             className={`outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0' : 'p-0 min-h-[1.4em] w-full'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
             style={{
-                fontSize: `${fontSizeOverride ?? element.fontSize ?? 14}px`,
+                fontSize: `${localFontSizeOverride ?? fontSizeOverride ?? element.fontSize ?? 14}px`,
                 color: element.color || '#333333',
                 fontWeight: element.fontWeight || 'normal',
                 fontStyle: element.fontStyle || 'normal',

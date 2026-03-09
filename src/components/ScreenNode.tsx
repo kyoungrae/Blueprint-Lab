@@ -18,7 +18,7 @@ import { ExportModeContext } from '../contexts/ExportModeContext';
 import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { TooltipPortalContext } from '../contexts/TooltipPortalContext';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
-import DrawTextComponent from './screenNode/DrawTextComponent';
+import DrawTextComponent, { FONT_SIZE_OVERRIDE_EVENT } from './screenNode/DrawTextComponent';
 import EditableTableCell from './screenNode/EditableTableCell';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
@@ -155,6 +155,10 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const nodeRef = useRef<HTMLDivElement>(null);
     const pendingSyncDrawElementsRef = useRef<DrawElement[] | null>(null);
     const pendingSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** 폰트 크기만 변경 시 전체 리렌더 지연: 디바운스 후 한 번만 스토어 반영 */
+    const pendingFontSizeRef = useRef<{ elementId: string; px: number } | null>(null);
+    const pendingFontSizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const PENDING_FONT_SIZE_DEBOUNCE_MS = 380;
 
     const { projects, currentProjectId } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
@@ -638,6 +642,19 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 
     useEffect(() => {
         return () => {
+            if (pendingFontSizeTimerRef.current) {
+                clearTimeout(pendingFontSizeTimerRef.current);
+                pendingFontSizeTimerRef.current = null;
+            }
+            if (pendingFontSizeRef.current) {
+                const pending = pendingFontSizeRef.current;
+                pendingFontSizeRef.current = null;
+                const current = getScreenById(screen.id)?.drawElements ?? [];
+                const next = current.map((el) => el.id === pending.elementId ? { ...el, fontSize: pending.px } : el);
+                update({ drawElements: next });
+                saveHistory(next);
+                sendOperation({ type: 'SCREEN_UPDATE', targetId: screen.id, userId: user?.id || 'anonymous', userName: user?.name || 'Anonymous', payload: { drawElements: next } });
+            }
             if (pendingSyncTimerRef.current) {
                 clearTimeout(pendingSyncTimerRef.current);
                 pendingSyncTimerRef.current = null;
@@ -648,23 +665,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                 sendOperation({ type: 'SCREEN_UPDATE', targetId: screen.id, userId: user?.id || 'anonymous', userName: user?.name || 'Anonymous', payload: { drawElements: toSend } });
             }
         };
-    }, [screen.id, sendOperation, user?.id, user?.name]);
-
-    useEffect(() => {
-        const elements = screen.drawElements || [];
-        setFontSizeOverrides(prev => {
-            let changed = false;
-            const next = { ...prev };
-            Object.keys(next).forEach(id => {
-                const el = elements.find(e => e.id === id);
-                if (el && (el.fontSize ?? 14) === next[id]) {
-                    delete next[id];
-                    changed = true;
-                }
-            });
-            return changed ? next : prev;
-        });
-    }, [screen.drawElements]);
+    }, [screen.id, sendOperation, user?.id, user?.name, getScreenById, update, saveHistory]);
 
     // 엔티티 이동(position)도 undo/redo 히스토리에 포함 (원격 유저의 수정은 히스토리에 넣지 않음)
     useEffect(() => {
@@ -727,7 +728,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
     const tableCellSelectionRestoreRef = useRef<{ tableId: string; cellIndex: number } | null>(null);
     const [textStyleToolbarRefresh, setTextStyleToolbarRefresh] = useState(0);
     const [showFontStylePanel, setShowFontStylePanel] = useState(false);
-    const [fontSizeOverrides, setFontSizeOverrides] = useState<Record<string, number>>({});
     const [fontStylePanelPos, setFontStylePanelPos] = useState({ x: 0, y: 0 });
 
     const handleElementTextSelectionChange = useCallback((rect: DOMRect | null) => {
@@ -2091,8 +2091,52 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
         if (activeTool !== 'select') setActiveTool('select');
     };
 
+    const flushPendingFontSize = useCallback(() => {
+        const pending = pendingFontSizeRef.current;
+        if (!pending) return;
+        pendingFontSizeRef.current = null;
+        if (pendingFontSizeTimerRef.current) {
+            clearTimeout(pendingFontSizeTimerRef.current);
+            pendingFontSizeTimerRef.current = null;
+        }
+        const current = getScreenById(screen.id)?.drawElements ?? [];
+        const next = current.map((el) => el.id === pending.elementId ? { ...el, fontSize: pending.px } : el);
+        update({ drawElements: next });
+        saveHistory(next);
+        pendingSyncDrawElementsRef.current = next;
+        if (pendingSyncTimerRef.current) clearTimeout(pendingSyncTimerRef.current);
+        pendingSyncTimerRef.current = setTimeout(() => {
+            pendingSyncTimerRef.current = null;
+            const toSend = pendingSyncDrawElementsRef.current;
+            if (toSend) {
+                pendingSyncDrawElementsRef.current = null;
+                syncUpdate({ drawElements: toSend });
+            }
+        }, 200);
+    }, [screen.id, getScreenById, update, saveHistory, syncUpdate]);
+
     const updateElement = (id: string, updates: Partial<DrawElement>) => {
-        const nextElements = drawElements.map(el => el.id === id ? { ...el, ...updates } : el);
+        const isFontSizeOnly = Object.keys(updates).length === 1 && 'fontSize' in updates && updates.fontSize != null;
+        if (isFontSizeOnly) {
+            pendingFontSizeRef.current = { elementId: id, px: updates.fontSize! };
+            if (pendingFontSizeTimerRef.current) clearTimeout(pendingFontSizeTimerRef.current);
+            pendingFontSizeTimerRef.current = setTimeout(() => {
+                pendingFontSizeTimerRef.current = null;
+                flushPendingFontSize();
+            }, PENDING_FONT_SIZE_DEBOUNCE_MS);
+            return;
+        }
+        let elements = drawElements;
+        if (pendingFontSizeRef.current) {
+            const { elementId, px } = pendingFontSizeRef.current;
+            pendingFontSizeRef.current = null;
+            if (pendingFontSizeTimerRef.current) {
+                clearTimeout(pendingFontSizeTimerRef.current);
+                pendingFontSizeTimerRef.current = null;
+            }
+            elements = elements.map((el) => el.id === elementId ? { ...el, fontSize: px } : el);
+        }
+        const nextElements = elements.map((el) => el.id === id ? { ...el, ...updates } : el);
         update({ drawElements: nextElements });
         saveHistory(nextElements);
         pendingSyncDrawElementsRef.current = nextElements;
@@ -4062,10 +4106,8 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                             const displayFontSize = fromTable && tableCellFontSize != null
                                 ? tableCellFontSize
                                 : (getFontSizeFromSelection() ?? defaultFontSize);
-                            const effectiveDisplayFontSize = fontSizeOverrides[el.id] ?? displayFontSize;
                             const onBeforeFontSizeApply = (elementId: string, px: number) => {
-                                setFontSizeOverrides(prev => ({ ...prev, [elementId]: px }));
-                                // 지연 적용: 낙관적 숫자/캔버스가 먼저 그려진 뒤, 무거운 update/히스토리 작업 실행
+                                window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId, px } }));
                                 requestAnimationFrame(() => {
                                     startTransition(() => updateElement(elementId, { fontSize: px }));
                                 });
@@ -4143,7 +4185,7 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                         fromTable={fromTable}
                                         defaultColor={defaultColor}
                                         defaultFontSize={defaultFontSize}
-                                        displayFontSize={effectiveDisplayFontSize}
+                                        displayFontSize={displayFontSize}
                                         onBeforeFontSizeApply={onBeforeFontSizeApply}
                                         updateElement={updateElement}
                                         applyToSelection={applyToSelection}
@@ -4275,7 +4317,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                             autoFocus={editingTextId === el.id}
                                                                                             className={isCompact ? 'px-0' : 'px-2'}
                                                                                             compact={isCompact}
-                                                                                            fontSizeOverride={fontSizeOverrides[el.id]}
                                                                                         />
                                                                                     )}
                                                                                 </div>
@@ -4297,7 +4338,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                             autoFocus={editingTextId === el.id}
                                                                                             className={isCompact ? 'px-0' : 'px-4'}
                                                                                             compact={isCompact}
-                                                                                            fontSizeOverride={fontSizeOverrides[el.id]}
                                                                                         />
                                                                                     )}
                                                                                 </div>
@@ -4374,7 +4414,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
                                                                                     onUpdate={(updates) => updateElement(el.id, updates)}
                                                                                     onSelectionChange={handleElementTextSelectionChange}
                                                                                     autoFocus={editingTextId === el.id}
-                                                                                    fontSizeOverride={fontSizeOverrides[el.id]}
                                                                                 />
                                                                             )}
                                                                             {el.type === 'image' && (
