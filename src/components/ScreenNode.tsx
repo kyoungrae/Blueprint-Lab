@@ -6,8 +6,11 @@ import { getCanvasDimensions } from '../types/screenDesign';
 
 import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, Table2, Settings2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
-import { consumeLastRemoteUpdateScreenIdIfMatch } from '../store/screenUndoRemoteFlag';
+
 import { useScreenLockAndSync } from './screenNode/useScreenLockAndSync';
+import { useCanvasHistory } from './screenNode/useCanvasHistory';
+import { useCanvasElementActions } from './screenNode/useCanvasElementActions';
+import { useGuideLines } from './screenNode/useGuideLines';
 
 // ── Sub-Components ────────────────────────────────────────────
 
@@ -30,7 +33,7 @@ import { normalizeImageUrlForStorage } from '../utils/imageUrl';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { EntityLockBadge } from './collaboration';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './screenNode/types';
-import { getSmartGuidesAndSnap, SNAP_THRESHOLD, type AlignmentGuides, type SnapState } from './screenNode/smartGuides';
+import { getSmartGuidesAndSnap, type AlignmentGuides, type SnapState } from './screenNode/smartGuides';
 import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { GRID_STEP } from '../constants/canvasGrid';
 import { ScreenHeader } from './screenNode/ScreenHeader';
@@ -295,11 +298,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [showGridPanel, setShowGridPanel] = useState(false);
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
     const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
-    const guideLineDragRef = useRef<{ axis: 'vertical' | 'horizontal'; value: number } | null>(null);
-    /** 드래그 중인 보조선: store는 건드리지 않고, mouseup 시에만 최종 위치 반영 (지나간 자리에 선이 생기는 버그 방지) */
-    const [guideLineDragPreview, setGuideLineDragPreview] = useState<{ axis: 'vertical' | 'horizontal'; startValue: number; currentValue: number } | null>(null);
-    const guideLineDragPreviewValueRef = useRef<number>(0);
-    const [selectedGuideLine, setSelectedGuideLine] = useState<{ axis: 'vertical' | 'horizontal'; value: number } | null>(null);
 
     const [showStylePanel, setShowStylePanel] = useState(false);
     const [showLayerPanel, setShowLayerPanel] = useState(false);
@@ -426,92 +424,20 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
 
-    type HistorySnapshot = {
-        drawElements: DrawElement[];
-        position: { x: number; y: number };
-        subComponents?: Array<{ id: string; name: string; elementIds: string[] }>;
-    };
-
-    // Undo/Redo History State (요소 + 엔티티 위치)
-    const [history, setHistory] = useState<{
-        past: HistorySnapshot[],
-        future: HistorySnapshot[]
-    }>({ past: [], future: [] });
-    const MAX_HISTORY = 100;
-    const restoringHistoryRef = useRef(false);
-
-    const HISTORY_DEDUPE_SIZE_THRESHOLD = 50;
-    const saveHistory = (elements: DrawElement[], position = screen.position, subComponents?: Screen['subComponents']) => {
-        const snapshot: HistorySnapshot = {
-            drawElements: elements,
-            position: { x: position.x, y: position.y },
-            subComponents: subComponents ?? screen.subComponents,
-        };
-        setHistory(prev => {
-            if (prev.past.length > 0 && elements.length <= HISTORY_DEDUPE_SIZE_THRESHOLD) {
-                const last = prev.past[prev.past.length - 1];
-                if (JSON.stringify(last) === JSON.stringify(snapshot)) return prev;
-            }
-            const newPast = [...prev.past, snapshot].slice(-MAX_HISTORY);
-            return {
-                past: newPast,
-                future: []
-            };
-        });
-    };
-
-    const undo = () => {
-        if (history.past.length <= 1) return;
-
-        setHistory(prev => {
-            const newPast = [...prev.past];
-            const current = newPast.pop();
-            const previous = newPast[newPast.length - 1];
-
-            if (!current || !previous) return prev;
-
-            restoringHistoryRef.current = true;
-            // undo/redo는 잠금 여부와 관계없이 실행 (의도적인 복원 동작)
-            const undoPayload: Partial<Screen> = { drawElements: previous.drawElements, position: previous.position };
-            if (previous.subComponents !== undefined) undoPayload.subComponents = previous.subComponents;
-            updateScreen(screen.id, undoPayload);
-            syncUpdate(undoPayload);
-            requestAnimationFrame(() => {
-                restoringHistoryRef.current = false;
-            });
-
-            return {
-                past: newPast,
-                future: [current, ...prev.future].slice(0, MAX_HISTORY)
-            };
-        });
-    };
-
-    const redo = () => {
-        if (history.future.length === 0) return;
-
-        setHistory(prev => {
-            const newFuture = [...prev.future];
-            const next = newFuture.shift();
-
-            if (!next) return prev;
-
-            restoringHistoryRef.current = true;
-            // undo/redo는 잠금 여부와 관계없이 실행 (의도적인 복원 동작)
-            const redoPayload: Partial<Screen> = { drawElements: next.drawElements, position: next.position };
-            if (next.subComponents !== undefined) redoPayload.subComponents = next.subComponents;
-            updateScreen(screen.id, redoPayload);
-            syncUpdate(redoPayload);
-            requestAnimationFrame(() => {
-                restoringHistoryRef.current = false;
-            });
-
-            return {
-                past: [...prev.past, next].slice(-MAX_HISTORY),
-                future: newFuture
-            };
-        });
-    };
+    // ── Undo/Redo History (extracted to useCanvasHistory) ──────────────────
+    const {
+        history,
+        saveHistory,
+        undo,
+        redo,
+    } = useCanvasHistory({
+        screen,
+        screenId: screen.id,
+        selected,
+        updateScreen,
+        syncUpdate,
+        setHandlers,
+    });
 
     const handlePartialComponentize = useCallback(() => {
         if (selectedElementIds.length === 0 || isLocked) return;
@@ -631,9 +557,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 }
                 if (tableCellLockedIndices.length === 0) tableCellLockedIndices = undefined;
             }
-            const hasComponentText = false;
             return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, hasComponentText: undefined, tableCellLockedIndices };
-            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, hasComponentText: hasComponentText || undefined, tableCellLockedIndices };
         });
         newElements.forEach((el) => {
             if (el.groupId && idMap.has(el.groupId)) {
@@ -655,70 +579,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         saveHistory(nextElements);
         setSelectedElementIds(newElements.map((e) => e.id));
         setShowComponentPicker(false);
-    }, [screen.drawElements, update, syncUpdate, saveHistory]);
-
-    // Initial history save
-    useEffect(() => {
-        if (history.past.length === 0 && screen.drawElements) {
-            setHistory({
-                past: [{
-                    drawElements: screen.drawElements,
-                    position: { x: screen.position.x, y: screen.position.y },
-                    subComponents: screen.subComponents,
-                }],
-                future: []
-            });
-        }
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            if (pendingFontSizeTimerRef.current) {
-                clearTimeout(pendingFontSizeTimerRef.current);
-                pendingFontSizeTimerRef.current = null;
-            }
-            if (pendingFontSizeRef.current) {
-                const pending = pendingFontSizeRef.current;
-                pendingFontSizeRef.current = null;
-                const current = getScreenById(screen.id)?.drawElements ?? [];
-                const next = current.map((el) => el.id === pending.elementId ? { ...el, fontSize: pending.px } : el);
-                update({ drawElements: next });
-                saveHistory(next);
-                sendOperation({ type: 'SCREEN_UPDATE', targetId: screen.id, userId: user?.id || 'anonymous', userName: user?.name || 'Anonymous', payload: { drawElements: next } });
-            }
-            if (pendingSyncTimerRef.current) {
-                clearTimeout(pendingSyncTimerRef.current);
-                pendingSyncTimerRef.current = null;
-            }
-            const toSend = pendingSyncDrawElementsRef.current;
-            if (toSend) {
-                pendingSyncDrawElementsRef.current = null;
-                sendOperation({ type: 'SCREEN_UPDATE', targetId: screen.id, userId: user?.id || 'anonymous', userName: user?.name || 'Anonymous', payload: { drawElements: toSend } });
-            }
-        };
-    }, [screen.id, sendOperation, user?.id, user?.name, getScreenById, update, saveHistory]);
-
-    // 엔티티 이동(position)도 undo/redo 히스토리에 포함 (원격 유저의 수정은 히스토리에 넣지 않음)
-    useEffect(() => {
-        if (restoringHistoryRef.current) return;
-        if (consumeLastRemoteUpdateScreenIdIfMatch(screen.id)) return;
-        saveHistory(screen.drawElements || [], screen.position);
-    }, [screen.position.x, screen.position.y, screen.id]);
-
-    // 상단 툴바에 Undo/Redo 노출 (선택된 화면이면 잠금 여부와 관계없이 항상 노출)
-    useEffect(() => {
-        if (selected) {
-            setHandlers(screen.id, {
-                undo,
-                redo,
-                canUndo: history.past.length > 1,
-                canRedo: history.future.length > 0,
-            });
-        } else {
-            setHandlers(screen.id, null);
-        }
-        return () => setHandlers(screen.id, null);
-    }, [selected, history.past.length, history.future.length, setHandlers, screen.id]);
+    }, [screen.drawElements, screen, update, syncUpdate, saveHistory]);
 
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
     // IME 조합 중(한글 등) 자음/모음 분리 방지
@@ -861,7 +722,31 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     }, [setLastInteractedScreenId, screen.id]);
 
     const drawElements = screen.drawElements || [];
-    const guideLines = screen.guideLines || { vertical: [], horizontal: [] };
+    const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
+    let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
+    if (canvasW < MIN_CANVAS_WIDTH) {
+        const scale = MIN_CANVAS_WIDTH / canvasW;
+        canvasW = MIN_CANVAS_WIDTH;
+        canvasH = Math.round(canvasH * scale);
+    }
+    const {
+        guideLines,
+        guideLineDragPreview,
+        selectedGuideLine,
+        setSelectedGuideLine,
+        addGuideLine,
+        removeGuideLine,
+        removeAllGuideLines,
+        addAllGuideLines,
+        handleGuideLineDragStart,
+    } = useGuideLines({
+        screen,
+        canvasW,
+        canvasH,
+        update,
+        syncUpdate,
+        onFlushProjectData: data.onFlushProjectData,
+    });
 
     // 방향키로 선택된 객체 이동 (1px 또는 Shift+방향키 시 GRID_STEP)
     const ARROW_MOVE_STEP = 1;
@@ -913,256 +798,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         return () => document.removeEventListener('keydown', handleKeyDown, true);
     }, [selectedElementIds, drawElements, isLocked, update, syncUpdate, saveHistory]);
 
-    /** 같은 위치에 겹친 보조선 합치기 (tolerance px 이내는 하나로) */
-    const dedupeGuides = (arr: number[], tolerance = 2): number[] => {
-        const sorted = [...arr].sort((a, b) => a - b);
-        const out: number[] = [];
-        for (const v of sorted) {
-            if (out.length === 0 || Math.abs(v - out[out.length - 1]) > tolerance) out.push(v);
-        }
-        return out;
-    };
 
-    const addGuideLine = (axis: 'vertical' | 'horizontal') => {
-        const cw = canvasRef.current?.clientWidth ?? 400;
-        const ch = canvasRef.current?.clientHeight ?? 300;
-        if (cw <= 0 || ch <= 0) return;
-
-        // 이미 저장된 중복 보조선(같은 위치에 여러 줄) 정리 → 0 눈금자에 겹쳐 보이던 현상 제거
-        const dedupedVertical = dedupeGuides(guideLines.vertical);
-        const dedupedHorizontal = dedupeGuides(guideLines.horizontal);
-        if (dedupedVertical.length !== guideLines.vertical.length || dedupedHorizontal.length !== guideLines.horizontal.length) {
-            const cleaned = { vertical: dedupedVertical, horizontal: dedupedHorizontal };
-            update({ guideLines: cleaned });
-            syncUpdate({ guideLines: cleaned });
-        }
-
-        // 눈금자와 동일한 간격으로 최대 개수 계산 → 보조선이 눈금자 개수를 넘지 않도록 제한
-        const centerX = cw / 2;
-        const centerY = ch / 2;
-        let maxVerticalTicks = 0;
-        const minH = -Math.floor(centerX / GRID_STEP) * GRID_STEP;
-        const maxH = Math.ceil(centerX / GRID_STEP) * GRID_STEP;
-        for (let v = minH; v <= maxH; v += GRID_STEP) {
-            if (centerX + v >= 0 && centerX + v <= cw) maxVerticalTicks++;
-        }
-        let maxHorizontalTicks = 0;
-        const minV = -Math.floor(centerY / GRID_STEP) * GRID_STEP;
-        const maxV = Math.ceil(centerY / GRID_STEP) * GRID_STEP;
-        for (let v = minV; v <= maxV; v += GRID_STEP) {
-            if (centerY + v >= 0 && centerY + v <= ch) maxHorizontalTicks++;
-        }
-        if (axis === 'vertical' && dedupedVertical.length >= maxVerticalTicks) return;
-        if (axis === 'horizontal' && dedupedHorizontal.length >= maxHorizontalTicks) return;
-
-        const dim = axis === 'vertical' ? cw : ch;
-        const existing = axis === 'vertical' ? dedupedVertical : dedupedHorizontal;
-        const minGap = 20;
-
-        const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
-        const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
-        const outerW = canvasW - canvasInsetLocal * 2;
-        const outerH = canvasH - canvasInsetLocal * 2;
-        const innerStepX = outerW > 0 ? (GRID_STEP * canvasW) / outerW : GRID_STEP;
-        const innerStepY = outerH > 0 ? (GRID_STEP * canvasH) / outerH : GRID_STEP;
-        const centerXInner = canvasW / 2;
-        const centerYInner = canvasH / 2;
-
-        const candidates: number[] = [];
-        if (axis === 'vertical') {
-            for (let k = Math.ceil((minGap - centerXInner) / innerStepX); centerXInner + k * innerStepX <= cw - minGap; k++) {
-                const p = Math.round(centerXInner + k * innerStepX);
-                if (p >= minGap && p <= cw - minGap) candidates.push(p);
-            }
-        } else {
-            for (let k = Math.ceil((minGap - centerYInner) / innerStepY); centerYInner + k * innerStepY <= ch - minGap; k++) {
-                const p = Math.round(centerYInner + k * innerStepY);
-                if (p >= minGap && p <= ch - minGap) candidates.push(p);
-            }
-        }
-        candidates.sort((a, b) => {
-            const mid = dim / 2;
-            return Math.abs(a - mid) - Math.abs(b - mid);
-        });
-
-        let nextValue = candidates.find(p => !existing.some(v => Math.abs(v - p) < minGap));
-        if (nextValue == null) {
-            const last = existing.length > 0 ? Math.max(...existing) : 0;
-            nextValue = Math.min(dim - minGap, last + minGap);
-            if (existing.some(v => Math.abs(v - nextValue!) < minGap)) {
-                nextValue = axis === 'vertical'
-                    ? Math.round(centerXInner + Math.round((dim / 2 - centerXInner) / innerStepX) * innerStepX)
-                    : Math.round(centerYInner + Math.round((dim / 2 - centerYInner) / innerStepY) * innerStepY);
-            }
-        }
-        // 같은 위치에 중복 추가 방지 (0 눈금자에 여러 줄 쌓여 색이 진해지는 현상 제거)
-        if (existing.some(v => Math.abs(v - nextValue!) < 2)) return;
-        const nextLines = {
-            vertical: axis === 'vertical' ? [...dedupedVertical, nextValue] : [...dedupedVertical],
-            horizontal: axis === 'horizontal' ? [...dedupedHorizontal, nextValue] : [...dedupedHorizontal],
-        };
-        nextLines.vertical.sort((a, b) => a - b);
-        nextLines.horizontal.sort((a, b) => a - b);
-        update({ guideLines: nextLines });
-        syncUpdate({ guideLines: nextLines });
-    };
-
-    const removeAllGuideLines = () => {
-        const nextLines = { vertical: [], horizontal: [] };
-        update({ guideLines: nextLines });
-        syncUpdate({ guideLines: nextLines });
-    };
-
-    const addAllGuideLines = () => {
-        const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
-        const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
-        const outerW = canvasW - canvasInsetLocal * 2;
-        const outerH = canvasH - canvasInsetLocal * 2;
-        if (outerW <= 0 || outerH <= 0) return;
-        // 세로/가로줄 한 줄씩 추가할 때와 동일한 공식 사용 → 눈금자와 정렬
-        const innerStepX = (GRID_STEP * canvasW) / outerW;
-        const innerStepY = (GRID_STEP * canvasH) / outerH;
-        const centerXInner = canvasW / 2;
-        const centerYInner = canvasH / 2;
-        const vertical: number[] = [];
-        for (let k = Math.ceil(-centerXInner / innerStepX); centerXInner + k * innerStepX <= canvasW; k++) {
-            const x = centerXInner + k * innerStepX;
-            if (x >= 0) vertical.push(Math.round(x));
-        }
-        const horizontal: number[] = [];
-        for (let l = Math.ceil(-centerYInner / innerStepY); centerYInner + l * innerStepY <= canvasH; l++) {
-            const y = centerYInner + l * innerStepY;
-            if (y >= 0) horizontal.push(Math.round(y));
-        }
-        const nextLines = { vertical, horizontal };
-        update({ guideLines: nextLines });
-        syncUpdate({ guideLines: nextLines });
-    };
-
-    const moveGuideLine = (axis: 'vertical' | 'horizontal', oldValue: number, newValue: number): number => {
-        const cw = canvasRef.current?.clientWidth ?? 400;
-        const ch = canvasRef.current?.clientHeight ?? 300;
-        const max = axis === 'vertical' ? cw : ch;
-        const clamped = Math.max(2, Math.min(max - 2, Math.round(newValue)));
-        const current = getScreenById(screen.id)?.guideLines;
-        const vert = current?.vertical ?? guideLines.vertical;
-        const horz = current?.horizontal ?? guideLines.horizontal;
-        const arr = axis === 'vertical' ? vert : horz;
-        const others = arr.filter(v => Math.abs(v - oldValue) > 2);
-        if (others.some(v => Math.abs(v - clamped) < 2)) return oldValue;
-
-        const nextLines = {
-            vertical: axis === 'vertical' ? vert.map(v => v === oldValue ? clamped : v) : [...vert],
-            horizontal: axis === 'horizontal' ? horz.map(v => v === oldValue ? clamped : v) : [...horz],
-        };
-        nextLines.vertical.sort((a, b) => a - b);
-        nextLines.horizontal.sort((a, b) => a - b);
-        update({ guideLines: nextLines });
-        return clamped;
-    };
-
-    const removeGuideLine = (axis: 'vertical' | 'horizontal', value: number) => {
-        const nextLines = {
-            vertical: guideLines.vertical.filter(v => !(axis === 'vertical' && v === value)),
-            horizontal: guideLines.horizontal.filter(v => !(axis === 'horizontal' && v === value)),
-        };
-        update({ guideLines: nextLines });
-        syncUpdate({ guideLines: nextLines });
-    };
-
-    const handleGuideLineDragStart = useCallback((axis: 'vertical' | 'horizontal', value: number, e: React.MouseEvent) => {
-        if (isLocked || screen.guideLinesLocked || !canvasRef.current) return;
-        e.stopPropagation();
-        e.preventDefault();
-        guideLineDragRef.current = { axis, value };
-        setGuideLineDragPreview({ axis, startValue: value, currentValue: value });
-        let hasMoved = false;
-        const rect = canvasRef.current.getBoundingClientRect();
-        const scaleX = canvasRef.current.clientWidth / rect.width;
-        const scaleY = canvasRef.current.clientHeight / rect.height;
-        const cw = canvasRef.current.clientWidth;
-        const ch = canvasRef.current.clientHeight;
-
-        const onMove = (me: MouseEvent) => {
-            if (!guideLineDragRef.current) return;
-            hasMoved = true;
-            const { axis: ax, value: startVal } = guideLineDragRef.current;
-            const rawVal = ax === 'vertical'
-                ? (me.clientX - rect.left) * scaleX
-                : (me.clientY - rect.top) * scaleY;
-            const max = ax === 'vertical' ? cw : ch;
-            const clampedRaw = Math.max(2, Math.min(max - 2, Math.round(rawVal)));
-
-            const current = getScreenById(screen.id);
-            const elements = current?.drawElements ?? [];
-            const gl = current?.guideLines ?? { vertical: [], horizontal: [] };
-
-            const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
-            const canvasInsetLocal = !isLocked && screen.guideLinesVisible !== false ? 14 : 0;
-            const outerW = canvasW - canvasInsetLocal * 2;
-            const outerH = canvasH - canvasInsetLocal * 2;
-            const innerStepX = outerW > 0 ? (GRID_STEP * canvasW) / outerW : GRID_STEP;
-            const innerStepY = outerH > 0 ? (GRID_STEP * canvasH) / outerH : GRID_STEP;
-            const centerXInner = canvasW / 2;
-            const centerYInner = canvasH / 2;
-            const gridTickX: number[] = [];
-            for (let k = Math.ceil(-centerXInner / innerStepX); centerXInner + k * innerStepX <= canvasW; k++) {
-                const x = centerXInner + k * innerStepX;
-                if (x >= 0) gridTickX.push(Math.round(x));
-            }
-            const gridTickY: number[] = [];
-            for (let l = Math.ceil(-centerYInner / innerStepY); centerYInner + l * innerStepY <= canvasH; l++) {
-                const y = centerYInner + l * innerStepY;
-                if (y >= 0) gridTickY.push(Math.round(y));
-            }
-
-            const candidates: number[] = ax === 'vertical'
-                ? [cw / 2, ...gridTickX, ...elements.flatMap((el) => [el.x, el.x + el.width, el.x + el.width / 2]), ...gl.vertical.filter((v) => Math.abs(v - startVal) > 2)]
-                : [ch / 2, ...gridTickY, ...elements.flatMap((el) => [el.y, el.y + el.height, el.y + el.height / 2]), ...gl.horizontal.filter((v) => Math.abs(v - startVal) > 2)];
-
-            let snapped = clampedRaw;
-            let bestDist = SNAP_THRESHOLD + 1;
-            for (const cand of candidates) {
-                const d = Math.abs(clampedRaw - cand);
-                if (d <= SNAP_THRESHOLD && d < bestDist) {
-                    bestDist = d;
-                    snapped = Math.round(cand);
-                }
-            }
-            if (bestDist <= SNAP_THRESHOLD) {
-                setAlignmentGuides(ax === 'vertical' ? { vertical: [snapped], horizontal: [] } : { vertical: [], horizontal: [snapped] });
-            } else {
-                setAlignmentGuides(null);
-            }
-
-            guideLineDragPreviewValueRef.current = snapped;
-            setGuideLineDragPreview((prev) => (prev ? { ...prev, currentValue: snapped } : null));
-        };
-        const onUp = () => {
-            if (guideLineDragRef.current) {
-                const { axis: ax, value: startVal } = guideLineDragRef.current;
-                setAlignmentGuides(null);
-                if (hasMoved) {
-                    const finalValue = guideLineDragPreviewValueRef.current;
-                    moveGuideLine(ax, startVal, finalValue);
-                    const current = getScreenById(screen.id)?.guideLines;
-                    if (current) {
-                        syncUpdate({ guideLines: current });
-                    }
-                    data.onFlushProjectData?.();
-                    setSelectedGuideLine(null);
-                } else {
-                    setSelectedGuideLine({ axis: ax, value: startVal });
-                }
-                setGuideLineDragPreview(null);
-            }
-            guideLineDragRef.current = null;
-            window.removeEventListener('mousemove', onMove, true);
-            window.removeEventListener('mouseup', onUp, true);
-        };
-        window.addEventListener('mousemove', onMove, true);
-        window.addEventListener('mouseup', onUp, true);
-    }, [isLocked, screen.id, screen.guideLinesLocked, syncUpdate]);
 
     // Drawing Element Resizing Logic
     const elementResizeStartRef = useRef<{
@@ -2174,41 +1810,31 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         }, 100);
     }, [screen.id, getScreenById, update, saveHistory, syncUpdate]);
 
-    const updateElement = (id: string, updates: Partial<DrawElement>) => {
-        const isFontSizeOnly = Object.keys(updates).length === 1 && 'fontSize' in updates && updates.fontSize != null;
-        if (isFontSizeOnly) {
-            pendingFontSizeRef.current = { elementId: id, px: updates.fontSize! };
-            if (pendingFontSizeTimerRef.current) clearTimeout(pendingFontSizeTimerRef.current);
-            pendingFontSizeTimerRef.current = setTimeout(() => {
-                pendingFontSizeTimerRef.current = null;
-                flushPendingFontSize();
-            }, PENDING_FONT_SIZE_DEBOUNCE_MS);
-            return;
-        }
-        let elements = drawElements;
-        if (pendingFontSizeRef.current) {
-            const { elementId, px } = pendingFontSizeRef.current;
-            pendingFontSizeRef.current = null;
-            if (pendingFontSizeTimerRef.current) {
-                clearTimeout(pendingFontSizeTimerRef.current);
-                pendingFontSizeTimerRef.current = null;
-            }
-            elements = elements.map((el) => el.id === elementId ? { ...el, fontSize: px } : el);
-        }
-        const nextElements = elements.map((el) => el.id === id ? { ...el, ...updates } : el);
-        update({ drawElements: nextElements });
-        saveHistory(nextElements);
-        pendingSyncDrawElementsRef.current = nextElements;
-        if (pendingSyncTimerRef.current) clearTimeout(pendingSyncTimerRef.current);
-        pendingSyncTimerRef.current = setTimeout(() => {
-            pendingSyncTimerRef.current = null;
-            const toSend = pendingSyncDrawElementsRef.current;
-            if (toSend) {
-                pendingSyncDrawElementsRef.current = null;
-                syncUpdate({ drawElements: toSend });
-            }
-        }, 100);
-    };
+    // ── Element Actions (extracted to useCanvasElementActions) ──────────────
+    const {
+        updateElement,
+        deleteElements,
+        handleLayerAction,
+        handleObjectAlign,
+        handleGroup,
+        handleUngroup,
+    } = useCanvasElementActions({
+        screen,
+        drawElements,
+        selectedElementIds,
+        update,
+        syncUpdate,
+        saveHistory,
+        setSelectedElementIds,
+        sendOperation,
+        user,
+        pendingFontSizeRef,
+        pendingFontSizeTimerRef,
+        pendingSyncDrawElementsRef,
+        pendingSyncTimerRef,
+        flushPendingFontSize,
+        PENDING_FONT_SIZE_DEBOUNCE_MS,
+    });
 
     const handlePolygonVertexDragStart = (id: string, pointIndex: number, e: React.MouseEvent) => {
         if (isLocked) return;
@@ -2314,175 +1940,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         window.addEventListener('mouseup', handleUp, true);
     };
 
-    const deleteElements = (ids: string[]) => {
-        const idsSet = new Set(ids);
-        const nextElements = drawElements.filter(el => !idsSet.has(el.id));
 
-        // subComponents에서 삭제된 element 참조 제거, elementIds가 비면 하위 컴포넌트 제거
-        const nextSubComponents = (screen.subComponents ?? [])
-            .map((sub) => ({
-                ...sub,
-                elementIds: sub.elementIds.filter((eid) => !idsSet.has(eid)),
-            }))
-            .filter((sub) => sub.elementIds.length > 0);
-
-        sendOperation({
-            type: 'SCREEN_DRAW_DELETE',
-            targetId: screen.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: { drawElements: nextElements, subComponents: nextSubComponents },
-            previousState: { drawElements: drawElements },
-        });
-        update({ drawElements: nextElements, subComponents: nextSubComponents });
-        saveHistory(nextElements, screen.position, nextSubComponents);
-        setSelectedElementIds([]);
-    };
-
-    const handleLayerAction = (action: 'front' | 'back' | 'forward' | 'backward') => {
-        if (selectedElementIds.length === 0) return;
-
-        let nextElements = [...drawElements].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-
-        selectedElementIds.forEach(id => {
-            const index = nextElements.findIndex(el => el.id === id);
-            if (index === -1) return;
-
-            const el = nextElements[index];
-
-            if (action === 'front') {
-                nextElements.splice(index, 1);
-                nextElements.push(el);
-            } else if (action === 'back') {
-                nextElements.splice(index, 1);
-                nextElements.unshift(el);
-            } else if (action === 'forward') {
-                if (index < nextElements.length - 1) {
-                    [nextElements[index], nextElements[index + 1]] = [nextElements[index + 1], nextElements[index]];
-                }
-            } else if (action === 'backward') {
-                if (index > 0) {
-                    [nextElements[index], nextElements[index - 1]] = [nextElements[index - 1], nextElements[index]];
-                }
-            }
-        });
-
-        // Re-assign z-indices based on new order
-        const updatedElements = nextElements.map((el, i) => ({ ...el, zIndex: i + 1 }));
-        update({ drawElements: updatedElements });
-        syncUpdate({ drawElements: updatedElements });
-        saveHistory(updatedElements);
-    };
-
-    // ── Object-to-Object Alignment ──────────────────────────────
-    const handleObjectAlign = (action: 'align-left' | 'align-center-h' | 'align-right' | 'align-top' | 'align-center-v' | 'align-bottom' | 'distribute-h' | 'distribute-v') => {
-        if (selectedElementIds.length < 2) return;
-
-        const selectedElements = drawElements.filter(el => selectedElementIds.includes(el.id));
-        if (selectedElements.length < 2) return;
-
-        let nextElements = [...drawElements];
-
-        if (action === 'align-left') {
-            const minX = Math.min(...selectedElements.map(el => el.x));
-            nextElements = nextElements.map(el =>
-                selectedElementIds.includes(el.id) ? { ...el, x: minX } : el
-            );
-        } else if (action === 'align-center-h') {
-            const minX = Math.min(...selectedElements.map(el => el.x));
-            const maxRight = Math.max(...selectedElements.map(el => el.x + el.width));
-            const centerX = (minX + maxRight) / 2;
-            nextElements = nextElements.map(el =>
-                selectedElementIds.includes(el.id) ? { ...el, x: centerX - el.width / 2 } : el
-            );
-        } else if (action === 'align-right') {
-            const maxRight = Math.max(...selectedElements.map(el => el.x + el.width));
-            nextElements = nextElements.map(el =>
-                selectedElementIds.includes(el.id) ? { ...el, x: maxRight - el.width } : el
-            );
-        } else if (action === 'align-top') {
-            const minY = Math.min(...selectedElements.map(el => el.y));
-            nextElements = nextElements.map(el =>
-                selectedElementIds.includes(el.id) ? { ...el, y: minY } : el
-            );
-        } else if (action === 'align-center-v') {
-            const minY = Math.min(...selectedElements.map(el => el.y));
-            const maxBottom = Math.max(...selectedElements.map(el => el.y + el.height));
-            const centerY = (minY + maxBottom) / 2;
-            nextElements = nextElements.map(el =>
-                selectedElementIds.includes(el.id) ? { ...el, y: centerY - el.height / 2 } : el
-            );
-        } else if (action === 'align-bottom') {
-            const maxBottom = Math.max(...selectedElements.map(el => el.y + el.height));
-            nextElements = nextElements.map(el =>
-                selectedElementIds.includes(el.id) ? { ...el, y: maxBottom - el.height } : el
-            );
-        } else if (action === 'distribute-h') {
-            if (selectedElements.length < 3) return;
-            const sorted = [...selectedElements].sort((a, b) => a.x - b.x);
-            const firstX = sorted[0].x;
-            const lastRight = sorted[sorted.length - 1].x + sorted[sorted.length - 1].width;
-            const totalWidth = sorted.reduce((sum, el) => sum + el.width, 0);
-            const gap = (lastRight - firstX - totalWidth) / (sorted.length - 1);
-            let currentX = firstX;
-            const posMap = new Map<string, number>();
-            sorted.forEach(el => {
-                posMap.set(el.id, currentX);
-                currentX += el.width + gap;
-            });
-            nextElements = nextElements.map(el => {
-                const newX = posMap.get(el.id);
-                return newX !== undefined ? { ...el, x: newX } : el;
-            });
-        } else if (action === 'distribute-v') {
-            if (selectedElements.length < 3) return;
-            const sorted = [...selectedElements].sort((a, b) => a.y - b.y);
-            const firstY = sorted[0].y;
-            const lastBottom = sorted[sorted.length - 1].y + sorted[sorted.length - 1].height;
-            const totalHeight = sorted.reduce((sum, el) => sum + el.height, 0);
-            const gap = (lastBottom - firstY - totalHeight) / (sorted.length - 1);
-            let currentY = firstY;
-            const posMap = new Map<string, number>();
-            sorted.forEach(el => {
-                posMap.set(el.id, currentY);
-                currentY += el.height + gap;
-            });
-            nextElements = nextElements.map(el => {
-                const newY = posMap.get(el.id);
-                return newY !== undefined ? { ...el, y: newY } : el;
-            });
-        }
-
-        update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
-        saveHistory(nextElements);
-    };
-
-    const handleGroup = () => {
-        if (selectedElementIds.length < 2) return;
-        const groupId = `grp_${Date.now()}`;
-        const nextElements = drawElements.map(el =>
-            selectedElementIds.includes(el.id) ? { ...el, groupId } : el
-        );
-        update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
-        saveHistory(nextElements);
-    };
-
-    const handleUngroup = () => {
-        const toUngroup = selectedElementIds.filter(id => {
-            const el = drawElements.find(e => e.id === id);
-            return el?.groupId != null;
-        });
-        if (toUngroup.length === 0) return;
-        const nextElements = drawElements.map(el =>
-            toUngroup.includes(el.id) ? { ...el, groupId: undefined } : el
-        );
-        update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
-        saveHistory(nextElements);
-        setSelectedElementIds(prev => prev.filter(id => toUngroup.includes(id)));
-    };
 
     // 삭제 계층: 1) 화면 엔티티(캔버스에서 처리) 2) 그리기 객체 3) 텍스트 입력 영역(문자만 삭제)
     useEffect(() => {
@@ -3100,18 +2558,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
 
     // Entity dimensions from getCanvasDimensions (컴포넌트는 용지=캔버스, 화면 설계는 70% 비율)
-    const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
     const FIXED_TOP_HEIGHT = 162; // 화면 설계: 헤더+메타+툴바 (하단 여백 제거용)
     const FIXED_TOP_HEIGHT_COMPONENT = 88; // 컴포넌트: 헤더 + 툴바 2행
     const CANVAS_INSET = 14; // 캔버스 여백 (눈금자 숫자 표시 공간 확보)
     const ENTITY_CANVAS_GAP = 0; // 캔버스와 엔티티 테두리 사이 간격 (0=영역 딱 맞춤)
-    let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
-    if (canvasW < MIN_CANVAS_WIDTH) {
-        const scale = MIN_CANVAS_WIDTH / canvasW;
-        canvasW = MIN_CANVAS_WIDTH;
-        canvasH = Math.round(canvasH * scale);
-    }
     const isComponent = screen.screenId?.startsWith('CMP-');
     const entityWidth = isComponent
         ? canvasW + ENTITY_CANVAS_GAP * 2
