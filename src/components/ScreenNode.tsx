@@ -582,12 +582,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
     // IME 조합 중(한글 등) 자음/모음 분리 방지
-    const [tableCellComposing, setTableCellComposing] = useState<{ cellIndex: number; value: string } | null>(null);
     const [showTablePanel, setShowTablePanel] = useState(false);
-
-    useEffect(() => {
-        setTableCellComposing(null);
-    }, [editingCellIndex]);
 
     // 표 패널 열릴 때 현재 V2 셀 분포와 잠금 인덱스를 스냅샷으로 확인
     useEffect(() => {
@@ -1796,7 +1791,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         const current = getScreenById(screen.id)?.drawElements ?? [];
         const next = current.map((el) => el.id === pending.elementId ? { ...el, fontSize: pending.px } : el);
         update({ drawElements: next });
-        saveHistory(next);
         pendingSyncDrawElementsRef.current = next;
         if (pendingSyncTimerRef.current) clearTimeout(pendingSyncTimerRef.current);
         pendingSyncTimerRef.current = setTimeout(() => {
@@ -1805,7 +1799,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             if (toSend) {
                 pendingSyncDrawElementsRef.current = null;
                 syncUpdate({ drawElements: toSend });
-                saveHistory(toSend);
             }
         }, 300);
     }, [getScreenById, screen.id, update, saveHistory, syncUpdate]);
@@ -3477,6 +3470,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         applyFontSizePx={applyFontSizePx}
                                         drawElements={drawElements}
                                         update={update}
+                                        syncUpdate={syncUpdate}
                                         textSelectionFromTable={textSelectionFromTable}
                                         selectedCellIndices={selectedCellIndices}
                                         editingTableId={editingTableId}
@@ -3684,15 +3678,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                     editingTableId={editingTableId}
                                                                                     editingCellIndex={editingCellIndex}
                                                                                     selectedCellIndices={selectedCellIndices}
-                                                                                    tableCellComposing={tableCellComposing}
                                                                                     tableCellSelectionRestoreRef={tableCellSelectionRestoreRef}
                                                                                     setEditingTableId={setEditingTableId}
                                                                                     setEditingCellIndex={setEditingCellIndex}
                                                                                     setSelectedCellIndices={setSelectedCellIndices}
-                                                                                    setTableCellComposing={setTableCellComposing}
                                                                                     setTextSelectionRect={setTextSelectionRect}
                                                                                     setTextSelectionFromTable={setTextSelectionFromTable}
-                                                                                    update={update}
                                                                                     syncUpdate={syncUpdate}
                                                                                     updateElement={updateElement}
                                                                                     drawElements={drawElements}

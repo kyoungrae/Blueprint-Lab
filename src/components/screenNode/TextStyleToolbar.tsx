@@ -28,6 +28,7 @@ interface TextStyleToolbarProps {
     applyToSelection: (fn: () => void) => boolean;
     drawElements: DrawElement[];
     update: (updates: any) => void;
+    syncUpdate: (updates: any) => void;
     textSelectionFromTable: { tableId: string; cellIndex: number } | null;
     selectedCellIndices: number[];
     editingTableId: string | null;
@@ -58,6 +59,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     applyToSelection,
     drawElements,
     update,
+    syncUpdate,
     textSelectionFromTable,
     selectedCellIndices,
     editingTableId,
@@ -144,6 +146,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 if (pending) {
                     pendingTableStyleRef.current = null;
                     update({ drawElements: pending });
+                    syncUpdate({ drawElements: pending });
                 }
             }
         };
@@ -177,6 +180,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 if (!toApply) return;
                 pendingTableFontSizeRef.current = null;
                 update({ drawElements: toApply });
+                syncUpdate({ drawElements: toApply });
             }, TABLE_FONT_SIZE_DEBOUNCE_MS);
         } else if (!fromTable) {
             window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId: el.id, px: clamped } }));
@@ -292,6 +296,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 if (toApply) {
                     pendingTableStyleRef.current = null;
                     update({ drawElements: toApply });
+                    syncUpdate({ drawElements: toApply });
                 }
             }, 200);
         } else {
@@ -334,6 +339,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 if (toApply) {
                     pendingTableStyleRef.current = null;
                     update({ drawElements: toApply });
+                    syncUpdate({ drawElements: toApply });
                 }
             }, 200);
         } else {
@@ -376,6 +382,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 if (toApply) {
                     pendingTableStyleRef.current = null;
                     update({ drawElements: toApply });
+                    syncUpdate({ drawElements: toApply });
                 }
             }, 200);
         } else {
@@ -425,6 +432,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 if (toApply) {
                     pendingTableStyleRef.current = null;
                     update({ drawElements: toApply });
+                    syncUpdate({ drawElements: toApply });
                 }
             }, 200);
         } else {

@@ -11,9 +11,6 @@ interface EditableTableCellProps {
     isLocked: boolean;
     restoreSelectionRef?: React.MutableRefObject<{ tableId: string; cellIndex: number } | null>;
     autoFocus?: boolean;
-    isComposing: boolean;
-    composingValue: string | null;
-    onComposingChange: (value: string | null) => void;
     onValueChange: (html: string) => void;
     onSelectionChange: (rect: DOMRect | null) => void;
     onBlur: () => void;
@@ -63,8 +60,6 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     isLocked,
     restoreSelectionRef,
     autoFocus,
-    isComposing,
-    onComposingChange,
     onValueChange,
     onSelectionChange,
     onBlur,
@@ -79,15 +74,17 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     const textUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSentTextRef = useRef<string | null>(null);
 
+    const isComposingRef = useRef(false);
+
     // value → DOM 동기화(undo/원격 등). 편집 중(포커스 있음)이면 덮어쓰지 않아 커서 유지·역순 입력 버그 방지
     useEffect(() => {
-        if (isComposing) return;
+        if (isComposingRef.current) return;
         const el = divRef.current;
         if (!el || el.innerHTML === (value || '')) return;
         if (document.activeElement && el.contains(document.activeElement)) return;
         el.innerHTML = value || '';
         lastSentTextRef.current = value || null;
-    }, [value, isComposing]);
+    }, [value]);
 
     useEffect(() => {
         return () => {
@@ -166,8 +163,8 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     };
 
     const handleCompositionEnd = () => {
+        isComposingRef.current = false;
         if (divRef.current) {
-            onComposingChange(null);
             flushTextUpdate();
         }
     };
@@ -238,7 +235,7 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
             onInput={handleInput}
             onCopy={handleCopy}
             onPaste={handlePaste}
-            onCompositionStart={() => onComposingChange('')}
+            onCompositionStart={() => { isComposingRef.current = true; }}
             onCompositionEnd={handleCompositionEnd}
             onSelect={handleSelect}
             onMouseUp={handleSelect}

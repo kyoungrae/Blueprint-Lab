@@ -11,15 +11,12 @@ interface TableElementProps {
     editingTableId: string | null;
     editingCellIndex: number | null;
     selectedCellIndices: number[];
-    tableCellComposing: { cellIndex: number; value: string } | null;
     tableCellSelectionRestoreRef: React.MutableRefObject<{ tableId: string; cellIndex: number } | null>;
     setEditingTableId: (id: string | null) => void;
     setEditingCellIndex: (idx: number | null) => void;
     setSelectedCellIndices: (indices: number[]) => void;
-    setTableCellComposing: (val: { cellIndex: number; value: string } | null) => void;
     setTextSelectionRect: (rect: DOMRect | null) => void;
     setTextSelectionFromTable: (val: { tableId: string; cellIndex: number } | null) => void;
-    update: (updates: any) => void;
     syncUpdate: (updates: any) => void;
     updateElement: (id: string, updates: any) => void;
     drawElements: DrawElement[];
@@ -33,15 +30,12 @@ const TableElement: React.FC<TableElementProps> = memo(({
     editingTableId,
     editingCellIndex,
     selectedCellIndices,
-    tableCellComposing,
     tableCellSelectionRestoreRef,
     setEditingTableId,
     setEditingCellIndex,
     setSelectedCellIndices,
-    setTableCellComposing,
     setTextSelectionRect,
     setTextSelectionFromTable,
-    update,
     syncUpdate,
     updateElement,
     drawElements,
@@ -287,17 +281,12 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         isLocked={hasComponentText}
                                         restoreSelectionRef={tableCellSelectionRestoreRef}
                                         autoFocus
-                                        isComposing={tableCellComposing?.cellIndex === cellIndex}
-                                        composingValue={tableCellComposing?.cellIndex === cellIndex ? tableCellComposing.value : null}
-                                        onComposingChange={(v) => setTableCellComposing(v != null ? { cellIndex, value: v } : null)}
                                         onValueChange={(html) => {
                                             const newV2 = deepCopyCells(getV2Cells(el));
                                             if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: html };
                                             const newData = [...(el.tableCellData || [])];
                                             newData[cellIndex] = html;
-                                            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
-                                            update({ drawElements: nextElements });
-                                            syncUpdate({ drawElements: nextElements });
+                                            updateElement(el.id, { tableCellData: newData, tableCellDataV2: newV2 });
                                         }}
                                         onSelectionChange={(rect) => {
                                             setTextSelectionRect(rect);

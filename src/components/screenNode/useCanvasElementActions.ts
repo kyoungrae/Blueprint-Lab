@@ -88,7 +88,6 @@ export function useCanvasElementActions({
                         pendingSyncDrawElementsRef.current = null;
                         update({ drawElements: targets });
                         syncUpdate({ drawElements: targets });
-                        saveHistory(targets);
                     }
                 }, 200); // 200ms 디바운스로 상향 (부하 경감)
                 return;
