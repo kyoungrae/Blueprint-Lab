@@ -309,7 +309,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const polygonVertexSnapStateRef = useRef<SnapState>({});
     const lineVertexDragRef = useRef<{ elementId: string; pointIndex: 0 | 1 } | null>(null);
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
-    const tableSelectionTimeRef = useRef<number | null>(null);
+    const tableLastClickTimeRef = useRef<number | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const tooltipContainerRef = useRef<HTMLDivElement>(null);
@@ -327,7 +327,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     /** rAF throttle refs — 드래그·리사이즈 중 setState 호출 빈도를 requestAnimationFrame으로 제한 */
     const dragRafIdRef = useRef<number | undefined>(undefined);
     const resizeRafIdRef = useRef<number | undefined>(undefined);
-    const groupResizeRafIdRef = useRef<number | undefined>(undefined);
     const [showGridPanel, setShowGridPanel] = useState(false);
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
     const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
@@ -976,12 +975,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     });
                     const avgCenterX = centerPoints.reduce((sum, p) => sum + p.cx, 0) / centerPoints.length;
                     const avgCenterY = centerPoints.reduce((sum, p) => sum + p.cy, 0) / centerPoints.length;
-                    const oldCenterX = rel.x + rel.width / 2;
-                    const oldCenterY = rel.y + rel.height / 2;
-                    const offsetX = (oldCenterX - avgCenterX) * scaleX;
-                    const offsetY = (oldCenterY - avgCenterY) * scaleY;
-                    const newCenterX = avgCenterX + offsetX;
-                    const newCenterY = avgCenterY + offsetY;
                     const oldRelX = rel.x - avgCenterX;
                     const oldRelY = rel.y - avgCenterY;
                     const newRelX = oldRelX * scaleX;
@@ -1135,12 +1128,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     });
                     const avgCenterX = centerPoints.reduce((sum, p) => sum + p.cx, 0) / centerPoints.length;
                     const avgCenterY = centerPoints.reduce((sum, p) => sum + p.cy, 0) / centerPoints.length;
-                    const oldCenterX = rel.x + rel.width / 2;
-                    const oldCenterY = rel.y + rel.height / 2;
-                    const offsetX = (oldCenterX - avgCenterX) * scaleX;
-                    const offsetY = (oldCenterY - avgCenterY) * scaleY;
-                    const newCenterX = avgCenterX + offsetX;
-                    const newCenterY = avgCenterY + offsetY;
                     const oldRelX = rel.x - avgCenterX;
                     const oldRelY = rel.y - avgCenterY;
                     const newRelX = oldRelX * scaleX;
@@ -1605,21 +1592,22 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             return;
         }
 
-        // 테이블 단독 선택 시 즉시 움직이는 것을 막기 위해 타이머 기반 지연 추가
+        // 테이블 단독 선택 시에는 움직일 수 있도록 허용 (단, 선택 직후에는 약간의 지연)
         if (clickedEl?.type === 'table' && nextSelected.length === 1 && nextSelected[0] === id) {
+            // 테이블이 방금 선택된 경우에는 약간의 지연을 줌
             const now = Date.now();
-            if (!tableSelectionTimeRef.current) {
-                tableSelectionTimeRef.current = now;
-                return; // 선택 직후에는 움직이지 못하도록 막음
+            if (!tableLastClickTimeRef.current) {
+                tableLastClickTimeRef.current = now;
+                return; // 선택 직후에는 잠시 막음
             }
             
-            // 300ms 후에 움직일 수 있도록 허용
-            if (now - tableSelectionTimeRef.current < 300) {
+            // 200ms 후에 움직일 수 있도록 허용
+            if (now - tableLastClickTimeRef.current < 200) {
                 return;
             }
         } else {
-            // 다른 요소가 선택되거나 다중 선택 시 타이머 초기화
-            tableSelectionTimeRef.current = null;
+            // 다른 요소가 선택되면 타이머 초기화
+            tableLastClickTimeRef.current = null;
         }
 
         // Prepare for dragging all selected elements
