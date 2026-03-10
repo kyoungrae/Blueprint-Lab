@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { Layers, GripVertical, X, ChevronDown } from 'lucide-react';
+import { useStore } from 'reactflow';
 
 interface LayerPanelProps {
     show: boolean;
@@ -29,6 +30,8 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
     onLayerAction,
 }) => {
     const isDraggingRef = useRef(false);
+    // Force re-render on viewport transformation to keep position in sync
+    useStore(s => s.transform);
 
     if (selectedElementIds.length === 0 || !show) return null;
 

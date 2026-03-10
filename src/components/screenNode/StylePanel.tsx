@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Palette, GripVertical, X, Bold, Italic, Underline, ChevronDown, Plus, RotateCw } from 'lucide-react';
+import { RotateCw, Palette, GripVertical, X, Bold, Italic, Underline, ChevronDown, Plus } from 'lucide-react';
+import { useStore } from 'reactflow';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import type { DrawElement } from '../../types/screenDesign';
@@ -152,6 +153,9 @@ const StylePanel: React.FC<StylePanelProps> = ({
     onDragEnd,
 }) => {
     const isDraggingRef = useRef(false);
+    // Force re-render on viewport transformation to keep position in sync
+    useStore(s => s.transform);
+
     if (selectedElementIds.length === 0 || !show) return null;
 
     const selectedEl = drawElements.find(el => selectedElementIds.includes(el.id));

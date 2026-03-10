@@ -53,6 +53,35 @@ import GuideClipboardControls from './screenNode/GuideClipboardControls';
 import ObjectAlignToolbar from './screenNode/ObjectAlignToolbar';
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
+/** 포털로 렌더링되는 패널들이 뷰포트 이동/줌에 기민하게 반응하도록 감싸는 컴포넌트 */
+const FloatingPanelWrapper: React.FC<{
+    children: React.ReactNode;
+    flowPos: { x: number; y: number };
+    zoom: number | string;
+    flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
+    className?: string;
+    [key: string]: any;
+}> = ({ children, flowPos, zoom, flowToScreenPosition, className, ...props }) => {
+    useRFStore(s => s.transform); // Force re-render on pan/zoom
+    const screenPos = flowToScreenPosition(flowPos);
+    return (
+        <div
+            className={className}
+            style={{
+                left: screenPos.x,
+                top: screenPos.y,
+                transform: `scale(calc(0.9 * ${zoom}))`,
+                transformOrigin: 'top left',
+                position: 'fixed',
+                ...props.style
+            }}
+            {...props}
+        >
+            {children}
+        </div>
+    );
+};
+
 /** 다각형 프리셋에 따른 정규화된 꼭짓점 (0~1). [x,y] 배열 */
 const POLYGON_PRESET_NORM: Record<PolygonPreset, [number, number][]> = {
     triangle: [[0.5, 0], [0, 1], [1, 1]],
@@ -3461,18 +3490,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                 ? tableCellFontSize
                                 : defaultFontSize;
 
-                            const screenPos = flowToScreenPosition({ x: fontStylePanelPos.x, y: fontStylePanelPos.y });
                             return createPortal(
-                                <div
+                                <FloatingPanelWrapper
                                     data-font-style-panel
-                                    className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in-95 origin-top-left"
-                                    style={{
-                                        left: screenPos.x,
-                                        top: screenPos.y,
-                                        transform: `scale(calc(0.9 * ${zoom}))`,
-                                        transformOrigin: 'top left',
-                                    }}
-                                    onMouseDown={(e) => {
+                                    className="nodrag nopan bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in-95"
+                                    flowPos={fontStylePanelPos}
+                                    zoom={zoom}
+                                    flowToScreenPosition={flowToScreenPosition}
+                                    onMouseDown={(e: React.MouseEvent) => {
                                         e.stopPropagation();
                                         e.preventDefault();
                                     }}
@@ -3507,7 +3532,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         editingTableId={editingTableId}
                                         tableCellSelectionRestoreRef={tableCellSelectionRestoreRef}
                                     />
-                                </div>,
+                                </FloatingPanelWrapper>,
                                 getPanelPortalRoot()
                             );
                         })()}

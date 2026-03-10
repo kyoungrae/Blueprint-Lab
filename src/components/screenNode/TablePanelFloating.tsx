@@ -10,6 +10,7 @@ import {
 import type { DrawElement, TableCellData } from '../../types/screenDesign';
 import { flatIdxToRowCol, rowColToFlatIdx, getV2Cells } from './types';
 import PremiumTooltip from './PremiumTooltip';
+import { useStore } from 'reactflow';
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
@@ -81,6 +82,8 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
     onClose,
 }) => {
     const isDraggingTablePanelRef = useRef(false);
+    // Force re-render on viewport transformation to keep position in sync
+    useStore(s => s.transform);
 
     if (!show || selectedEl.type !== 'table') return null;
 
