@@ -1925,13 +1925,17 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     }, []);
 
     const applyToSelection = useCallback((fn: () => void, fromTable: boolean): boolean => {
-        // ...
         const sel = window.getSelection();
         if (sel && !sel.isCollapsed) {
             fn();
-            const active = document.activeElement as HTMLElement;
-            if (active?.contentEditable === 'true') {
-                active.dispatchEvent(new Event('input', { bubbles: true }));
+            // Find the contenteditable parent even if not activeElement
+            let node: Node | null = sel.anchorNode;
+            while (node && node !== document.body) {
+                if (node instanceof HTMLElement && node.getAttribute('contenteditable') === 'true') {
+                    node.dispatchEvent(new Event('input', { bubbles: true }));
+                    break;
+                }
+                node = node.parentNode;
             }
             return false;
         }
@@ -1941,8 +1945,19 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const applyFontSizePx = useCallback((px: number): boolean => {
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
-        const editable = document.activeElement as HTMLElement;
-        if (!editable?.contentEditable) return false;
+
+        // Find the contenteditable container from selection
+        let editableNode: Node | null = sel.anchorNode;
+        let editable: HTMLElement | null = null;
+        while (editableNode && editableNode !== document.body) {
+            if (editableNode instanceof HTMLElement && editableNode.getAttribute('contenteditable') === 'true') {
+                editable = editableNode;
+                break;
+            }
+            editableNode = editableNode.parentNode;
+        }
+        if (!editable) return false;
+
         document.execCommand('fontSize', false, '7');
         let node: Element | null = sel.anchorNode?.nodeType === Node.TEXT_NODE
             ? (sel.anchorNode as Text).parentElement
