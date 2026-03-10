@@ -130,12 +130,15 @@ const TableElement: React.FC<TableElementProps> = memo(({
                 borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
             }}
             onMouseDown={(e) => {
-                if (editingTableId === el.id) {
+                // 컴포넌트로부터 생성된 테이블의 경우, 셀 선택/편집 로직이 동작해야 함.
+                // 이미 선택된 상태이거나, 컴포넌트 인스턴스인 경우 이벤트를 중단하여 캔버스의 엔티티 선택 로직이 가로채지 않도록 함.
+                if (isSelected || editingTableId === el.id || el.fromComponentId) {
                     e.stopPropagation();
                 }
                 if (isLocked) return;
             }}
             onDoubleClick={(e) => {
+                // 더블 클릭은 항상 중단하여 상위 엔티티 등이 잡히지 않도록 함.
                 e.stopPropagation();
                 if (isLocked) return;
                 setEditingTableId(el.id);
@@ -344,7 +347,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                 ) : (
                                     <div
                                         dir="ltr"
-                                        className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0"
+                                        className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0 nodrag nopan"
                                         style={{
                                             alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
                                             justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',

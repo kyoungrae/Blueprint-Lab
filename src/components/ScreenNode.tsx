@@ -1475,7 +1475,10 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             // 모든 도형 및 텍스트 상은 더블 클릭 시 편집 모드로 진입 허용 (컴포넌트 인스턴스 포함)
             setEditingTextId(id);
         }
-        // Table double-click is handled at the cell level
+        // 테이블 더블 클릭은 셀 레벨에서 처리하므로 여기서 명시적으로 무시
+        if (el && el.type === 'table') {
+            return;
+        }
     };
 
 
