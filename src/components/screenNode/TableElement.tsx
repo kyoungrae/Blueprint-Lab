@@ -121,7 +121,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
 
     return (
         <div
-            className="w-full h-full overflow-hidden relative nodrag nopan"
+            className="w-full h-full relative nodrag nopan"
             style={{
                 cursor: editingTableId === el.id ? 'default' : 'move',
                 outline: editingTableId === el.id ? '2px solid #3b82f6' : 'none',

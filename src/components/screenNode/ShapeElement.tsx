@@ -39,19 +39,21 @@ const ShapeElement: React.FC<ShapeElementProps> = memo(({
 
     return (
         <div className={alignmentClasses} style={containerStyle}>
-            {(el.text || editingTextId === el.id) && (
-                <DrawTextComponent
-                    element={el}
-                    isLocked={isLocked}
-                    isSelected={isSelected}
-                    onUpdate={(updates) => updateElement(el.id, updates)}
-                    onSelectionChange={onSelectionChange}
-                    autoFocus={editingTextId === el.id}
-                    className={isCompact ? 'px-0' : (isCircle ? 'px-4' : 'px-2')}
-                    compact={isCompact}
-                    autoResizeContainer={autoResizeContainer}
-                />
-            )}
+            <div className="absolute inset-0 overflow-hidden flex items-center justify-center">
+                {(el.text || editingTextId === el.id) && (
+                    <DrawTextComponent
+                        element={el}
+                        isLocked={isLocked}
+                        isSelected={isSelected}
+                        onUpdate={(updates) => updateElement(el.id, updates)}
+                        onSelectionChange={onSelectionChange}
+                        autoFocus={editingTextId === el.id}
+                        className={isCompact ? 'px-0' : (isCircle ? 'px-4' : 'px-2')}
+                        compact={isCompact}
+                        autoResizeContainer={autoResizeContainer}
+                    />
+                )}
+            </div>
         </div>
     );
 });

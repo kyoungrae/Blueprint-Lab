@@ -142,12 +142,14 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
         top: previewPos?.y ?? el.y,
         width: el.width,
         height: el.height,
+        minWidth: 0,
+        minHeight: 0,
         zIndex: el.zIndex ?? 1,
         transition: (isDrawing || isMoving) ? 'none' : 'all 0.1s ease',
         pointerEvents: isDrawing ? 'none' : 'auto',
         opacity: el.opacity !== undefined ? el.opacity : 1,
         ...(rot !== 0 ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' } : {}),
-        ...(el.type === 'polygon' || el.type === 'line' ? { overflow: 'visible' as const } : {}),
+        overflow: 'visible',
     };
 
     return (
@@ -166,7 +168,7 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                     editingTextId={editingTextId}
                     updateElement={updateElement}
                     onSelectionChange={setTextSelectionRect}
-                    autoResizeContainer={el.type === 'rect'} // 사각형에만 자동 높이 조절 활성화
+                    autoResizeContainer={false} // 자동 조절 비활성화 (자유로운 크기 조절을 위해)
                 />
             )}
             {el.type === 'polygon' && (() => {
@@ -390,14 +392,14 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                     ) : (
                         <>
                             <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
-                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize pointer-events-auto z-[130]" />
-                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize pointer-events-auto z-[130]" />
-                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize pointer-events-auto z-[130]" />
-                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize pointer-events-auto z-[130]" />
-                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize pointer-events-auto z-[130]" />
-                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize pointer-events-auto z-[130]" />
-                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize pointer-events-auto z-[130]" />
-                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize pointer-events-auto z-[130]" />
+                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute top-0 left-0 w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize pointer-events-auto z-[150] -translate-x-1/2 -translate-y-1/2" />
+                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute top-0 right-0 w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize pointer-events-auto z-[150] translate-x-1/2 -translate-y-1/2" />
+                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute bottom-0 left-0 w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize pointer-events-auto z-[150] -translate-x-1/2 translate-y-1/2" />
+                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute bottom-0 right-0 w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize pointer-events-auto z-[150] translate-x-1/2 translate-y-1/2" />
+                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute top-0 left-1/2 w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize pointer-events-auto z-[150] -translate-x-1/2 -translate-y-1/2" />
+                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute bottom-0 left-1/2 w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize pointer-events-auto z-[150] -translate-x-1/2 translate-y-1/2" />
+                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 left-0 w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize pointer-events-auto z-[150] -translate-x-1/2 -translate-y-1/2" />
+                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 right-0 w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize pointer-events-auto z-[150] translate-x-1/2 -translate-y-1/2" />
                             {el.type === 'polygon' && (el.polygonPoints ?? []).length > 0 && (
                                 <>
                                     {(el.polygonPoints ?? []).map((pt, idx) => (
