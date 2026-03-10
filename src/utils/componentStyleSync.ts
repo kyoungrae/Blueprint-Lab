@@ -46,19 +46,25 @@ function mergeTableCellData(target: DrawElement, source: DrawElement): DrawEleme
         }));
 
     for (let i = 0; i < totalCells; i++) {
-        const srcContent = (srcV2?.[i]?.content ?? srcLegacy?.[i] ?? '').trim();
-        if (srcContent.length === 0) continue;
+        const srcVal = (srcV2?.[i]?.content ?? srcLegacy?.[i] ?? '').trim();
+        const tgtVal = (newV2[i]?.content ?? newLegacy[i] ?? '').trim();
 
-        const srcVal = srcV2?.[i]?.content ?? srcLegacy?.[i] ?? '';
-        const tgtVal = newV2[i]?.content ?? newLegacy[i] ?? '';
+        // 값이 같으면 동기화할 필요 없음 (trim 후 비교로 미세한 공백 차이 무시)
         if (srcVal === tgtVal) continue;
 
-        const tgtContent = (tgtVal || '').trim();
-        // 컴포넌트 표 셀에 기본 텍스트가 있더라도, 인스턴스에서 사용자가 해당 셀 내용을 변경했다면 덮어쓰지 않는다.
-        if (tgtContent.length > 0 && tgtVal !== srcVal) continue;
+        // 사용자가 인스턴스에서 해당 셀을 직접 수정한 경우(tableCellLockedIndices에서 제거됨), 동기화하지 않는다.
+        if (target.fromComponentId) {
+            if (target.tableCellLockedIndices) {
+                if (!target.tableCellLockedIndices.includes(i)) continue;
+            } else {
+                if (tgtVal.length > 0) continue;
+                if (!srcVal.length) continue;
+            }
+        }
 
-        newLegacy[i] = srcVal;
-        if (newV2[i]) newV2[i] = { ...newV2[i], content: srcVal };
+        const actualSrcVal = srcV2?.[i]?.content ?? srcLegacy?.[i] ?? '';
+        newLegacy[i] = actualSrcVal;
+        if (newV2[i]) newV2[i] = { ...newV2[i], content: actualSrcVal };
         changed = true;
     }
 
@@ -92,8 +98,15 @@ function applyStyleFromSource(target: DrawElement, source: DrawElement): DrawEle
             if (target.hasComponentText === undefined && target.fromComponentId && srcText.length === 0) continue;
         }
         const srcVal = source[key];
-        if (srcVal === undefined) continue;
         const tgtVal = target[key];
+
+        // 둘 다 Falsy(undefined, null, "")한 값이면 같은 것으로 간주하여 무한 루프 방지
+        const isSrcFalsy = srcVal === undefined || srcVal === null || srcVal === "";
+        const isTgtFalsy = tgtVal === undefined || tgtVal === null || tgtVal === "";
+        if (isSrcFalsy && isTgtFalsy) continue;
+
+        if (srcVal === undefined) continue;
+
         if (JSON.stringify(srcVal) !== JSON.stringify(tgtVal)) {
             (updated as any)[key] =
                 typeof srcVal === 'object' && srcVal !== null

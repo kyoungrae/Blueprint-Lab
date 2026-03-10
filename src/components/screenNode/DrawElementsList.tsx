@@ -62,6 +62,7 @@ interface DrawElementsListProps {
     deleteElements: (ids: string[]) => void;
     currentProjectId?: string | null;
     imageCropMode: boolean;
+    flushPendingSync: () => void;
 }
 
 const DrawElementsList: React.FC<DrawElementsListProps> = memo(({
@@ -100,6 +101,7 @@ const DrawElementsList: React.FC<DrawElementsListProps> = memo(({
     deleteElements,
     currentProjectId,
     imageCropMode,
+    flushPendingSync,
 }) => {
     // drawElements를 직접 구독 — ScreenNodeFull이 구독할 필요 없음
     const screenCanvasCtx = useScreenCanvasStore();
@@ -159,6 +161,7 @@ const DrawElementsList: React.FC<DrawElementsListProps> = memo(({
                     deleteElements={deleteElements}
                     currentProjectId={currentProjectId}
                     imageCropMode={imageCropMode}
+                    flushPendingSync={flushPendingSync}
                 />
             ))}
         </>

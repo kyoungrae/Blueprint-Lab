@@ -44,6 +44,7 @@ interface CanvasElementProps {
     deleteElements: (ids: string[]) => void;
     currentProjectId?: string | null;
     imageCropMode: boolean;
+    flushPendingSync: () => void;
 }
 
 function areCanvasElementPropsEqual(prev: CanvasElementProps, next: CanvasElementProps): boolean {
@@ -127,6 +128,7 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
     deleteElements,
     currentProjectId,
     imageCropMode,
+    flushPendingSync,
 }) => {
     // 드래그 미리보기 위치를 스토어에서 직접 구독 (자기 자신것만)
     const previewPos = useDragStore(state => state.previews?.[el.id]);
@@ -253,6 +255,7 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                 <TableElement
                     el={el}
                     isLocked={isLocked}
+                    isSelected={isSelected}
                     editingTableId={editingTableId}
                     editingCellIndex={editingCellIndex}
                     selectedCellIndices={selectedCellIndices}
@@ -267,6 +270,7 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                     getDrawElements={getDrawElements}
                     isDraggingCellSelectionRef={isDraggingCellSelectionRef}
                     dragStartCellIndexRef={dragStartCellIndexRef}
+                    flushPendingSync={flushPendingSync}
                 />
             )}
             {el.type === 'func-no' && (

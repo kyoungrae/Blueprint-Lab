@@ -48,6 +48,20 @@ export function useCanvasElementActions({
     PENDING_FONT_SIZE_DEBOUNCE_MS,
 }: UseCanvasElementActionsOptions) {
 
+    const flushPendingSync = useCallback(() => {
+        if (pendingSyncTimerRef.current) {
+            clearTimeout(pendingSyncTimerRef.current);
+            pendingSyncTimerRef.current = null;
+        }
+        const targets = pendingSyncDrawElementsRef.current;
+        if (targets) {
+            pendingSyncDrawElementsRef.current = null;
+            update({ drawElements: targets });
+            syncUpdate({ drawElements: targets });
+            saveHistory(targets);
+        }
+    }, [update, syncUpdate, saveHistory, pendingSyncTimerRef, pendingSyncDrawElementsRef]);
+
     // ── updateElement ────────────────────────────────────────────────────────
     const updateElement = useCallback(
         (id: string, updates: Partial<DrawElement>) => {
@@ -62,8 +76,7 @@ export function useCanvasElementActions({
 
             if (isThrottledOnly) {
                 const finalUpdates = { ...updates };
-                // 텍스트를 수정하는 경우, 더 이상 컴포넌트 스타일 동기화(text) 대상이 되지 않도록 플래그 설정
-                if ('text' in updates && drawElements.find(e => e.id === id)?.fromComponentId) {
+                if (finalUpdates.text !== undefined && drawElements.find(e => e.id === id)?.fromComponentId) {
                     finalUpdates.hasComponentText = false;
                 }
 
@@ -114,8 +127,7 @@ export function useCanvasElementActions({
             }
 
             const finalUpdates = { ...updates };
-            // 컴포넌트 인스턴스의 텍스트를 수정하는 경우, 더 이상 컴포넌트 스타일 동기화 대상이 되지 않도록 플래그 설정
-            if ('text' in updates && drawElements.find(e => e.id === id)?.fromComponentId) {
+            if (finalUpdates.text !== undefined && drawElements.find(e => e.id === id)?.fromComponentId) {
                 finalUpdates.hasComponentText = false;
             }
 
@@ -334,5 +346,6 @@ export function useCanvasElementActions({
         handleObjectAlign,
         handleGroup,
         handleUngroup,
+        flushPendingSync,
     };
 }

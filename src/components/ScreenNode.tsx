@@ -1892,6 +1892,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         handleObjectAlign,
         handleGroup,
         handleUngroup,
+        flushPendingSync,
     } = useCanvasElementActions({
         screen,
         getDrawElements,
@@ -3777,6 +3778,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     deleteElements={deleteElements}
                                                                     currentProjectId={currentProjectId}
                                                                     imageCropMode={imageCropMode}
+                                                                    flushPendingSync={flushPendingSync}
                                                                 />
 
                                                                 {/* Overlays (Group handles, previews, etc.) - rendered once per canvas */}

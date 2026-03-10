@@ -8,9 +8,11 @@ import { FONT_SIZE_OVERRIDE_EVENT, COLOR_OVERRIDE_EVENT, TEXT_STYLE_OVERRIDE_EVE
 interface TableElementProps {
     el: DrawElement;
     isLocked: boolean;
+    isSelected: boolean;
     editingTableId: string | null;
     editingCellIndex: number | null;
     selectedCellIndices: number[];
+    flushPendingSync: () => void;
     tableCellSelectionRestoreRef: React.MutableRefObject<{ tableId: string; cellIndex: number } | null>;
     setEditingTableId: (id: string | null) => void;
     setEditingCellIndex: (idx: number | null) => void;
@@ -27,9 +29,11 @@ interface TableElementProps {
 const TableElement: React.FC<TableElementProps> = memo(({
     el,
     isLocked,
+    isSelected,
     editingTableId,
     editingCellIndex,
     selectedCellIndices,
+    flushPendingSync,
     tableCellSelectionRestoreRef,
     setEditingTableId,
     setEditingCellIndex,
@@ -40,7 +44,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
     updateElement,
     getDrawElements,
     isDraggingCellSelectionRef,
-    dragStartCellIndexRef
+    dragStartCellIndexRef,
 }) => {
     const rows = el.tableRows || 3;
     const cols = el.tableCols || 3;
@@ -221,7 +225,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                         cellElements.push(
                             <div
                                 key={cellIndex}
-                                className={`relative px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center ${isHeaderRow && !cellColor ? 'font-bold text-[#2c3e7c]' : 'text-gray-700'}`}
+                                className={`relative px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center nodrag nopan ${isHeaderRow && !cellColor ? 'font-bold text-[#2c3e7c]' : 'text-gray-700'}`}
                                 style={{
                                     gridColumn: cellColSpan > 1 ? `span ${cellColSpan}` : undefined,
                                     gridRow: cellRowSpan > 1 ? `span ${cellRowSpan}` : undefined,
@@ -235,9 +239,12 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                     overflow: 'hidden', minWidth: 0, minHeight: 0,
                                 }}
                                 onMouseDown={(e) => {
-                                    if (editingTableId === el.id) {
+                                    // 이미 선택된 상태이거나 편집 중인 경우에만 중단하여 셀 선택/편집 로직이 작동하게 함.
+                                    // 선택되지 않은 상태에서는 상위로 전파하여 테이블 자체가 먼저 선택되도록 허용.
+                                    if (isSelected || editingTableId === el.id) {
                                         e.stopPropagation();
                                     }
+
                                     if (isLocked) return;
                                     if (editingTableId !== el.id) return;
                                     if (editingCellIndex !== null) setEditingCellIndex(null);
@@ -289,12 +296,13 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                             newData[cellIndex] = html;
 
                                             // 편집된 셀은 더 이상 컴포넌트 잠금 대상이 아니도록 인덱스 제거
-                                            const newLocked = el.tableCellLockedIndices?.filter(idx => idx !== cellIndex);
+                                            const currentLocked = el.tableCellLockedIndices || (el.fromComponentId ? Array.from({ length: totalCells }, (_, k) => k) : []);
+                                            const newLocked = currentLocked.filter(idx => idx !== cellIndex);
 
                                             updateElement(el.id, {
                                                 tableCellData: newData,
                                                 tableCellDataV2: newV2,
-                                                tableCellLockedIndices: newLocked && newLocked.length > 0 ? newLocked : undefined
+                                                tableCellLockedIndices: newLocked.length > 0 ? newLocked : (el.fromComponentId ? [] : undefined)
                                             });
                                         }}
                                         onSelectionChange={(rect) => {
@@ -303,28 +311,22 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         }}
                                         onBlur={() => {
                                             setEditingCellIndex(null);
-                                            syncUpdate({ drawElements: getDrawElements() });
+                                            flushPendingSync();
                                         }}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
                                                 setEditingCellIndex(null);
-                                                syncUpdate({ drawElements: getDrawElements() });
+                                                flushPendingSync();
                                                 return;
                                             }
                                             if (e.key === 'Tab') {
                                                 e.preventDefault();
                                                 syncUpdate({ drawElements: getDrawElements() });
-                                                const locked = el.fromComponentId ? (el.tableCellLockedIndices ?? []) : [];
-                                                const findNext = (start: number, dir: 1 | -1) => {
-                                                    for (let k = 1; k <= totalCells; k++) {
-                                                        const i = (start + k * dir + totalCells) % totalCells;
-                                                        if (!locked.includes(i)) return i;
-                                                    }
-                                                    return cellIndex;
-                                                };
-                                                const next = e.shiftKey ? findNext(cellIndex, -1) : findNext(cellIndex, 1);
-                                                if (next !== cellIndex) { setEditingCellIndex(next); setSelectedCellIndices([next]); }
+                                                const dir = e.shiftKey ? -1 : 1;
+                                                const next = (cellIndex + dir + totalCells) % totalCells;
+                                                setEditingCellIndex(next);
+                                                setSelectedCellIndices([next]);
                                             }
                                         }}
                                         onMouseDown={(e) => e.stopPropagation()}

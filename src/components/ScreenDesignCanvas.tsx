@@ -292,6 +292,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isExporting, setIsExporting] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
+    const lastSyncedComponentAtRef = useRef<string | null>(null);
     const { getNodes, fitView, screenToFlowPosition, flowToScreenPosition, getViewport, setViewport } = useReactFlow();
 
     const [isSectionDrawMode, setIsSectionDrawMode] = useState(false);
@@ -689,39 +690,52 @@ const ScreenDesignCanvasContent: React.FC = () => {
     // 컴포넌트 스타일 동기화: 연결된 컴포넌트 프로젝트의 스타일 변경을 화면 설계에 반영
     const linkedComponentProjectId = currentProject?.linkedComponentProjectId;
     const linkedProject = projects.find(p => p.id === linkedComponentProjectId);
-    const linkedUpdatedAt = linkedProject?.updatedAt;
 
     useEffect(() => {
         const linkedId = currentProject?.linkedComponentProjectId;
-        if (!linkedId) return;
+        const linkedAt = linkedProject?.updatedAt;
+        if (!linkedId || !linkedAt) return;
 
-        // screens를 의존성에서 제외하여 로컬 편집 시 즉시 초기화되는 현상 방지.
-        // 대신 최신 screens를 스토어에서 직접 가져와 사용한다.
-        const currentScreens = useScreenDesignStore.getState().screens;
-        if (!currentScreens.length) return;
+        // 이미 동기화한 시점이면 중단 (무한 루프 방지)
+        if (lastSyncedComponentAtRef.current === linkedAt) return;
 
-        const components = (linkedProject?.data as { components?: Screen[] })?.components ?? [];
-        if (!components.length) return;
+        // 프로젝트 자동 저장 등과 겹치지 않도록 약간의 지연 후 1회 수행
+        const timer = setTimeout(() => {
+            // screens를 의존성에서 제외하여 로컬 편집 시 즉시 초기화되는 현상 방지.
+            // 대신 최신 screens를 스토어에서 직접 가져와 사용한다.
+            const currentScreens = useScreenDesignStore.getState().screens;
+            if (!currentScreens.length) return;
 
-        const hasRefs = currentScreens.some((s) =>
-            (s.drawElements ?? []).some((e) => e.fromComponentId && e.fromElementId)
-        );
-        if (!hasRefs) return;
+            const components = (linkedProject?.data as { components?: Screen[] })?.components ?? [];
+            if (!components.length) return;
 
-        const updates = syncComponentStyles(currentScreens, components);
-        if (updates.size === 0) return;
+            const hasRefs = currentScreens.some((s) =>
+                (s.drawElements ?? []).some((e) => e.fromComponentId && e.fromElementId)
+            );
+            if (!hasRefs) {
+                lastSyncedComponentAtRef.current = linkedAt;
+                return;
+            }
 
-        updates.forEach((drawElements, screenId) => {
-            updateScreen(screenId, { drawElements });
-            sendOperation({
-                type: 'SCREEN_UPDATE',
-                targetId: screenId,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: { drawElements },
+            const updates = syncComponentStyles(currentScreens, components);
+            lastSyncedComponentAtRef.current = linkedAt;
+
+            if (updates.size === 0) return;
+
+            updates.forEach((drawElements, screenId) => {
+                updateScreen(screenId, { drawElements });
+                sendOperation({
+                    type: 'SCREEN_UPDATE',
+                    targetId: screenId,
+                    userId: user?.id || 'anonymous',
+                    userName: user?.name || 'Anonymous',
+                    payload: { drawElements },
+                });
             });
-        });
-    }, [linkedUpdatedAt, currentProject, updateScreen, sendOperation, user]); // Removed screens to prevent immediate reset during local edits
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    }, [linkedProject?.updatedAt, currentProject?.linkedComponentProjectId, updateScreen, sendOperation, user]); // Removed currentProject to prevent loop on local saves
 
     // Auto-save to ProjectStore (로컬: 주기적 저장, 원격: 섹션 포함해 PATCH 전송)
     // 전송 직전에 getState + projectStore fallback 사용해 state_sync로 비워진 뒤 빈 payload가 나가는 것 방지
