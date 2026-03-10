@@ -277,9 +277,10 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                 });
             }}
             onMouseDown={(e) => {
-                if (isSelected && !isLocked) {
+                if (isSelected && !isLocked && !e.shiftKey) {
                     e.stopPropagation();
                 }
+                // Shift 키를 누른 경우에는 이벤트 전파를 허용하여 상위 객체의 선택 해제 로직이 동작하도록 함
             }}
             className={`nodrag nopan outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0 overflow-visible' : 'p-0 min-h-0 w-full overflow-visible'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
             style={{

@@ -332,7 +332,12 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                                 setSelectedCellIndices([next]);
                                             }
                                         }}
-                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => {
+                                        if (!e.shiftKey) {
+                                            e.stopPropagation();
+                                        }
+                                        // Shift 키를 누른 경우에는 이벤트 전파를 허용하여 상위 객체의 선택 해제 로직이 동작하도록 함
+                                    }}
                                         className="w-full h-full bg-white border-none outline-none p-1 absolute inset-0 z-[20] nodrag nopan"
                                         style={{
                                             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
