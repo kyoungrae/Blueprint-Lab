@@ -207,7 +207,8 @@ ssh -p 22222 vims@192.168.0.141
 cd ~/projects/blueprint-lab
 
 # 1. 기존 컨테이너 중지 및 삭제 (DB/Redis는 데이터 유지가 필요하면 앱만 교체, 이번처럼 이슈 시 전체 교체)
-podman rm -f blueprint-frontend blueprint-backend  # blueprint-mongodb blueprint-redis
+podman rm -f blueprint-frontend blueprint-backend  
+# blueprint-mongodb blueprint-redis
 
 # 2. 신규 이미지 로드 및 호환 DB 다운로드
 # podman pull docker.io/library/mongo:4.4
