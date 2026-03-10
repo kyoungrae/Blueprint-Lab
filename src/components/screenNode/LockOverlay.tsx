@@ -19,6 +19,7 @@ export const LockOverlay: React.FC<LockOverlayProps> = ({
 
     return (
         <div
+            data-lock-overlay
             onDoubleClick={!isLockedByOther ? onDoubleClick : undefined}
             className="absolute inset-0 z-[100] cursor-pointer group/mask hover:bg-white/10 transition-all duration-300 rounded-[inherit]"
         >

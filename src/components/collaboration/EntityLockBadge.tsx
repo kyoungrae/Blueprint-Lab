@@ -17,6 +17,7 @@ export function EntityLockBadge({ entityId }: EntityLockBadgeProps) {
 
     return (
         <div
+            data-entity-lock-badge
             className={`absolute -top-2 -right-2 px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5 shadow-lg z-10 whitespace-nowrap shrink-0 ${isOwnLock
                 ? 'bg-blue-500 text-white'
                 : 'bg-amber-500 text-black'

@@ -1501,6 +1501,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 '.react-flow__edges',
                 '.react-flow__edgelabel-renderer',
                 '.react-flow__handle',
+                '[data-entity-lock-badge]',
+                '[data-lock-overlay]',
             ];
             if (excludeSelectors.some(sel => node.closest?.(sel))) return false;
             if (node.classList?.contains('react-flow__node')) {
@@ -1519,6 +1521,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 '.react-flow__edges',
                 '.react-flow__edgelabel-renderer',
                 '.react-flow__handle',
+                '[data-entity-lock-badge]',
+                '[data-lock-overlay]',
             ];
             return !excludeSelectors.some(sel => node.closest?.(sel));
         };
