@@ -166,6 +166,7 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                     editingTextId={editingTextId}
                     updateElement={updateElement}
                     onSelectionChange={setTextSelectionRect}
+                    autoResizeContainer={el.type === 'rect'} // 사각형에만 자동 높이 조절 활성화
                 />
             )}
             {el.type === 'polygon' && (() => {

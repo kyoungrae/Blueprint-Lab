@@ -22,6 +22,8 @@ interface DrawTextComponentProps {
     compact?: boolean;
     /** 낙관적 폰트 크기 표시 (툴바 +/- 클릭 시 즉시 반영) */
     fontSizeOverride?: number;
+    /** 텍스트 높이에 따른 도형 높이 자동 조절 */
+    autoResizeContainer?: boolean;
 }
 
 const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
@@ -33,7 +35,8 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     autoFocus,
     className,
     compact = false,
-    fontSizeOverride
+    fontSizeOverride,
+    autoResizeContainer = false
 }) => {
     const divRef = useRef<HTMLDivElement>(null);
     const blurFromToolbarRef = useRef(false);
@@ -120,6 +123,46 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             }
         };
     }, []);
+
+    // 텍스트 영역 높이 자동 조절
+    useEffect(() => {
+        const el = divRef.current;
+        if (!el) return;
+        
+        const adjustHeight = () => {
+            // 현재 높이를 기반으로 자동 조절
+            const scrollHeight = el.scrollHeight;
+            const currentHeight = el.offsetHeight;
+            
+            // 스크롤이 필요한 경우 높이를 늘림
+            if (scrollHeight > currentHeight) {
+                el.style.height = 'auto';
+                el.style.height = `${scrollHeight}px`;
+            }
+            
+            // 도형 높이 자동 조절 (활성화된 경우)
+            if (autoResizeContainer && element.type === 'rect') {
+                const padding = compact ? 0 : 8; // px-2 = 8px
+                const newHeight = Math.max(element.height || 0, scrollHeight + padding * 2);
+                if (newHeight !== element.height) {
+                    onUpdate({ height: newHeight });
+                }
+            }
+        };
+        
+        // 텍스트 변경 시 높이 조절
+        const observer = new MutationObserver(adjustHeight);
+        observer.observe(el, { 
+            characterData: true, 
+            childList: true, 
+            subtree: true 
+        });
+        
+        // 초기 높이 조절
+        adjustHeight();
+        
+        return () => observer.disconnect();
+    }, [autoResizeContainer, element.type, element.height, compact, onUpdate]);
 
     useEffect(() => {
         if (autoFocus && divRef.current) {
@@ -241,7 +284,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                     e.stopPropagation();
                 }
             }}
-            className={`nodrag nopan outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0' : 'p-0 min-h-[1.4em] w-full'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
+            className={`nodrag nopan outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0 overflow-visible' : 'p-0 min-h-[1.4em] w-full overflow-visible'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
             style={{
                 fontSize: `${localFontSizeOverride ?? fontSizeOverride ?? (element.fontSize ?? 14)}px`,
                 color: localColorOverride ?? (element.color || '#333333'),

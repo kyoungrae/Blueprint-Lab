@@ -10,6 +10,7 @@ interface ShapeElementProps {
     editingTextId: string | null;
     updateElement: (id: string, updates: any) => void;
     onSelectionChange: (rect: DOMRect | null) => void;
+    autoResizeContainer?: boolean;
 }
 
 const ShapeElement: React.FC<ShapeElementProps> = memo(({
@@ -18,7 +19,8 @@ const ShapeElement: React.FC<ShapeElementProps> = memo(({
     isLocked,
     editingTextId,
     updateElement,
-    onSelectionChange
+    onSelectionChange,
+    autoResizeContainer = false
 }) => {
     const isCompact = (el.width ?? 0) < 48 && (el.height ?? 0) < 48;
     const isCircle = el.type === 'circle';
@@ -31,7 +33,7 @@ const ShapeElement: React.FC<ShapeElementProps> = memo(({
         borderRadius: el.borderRadius !== undefined ? (typeof el.borderRadius === 'number' ? `${el.borderRadius}px` : el.borderRadius) : (isCircle ? '50%' : '0px'),
     };
 
-    const alignmentClasses = `w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
+    const alignmentClasses = `w-full h-full relative flex ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
         } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
         }`;
 
@@ -47,6 +49,7 @@ const ShapeElement: React.FC<ShapeElementProps> = memo(({
                     autoFocus={editingTextId === el.id}
                     className={isCompact ? 'px-0' : (isCircle ? 'px-4' : 'px-2')}
                     compact={isCompact}
+                    autoResizeContainer={autoResizeContainer}
                 />
             )}
         </div>

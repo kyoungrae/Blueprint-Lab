@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { memo, useRef, useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Trash2, Database, GripHorizontal, Edit3, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
@@ -26,6 +26,67 @@ interface RightPaneProps {
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     screenId: string;
 }
+
+// 자동 높이 조절 textarea 컴포넌트
+const AutoResizeTextarea: React.FC<{
+    value: string;
+    onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+    onCompositionEnd?: (e: React.CompositionEvent<HTMLTextAreaElement>) => void;
+    onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void;
+    onMouseDown?: (e: React.MouseEvent<HTMLTextAreaElement>) => void;
+    placeholder?: string;
+    disabled?: boolean;
+    minRows?: number;
+    className?: string;
+    id?: string;
+}> = ({ 
+    value, 
+    onChange, 
+    onCompositionEnd, 
+    onBlur, 
+    onMouseDown, 
+    placeholder, 
+    disabled, 
+    minRows = 1, 
+    className,
+    id 
+}) => {
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+
+        // 높이 초기화 후 자동 조절
+        textarea.style.height = 'auto';
+        const scrollHeight = textarea.scrollHeight;
+        const lineHeight = 16; // text-[11px] leading-relaxed의 대략적인 높이
+        const minHeight = lineHeight * minRows;
+        const newHeight = Math.max(minHeight, scrollHeight);
+        textarea.style.height = `${newHeight}px`;
+    }, [value, minRows]);
+
+    return (
+        <textarea
+            ref={textareaRef}
+            id={id}
+            value={value}
+            onChange={onChange}
+            onCompositionEnd={onCompositionEnd}
+            onBlur={onBlur}
+            onMouseDown={onMouseDown}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={1}
+            className={className}
+            style={{ 
+                resize: 'none', 
+                overflow: 'hidden',
+                height: 'auto'
+            }}
+        />
+    );
+};
 
 const getRows = (text: string | undefined, minRows = 2): number => {
     if (!text) return minRows;
@@ -225,7 +286,8 @@ const RightPane: React.FC<RightPaneProps> = ({
                             >
                                 <span style={{ marginTop: '-1px' }}>{fn.text}</span>
                             </div>
-                            <textarea
+                            <AutoResizeTextarea
+                                id={`func-${fn.id}`}
                                 value={displayValue(`func-${fn.id}`, (fn as any).description || '')}
                                 onChange={(e) => handleFuncDescChange(fn as any, e.target.value, e)}
                                 onCompositionEnd={(e) => handleFuncDescCompositionEnd(fn as any, (e.target as HTMLTextAreaElement).value)}
@@ -233,25 +295,25 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 onMouseDown={(e) => e.stopPropagation()}
                                 disabled={isLocked}
                                 placeholder={`${fn.text}번에 대한 기능 설명...`}
-                                rows={getRows((fn as any).description, 1)}
-                                className="nodrag flex-1 bg-transparent border-none outline-none text-[11px] leading-relaxed resize-none overflow-hidden text-gray-800 placeholder-gray-300"
+                                minRows={1}
+                                className="nodrag flex-1 bg-transparent border-none outline-none text-[11px] leading-relaxed text-gray-800 placeholder-gray-300"
                             />
                         </div>
                     ))}
                     {funcNos.length > 0 && (
                         <div className="border-b border-gray-100 pt-1" />
                     )}
-                    <textarea
+                    <AutoResizeTextarea
+                        id="functionDetails"
                         value={displayValue('functionDetails', screen.functionDetails || '')}
                         onChange={(e) => handleChange('functionDetails', e.target.value, e)}
                         onCompositionEnd={(e) => handleCompositionEnd('functionDetails', (e.target as HTMLTextAreaElement).value)}
                         onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; setComposing(null); update({ functionDetails: v }); syncUpdate({ functionDetails: v }); }}
                         onMouseDown={(e) => e.stopPropagation()}
                         disabled={isLocked}
-                        rows={getRows(screen.functionDetails, 3)}
-                        className={`nodrag w-full text-[11px] leading-relaxed bg-transparent border-none outline-none resize-none overflow-hidden ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
+                        minRows={3}
+                        className={`nodrag w-full text-[11px] leading-relaxed bg-transparent border-none outline-none ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
                         placeholder="기타 상세 기능 설명 입력..."
-                        spellCheck={false}
                     />
                 </div>
             </div>
