@@ -255,7 +255,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                         disabled={isLocked}
                         rows={getRows(screen.initialSettings, 2)}
                         className={`nodrag w-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none overflow-hidden ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
-                        placeholder="• 화면 진입 시 초기 설정..."
+                        placeholder={isLocked ? "" : "• 화면 진입 시 초기 설정..."}
                         spellCheck={false}
                     />
                 </div>
@@ -294,7 +294,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; setComposing(null); const next = drawElements.map(it => it.id === fn.id ? { ...it, description: v } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 disabled={isLocked}
-                                placeholder={`${fn.text}번에 대한 기능 설명...`}
+                                placeholder={isLocked ? "" : `${fn.text}번에 대한 기능 설명...`}
                                 minRows={1}
                                 className="nodrag flex-1 bg-transparent border-none outline-none text-[11px] leading-relaxed text-gray-800 placeholder-gray-300"
                             />
@@ -313,7 +313,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                         disabled={isLocked}
                         minRows={3}
                         className={`nodrag w-full text-[11px] leading-relaxed bg-transparent border-none outline-none ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
-                        placeholder="기타 상세 기능 설명 입력..."
+                        placeholder={isLocked ? "" : "기타 상세 기능 설명 입력..."}
                     />
                 </div>
             </div>

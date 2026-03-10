@@ -304,23 +304,29 @@ const StylePanel: React.FC<StylePanelProps> = ({
                     </div>
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] text-gray-400 font-mono uppercase">{currentBgColor}</span>
-                        <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
-                            <input
-                                type="color"
-                                value={currentBgColor}
-                                onChange={(e) => {
-                                    const color = e.target.value;
-                                    applyBgColor(color);
-                                    addRecentFillColor(color);
-                                    (e.target as HTMLInputElement).blur();
-                                }}
-                                className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
-                            />
+                        <div className={`relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer ${currentBgColor === 'transparent' ? 'bg-white' : ''}`}>
+                            {currentBgColor === 'transparent' ? (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-full h-[1px] bg-red-400 rotate-45" />
+                                </div>
+                            ) : (
+                                <input
+                                    type="color"
+                                    value={currentBgColor}
+                                    onChange={(e) => {
+                                        const color = e.target.value;
+                                        applyBgColor(color);
+                                        addRecentFillColor(color);
+                                        (e.target as HTMLInputElement).blur();
+                                    }}
+                                    className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
+                                />
+                            )}
                         </div>
                     </div>
                 </div>
                 <div className="flex gap-1.5 justify-end">
-                    {['#ffffff', '#f1f5f9', '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#2c3e7c'].map(color => (
+                    {['#ffffff', '#f1f5f9', '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#2c3e7c', 'transparent'].map(color => (
                         <button
                             key={color}
                             type="button"
@@ -328,9 +334,11 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                 applyBgColor(color);
                                 addRecentFillColor(color);
                             }}
-                            className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110`}
-                            style={{ backgroundColor: color }}
-                        />
+                            className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden`}
+                            style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
+                        >
+                            {color === 'transparent' && <div className="w-full h-[1px] bg-red-400 rotate-45" />}
+                        </button>
                     ))}
                 </div>
                 {recentFillColors.length > 0 && (
@@ -342,10 +350,12 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                     key={color}
                                     type="button"
                                     onClick={() => { applyBgColor(color); addRecentFillColor(color); }}
-                                    className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 ${currentBgColor.toLowerCase() === color ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
-                                    style={{ backgroundColor: color }}
+                                    className={`w-3.5 h-3.5 rounded-full border border-gray-200 transition-transform hover:scale-110 flex items-center justify-center overflow-hidden ${currentBgColor.toLowerCase() === color ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
+                                    style={{ backgroundColor: color === 'transparent' ? 'white' : color }}
                                     title={color}
-                                />
+                                >
+                                    {color === 'transparent' && <div className="w-full h-[1px] bg-red-400 rotate-45" />}
+                                </button>
                             ))}
                         </div>
                     </div>
