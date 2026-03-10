@@ -6,6 +6,7 @@ import {
     AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
     AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd,
     AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
+    Bold, Italic, Underline, Strikethrough, Type, Palette
 } from 'lucide-react';
 import type { DrawElement, TableCellData } from '../../types/screenDesign';
 import { flatIdxToRowCol, rowColToFlatIdx, getV2Cells } from './types';
@@ -677,6 +678,124 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                             </div>
                         </div>
                     )}
+                </div>
+
+                {/* Font Preferences */}
+                <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center gap-1.5 text-gray-700">
+                        <Type size={12} className="text-gray-400" />
+                        <span className="text-[11px] font-bold">폰트 설정</span>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                        {/* Font Size & Color */}
+                        <div className="flex items-center gap-3">
+                            <div className="flex flex-col gap-1.5 flex-1">
+                                <span className="text-[10px] text-gray-500 font-medium pl-0.5">글자 크기</span>
+                                <div className="flex items-center gap-1 bg-gray-50 rounded px-1.5 py-1 border border-gray-100">
+                                    <input
+                                        type="number" min="8" max="72"
+                                        value={(() => {
+                                            const isTableCellMode = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                            const s = isTableCellMode ? selectedEl.tableCellStyles?.[selectedCellIndices[0]] : null;
+                                            return s?.fontSize || selectedEl.fontSize || 13;
+                                        })()}
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value) || 13;
+                                            if (selectedCellIndices.length > 0 && editingTableId === selectedEl.id) {
+                                                const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                selectedCellIndices.forEach(idx => {
+                                                    newStyles[idx] = { ...(newStyles[idx] || {}), fontSize: val };
+                                                });
+                                                updateEl({ tableCellStyles: newStyles });
+                                            } else {
+                                                updateEl({ fontSize: val });
+                                            }
+                                        }}
+                                        onMouseDown={e => e.stopPropagation()}
+                                        className="w-full bg-transparent text-[11px] font-bold text-gray-700 outline-none"
+                                    />
+                                    <span className="text-[9px] text-gray-400">px</span>
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-1.5 flex-1">
+                                <span className="text-[10px] text-gray-500 font-medium pl-0.5">글자 색상</span>
+                                <div className="flex items-center gap-2">
+                                    <div className="relative w-7 h-7 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
+                                        <input
+                                            type="color"
+                                            value={(() => {
+                                                const isTableCellMode = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                const s = isTableCellMode ? selectedEl.tableCellStyles?.[selectedCellIndices[0]] : null;
+                                                return s?.color || selectedEl.color || '#333333';
+                                            })()}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (selectedCellIndices.length > 0 && editingTableId === selectedEl.id) {
+                                                    const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                    selectedCellIndices.forEach(idx => {
+                                                        newStyles[idx] = { ...(newStyles[idx] || {}), color: val };
+                                                    });
+                                                    updateEl({ tableCellStyles: newStyles });
+                                                } else {
+                                                    updateEl({ color: val });
+                                                }
+                                            }}
+                                            onMouseDown={e => e.stopPropagation()}
+                                            className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
+                                        />
+                                        <div className="w-full h-full" style={{
+                                            backgroundColor: (() => {
+                                                const isTableCellMode = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                                const s = isTableCellMode ? selectedEl.tableCellStyles?.[selectedCellIndices[0]] : null;
+                                                return s?.color || selectedEl.color || '#333333';
+                                            })()
+                                        }} />
+                                    </div>
+                                    <Palette size={14} className="text-gray-400" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Bold, Italic, Underline Icons */}
+                        <div className="flex gap-1.5">
+                            {[
+                                { key: 'fontWeight', value: 'bold', normal: 'normal', icon: <Bold size={14} />, label: '굵게' },
+                                { key: 'fontStyle', value: 'italic', normal: 'normal', icon: <Italic size={14} />, label: '기울임' },
+                                { key: 'textDecoration', value: 'underline', normal: 'none', icon: <Underline size={14} />, label: '밑줄' },
+                                { key: 'textDecoration', value: 'line-through', normal: 'none', icon: <Strikethrough size={14} />, label: '취소선' },
+                            ].map((opt, i) => {
+                                const isTableCellMode = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                const currentVal = isTableCellMode
+                                    ? (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.[opt.key as any] || selectedEl[opt.key as keyof DrawElement] || opt.normal)
+                                    : (selectedEl[opt.key as keyof DrawElement] || opt.normal);
+
+                                const isActive = currentVal === opt.value;
+
+                                return (
+                                    <button
+                                        key={i}
+                                        onMouseDown={e => e.stopPropagation()}
+                                        onClick={() => {
+                                            const nextVal = isActive ? opt.normal : opt.value;
+                                            if (isTableCellMode) {
+                                                const newStyles = [...(selectedEl.tableCellStyles || Array(totalCells).fill(undefined))];
+                                                selectedCellIndices.forEach(idx => {
+                                                    newStyles[idx] = { ...(newStyles[idx] || {}), [opt.key]: nextVal };
+                                                });
+                                                updateEl({ tableCellStyles: newStyles });
+                                            } else {
+                                                updateEl({ [opt.key]: nextVal });
+                                            }
+                                        }}
+                                        className={`w-9 h-9 flex items-center justify-center rounded-lg border transition-all ${isActive ? 'bg-[#2c3e7c] text-white border-[#2c3e7c] shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
+                                        title={opt.label}
+                                    >
+                                        {opt.icon}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Text Alignment */}

@@ -352,19 +352,31 @@ const StylePanel: React.FC<StylePanelProps> = ({
                 )}
             </div>
 
-            {/* Text Style (굵기, 기울기, 밑줄, 폰트) - 텍스트 요소 선택 시 */}
-            {isText && selectedEl && (
+            {(isText || isTableCellMode) && selectedEl && (
                 <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
                     <span className="text-[11px] text-gray-600 font-medium">텍스트 스타일</span>
                     <div className="flex items-center gap-1">
                         <button
                             type="button"
                             onClick={() => {
-                                updateElements(selectedElementIds, (el) => ({
-                                    fontWeight: el.fontWeight === 'bold' ? 'normal' : 'bold'
-                                }));
+                                updateElements(selectedElementIds, (el) => {
+                                    if (el.type === 'table' && editingTableId === el.id && selectedCellIndices.length > 0) {
+                                        const s = el.tableCellStyles?.[selectedCellIndices[0]];
+                                        const nextVal = (s?.fontWeight || el.fontWeight || 'normal') === 'bold' ? 'normal' : 'bold';
+                                        const total = (el.tableRows || 3) * (el.tableCols || 3);
+                                        const next = [...(el.tableCellStyles || Array(total).fill(undefined))];
+                                        selectedCellIndices.forEach(idx => { next[idx] = { ...(next[idx] || {}), fontWeight: nextVal }; });
+                                        return { tableCellStyles: next };
+                                    }
+                                    return { fontWeight: (el.fontWeight || 'normal') === 'bold' ? 'normal' : 'bold' };
+                                });
                             }}
-                            className={`p-2 rounded-lg border transition-all ${selectedEl.fontWeight === 'bold' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c] font-bold' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                            className={`p-2 rounded-lg border transition-all ${(() => {
+                                if (isTableCellMode && selectedEl.type === 'table') {
+                                    return (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.fontWeight === 'bold') ? 'bg-gray-100 border-gray-300 text-[#2c3e7c] font-bold' : 'border-gray-200 text-gray-400 hover:bg-gray-50';
+                                }
+                                return selectedEl.fontWeight === 'bold' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c] font-bold' : 'border-gray-200 text-gray-400 hover:bg-gray-50';
+                            })()}`}
                             title="굵게"
                         >
                             <Bold size={14} />
@@ -372,11 +384,24 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         <button
                             type="button"
                             onClick={() => {
-                                updateElements(selectedElementIds, (el) => ({
-                                    fontStyle: el.fontStyle === 'italic' ? 'normal' : 'italic'
-                                }));
+                                updateElements(selectedElementIds, (el) => {
+                                    if (el.type === 'table' && editingTableId === el.id && selectedCellIndices.length > 0) {
+                                        const s = el.tableCellStyles?.[selectedCellIndices[0]];
+                                        const nextVal = (s?.fontStyle || el.fontStyle || 'normal') === 'italic' ? 'normal' : 'italic';
+                                        const total = (el.tableRows || 3) * (el.tableCols || 3);
+                                        const next = [...(el.tableCellStyles || Array(total).fill(undefined))];
+                                        selectedCellIndices.forEach(idx => { next[idx] = { ...(next[idx] || {}), fontStyle: nextVal }; });
+                                        return { tableCellStyles: next };
+                                    }
+                                    return { fontStyle: (el.fontStyle || 'normal') === 'italic' ? 'normal' : 'italic' };
+                                });
                             }}
-                            className={`p-2 rounded-lg border transition-all ${selectedEl.fontStyle === 'italic' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c]' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                            className={`p-2 rounded-lg border transition-all ${(() => {
+                                if (isTableCellMode && selectedEl.type === 'table') {
+                                    return (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.fontStyle === 'italic') ? 'bg-gray-100 border-gray-300 text-[#2c3e7c]' : 'border-gray-200 text-gray-400 hover:bg-gray-50';
+                                }
+                                return selectedEl.fontStyle === 'italic' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c]' : 'border-gray-200 text-gray-400 hover:bg-gray-50';
+                            })()}`}
                             title="기울임"
                         >
                             <Italic size={14} />
@@ -384,11 +409,24 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         <button
                             type="button"
                             onClick={() => {
-                                updateElements(selectedElementIds, (el) => ({
-                                    textDecoration: el.textDecoration === 'underline' ? 'none' : 'underline'
-                                }));
+                                updateElements(selectedElementIds, (el) => {
+                                    if (el.type === 'table' && editingTableId === el.id && selectedCellIndices.length > 0) {
+                                        const s = el.tableCellStyles?.[selectedCellIndices[0]];
+                                        const nextVal = (s?.textDecoration || el.textDecoration || 'none') === 'underline' ? 'none' : 'underline';
+                                        const total = (el.tableRows || 3) * (el.tableCols || 3);
+                                        const next = [...(el.tableCellStyles || Array(total).fill(undefined))];
+                                        selectedCellIndices.forEach(idx => { next[idx] = { ...(next[idx] || {}), textDecoration: nextVal }; });
+                                        return { tableCellStyles: next };
+                                    }
+                                    return { textDecoration: (el.textDecoration || 'none') === 'underline' ? 'none' : 'underline' };
+                                });
                             }}
-                            className={`p-2 rounded-lg border transition-all ${selectedEl.textDecoration === 'underline' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c]' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                            className={`p-2 rounded-lg border transition-all ${(() => {
+                                if (isTableCellMode && selectedEl.type === 'table') {
+                                    return (selectedEl.tableCellStyles?.[selectedCellIndices[0]]?.textDecoration === 'underline') ? 'bg-gray-100 border-gray-300 text-[#2c3e7c]' : 'border-gray-200 text-gray-400 hover:bg-gray-50';
+                                }
+                                return selectedEl.textDecoration === 'underline' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c]' : 'border-gray-200 text-gray-400 hover:bg-gray-50';
+                            })()}`}
                             title="밑줄"
                         >
                             <Underline size={14} />
@@ -440,7 +478,15 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                                 if (!res.ok) throw new Error();
                                                 const data = await res.json();
                                                 setFonts(prev => [...prev, data]);
-                                                updateElements(selectedElementIds, { fontFamily: data.name });
+                                                updateElements(selectedElementIds, (el) => {
+                                                    if (el.type === 'table' && editingTableId === el.id && selectedCellIndices.length > 0) {
+                                                        const total = (el.tableRows || 3) * (el.tableCols || 3);
+                                                        const next = [...(el.tableCellStyles || Array(total).fill(undefined))];
+                                                        selectedCellIndices.forEach(idx => { next[idx] = { ...(next[idx] || {}), fontFamily: data.name }; });
+                                                        return { tableCellStyles: next };
+                                                    }
+                                                    return { fontFamily: data.name };
+                                                });
                                             } catch (err) { console.error(err); }
                                             e.target.value = '';
                                         }} />
