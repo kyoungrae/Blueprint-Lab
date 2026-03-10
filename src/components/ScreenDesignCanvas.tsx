@@ -650,6 +650,25 @@ const ScreenDesignCanvasContent: React.FC = () => {
         }
     }, [currentProjectId, currentProject?.id, importData]);
 
+    const isConnectedOnSocket = useSyncStore(s => s.isConnected);
+    useEffect(() => {
+        if (!isConnectedOnSocket && currentProjectId && currentProject?.data) {
+            const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
+            if (data && Array.isArray(data.screens)) {
+                const local = useScreenDesignStore.getState();
+                const localCount = local.screens.length;
+                const serverCount = data.screens.length;
+                if (localCount !== serverCount || (localCount === 0 && serverCount > 0)) {
+                    importData({
+                        screens: data.screens || [],
+                        flows: data.flows || [],
+                        sections: Array.isArray((data as any).sections) ? (data as any).sections : [],
+                    });
+                }
+            }
+        }
+    }, [isConnectedOnSocket, currentProjectId, currentProject?.data, importData]);
+
     // 원격 프로젝트: 진입 시 서버에서 최신 데이터 fetch (새로고침 후 복원 시 currentProject.data 보강)
     useEffect(() => {
         if (currentProjectId && !currentProjectId.startsWith('local_') && typeof fetchProjects === 'function') {
@@ -974,9 +993,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     updateScreen(op.targetId, op.payload as any);
                 }
                 else if (op.type === 'SCREEN_DELETE') deleteScreen(op.targetId);
-                else if (op.type === 'SCREEN_FLOW_CREATE') addFlow(op.payload as any);
-                else if (op.type === 'SCREEN_FLOW_UPDATE') updateFlow(op.targetId, op.payload as any);
-                else if (op.type === 'SCREEN_FLOW_DELETE') deleteFlow(op.targetId);
+            } else if (op.type === 'SCREEN_FLOW_CREATE') {
+                addFlow(op.payload as any);
+            } else if (op.type === 'SCREEN_FLOW_UPDATE') {
+                updateFlow(op.targetId, op.payload as any);
+            } else if (op.type === 'SCREEN_FLOW_DELETE') {
+                deleteFlow(op.targetId);
             }
         };
         window.addEventListener('erd:remote_operation', handleRemoteOp as EventListener);

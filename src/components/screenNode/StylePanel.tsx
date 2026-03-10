@@ -357,7 +357,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                     fontWeight: el.fontWeight === 'bold' ? 'normal' : 'bold'
                                 }));
                             }}
-                            className={`p-2 rounded-lg border transition-colors ${selectedEl.fontWeight === 'bold' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
+                            className={`p-2 rounded-lg border transition-all ${selectedEl.fontWeight === 'bold' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c] font-bold' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
                             title="굵게"
                         >
                             <Bold size={14} />
@@ -369,7 +369,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                     fontStyle: el.fontStyle === 'italic' ? 'normal' : 'italic'
                                 }));
                             }}
-                            className={`p-2 rounded-lg border transition-colors ${selectedEl.fontStyle === 'italic' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
+                            className={`p-2 rounded-lg border transition-all ${selectedEl.fontStyle === 'italic' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c]' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
                             title="기울임"
                         >
                             <Italic size={14} />
@@ -381,7 +381,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                     textDecoration: el.textDecoration === 'underline' ? 'none' : 'underline'
                                 }));
                             }}
-                            className={`p-2 rounded-lg border transition-colors ${selectedEl.textDecoration === 'underline' ? 'bg-gray-200 border-gray-300' : 'border-gray-200 hover:bg-gray-50'}`}
+                            className={`p-2 rounded-lg border transition-all ${selectedEl.textDecoration === 'underline' ? 'bg-gray-100 border-gray-300 text-[#2c3e7c]' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
                             title="밑줄"
                         >
                             <Underline size={14} />

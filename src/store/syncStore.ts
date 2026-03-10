@@ -4,10 +4,16 @@ import type { ERDState, HistoryLog } from '../types/erd';
 
 // Socket Server URL
 // - Dev: localhost:3001 (backend)
-// - Prod with VITE_SOCKET_URL empty: same origin (window.location.origin)
+// - Prod with VITE_SOCKET_URL empty: same origin (window.location.host + port 3001)
 // - Prod with VITE_SOCKET_URL set: use that value
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL
-    || (import.meta.env.DEV ? 'http://localhost:3001' : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'));
+    || (import.meta.env.DEV
+        ? 'http://localhost:3001'
+        : (typeof window !== 'undefined'
+            ? `${window.location.protocol}//${window.location.hostname}:3001`
+            : 'http://localhost:3001'));
+
+console.log('📡 Collaboration Server URL:', SOCKET_URL);
 
 // Online User Interface
 export interface OnlineUser {
@@ -192,12 +198,12 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
         // Operation from other users
         socket.on('operation', (operation: CRDTOperation) => {
-            console.log('📥 Received operation:', operation.type);
+            console.log(`📥 [Collaboration] Received remote operation: ${operation.type} for ${operation.targetId}`);
             // Update local clock
             const { lamportClock } = get();
             set({ lamportClock: Math.max(lamportClock, operation.lamportClock) + 1 });
 
-            // Dispatch custom event for ERD store to handle
+            // Dispatch custom event for ERD/ScreenDesign stores to handle
             window.dispatchEvent(new CustomEvent('erd:remote_operation', { detail: operation }));
         });
 

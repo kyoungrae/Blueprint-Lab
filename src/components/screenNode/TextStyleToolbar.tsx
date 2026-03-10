@@ -86,7 +86,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     /** 로컬 강제 리렌더 (ScreenNode 전체 리렌더 우회) */
     // const [refresh, setRefresh] = useState(0);
 
-    const [computedSelection, setComputedSelection] = useState<{ fontSize?: number; fontFamily?: string }>({});
+    const [computedSelection, setComputedSelection] = useState<{
+        fontSize?: number;
+        fontFamily?: string;
+        bold?: boolean;
+        italic?: boolean;
+        underline?: boolean;
+    }>({});
 
     useEffect(() => {
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -102,7 +108,17 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                         const computed = window.getComputedStyle(element);
                         const fontSize = parseFloat(computed.fontSize);
                         const fontFamily = computed.fontFamily.split(',')[0].trim().replace(/^"|"$/g, '');
-                        setComputedSelection({ fontSize, fontFamily });
+                        // Detect active styles for selection
+                        const isBoldSelection = document.queryCommandState('bold');
+                        const isItalicSelection = document.queryCommandState('italic');
+                        const isUnderlineSelection = document.queryCommandState('underline');
+                        setComputedSelection({
+                            fontSize,
+                            fontFamily,
+                            bold: isBoldSelection,
+                            italic: isItalicSelection,
+                            underline: isUnderlineSelection
+                        });
                     } else {
                         setComputedSelection({});
                     }
@@ -462,15 +478,21 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
         }
     };
 
-    const isBold = fromTable && textSelectionFromTable
-        ? getCellStyle(textSelectionFromTable.cellIndex).fontWeight === 'bold'
-        : el.fontWeight === 'bold';
-    const isItalic = fromTable && textSelectionFromTable
-        ? getCellStyle(textSelectionFromTable.cellIndex).fontStyle === 'italic'
-        : el.fontStyle === 'italic';
-    const isUnderline = fromTable && textSelectionFromTable
-        ? getCellStyle(textSelectionFromTable.cellIndex).textDecoration === 'underline'
-        : el.textDecoration === 'underline';
+    const isBold = computedSelection.bold != null
+        ? computedSelection.bold
+        : (fromTable && textSelectionFromTable
+            ? getCellStyle(textSelectionFromTable.cellIndex).fontWeight === 'bold'
+            : el.fontWeight === 'bold');
+    const isItalic = computedSelection.italic != null
+        ? computedSelection.italic
+        : (fromTable && textSelectionFromTable
+            ? getCellStyle(textSelectionFromTable.cellIndex).fontStyle === 'italic'
+            : el.fontStyle === 'italic');
+    const isUnderline = computedSelection.underline != null
+        ? computedSelection.underline
+        : (fromTable && textSelectionFromTable
+            ? getCellStyle(textSelectionFromTable.cellIndex).textDecoration === 'underline'
+            : el.textDecoration === 'underline');
 
     const applyColor = (color: string, closePickerInput?: HTMLInputElement | null) => {
         const sel = window.getSelection();
@@ -533,7 +555,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 <button
                     type="button"
                     onMouseDown={(e) => { e.preventDefault(); applyBold(); }}
-                    className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isBold ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
+                    className={`p-1.5 rounded transition-colors ${isBold ? 'bg-gray-100 text-[#2c3e7c] font-bold' : 'text-gray-400 hover:bg-gray-50'}`}
                     title="굵게"
                 >
                     <Bold size={14} />
@@ -541,7 +563,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 <button
                     type="button"
                     onMouseDown={(e) => { e.preventDefault(); applyItalic(); }}
-                    className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isItalic ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
+                    className={`p-1.5 rounded transition-colors ${isItalic ? 'bg-gray-100 text-[#2c3e7c]' : 'text-gray-400 hover:bg-gray-50'}`}
                     title="기울임"
                 >
                     <Italic size={14} />
@@ -549,7 +571,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 <button
                     type="button"
                     onMouseDown={(e) => { e.preventDefault(); applyUnderline(); }}
-                    className={`p-1.5 rounded hover:bg-gray-200 transition-colors ${isUnderline ? 'bg-gray-300 text-gray-800' : 'text-gray-600'}`}
+                    className={`p-1.5 rounded transition-colors ${isUnderline ? 'bg-gray-100 text-[#2c3e7c]' : 'text-gray-400 hover:bg-gray-50'}`}
                     title="밑줄"
                 >
                     <Underline size={14} />

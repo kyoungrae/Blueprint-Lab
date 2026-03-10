@@ -466,14 +466,17 @@ const ComponentCanvasContent: React.FC = () => {
 
             if (op.type.startsWith('SCREEN_')) {
                 if (op.type === 'SCREEN_CREATE') addComponent(op.payload as any);
-                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE') {
+                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE' || op.type === 'SCREEN_DRAW_DELETE') {
                     setLastRemoteUpdateScreenId(op.targetId);
                     updateComponent(op.targetId, op.payload as any);
                 }
                 else if (op.type === 'SCREEN_DELETE') deleteComponent(op.targetId);
-                else if (op.type === 'SCREEN_FLOW_CREATE') addFlow(op.payload as any);
-                else if (op.type === 'SCREEN_FLOW_UPDATE') updateFlow(op.targetId, op.payload as any);
-                else if (op.type === 'SCREEN_FLOW_DELETE') deleteFlow(op.targetId);
+            } else if (op.type === 'SCREEN_FLOW_CREATE' || op.type === 'FLOW_CREATE') {
+                addFlow(op.payload as any);
+            } else if (op.type === 'SCREEN_FLOW_UPDATE' || op.type === 'FLOW_UPDATE') {
+                updateFlow(op.targetId, op.payload as any);
+            } else if (op.type === 'SCREEN_FLOW_DELETE' || op.type === 'FLOW_DELETE') {
+                deleteFlow(op.targetId);
             }
         };
         window.addEventListener('erd:remote_operation', handleRemoteOp as EventListener);
