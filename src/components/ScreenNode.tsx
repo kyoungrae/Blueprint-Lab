@@ -51,6 +51,8 @@ import UndoRedoControls from './screenNode/UndoRedoControls';
 import CanvasAlignToolbar from './screenNode/CanvasAlignToolbar';
 import GuideClipboardControls from './screenNode/GuideClipboardControls';
 import ObjectAlignToolbar from './screenNode/ObjectAlignToolbar';
+import { StickyToolbarWrapper } from './screenNode/StickyToolbarWrapper';
+
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 /** 포털로 렌더링되는 패널들이 뷰포트 이동/줌에 기민하게 반응하도록 감싸는 컴포넌트 */
@@ -2729,10 +2731,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
                         {/* Drawing Toolbar - Full width (100%), 2 rows: main tools + text style (below) */}
                         {!canvasOnlyMode && !isLocked && (
-                            <div className="nodrag w-full flex flex-col border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px]">
+                            <StickyToolbarWrapper
+                                forceShow={selected || selectedElementIds.length > 0 || lastInteractedScreenId === screen.id}
+                            >
                                 {/* Row 1: Main tools */}
                                 <div
-                                    className="flex flex-nowrap items-center gap-1 p-1 bg-white/80 overflow-x-auto custom-scrollbar"
+                                    className={`flex flex-nowrap items-center gap-1 p-1 bg-white/80 overflow-x-auto custom-scrollbar rounded-[15px]`}
                                     onMouseDown={(e) => e.stopPropagation()}
                                 >
                                     <div className="flex flex-nowrap items-center gap-1 flex-1 min-w-max px-1">
@@ -3468,7 +3472,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
                                     </div>
                                 </div>
-                            </div>
+                            </StickyToolbarWrapper>
                         )}
 
                         {/* 폰트 스타일 패널 - 드롭다운 방식 (텍스트 선택 시 버튼 클릭으로 표시) */}
