@@ -993,6 +993,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     if ((localScr.drawElements?.length ?? 0) > (syncScr.drawElements?.length ?? 0)) {
                         merged.drawElements = localScr.drawElements;
                     }
+                    // rightPaneRatios 보존 - 로컬에 있으면 서버 데이터 대신 로컬 데이터 사용
+                    if (localScr.rightPaneRatios) {
+                        merged.rightPaneRatios = localScr.rightPaneRatios;
+                    }
                     return merged;
                 });
 

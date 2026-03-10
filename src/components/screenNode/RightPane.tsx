@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Trash2, Database, GripHorizontal, Edit3, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
+import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
 
 const DEFAULT_RATIOS: [number, number, number] = [40, 35, 25];
 const MIN_PANEL_PCT = 10;
@@ -111,6 +112,8 @@ const RightPane: React.FC<RightPaneProps> = ({
     flowToScreenPosition,
     screenId,
 }) => {
+    // updateScreen을 직접 가져와서 rightPaneRatios 업데이트에 사용
+    const { updateScreen } = useScreenNodeStore();
     const funcNos = (drawElements || [])
         .filter(el => el.type === 'func-no')
         .sort((a, b) => {
@@ -226,7 +229,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                 next = [r0, r1, r2];
             }
             const clamped = clampRatios(next);
-            update({ rightPaneRatios: clamped });
+            updateScreen(screen.id, { rightPaneRatios: clamped }); // 잠금 상태와 관계없이 즉시 업데이트
             syncUpdate({ rightPaneRatios: clamped });
         };
         const onUp = () => {
@@ -235,7 +238,7 @@ const RightPane: React.FC<RightPaneProps> = ({
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
-    }, [ratios, update, syncUpdate]);
+    }, [ratios, update, syncUpdate, updateScreen]);
 
     return (
         <div ref={rightPaneRef} className="nodrag w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[15px] overflow-hidden" style={{ minWidth: 250 }} onMouseDown={(e) => e.stopPropagation()}>
