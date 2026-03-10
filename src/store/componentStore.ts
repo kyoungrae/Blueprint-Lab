@@ -12,6 +12,8 @@ interface ComponentStore {
 
     addComponent: (component: Screen) => void;
     updateComponent: (id: string, updates: Partial<Screen>) => void;
+    /** drawElements만 업데이트 */
+    updateDrawElements: (id: string, elements: DrawElement[]) => void;
     deleteComponent: (id: string) => void;
 
     addFlow: (flow: ScreenFlow) => void;
@@ -42,6 +44,14 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
         set((state) => ({
             components: state.components.map((s) =>
                 s.id === id ? { ...s, ...updates } : s
+            ),
+        }));
+    },
+
+    updateDrawElements: (id, elements) => {
+        set((state) => ({
+            components: state.components.map((s) =>
+                s.id === id ? { ...s, drawElements: elements } : s
             ),
         }));
     },

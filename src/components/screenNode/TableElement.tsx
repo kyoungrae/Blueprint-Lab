@@ -19,7 +19,7 @@ interface TableElementProps {
     setTextSelectionFromTable: (val: { tableId: string; cellIndex: number } | null) => void;
     syncUpdate: (updates: any) => void;
     updateElement: (id: string, updates: any) => void;
-    drawElements: DrawElement[];
+    getDrawElements: () => DrawElement[];
     isDraggingCellSelectionRef: React.MutableRefObject<boolean>;
     dragStartCellIndexRef: React.MutableRefObject<number>;
 }
@@ -38,7 +38,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
     setTextSelectionFromTable,
     syncUpdate,
     updateElement,
-    drawElements,
+    getDrawElements,
     isDraggingCellSelectionRef,
     dragStartCellIndexRef
 }) => {
@@ -294,13 +294,18 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         }}
                                         onBlur={() => {
                                             setEditingCellIndex(null);
-                                            syncUpdate({ drawElements });
+                                            syncUpdate({ drawElements: getDrawElements() });
                                         }}
                                         onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingCellIndex(null); syncUpdate({ drawElements }); return; }
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                setEditingCellIndex(null);
+                                                syncUpdate({ drawElements: getDrawElements() });
+                                                return;
+                                            }
                                             if (e.key === 'Tab') {
                                                 e.preventDefault();
-                                                syncUpdate({ drawElements });
+                                                syncUpdate({ drawElements: getDrawElements() });
                                                 const locked = el.fromComponentId ? (el.tableCellLockedIndices ?? []) : [];
                                                 const findNext = (start: number, dir: 1 | -1) => {
                                                     for (let k = 1; k <= totalCells; k++) {
@@ -384,7 +389,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                 const handleUp = () => {
                                     window.removeEventListener('mousemove', handleMove, true);
                                     window.removeEventListener('mouseup', handleUp, true);
-                                    syncUpdate({ drawElements });
+                                    syncUpdate({ drawElements: getDrawElements() });
                                 };
                                 window.addEventListener('mousemove', handleMove, true);
                                 window.addEventListener('mouseup', handleUp, true);
@@ -441,7 +446,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                 const handleUp = () => {
                                     window.removeEventListener('mousemove', handleMove, true);
                                     window.removeEventListener('mouseup', handleUp, true);
-                                    syncUpdate({ drawElements });
+                                    syncUpdate({ drawElements: getDrawElements() });
                                 };
                                 window.addEventListener('mousemove', handleMove, true);
                                 window.addEventListener('mouseup', handleUp, true);

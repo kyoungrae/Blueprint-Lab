@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, memo } from 'react';
 import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
 
 const TEXT_UPDATE_DEBOUNCE_MS = 120;
@@ -260,4 +260,4 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     );
 };
 
-export default EditableTableCell;
+export default memo(EditableTableCell);

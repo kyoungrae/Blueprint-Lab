@@ -5,6 +5,8 @@ import { useScreenDesignStore } from '../store/screenDesignStore';
 export interface ScreenCanvasStoreValue {
     screens: Screen[];
     updateScreen: (id: string, updates: Partial<Screen>) => void;
+    /** drawElements만 업데이트 */
+    updateDrawElements: (id: string, elements: DrawElement[]) => void;
     deleteScreen: (id: string) => void;
     canvasClipboard: DrawElement[];
     setCanvasClipboard: (elements: DrawElement[]) => void;
@@ -37,6 +39,7 @@ export const useScreenNodeStore = (): ScreenCanvasStoreValue => {
 
     // 개별 값/액션별로 선택적으로 구독하거나 getState()를 사용하여 전체 리렌더 방지
     const updateScreen = useScreenDesignStore(state => state.updateScreen);
+    const updateDrawElements = useScreenDesignStore(state => state.updateDrawElements);
     const deleteScreen = useScreenDesignStore(state => state.deleteScreen);
     const canvasClipboard = useScreenDesignStore(state => state.canvasClipboard);
     const setCanvasClipboard = useScreenDesignStore(state => state.setCanvasClipboard);
@@ -50,6 +53,7 @@ export const useScreenNodeStore = (): ScreenCanvasStoreValue => {
 
         return {
             updateScreen,
+            updateDrawElements,
             deleteScreen,
             canvasClipboard,
             setCanvasClipboard,
@@ -64,5 +68,5 @@ export const useScreenNodeStore = (): ScreenCanvasStoreValue => {
                 return state.lastInteractedScreenId ?? (state.screens.length === 1 ? state.screens[0].id : null);
             },
         };
-    }, [ctx, updateScreen, deleteScreen, canvasClipboard, setCanvasClipboard, gridClipboard, setGridClipboard, lastInteractedScreenId, setLastInteractedScreenId]);
+    }, [ctx, updateScreen, updateDrawElements, deleteScreen, canvasClipboard, setCanvasClipboard, gridClipboard, setGridClipboard, lastInteractedScreenId, setLastInteractedScreenId]);
 };

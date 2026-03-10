@@ -26,7 +26,7 @@ interface UseCanvasHistoryOptions {
 }
 
 const MAX_HISTORY = 100;
-const HISTORY_DEDUPE_SIZE_THRESHOLD = 50;
+const HISTORY_DEDUPE_SIZE_THRESHOLD = 1000;
 
 export function useCanvasHistory({
     screen,

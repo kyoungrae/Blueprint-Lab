@@ -8,6 +8,7 @@ import { useEntityLock } from '../collaboration';
 export const useScreenLockAndSync = (screen: Screen) => {
     const {
         updateScreen,
+        updateDrawElements,
         deleteScreen,
         canvasClipboard,
         setCanvasClipboard,
@@ -40,9 +41,16 @@ export const useScreenLockAndSync = (screen: Screen) => {
     const update = useCallback(
         (updates: Partial<Screen>) => {
             if (isLocked) return;
-            updateScreen(screen.id, updates);
+            // drawElements만 업데이트하는 경우 전체 screen 객체 대신 drawElements만 교체
+            // 이를 통해 ScreenNodeFull로 전달되는 screen prop의 레퍼런스가 변하지 않아
+            // drawElements 변경 시 ScreenNodeFull 전체 리렌더링을 회피함
+            if ('drawElements' in updates && Object.keys(updates).length === 1 && updates.drawElements) {
+                updateDrawElements(screen.id, updates.drawElements);
+            } else {
+                updateScreen(screen.id, updates);
+            }
         },
-        [isLocked, updateScreen, screen.id],
+        [isLocked, updateScreen, updateDrawElements, screen.id],
     );
 
     const handleToggleLock = useCallback(

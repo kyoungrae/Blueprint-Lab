@@ -8,6 +8,8 @@ interface ScreenDesignStore {
 
     addScreen: (screen: Screen) => void;
     updateScreen: (id: string, updates: Partial<Screen>) => void;
+    /** drawElements만 업데이트 (다른 screen 메타데이터 변경 없이) */
+    updateDrawElements: (id: string, elements: DrawElement[]) => void;
     deleteScreen: (id: string) => void;
 
     addFlow: (flow: ScreenFlow) => void;
@@ -51,6 +53,14 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
         set((state) => ({
             screens: state.screens.map((s) =>
                 s.id === id ? { ...s, ...updates } : s
+            ),
+        }));
+    },
+
+    updateDrawElements: (id, elements) => {
+        set((state) => ({
+            screens: state.screens.map((s) =>
+                s.id === id ? { ...s, drawElements: elements } : s
             ),
         }));
     },

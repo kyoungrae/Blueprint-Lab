@@ -835,6 +835,9 @@ const ComponentCanvasContent: React.FC = () => {
     const storeValue = useMemo(() => ({
         screens: components,
         updateScreen: updateComponent,
+        updateDrawElements: (id: string, elements: import('../types/screenDesign').DrawElement[]) => {
+            useComponentStore.getState().updateDrawElements(id, elements);
+        },
         deleteScreen: deleteComponent,
         canvasClipboard,
         setCanvasClipboard,
@@ -997,6 +1000,7 @@ const ComponentCanvasContent: React.FC = () => {
                                             zoomActivationKeyCode="Control"
                                             minZoom={0.05}
                                             maxZoom={4}
+                                            onlyRenderVisibleElements={true}
                                             fitView
                                             multiSelectionKeyCode="Shift"
                                             selectionKeyCode="Shift"

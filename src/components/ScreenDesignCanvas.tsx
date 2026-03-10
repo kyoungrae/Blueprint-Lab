@@ -275,11 +275,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     const { projects, currentProjectId, setCurrentProject, updateProjectData, fetchProjects } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
-    
+
     // 데이터베이스 폴링으로 실시간 동기화 대체 (5초 간격)
-    const { isPolling } = useDatabasePolling({ 
-        projectId: currentProjectId || '', 
-        interval: 5000 
+    useDatabasePolling({
+        projectId: currentProjectId || '',
+        interval: 5000
     });
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [sidebarListKey, setSidebarListKey] = useState(0); // 가져오기 후 사이드바 목록 갱신용
@@ -1827,6 +1827,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     zoomActivationKeyCode="Control"
                                     minZoom={0.05}
                                     maxZoom={4}
+                                    onlyRenderVisibleElements={true}
                                     fitView
                                     multiSelectionKeyCode="Shift"
                                     selectionKeyCode="Shift"

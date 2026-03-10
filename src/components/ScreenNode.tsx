@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { type NodeProps, useReactFlow, useOnViewportChange, useStore as useRFStore } from 'reactflow';
 import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
+import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useComponentStore } from '../store/componentStore';
+import { useScreenCanvasStore } from '../contexts/ScreenCanvasStoreContext';
 
 import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, Table2, Settings2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
@@ -15,20 +18,19 @@ import { useGuideLines } from './screenNode/useGuideLines';
 // ── Sub-Components ────────────────────────────────────────────
 
 import ScreenHandles from './screenNode/ScreenHandles';
+import DrawElementsList from './screenNode/DrawElementsList';
+import { useDragStore } from '../store/dragStore';
 import { ExportModeContext } from '../contexts/ExportModeContext';
 import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { TooltipPortalContext } from '../contexts/TooltipPortalContext';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
-import DrawTextComponent, { FONT_SIZE_OVERRIDE_EVENT } from './screenNode/DrawTextComponent';
+import { FONT_SIZE_OVERRIDE_EVENT } from './screenNode/DrawTextComponent';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
 import RightPane from './screenNode/RightPane';
 import StylePanel from './screenNode/StylePanel';
 import { TextStyleToolbar } from './screenNode/TextStyleToolbar';
 import LayerPanel from './screenNode/LayerPanel';
-import ImageElement from './screenNode/ImageElement';
-import TableElement from './screenNode/TableElement';
-import ShapeElement from './screenNode/ShapeElement';
 import { ImageStylePanel } from './screenNode/ImageStylePanel';
 import { normalizeImageUrlForStorage } from '../utils/imageUrl';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
@@ -290,7 +292,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuides | null>(null);
     const snapStateRef = useRef<SnapState>({});
     const resizeSnapStateRef = useRef<SnapState>({});
-    const [dragPreviewPositions, setDragPreviewPositions] = useState<Record<string, { x: number; y: number }> | null>(null);
+    const setDragPreviews = useDragStore(state => state.setPreviews);
     /** rAF throttle refs — 드래그·리사이즈 중 setState 호출 빈도를 requestAnimationFrame으로 제한 */
     const dragRafIdRef = useRef<number | undefined>(undefined);
     const resizeRafIdRef = useRef<number | undefined>(undefined);
@@ -492,7 +494,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         const selected = elements.filter((el) => selectedElementIds.includes(el.id));
         if (selected.length === 0) return null;
         const getPos = (el: DrawElement) => {
-            const preview = dragPreviewPositions?.[el.id];
+            const preview = useDragStore.getState().previews?.[el.id];
             return preview ? { x: preview.x, y: preview.y } : { x: el.x, y: el.y };
         };
         const minX = Math.min(...selected.map((el) => getPos(el).x));
@@ -500,7 +502,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         const maxX = Math.max(...selected.map((el) => getPos(el).x + el.width));
         const maxY = Math.max(...selected.map((el) => getPos(el).y + el.height));
         return { minX, minY, maxX, maxY, centerX: (minX + maxX) / 2, topY: minY };
-    }, [selectedElementIds, screen.drawElements, dragPreviewPositions]);
+    }, [selectedElementIds, screen.drawElements, useDragStore.getState().previews]);
 
     const isUnifiedGroupSelection = React.useMemo(() => {
         if (selectedElementIds.length < 2) return false;
@@ -715,7 +717,35 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         };
     }, [setLastInteractedScreenId, screen.id]);
 
-    const drawElements = screen.drawElements || [];
+    const screenCanvasCtx = useScreenCanvasStore();
+    const isComponentCtx = Boolean(screenCanvasCtx);
+
+    // drawElements는 이제 DrawElementsList 하위 컴포넌트에서 직접 구독함.
+    // ScreenNodeFull에서 구독을 제거함으로써, 요소가 이동하거나 변경될 때 3900줄이 넘는 이 거대한 컴포넌트 전체가
+    // 리렌더링되는 비용을 획기적으로 줄임 (Figma 스타일 격리)
+    const elementsRefForHandlers = useRef<DrawElement[]>([]);
+    const getDrawElements = useCallback(() => (
+        isComponentCtx
+            ? useComponentStore.getState().components.find(s => s.id === screen.id)?.drawElements
+            : useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.drawElements
+    ) ?? [], [isComponentCtx, screen.id]);
+
+    useEffect(() => {
+        // 핸들러에서 최신 데이터를 참조하기 위한 ref 업데이트 (구독은 하지 않음)
+        const unsubscribe = isComponentCtx
+            ? useComponentStore.subscribe(state => {
+                elementsRefForHandlers.current = state.components.find(s => s.id === screen.id)?.drawElements ?? [];
+            })
+            : useScreenDesignStore.subscribe(state => {
+                elementsRefForHandlers.current = state.screens.find(s => s.id === screen.id)?.drawElements ?? [];
+            });
+        return unsubscribe;
+    }, [isComponentCtx, screen.id]);
+
+    // 하위 핸들러들이 리렌더링 없이도 최신 배열을 참조할 수 있게 함
+    // (다만 이 변수 자체를 의존성에 넣으면 안 됨)
+    const drawElements = elementsRefForHandlers.current;
+
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
@@ -1370,7 +1400,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         setIsMoving(true);
         setDraggingElementIds(nextSelected);
         snapStateRef.current = {};
-        setDragPreviewPositions(null);
+        setDragPreviews(null);
 
         const offsets: Record<string, { x: number, y: number }> = {};
         nextSelected.forEach(sid => {
@@ -1639,7 +1669,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             if (dragRafIdRef.current !== undefined) cancelAnimationFrame(dragRafIdRef.current);
             dragRafIdRef.current = requestAnimationFrame(() => {
                 dragRafIdRef.current = undefined;
-                setDragPreviewPositions(preview);
+                setDragPreviews(preview);
                 setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
             });
         }
@@ -1732,9 +1762,10 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 dragRafIdRef.current = undefined;
             }
             // Finalize move: 드래그 중에는 프리뷰만 갱신하고, mouseup 시점에 한 번만 커밋
-            const committedElements = dragPreviewPositions
+            const currentPreviews = useDragStore.getState().previews;
+            const committedElements = currentPreviews
                 ? drawElements.map((el) => {
-                    const p = dragPreviewPositions[el.id];
+                    const p = currentPreviews[el.id];
                     if (!p) return el;
                     const dx = p.x - el.x;
                     const dy = p.y - el.y;
@@ -1767,7 +1798,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             setIsMoving(false);
             setAlignmentGuides(null);
             snapStateRef.current = {};
-            setDragPreviewPositions(null);
+            setDragPreviews(null);
         }
 
         setIsDrawing(false);
@@ -1803,9 +1834,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         }, 300);
     }, [getScreenById, screen.id, update, saveHistory, syncUpdate]);
 
-    const elementsRef = useRef(drawElements || []);
-    useEffect(() => { elementsRef.current = drawElements || []; }, [drawElements]);
-    const getDrawElements = useCallback(() => elementsRef.current, []);
+    // const elementsRef = useRef(drawElements || []);
+    // useEffect(() => { elementsRef.current = drawElements || []; }, [drawElements]);
+    // const getDrawElements = useCallback(() => elementsRef.current, []);
 
     const {
         updateElement,
@@ -3468,7 +3499,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         updateElement={updateElement}
                                         applyToSelection={(fn) => applyToSelection(fn, fromTable)}
                                         applyFontSizePx={applyFontSizePx}
-                                        drawElements={drawElements}
+                                        getDrawElements={getDrawElements}
                                         update={update}
                                         syncUpdate={syncUpdate}
                                         textSelectionFromTable={textSelectionFromTable}
@@ -3549,303 +3580,58 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 onMouseUp={handleCanvasMouseUp}
                                                                 onMouseLeave={handleCanvasMouseUp}
                                                             >
-                                                                {/* Render Existing Elements */}
-                                                                {drawElements.map((el) => {
-                                                                    const isSelected = selectedElementIds.includes(el.id);
-                                                                    const rot = el.type === 'image' ? (el.imageRotation ?? 0) : (el.rotation ?? 0);
-                                                                    const previewPos = dragPreviewPositions?.[el.id];
-                                                                    const commonStyle: React.CSSProperties = {
-                                                                        position: 'absolute',
-                                                                        left: previewPos?.x ?? el.x,
-                                                                        top: previewPos?.y ?? el.y,
-                                                                        width: el.width,
-                                                                        height: el.height,
-                                                                        // 드래그 중에도 원래 zIndex 유지 → 아래 레이어를 옮겨도 위 객체 위로 튀어오르지 않음
-                                                                        zIndex: el.zIndex ?? 1,
-                                                                        transition: (isDrawing || isMoving) ? 'none' : 'all 0.1s ease',
-                                                                        pointerEvents: isDrawing ? 'none' : 'auto',
-                                                                        opacity: el.opacity !== undefined ? el.opacity : 1,
-                                                                        ...(rot !== 0 ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' } : {}),
-                                                                        ...(el.type === 'polygon' || el.type === 'line' ? { overflow: 'visible' as const } : {}),
-                                                                    };
+                                                                {/* Render Existing Elements - Isolated Component */}
+                                                                <DrawElementsList
+                                                                    screenId={screen.id}
+                                                                    isLocked={isLocked}
+                                                                    activeTool={activeTool}
+                                                                    isDrawing={isDrawing}
+                                                                    isMoving={isMoving}
+                                                                    isUnifiedGroupSelection={isUnifiedGroupSelection}
+                                                                    selectedElementIds={selectedElementIds}
+                                                                    editingTextId={editingTextId}
+                                                                    editingTableId={editingTableId}
+                                                                    editingCellIndex={editingCellIndex}
+                                                                    selectedCellIndices={selectedCellIndices}
+                                                                    tableCellSelectionRestoreRef={tableCellSelectionRestoreRef}
+                                                                    setEditingTableId={setEditingTableId}
+                                                                    setEditingCellIndex={setEditingCellIndex}
+                                                                    setSelectedCellIndices={setSelectedCellIndices}
+                                                                    setTextSelectionRect={setTextSelectionRect}
+                                                                    setTextSelectionFromTable={setTextSelectionFromTable}
+                                                                    syncUpdate={syncUpdate}
+                                                                    updateElement={updateElement}
+                                                                    update={update}
+                                                                    saveHistory={saveHistory}
+                                                                    setSelectedElementIds={setSelectedElementIds}
+                                                                    getDrawElements={getDrawElements}
+                                                                    isDraggingCellSelectionRef={isDraggingCellSelectionRef}
+                                                                    dragStartCellIndexRef={dragStartCellIndexRef}
+                                                                    handleElementMouseDown={handleElementMouseDown}
+                                                                    handleElementDoubleClick={handleElementDoubleClick}
+                                                                    handleElementTextSelectionChange={handleElementTextSelectionChange}
+                                                                    handleLineVertexDragStart={handleLineVertexDragStart}
+                                                                    handleElementResizeStart={handleElementResizeStart}
+                                                                    handlePolygonVertexDragStart={handlePolygonVertexDragStart}
+                                                                    deleteElements={deleteElements}
+                                                                    currentProjectId={currentProjectId}
+                                                                    imageCropMode={imageCropMode}
+                                                                />
 
-                                                                    return (
-                                                                        <div
-                                                                            key={el.id}
-                                                                            style={commonStyle}
-                                                                            onMouseDown={(e) => handleElementMouseDown(el.id, e)}
-                                                                            onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
-                                                                            className={`group-canvas-element ${isSelected && !(isUnifiedGroupSelection && selectedElementIds.length > 1) ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
-                                                                            data-element-id={el.id}
-                                                                        >
-                                                                            {(el.type === 'rect' || el.type === 'circle') && (
-                                                                                <ShapeElement
-                                                                                    el={el}
-                                                                                    isSelected={isSelected}
-                                                                                    isLocked={isLocked}
-                                                                                    editingTextId={editingTextId}
-                                                                                    updateElement={updateElement}
-                                                                                    onSelectionChange={setTextSelectionRect}
-                                                                                />
-                                                                            )}
-                                                                            {el.type === 'polygon' && (() => {
-                                                                                const pts = (el.polygonPoints ?? []).map(p => ({ x: p.x - el.x, y: p.y - el.y }));
-                                                                                const pointsStr = pts.map(p => `${p.x},${p.y}`).join(' ');
-                                                                                const strokeW = el.strokeWidth ?? 2;
-                                                                                return (
-                                                                                    <div className="w-full h-full relative overflow-visible" style={{ pointerEvents: 'none' }}>
-                                                                                        <svg width="100%" height="100%" viewBox={`0 0 ${el.width || 1} ${el.height || 1}`} preserveAspectRatio="none" className="absolute inset-0" style={{ overflow: 'visible' }}>
-                                                                                            <polygon
-                                                                                                points={pointsStr}
-                                                                                                fill={hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1)}
-                                                                                                stroke={hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1)}
-                                                                                                strokeWidth={strokeW}
-                                                                                                strokeDasharray={el.strokeStyle === 'dashed' ? '4 2' : el.strokeStyle === 'dotted' ? '1 2' : undefined}
-                                                                                            />
-                                                                                        </svg>
-                                                                                    </div>
-                                                                                );
-                                                                            })()}
-                                                                            {el.type === 'line' && (() => {
-                                                                                let x1 = (el.lineX1 ?? el.x) - el.x;
-                                                                                let y1 = (el.lineY1 ?? el.y) - el.y;
-                                                                                let x2 = (el.lineX2 ?? el.x + el.width) - el.x;
-                                                                                let y2 = (el.lineY2 ?? el.y + el.height) - el.y;
-                                                                                const end = el.lineEnd ?? 'none';
-                                                                                const hasStart = end === 'start' || end === 'both';
-                                                                                const hasEnd = end === 'end' || end === 'both';
-                                                                                const arrowSize = 8;
-                                                                                const dx = x2 - x1;
-                                                                                const dy = y2 - y1;
-                                                                                const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                                                                                const ux = dx / len;
-                                                                                const uy = dy / len;
-                                                                                if (hasStart && len > arrowSize) {
-                                                                                    x1 += ux * arrowSize;
-                                                                                    y1 += uy * arrowSize;
-                                                                                }
-                                                                                if (hasEnd && len > arrowSize) {
-                                                                                    x2 -= ux * arrowSize;
-                                                                                    y2 -= uy * arrowSize;
-                                                                                }
-                                                                                const strokeW = el.strokeWidth ?? 2;
-                                                                                const strokeColor = hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1);
-                                                                                const dash = el.strokeStyle === 'dashed' ? '4 2' : el.strokeStyle === 'dotted' ? '1 2' : undefined;
-                                                                                const idStart = `line-arrow-start-${el.id}`;
-                                                                                const idEnd = `line-arrow-end-${el.id}`;
-                                                                                const markerStart = hasStart ? `url(#${idStart})` : undefined;
-                                                                                const markerEnd = hasEnd ? `url(#${idEnd})` : undefined;
-                                                                                return (
-                                                                                    <div className="w-full h-full relative overflow-visible" style={{ pointerEvents: 'none' }}>
-                                                                                        <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(el.width || 1, 1)} ${Math.max(el.height || 1, 1)}`} preserveAspectRatio="none" className="absolute inset-0" style={{ overflow: 'visible' }}>
-                                                                                            <defs>
-                                                                                                <marker id={idStart} markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
-                                                                                                    <path d="M 0 4 L 8 0 L 8 8 Z" fill={strokeColor} />
-                                                                                                </marker>
-                                                                                                <marker id={idEnd} markerWidth="8" markerHeight="8" refX="0" refY="4" orient="auto">
-                                                                                                    <path d="M 0 0 L 8 4 L 0 8 Z" fill={strokeColor} />
-                                                                                                </marker>
-                                                                                            </defs>
-                                                                                            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={strokeColor} strokeWidth={strokeW} strokeDasharray={dash} markerStart={markerStart} markerEnd={markerEnd} />
-                                                                                        </svg>
-                                                                                    </div>
-                                                                                );
-                                                                            })()}
-                                                                            {el.type === 'text' && (
-                                                                                <DrawTextComponent
-                                                                                    element={el}
-                                                                                    isLocked={isLocked}
-                                                                                    isSelected={isSelected}
-                                                                                    onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                                    onSelectionChange={handleElementTextSelectionChange}
-                                                                                    autoFocus={editingTextId === el.id}
-                                                                                />
-                                                                            )}
-                                                                            {el.type === 'image' && (
-                                                                                <ImageElement
-                                                                                    element={el}
-                                                                                    isSelected={isSelected}
-                                                                                    isLocked={isLocked}
-                                                                                    onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                                    projectId={currentProjectId ?? undefined}
-                                                                                    isCropMode={imageCropMode && selectedElementIds.includes(el.id)}
-                                                                                />
-                                                                            )}
-                                                                            {el.type === 'table' && (
-                                                                                <TableElement
-                                                                                    el={el}
-                                                                                    isLocked={isLocked}
-                                                                                    editingTableId={editingTableId}
-                                                                                    editingCellIndex={editingCellIndex}
-                                                                                    selectedCellIndices={selectedCellIndices}
-                                                                                    tableCellSelectionRestoreRef={tableCellSelectionRestoreRef}
-                                                                                    setEditingTableId={setEditingTableId}
-                                                                                    setEditingCellIndex={setEditingCellIndex}
-                                                                                    setSelectedCellIndices={setSelectedCellIndices}
-                                                                                    setTextSelectionRect={setTextSelectionRect}
-                                                                                    setTextSelectionFromTable={setTextSelectionFromTable}
-                                                                                    syncUpdate={syncUpdate}
-                                                                                    updateElement={updateElement}
-                                                                                    drawElements={drawElements}
-                                                                                    isDraggingCellSelectionRef={isDraggingCellSelectionRef}
-                                                                                    dragStartCellIndexRef={dragStartCellIndexRef}
-                                                                                />
-                                                                            )}
-                                                                            {el.type === 'func-no' && (
-                                                                                <div
-                                                                                    className="w-full h-full rounded-full flex items-center justify-center font-bold text-white select-none group/func"
-                                                                                    style={{
-                                                                                        backgroundColor: el.fill || '#ef4444',
-                                                                                        fontSize: el.fontSize || 12,
-                                                                                        border: `${el.strokeWidth || 2}px solid ${el.stroke || '#ffffff'}`,
-                                                                                        padding: 0,
-                                                                                        display: 'flex',
-                                                                                        alignItems: 'center',
-                                                                                        justifyContent: 'center',
-                                                                                        textAlign: 'center',
-                                                                                    }}
-                                                                                >
-                                                                                    <span
-                                                                                        style={{
-                                                                                            display: 'flex',
-                                                                                            alignItems: 'center',
-                                                                                            justifyContent: 'center',
-                                                                                            width: '100%',
-                                                                                            height: '100%',
-                                                                                            lineHeight: 1,
-                                                                                            textAlign: 'center',
-                                                                                        }}
-                                                                                    >
-                                                                                        {el.text}
-                                                                                    </span>
-                                                                                    {!isLocked && (
-                                                                                        <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 flex gap-1 opacity-0 group-hover/func:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm p-1 rounded-lg shadow-xl border border-gray-200 z-[120]">
-                                                                                            <button
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    const current = el.text || '1';
-                                                                                                    let nextText = '';
-                                                                                                    if (current.includes('-')) {
-                                                                                                        const parts = current.split('-');
-                                                                                                        nextText = `${parts[0]}-${parseInt(parts[1]) + 1}`;
-                                                                                                    } else {
-                                                                                                        nextText = `${current}-1`;
-                                                                                                    }
-
-                                                                                                    const newId = `draw_${Date.now()}`;
-                                                                                                    const newElement: DrawElement = {
-                                                                                                        ...el,
-                                                                                                        id: newId,
-                                                                                                        text: nextText,
-                                                                                                        x: el.x + 30, // Offset from original
-                                                                                                        y: el.y + 30,
-                                                                                                        zIndex: drawElements.length + 1,
-                                                                                                        description: '' // New element starts with empty description
-                                                                                                    };
-                                                                                                    const nextElements = [...drawElements, newElement];
-                                                                                                    update({ drawElements: nextElements });
-                                                                                                    syncUpdate({ drawElements: nextElements });
-                                                                                                    saveHistory(nextElements);
-                                                                                                    setSelectedElementIds([newId]);
-                                                                                                }}
-                                                                                                className="px-1.5 py-0.5 bg-blue-500 text-white text-[9px] rounded hover:bg-blue-600 whitespace-nowrap"
-                                                                                                title="새 하위 번호 객체 생성"
-                                                                                            >
-                                                                                                + 하위
-                                                                                            </button>
-                                                                                            <button
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    const current = el.text || '1';
-                                                                                                    const nextText = (parseInt(current.split('-')[0]) + 1).toString();
-
-                                                                                                    const newId = `draw_${Date.now()}`;
-                                                                                                    const newElement: DrawElement = {
-                                                                                                        ...el,
-                                                                                                        id: newId,
-                                                                                                        text: nextText,
-                                                                                                        x: el.x + 30, // Offset from original
-                                                                                                        y: el.y + 30,
-                                                                                                        zIndex: drawElements.length + 1,
-                                                                                                        description: '' // New element starts with empty description
-                                                                                                    };
-                                                                                                    const nextElements = [...drawElements, newElement];
-                                                                                                    update({ drawElements: nextElements });
-                                                                                                    syncUpdate({ drawElements: nextElements });
-                                                                                                    saveHistory(nextElements);
-                                                                                                    setSelectedElementIds([newId]);
-                                                                                                }}
-                                                                                                className="px-1.5 py-0.5 bg-gray-500 text-white text-[9px] rounded hover:bg-gray-600 whitespace-nowrap"
-                                                                                                title="새 다음 번호 객체 생성"
-                                                                                            >
-                                                                                                다음 번호
-                                                                                            </button>
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
-                                                                            )}
-                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && !isUnifiedGroupSelection && (
-                                                                                <button
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        deleteElements([el.id]);
-                                                                                    }}
-                                                                                    onMouseDown={e => e.stopPropagation()}
-                                                                                    className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 border-2 border-white scale-0 group-canvas-element-hover:scale-100 transition-transform z-[110]"
-                                                                                >
-                                                                                    <X size={12} />
-                                                                                </button>
-                                                                            )}
-
-                                                                            {/* Resize Handles (단일 선택 시에만; 그룹일 때는 그룹 아웃라인 쪽에서 처리) */}
-                                                                            {isSelected && !isLocked && selectedElementIds.length === 1 && !isUnifiedGroupSelection && !(el.type === 'image' && imageCropMode) && (
-                                                                                <>
-                                                                                    {el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null ? (
-                                                                                        <>
-                                                                                            <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
-                                                                                            <div onMouseDown={(e) => handleLineVertexDragStart(el.id, 0, e)} className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]" style={{ left: el.lineX1 - el.x, top: el.lineY1 - el.y, transform: 'translate(-50%, -50%)' }} />
-                                                                                            <div onMouseDown={(e) => handleLineVertexDragStart(el.id, 1, e)} className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]" style={{ left: el.lineX2 - el.x, top: el.lineY2 - el.y, transform: 'translate(-50%, -50%)' }} />
-                                                                                        </>
-                                                                                    ) : (
-                                                                                        <>
-                                                                                            <div className="absolute inset-0 border border-blue-500 pointer-events-none z-[125]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-nw-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-ne-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-sw-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-se-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-n-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 's', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-s-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-w-resize pointer-events-auto z-[130]" />
-                                                                                            <div onMouseDown={(e) => handleElementResizeStart(el.id, 'e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 transition-all duration-200 ease-out cursor-e-resize pointer-events-auto z-[130]" />
-                                                                                            {el.type === 'polygon' && (el.polygonPoints ?? []).length > 0 && (
-                                                                                                <>
-                                                                                                    {(el.polygonPoints ?? []).map((pt, idx) => (
-                                                                                                        <div key={idx} onMouseDown={(e) => handlePolygonVertexDragStart(el.id, idx, e)} className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]" style={{ left: pt.x - el.x, top: pt.y - el.y, transform: 'translate(-50%, -50%)' }} />
-                                                                                                    ))}
-                                                                                                </>
-                                                                                            )}
-                                                                                        </>
-                                                                                    )}
-                                                                                </>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })}
-
-                                                                {/* 그룹 단일 아웃라인 + 리사이즈 핸들 (2개 이상 그룹 선택 시 하나의 박스로 표시, 리사이즈 시 그룹 전체 스케일) */}
+                                                                {/* Overlays (Group handles, previews, etc.) - rendered once per canvas */}
                                                                 {isUnifiedGroupSelection && selectionBounds && !isLocked && (() => {
                                                                     const gid = drawElements.find((el) => selectedElementIds.includes(el.id))?.groupId;
                                                                     if (!gid) return null;
-                                                                    const left = selectionBounds.minX;
-                                                                    const top = selectionBounds.minY;
-                                                                    const width = selectionBounds.maxX - selectionBounds.minX;
-                                                                    const height = selectionBounds.maxY - selectionBounds.minY;
                                                                     return (
                                                                         <div
                                                                             className="absolute pointer-events-none border-2 border-blue-500 z-[125]"
-                                                                            style={{ left, top, width, height }}
+                                                                            style={{
+                                                                                left: selectionBounds.minX,
+                                                                                top: selectionBounds.minY,
+                                                                                width: selectionBounds.maxX - selectionBounds.minX,
+                                                                                height: selectionBounds.maxY - selectionBounds.minY
+                                                                            }}
                                                                         >
-                                                                            <div className="absolute inset-0 pointer-events-none" />
                                                                             <div onMouseDown={(e) => handleGroupResizeStart(gid, 'nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-nw-resize pointer-events-auto z-[130]" />
                                                                             <div onMouseDown={(e) => handleGroupResizeStart(gid, 'ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-ne-resize pointer-events-auto z-[130]" />
                                                                             <div onMouseDown={(e) => handleGroupResizeStart(gid, 'sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-sw-resize pointer-events-auto z-[130]" />
@@ -3858,7 +3644,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     );
                                                                 })()}
 
-                                                                {/* 부분 컴포넌트화 버튼 (컴포넌트 캔버스, 선택 시 상단 - 등록/해제 모드 토글) */}
+                                                                {/* 부분 컴포넌트화 버튼 */}
                                                                 {screen.screenId?.startsWith('CMP-') && selectionBounds && selectedElementIds.length >= 1 && !isLocked && (() => {
                                                                     const alreadyRegistered = new Set((screen.subComponents ?? []).flatMap((s) => s.elementIds));
                                                                     const hasUnregistered = selectedElementIds.some((id) => !alreadyRegistered.has(id));
@@ -3878,61 +3664,35 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             {isUnregisterMode ? (
                                                                                 <div className="flex items-center gap-1.5">
                                                                                     <PremiumTooltip label="부분 컴포넌트화 해제">
-                                                                                        <button
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                handleUnregisterPartialComponent();
-                                                                                            }}
-                                                                                            onMouseDown={(e) => e.stopPropagation()}
-                                                                                            className="px-2 py-1 bg-gray-400 text-white text-[10px] font-bold rounded-md shadow-md hover:bg-gray-500 flex items-center gap-1"
-                                                                                        >
-                                                                                            <PackageX size={12} />
-                                                                                            부분 컴포넌트화 해제
+                                                                                        <button onClick={(e) => { e.stopPropagation(); handleUnregisterPartialComponent(); }} className="px-2 py-1 bg-gray-400 text-white text-[10px] font-bold rounded-md shadow-md hover:bg-gray-500 flex items-center gap-1">
+                                                                                            <PackageX size={12} /> 부분 컴포넌트화 해제
                                                                                         </button>
                                                                                     </PremiumTooltip>
                                                                                     {(() => {
-                                                                                        const sub = (screen.subComponents ?? []).find((s) =>
-                                                                                            selectedElementIds.some((id) => s.elementIds.includes(id))
-                                                                                        );
+                                                                                        const sub = (screen.subComponents ?? []).find((s) => selectedElementIds.some((id) => s.elementIds.includes(id)));
                                                                                         if (!sub) return null;
-                                                                                        const displayValue = subComponentNameComposing?.subId === sub.id
-                                                                                            ? subComponentNameComposing.value
-                                                                                            : sub.name;
                                                                                         return (
                                                                                             <input
                                                                                                 type="text"
-                                                                                                value={displayValue}
+                                                                                                value={subComponentNameComposing?.subId === sub.id ? subComponentNameComposing.value : sub.name}
                                                                                                 onChange={(e) => {
                                                                                                     const v = e.target.value;
-                                                                                                    if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-                                                                                                        setSubComponentNameComposing({ subId: sub.id, value: v });
-                                                                                                        return;
-                                                                                                    }
+                                                                                                    if ((e.nativeEvent as { isComposing?: boolean }).isComposing) { setSubComponentNameComposing({ subId: sub.id, value: v }); return; }
                                                                                                     setSubComponentNameComposing(null);
-                                                                                                    const next = (screen.subComponents ?? []).map((x) =>
-                                                                                                        x.id === sub.id ? { ...x, name: v } : x
-                                                                                                    );
-                                                                                                    update({ subComponents: next });
-                                                                                                    syncUpdate({ subComponents: next });
+                                                                                                    const next = (screen.subComponents ?? []).map((x) => x.id === sub.id ? { ...x, name: v } : x);
+                                                                                                    update({ subComponents: next }); syncUpdate({ subComponents: next });
                                                                                                 }}
                                                                                                 onCompositionEnd={(e) => {
                                                                                                     const v = (e.target as HTMLInputElement).value;
                                                                                                     setSubComponentNameComposing(null);
-                                                                                                    const next = (screen.subComponents ?? []).map((x) =>
-                                                                                                        x.id === sub.id ? { ...x, name: v } : x
-                                                                                                    );
-                                                                                                    update({ subComponents: next });
-                                                                                                    syncUpdate({ subComponents: next });
+                                                                                                    const next = (screen.subComponents ?? []).map((x) => x.id === sub.id ? { ...x, name: v } : x);
+                                                                                                    update({ subComponents: next }); syncUpdate({ subComponents: next });
                                                                                                 }}
                                                                                                 onBlur={(e) => {
                                                                                                     const v = e.target.value.trim();
                                                                                                     setSubComponentNameComposing(null);
-                                                                                                    if (v && v !== sub.name) {
-                                                                                                        handleUpdateSubComponentName(sub.id, v);
-                                                                                                    }
+                                                                                                    if (v && v !== sub.name) { handleUpdateSubComponentName(sub.id, v); }
                                                                                                 }}
-                                                                                                onMouseDown={(e) => e.stopPropagation()}
-                                                                                                onClick={(e) => e.stopPropagation()}
                                                                                                 className="w-24 px-2 py-1 text-[10px] font-medium border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
                                                                                                 placeholder="하위 컴포넌트명"
                                                                                             />
@@ -3941,16 +3701,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                 </div>
                                                                             ) : (
                                                                                 <PremiumTooltip label="부분 컴포넌트화">
-                                                                                    <button
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            handlePartialComponentize();
-                                                                                        }}
-                                                                                        onMouseDown={(e) => e.stopPropagation()}
-                                                                                        className="px-2 py-1 bg-violet-500 text-white text-[10px] font-bold rounded-md shadow-md hover:bg-violet-600 flex items-center gap-1"
-                                                                                    >
-                                                                                        <Package size={12} />
-                                                                                        부분 컴포넌트화
+                                                                                    <button onClick={(e) => { e.stopPropagation(); handlePartialComponentize(); }} className="px-2 py-1 bg-violet-500 text-white text-[10px] font-bold rounded-md shadow-md hover:bg-violet-600 flex items-center gap-1">
+                                                                                        <Package size={12} /> 부분 컴포넌트화
                                                                                     </button>
                                                                                 </PremiumTooltip>
                                                                             )}
@@ -3961,64 +3713,26 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 {/* 선 그리기 미리보기 */}
                                                                 {lineDrawStart && lineDrawEnd && linePresetToCreate && (
                                                                     <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 9999 }}>
-                                                                        <line
-                                                                            x1={lineDrawStart.x}
-                                                                            y1={lineDrawStart.y}
-                                                                            x2={lineDrawEnd.x}
-                                                                            y2={lineDrawEnd.y}
-                                                                            stroke={hexToRgba('#2c3e7c', 1)}
-                                                                            strokeWidth={2}
-                                                                            strokeDasharray={linePresetToCreate.strokeStyle === 'dashed' ? '4 2' : linePresetToCreate.strokeStyle === 'dotted' ? '1 2' : undefined}
-                                                                        />
+                                                                        <line x1={lineDrawStart.x} y1={lineDrawStart.y} x2={lineDrawEnd.x} y2={lineDrawEnd.y} stroke={hexToRgba('#2c3e7c', 1)} strokeWidth={2} strokeDasharray={linePresetToCreate.strokeStyle === 'dashed' ? '4 2' : linePresetToCreate.strokeStyle === 'dotted' ? '1 2' : undefined} />
                                                                     </svg>
                                                                 )}
+
                                                                 {/* Render Temporary Drawing Element */}
                                                                 {tempElement && (
-                                                                    <div
-                                                                        style={{
-                                                                            position: 'absolute',
-                                                                            left: tempElement.x,
-                                                                            top: tempElement.y,
-                                                                            width: tempElement.width,
-                                                                            height: tempElement.height,
-                                                                            zIndex: 9999,
-                                                                            pointerEvents: 'none'
-                                                                        }}
-                                                                    >
+                                                                    <div style={{ position: 'absolute', left: tempElement.x, top: tempElement.y, width: tempElement.width, height: tempElement.height, zIndex: 9999, pointerEvents: 'none' }}>
                                                                         {tempElement.type === 'rect' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm" />}
                                                                         {tempElement.type === 'circle' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-full" />}
-                                                                        {tempElement.type === 'table' && (
-                                                                            <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm flex items-center justify-center">
-                                                                                <Table2 size={24} className="text-blue-400 opacity-60" />
-                                                                            </div>
-                                                                        )}
-                                                                        {tempElement.type === 'func-no' && (
-                                                                            <div className="w-full h-full border-2 border-red-500 border-dashed bg-red-50/20 rounded-full flex items-center justify-center text-[10px] text-red-600 font-bold">
-                                                                                {tempElement.text}
-                                                                            </div>
-                                                                        )}
+                                                                        {tempElement.type === 'table' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm flex items-center justify-center"><Table2 size={24} className="text-blue-400 opacity-60" /></div>}
+                                                                        {tempElement.type === 'func-no' && <div className="w-full h-full border-2 border-red-500 border-dashed bg-red-50/20 rounded-full flex items-center justify-center text-[10px] text-red-600 font-bold">{tempElement.text}</div>}
                                                                     </div>
                                                                 )}
 
                                                                 {/* Marquee Drag-Selection Rectangle */}
                                                                 {isDragSelecting && dragSelectRect && dragSelectRect.w > 2 && dragSelectRect.h > 2 && (
-                                                                    <div
-                                                                        style={{
-                                                                            position: 'absolute',
-                                                                            left: dragSelectRect.x,
-                                                                            top: dragSelectRect.y,
-                                                                            width: dragSelectRect.w,
-                                                                            height: dragSelectRect.h,
-                                                                            zIndex: 9998,
-                                                                            pointerEvents: 'none',
-                                                                            border: '1.5px dashed #3b82f6',
-                                                                            backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                                                                            borderRadius: 3
-                                                                        }}
-                                                                    />
+                                                                    <div style={{ position: 'absolute', left: dragSelectRect.x, top: dragSelectRect.y, width: dragSelectRect.w, height: dragSelectRect.h, zIndex: 9998, pointerEvents: 'none', border: '1.5px dashed #3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.08)', borderRadius: 3 }} />
                                                                 )}
 
-                                                                {/* Canvas Grid Lines (보조선) - 잠금/비활성화 시 숨김, 격자 잠금 시 이동/선택 불가. 드래그 중에는 원래 위치 제외·미리보기 위치만 표시 */}
+                                                                {/* Canvas Grid Lines */}
                                                                 {!isLocked && screen.guideLinesVisible !== false && (() => {
                                                                     const verticalPositions = guideLineDragPreview?.axis === 'vertical'
                                                                         ? (() => {
@@ -4030,54 +3744,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     return verticalPositions.map((vx) => (
                                                                         <div
                                                                             key={guideLineDragPreview?.axis === 'vertical' && guideLineDragPreview.currentValue === vx ? `grid-v-preview-${vx}` : `grid-v-${vx}`}
-                                                                            data-guide-line
                                                                             className="group nodrag"
-                                                                            style={{
-                                                                                position: 'absolute',
-                                                                                left: vx - 12,
-                                                                                top: 0,
-                                                                                height: canvasH,
-                                                                                width: 24,
-                                                                                zIndex: 4500,
-                                                                                cursor: screen.guideLinesLocked ? 'default' : 'col-resize',
-                                                                                pointerEvents: screen.guideLinesLocked ? 'none' : 'auto',
-                                                                            }}
-                                                                            onMouseDown={screen.guideLinesLocked ? undefined : (e) => {
-                                                                                e.stopPropagation();
-                                                                                if (!(e.target as HTMLElement).closest('[data-guide-delete]')) {
-                                                                                    handleGuideLineDragStart('vertical', vx, e);
-                                                                                }
-                                                                            }}
+                                                                            style={{ position: 'absolute', left: vx - 12, top: 0, height: canvasH, width: 24, zIndex: 4500, cursor: screen.guideLinesLocked ? 'default' : 'col-resize', pointerEvents: screen.guideLinesLocked ? 'none' : 'auto' }}
+                                                                            onMouseDown={screen.guideLinesLocked ? undefined : (e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest('[data-guide-delete]')) { handleGuideLineDragStart('vertical', vx, e); } }}
                                                                         >
-                                                                            <div
-                                                                                style={{
-                                                                                    position: 'absolute',
-                                                                                    left: 11,
-                                                                                    top: 0,
-                                                                                    height: canvasH,
-                                                                                    width: 2,
-                                                                                    backgroundColor: screen.guideLinesLocked ? 'rgba(239, 239, 239, 0.5)' : 'rgba(232, 223, 177, 0.35)',
-                                                                                    pointerEvents: 'none',
-                                                                                    ...(guideLineDragPreview?.axis === 'vertical' && guideLineDragPreview.currentValue === vx ? { boxShadow: '0 2px 12px rgba(0,0,0,0.2)' } : {}),
-                                                                                }}
-                                                                            />
-                                                                            <div
-                                                                                data-guide-delete
-                                                                                className={`transition-opacity absolute ${!screen.guideLinesLocked && selectedGuideLine?.axis === 'vertical' && selectedGuideLine?.value === vx ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-                                                                                style={{ left: 0, top: 4 }}
-                                                                                onMouseDown={(e) => e.stopPropagation()}
-                                                                            >
+                                                                            <div style={{ position: 'absolute', left: 11, top: 0, height: canvasH, width: 2, backgroundColor: screen.guideLinesLocked ? 'rgba(239, 239, 239, 0.5)' : 'rgba(232, 223, 177, 0.35)', pointerEvents: 'none', ...(guideLineDragPreview?.axis === 'vertical' && guideLineDragPreview.currentValue === vx ? { boxShadow: '0 2px 12px rgba(0,0,0,0.2)' } : {}) }} />
+                                                                            <div data-guide-delete className={`transition-opacity absolute ${!screen.guideLinesLocked && selectedGuideLine?.axis === 'vertical' && selectedGuideLine?.value === vx ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} style={{ left: 0, top: 4 }}>
                                                                                 <PremiumTooltip label="세로줄 삭제">
-                                                                                    <button
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            removeGuideLine('vertical', vx);
-                                                                                            setSelectedGuideLine(null);
-                                                                                        }}
-                                                                                        className="w-5 h-5 rounded-md bg-white/80 hover:bg-white text-slate-500 hover:text-red-500 border border-slate-200 flex items-center justify-center shadow-sm"
-                                                                                    >
-                                                                                        <Trash2 size={12} />
-                                                                                    </button>
+                                                                                    <button onClick={(e) => { e.stopPropagation(); removeGuideLine('vertical', vx); setSelectedGuideLine(null); }} className="w-5 h-5 rounded-md bg-white/80 hover:bg-white text-slate-500 hover:text-red-500 border border-slate-200 flex items-center justify-center shadow-sm"><Trash2 size={12} /></button>
                                                                                 </PremiumTooltip>
                                                                             </div>
                                                                         </div>
@@ -4094,61 +3768,21 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     return horizontalPositions.map((vy) => (
                                                                         <div
                                                                             key={guideLineDragPreview?.axis === 'horizontal' && guideLineDragPreview.currentValue === vy ? `grid-h-preview-${vy}` : `grid-h-${vy}`}
-                                                                            data-guide-line
                                                                             className="group nodrag"
-                                                                            style={{
-                                                                                position: 'absolute',
-                                                                                left: 0,
-                                                                                right: 0,
-                                                                                top: vy - 12,
-                                                                                height: 24,
-                                                                                zIndex: 4500,
-                                                                                cursor: screen.guideLinesLocked ? 'default' : 'row-resize',
-                                                                                pointerEvents: screen.guideLinesLocked ? 'none' : 'auto',
-                                                                            }}
-                                                                            onMouseDown={screen.guideLinesLocked ? undefined : (e) => {
-                                                                                e.stopPropagation();
-                                                                                if (!(e.target as HTMLElement).closest('[data-guide-delete]')) {
-                                                                                    handleGuideLineDragStart('horizontal', vy, e);
-                                                                                }
-                                                                            }}
+                                                                            style={{ position: 'absolute', left: 0, right: 0, top: vy - 12, height: 24, zIndex: 4500, cursor: screen.guideLinesLocked ? 'default' : 'row-resize', pointerEvents: screen.guideLinesLocked ? 'none' : 'auto' }}
+                                                                            onMouseDown={screen.guideLinesLocked ? undefined : (e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest('[data-guide-delete]')) { handleGuideLineDragStart('horizontal', vy, e); } }}
                                                                         >
-                                                                            <div
-                                                                                style={{
-                                                                                    position: 'absolute',
-                                                                                    left: 0,
-                                                                                    right: 0,
-                                                                                    top: 11,
-                                                                                    height: 2,
-                                                                                    backgroundColor: screen.guideLinesLocked ? 'rgba(239, 239, 239, 0.5)' : 'rgba(232, 223, 177, 0.35)',
-                                                                                    pointerEvents: 'none',
-                                                                                    ...(guideLineDragPreview?.axis === 'horizontal' && guideLineDragPreview.currentValue === vy ? { boxShadow: '0 2px 12px rgba(0,0,0,0.2)' } : {}),
-                                                                                }}
-                                                                            />
-                                                                            <div
-                                                                                data-guide-delete
-                                                                                className={`transition-opacity absolute ${!screen.guideLinesLocked && selectedGuideLine?.axis === 'horizontal' && selectedGuideLine?.value === vy ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-                                                                                style={{ left: 4, top: 0 }}
-                                                                                onMouseDown={(e) => e.stopPropagation()}
-                                                                            >
+                                                                            <div style={{ position: 'absolute', left: 0, right: 0, top: 11, height: 2, backgroundColor: screen.guideLinesLocked ? 'rgba(239, 239, 239, 0.5)' : 'rgba(232, 223, 177, 0.35)', pointerEvents: 'none', ...(guideLineDragPreview?.axis === 'horizontal' && guideLineDragPreview.currentValue === vy ? { boxShadow: '0 2px 12px rgba(0,0,0,0.2)' } : {}) }} />
+                                                                            <div data-guide-delete className={`transition-opacity absolute ${!screen.guideLinesLocked && selectedGuideLine?.axis === 'horizontal' && selectedGuideLine?.value === vy ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} style={{ left: 4, top: 0 }}>
                                                                                 <PremiumTooltip label="가로줄 삭제">
-                                                                                    <button
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            removeGuideLine('horizontal', vy);
-                                                                                            setSelectedGuideLine(null);
-                                                                                        }}
-                                                                                        className="w-5 h-5 rounded-md bg-white/80 hover:bg-white text-slate-500 hover:text-red-500 border border-slate-200 flex items-center justify-center shadow-sm"
-                                                                                    >
-                                                                                        <Trash2 size={12} />
-                                                                                    </button>
+                                                                                    <button onClick={(e) => { e.stopPropagation(); removeGuideLine('horizontal', vy); setSelectedGuideLine(null); }} className="w-5 h-5 rounded-md bg-white/80 hover:bg-white text-slate-500 hover:text-red-500 border border-slate-200 flex items-center justify-center shadow-sm"><Trash2 size={12} /></button>
                                                                                 </PremiumTooltip>
                                                                             </div>
                                                                         </div>
                                                                     ));
                                                                 })()}
 
-                                                                {/* Smart Guides - 정렬 시 가이드라인 */}
+                                                                {/* Smart Guides */}
                                                                 {alignmentGuides && <AlignmentGuidesOverlay guides={alignmentGuides} />}
                                                             </div>
                                                         </div>
@@ -4156,6 +3790,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                 </div>
                                             );
                                         })()}
+
                                     </CanvasRulers>
                                 </div>
                             </div>

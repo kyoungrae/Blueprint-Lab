@@ -26,7 +26,7 @@ interface TextStyleToolbarProps {
     updateElement: (id: string, updates: Partial<DrawElement>) => void;
     applyFontSizePx: (px: number) => boolean;
     applyToSelection: (fn: () => void) => boolean;
-    drawElements: DrawElement[];
+    getDrawElements: () => DrawElement[];
     update: (updates: any) => void;
     syncUpdate: (updates: any) => void;
     textSelectionFromTable: { tableId: string; cellIndex: number } | null;
@@ -57,7 +57,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     updateElement,
     applyFontSizePx,
     applyToSelection,
-    drawElements,
+    getDrawElements,
     update,
     syncUpdate,
     textSelectionFromTable,
@@ -171,7 +171,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 if (!indices.includes(i)) return s;
                 return { ...(s || {}), fontSize: clamped };
             });
-            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
+            const nextElements = getDrawElements().map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
             pendingTableFontSizeRef.current = nextElements;
             if (tableFontSizeTimerRef.current) clearTimeout(tableFontSizeTimerRef.current);
             tableFontSizeTimerRef.current = setTimeout(() => {
@@ -191,7 +191,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 updateElement(el.id, { fontSize: clamped });
             }
         }
-    }, [el.id, el.tableRows, el.tableCols, el.tableCellStyles, fromTable, textSelectionFromTable, editingTableId, selectedCellIndices, drawElements, update, onBeforeFontSizeApply, updateElement, applyFontSizePx, tableCellSelectionRestoreRef, setOptimisticFontSize]);
+    }, [el.id, el.tableRows, el.tableCols, el.tableCellStyles, fromTable, textSelectionFromTable, editingTableId, selectedCellIndices, getDrawElements, update, onBeforeFontSizeApply, updateElement, applyFontSizePx, tableCellSelectionRestoreRef, setOptimisticFontSize]);
 
     useEffect(() => {
         fetch(`${API_BASE}/api/fonts`)
@@ -284,7 +284,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 s.fontWeight = nextVal;
                 newStyles[idx] = s;
             });
-            const nextElements = drawElements.map(it =>
+            const nextElements = getDrawElements().map(it =>
                 it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
             );
 
@@ -327,7 +327,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 s.fontStyle = nextVal;
                 newStyles[idx] = s;
             });
-            const nextElements = drawElements.map(it =>
+            const nextElements = getDrawElements().map(it =>
                 it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
             );
 
@@ -370,7 +370,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 s.textDecoration = nextVal;
                 newStyles[idx] = s;
             });
-            const nextElements = drawElements.map(it =>
+            const nextElements = getDrawElements().map(it =>
                 it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
             );
 
@@ -420,7 +420,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 }
             });
 
-            const nextElements = drawElements.map(it =>
+            const nextElements = getDrawElements().map(it =>
                 it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
             );
 
@@ -502,7 +502,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 }
             });
 
-            const nextElements = drawElements.map(it =>
+            const nextElements = getDrawElements().map(it =>
                 it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
             );
 
