@@ -130,9 +130,9 @@ const TableElement: React.FC<TableElementProps> = memo(({
                 borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
             }}
             onMouseDown={(e) => {
-                // 컴포넌트로부터 생성된 테이블의 경우, 셀 선택/편집 로직이 동작해야 함.
-                // 이미 선택된 상태이거나, 컴포넌트 인스턴스인 경우 이벤트를 중단하여 캔버스의 엔티티 선택 로직이 가로채지 않도록 함.
-                if (isSelected || editingTableId === el.id || el.fromComponentId) {
+                // 이미 선택된 상태이거나 편집 중인 경우에만 중단하여 셀 선택/편집 로직이 작동하게 함.
+                // 선택되지 않은 상태에서는 상위(CanvasElement)로 전파하여 테이블 자체가 먼저 선택되도록 허용.
+                if (isSelected || editingTableId === el.id) {
                     e.stopPropagation();
                 }
                 if (isLocked) return;
@@ -349,6 +349,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         dir="ltr"
                                         className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0 nodrag nopan"
                                         style={{
+                                            pointerEvents: 'none', // 텍스트 영역(특히 <font> 등 내부 태그)이 이벤트를 가로채지 않도록 하여 부모 셀 컨테이너가 항상 이벤트를 받게 함
                                             alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
                                             justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
                                             wordBreak: 'break-word', unicodeBidi: 'isolate',
