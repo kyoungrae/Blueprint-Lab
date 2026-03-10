@@ -770,12 +770,13 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     // drawElements는 이제 DrawElementsList 하위 컴포넌트에서 직접 구독함.
     // ScreenNodeFull에서 구독을 제거함으로써, 요소가 이동하거나 변경될 때 3900줄이 넘는 이 거대한 컴포넌트 전체가
     // 리렌더링되는 비용을 획기적으로 줄임 (Figma 스타일 격리)
-    const elementsRefForHandlers = useRef<DrawElement[]>([]);
     const getDrawElements = useCallback(() => (
         isComponentCtx
             ? useComponentStore.getState().components.find(s => s.id === screen.id)?.drawElements
             : useScreenDesignStore.getState().screens.find(s => s.id === screen.id)?.drawElements
     ) ?? [], [isComponentCtx, screen.id]);
+
+    const elementsRefForHandlers = useRef<DrawElement[]>(getDrawElements());
 
     useEffect(() => {
         // 핸들러에서 최신 데이터를 참조하기 위한 ref 업데이트 (구독은 하지 않음)
@@ -789,9 +790,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         return unsubscribe;
     }, [isComponentCtx, screen.id]);
 
-    // 하위 핸들러들이 리렌더링 없이도 최신 배열을 참조할 수 있게 함
-    // (다만 이 변수 자체를 의존성에 넣으면 안 됨)
-    const drawElements = elementsRefForHandlers.current;
+    // 하위 핸들러들이 리렌더링 없이도 최신 배열을 참조할 수 있게 함 (기존 ref 방식 유지)
+    // 다만 UI 렌더링(RightPane 등)에는 prop 데이터를 우선 사용하여 초기 로딩 버그를 방지함
+    const drawElements = screen.drawElements || elementsRefForHandlers.current;
 
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
