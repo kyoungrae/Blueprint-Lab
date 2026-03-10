@@ -103,7 +103,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             timeoutId = setTimeout(() => {
                 // optimisticFontSize가 있는 경우 (폰트 사이즈 변경 중) DOM 읽기 건너뛰기
                 if (optimisticFontSize != null) return;
-                
+
                 const selection = window.getSelection();
                 if (selection && selection.rangeCount > 0) {
                     const range = selection.getRangeAt(0);
@@ -168,7 +168,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 }
             }
         };
-        
+
         // 전역 저장된 텍스트 선택이 있으면 복원 후 스타일 계산
         const globalSelection = (window as any).__savedTextSelection;
         if (globalSelection) {
@@ -220,7 +220,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
         const clamped = Math.min(72, Math.max(8, px));
         // applyFontSizePx는 텍스트 선택 시에만 적용되므로 반환값과 상관없이 항상 updateElement 호출
         applyFontSizePx(clamped);
-        
+
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             setOptimisticFontSize(clamped);
@@ -639,7 +639,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                             if (globalSelection) {
                                 savedSelectionRef.current = globalSelection;
                                 delete (window as any).__savedTextSelection;
-                                
+
                                 // 즉시 선택 복원
                                 setTimeout(() => {
                                     const sel = window.getSelection();
@@ -672,7 +672,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                             const px = Math.min(72, Math.max(8, parseInt(fontSizeInputStr ?? String(displayFontSize), 10) || 8));
                             setFontSizeInputStr(null);
                             applyFontSize(px);
-                            
+
                             // 텍스트 선택 복원
                             setTimeout(() => {
                                 if (savedSelectionRef.current) {
@@ -700,13 +700,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                         onClick={(e) => {
                             e.stopPropagation();
                             e.preventDefault(); // 클릭 기본 동작도 막기
-                            
+
                             // 수동으로 포커스 처리
                             const input = e.target as HTMLInputElement;
                             if (document.activeElement !== input) {
                                 input.focus();
                             }
-                            
+
                             // 텍스트 선택이 해제되었다면 즉시 복원
                             const sel = window.getSelection();
                             if (!sel || sel.isCollapsed) {

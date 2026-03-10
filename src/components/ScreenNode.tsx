@@ -3528,10 +3528,10 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         // 전역 상태에 저장 (TextStyleToolbar에서 사용)
                                                                         (window as any).__savedTextSelection = savedSelection;
                                                                     }
-                                                                    
-                                                                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                                                     const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
-                                                                     setFontStylePanelPos({ x: flowPos.x, y: flowPos.y });
+
+                                                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                    const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                    setFontStylePanelPos({ x: flowPos.x, y: flowPos.y });
                                                                 }
                                                                 setShowFontStylePanel(!showFontStylePanel);
                                                             }}
