@@ -24,7 +24,6 @@ import { ExportModeContext } from '../contexts/ExportModeContext';
 import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { TooltipPortalContext } from '../contexts/TooltipPortalContext';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
-import { FONT_SIZE_OVERRIDE_EVENT } from './screenNode/DrawTextComponent';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
 import RightPane from './screenNode/RightPane';
