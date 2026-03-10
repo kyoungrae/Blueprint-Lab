@@ -3430,25 +3430,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                 : (el.color || '#333333');
                             const defaultFontSize = el.fontSize || 14;
 
-                            const getFontSizeFromSelection = () => {
-                                const sel = window.getSelection();
-                                if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
-                                const range = sel.getRangeAt(0);
-                                const node = range.startContainer.nodeType === Node.TEXT_NODE
-                                    ? range.startContainer.parentElement
-                                    : range.startContainer as Element;
-                                if (!node) return null;
-                                const computed = window.getComputedStyle(node as Element);
-                                const px = parseFloat(computed.fontSize);
-                                return isNaN(px) ? null : Math.round(px);
-                            };
-
                             const tableCellFontSize = fromTable && textSelectionFromTable
                                 ? (el.tableCellStyles?.[textSelectionFromTable.cellIndex]?.fontSize ?? el.fontSize ?? 14)
                                 : null;
                             const displayFontSize = (fromTable && tableCellFontSize != null)
                                 ? tableCellFontSize
-                                : (getFontSizeFromSelection() ?? defaultFontSize);
+                                : defaultFontSize;
 
                             const screenPos = flowToScreenPosition({ x: fontStylePanelPos.x, y: fontStylePanelPos.y });
                             return createPortal(

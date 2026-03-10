@@ -84,7 +84,41 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     /** 로컬 강제 리렌더 (ScreenNode 전체 리렌더 우회) */
     // const [refresh, setRefresh] = useState(0);
 
-    const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(optimisticFontSize ?? displayFontSize);
+    const [computedSelection, setComputedSelection] = useState<{ fontSize?: number; fontFamily?: string }>({});
+
+    useEffect(() => {
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        const updateComputedStyle = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                const selection = window.getSelection();
+                if (selection && selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    let element = range.commonAncestorContainer;
+                    if (element.nodeType === Node.TEXT_NODE) element = element.parentElement!;
+                    if (element instanceof HTMLElement) {
+                        const computed = window.getComputedStyle(element);
+                        const fontSize = parseFloat(computed.fontSize);
+                        const fontFamily = computed.fontFamily.split(',')[0].trim().replace(/^"|"$/g, '');
+                        setComputedSelection({ fontSize, fontFamily });
+                    } else {
+                        setComputedSelection({});
+                    }
+                } else {
+                    setComputedSelection({});
+                }
+            }, 50);
+        };
+        document.addEventListener('selectionchange', updateComputedStyle);
+        updateComputedStyle();
+        return () => {
+            document.removeEventListener('selectionchange', updateComputedStyle);
+            if (timeoutId) clearTimeout(timeoutId);
+        };
+    }, [el.id, fromTable, textSelectionFromTable, editingTableId]);
+
+    const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(optimisticFontSize ?? computedSelection.fontSize ?? displayFontSize);
+
 
     useEffect(() => {
         if (optimisticFontSize != null && displayFontSize === optimisticFontSize) setOptimisticFontSize(null);
@@ -213,19 +247,9 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
         };
     };
 
-    const getFontFromSelection = (): string | null => {
-        const sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
-        const range = sel.getRangeAt(0);
-        const node = range.startContainer.nodeType === Node.TEXT_NODE ? (range.startContainer as Text).parentElement : range.startContainer as Element;
-        if (!node) return null;
-        const computed = window.getComputedStyle(node as Element);
-        return computed.fontFamily || null;
-    };
-
     const resolvedFont = fromTable && textSelectionFromTable
         ? getCellStyle(textSelectionFromTable.cellIndex).fontFamily
-        : getFontFromSelection() ?? el.fontFamily ?? 'Pretendard';
+        : computedSelection.fontFamily ?? el.fontFamily ?? 'Pretendard';
     const currentFont = getPrimaryFontName(resolvedFont);
     const baseFonts = useMemo(() => {
         return [...SYSTEM_FONTS, ...fonts.map(f => f.name)];
@@ -553,7 +577,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                             onMouseDown={(e) => {
                                 e.preventDefault();
                                 setFontSizeInputStr(null);
-                                const current = optimisticFontSize ?? displayFontSize;
+                                const current = optimisticFontSize ?? computedSelection.fontSize ?? displayFontSize;
                                 applyFontSize(current + 1);
                             }}
                             className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center"
@@ -566,7 +590,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                             onMouseDown={(e) => {
                                 e.preventDefault();
                                 setFontSizeInputStr(null);
-                                const current = optimisticFontSize ?? displayFontSize;
+                                const current = optimisticFontSize ?? computedSelection.fontSize ?? displayFontSize;
                                 applyFontSize(current - 1);
                             }}
                             className="p-0.5 hover:bg-gray-200 text-gray-500 flex items-center justify-center border-t border-gray-200"
