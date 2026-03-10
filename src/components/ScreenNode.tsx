@@ -1913,10 +1913,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     });
 
     // ── Font Panel Handlers (Memoized) ───────────────────────────────────────
-    const onBeforeFontSizeApply = useCallback((elementId: string, px: number) => {
-        window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId, px } }));
-        updateElement(elementId, { fontSize: px });
-    }, [updateElement]);
 
     const applyToSelection = useCallback((fn: () => void, fromTable: boolean): boolean => {
         // ...
@@ -3630,7 +3626,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             fromTable={fromTable}
                                             defaultColor={defaultColor}
                                             displayFontSize={displayFontSize}
-                                            onBeforeFontSizeApply={onBeforeFontSizeApply}
                                             updateElement={updateElement}
                                             applyToSelection={(fn) => applyToSelection(fn, fromTable)}
                                             applyFontSizePx={applyFontSizePx}

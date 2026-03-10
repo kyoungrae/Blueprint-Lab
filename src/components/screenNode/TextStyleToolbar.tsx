@@ -22,7 +22,6 @@ interface TextStyleToolbarProps {
     fromTable: boolean;
     defaultColor: string;
     displayFontSize: number;
-    onBeforeFontSizeApply?: (elementId: string, px: number) => void;
     updateElement: (id: string, updates: Partial<DrawElement>) => void;
     applyFontSizePx: (px: number) => boolean;
     applyToSelection: (fn: () => void) => boolean;
@@ -54,7 +53,6 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     fromTable,
     defaultColor,
     displayFontSize,
-    onBeforeFontSizeApply,
     updateElement,
     applyFontSizePx,
     applyToSelection,
@@ -82,6 +80,8 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     const tableFontSizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** 디바운스 중 최신 nextElements를 보관 */
     const pendingTableFontSizeRef = useRef<DrawElement[] | null>(null);
+    /** 텍스트 선택 상태 저장 */
+    const savedSelectionRef = useRef<{ range: Range | null; element: Element | null } | null>(null);
 
     const tableStyleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingTableStyleRef = useRef<DrawElement[] | null>(null);
@@ -101,6 +101,9 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
         const updateComputedStyle = () => {
             if (timeoutId) clearTimeout(timeoutId);
             timeoutId = setTimeout(() => {
+                // optimisticFontSize가 있는 경우 (폰트 사이즈 변경 중) DOM 읽기 건너뛰기
+                if (optimisticFontSize != null) return;
+                
                 const selection = window.getSelection();
                 if (selection && selection.rangeCount > 0) {
                     const range = selection.getRangeAt(0);
@@ -135,14 +138,16 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             document.removeEventListener('selectionchange', updateComputedStyle);
             if (timeoutId) clearTimeout(timeoutId);
         };
-    }, [el.id, fromTable, textSelectionFromTable, editingTableId]);
+    }, [el.id, fromTable, textSelectionFromTable, editingTableId, optimisticFontSize]);
 
     const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(optimisticFontSize ?? computedSelection.fontSize ?? displayFontSize);
 
 
     useEffect(() => {
-        if (optimisticFontSize != null && displayFontSize === optimisticFontSize) setOptimisticFontSize(null);
-    }, [displayFontSize, optimisticFontSize]);
+        if (optimisticFontSize != null && displayFontSize === optimisticFontSize && fontSizeInputStr == null) {
+            setOptimisticFontSize(null);
+        }
+    }, [displayFontSize, optimisticFontSize, fontSizeInputStr]);
 
     // 테이블 폰트 사이즈 디바운스 타이머 정리
     useEffect(() => {
@@ -172,7 +177,9 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
 
     const applyFontSize = useCallback((px: number) => {
         const clamped = Math.min(72, Math.max(8, px));
+        // applyFontSizePx는 텍스트 선택 시에만 적용되므로 반환값과 상관없이 항상 updateElement 호출
         applyFontSizePx(clamped);
+        
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
             setOptimisticFontSize(clamped);
@@ -202,14 +209,11 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             }, TABLE_FONT_SIZE_DEBOUNCE_MS);
         } else if (!fromTable) {
             window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId: el.id, px: clamped } }));
-            if (onBeforeFontSizeApply) {
-                setOptimisticFontSize(clamped);
-                onBeforeFontSizeApply(el.id, clamped);
-            } else {
-                updateElement(el.id, { fontSize: clamped });
-            }
+            setOptimisticFontSize(clamped);
+            // 직접 updateElement 호출하여 onBeforeFontSizeApply의 중복 디바운스 방지
+            updateElement(el.id, { fontSize: clamped });
         }
-    }, [el.id, el.tableRows, el.tableCols, el.tableCellStyles, fromTable, textSelectionFromTable, editingTableId, selectedCellIndices, getDrawElements, update, onBeforeFontSizeApply, updateElement, applyFontSizePx, tableCellSelectionRestoreRef, setOptimisticFontSize]);
+    }, [el.id, el.tableRows, el.tableCols, el.tableCellStyles, fromTable, textSelectionFromTable, editingTableId, selectedCellIndices, getDrawElements, update, updateElement, applyFontSizePx, tableCellSelectionRestoreRef, setOptimisticFontSize]);
 
     useEffect(() => {
         fetch(`${API_BASE}/api/fonts`)
@@ -587,7 +591,18 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                         type="text"
                         inputMode="numeric"
                         value={displayValue}
-                        onFocus={() => setFontSizeInputStr(String(optimisticFontSize ?? displayFontSize))}
+                        readOnly={false}
+                        onFocus={() => {
+                            // 텍스트 선택 상태 저장
+                            const sel = window.getSelection();
+                            if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+                                savedSelectionRef.current = {
+                                    range: sel.getRangeAt(0).cloneRange(),
+                                    element: sel.anchorNode?.parentElement || null
+                                };
+                            }
+                            setFontSizeInputStr(String(optimisticFontSize ?? displayFontSize));
+                        }}
                         onChange={(e) => {
                             const v = e.target.value.replace(/[^0-9]/g, '');
                             if (v === '' || v.length <= 3) setFontSizeInputStr(v || '');
@@ -596,12 +611,32 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                             const px = Math.min(72, Math.max(8, parseInt(fontSizeInputStr ?? String(displayFontSize), 10) || 8));
                             setFontSizeInputStr(null);
                             applyFontSize(px);
+                            
+                            // 텍스트 선택 복원
+                            setTimeout(() => {
+                                if (savedSelectionRef.current) {
+                                    const sel = window.getSelection();
+                                    if (sel && savedSelectionRef.current.range) {
+                                        try {
+                                            sel.removeAllRanges();
+                                            sel.addRange(savedSelectionRef.current.range);
+                                        } catch (e) {
+                                            // 선택 복원 실패 시 무시
+                                        }
+                                    }
+                                    savedSelectionRef.current = null;
+                                }
+                            }, 10);
                         }}
                         onKeyDown={(e) => {
                             e.stopPropagation();
                             if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                         }}
-                        className="w-9 py-1 px-1.5 bg-transparent text-[11px] font-bold text-gray-700 outline-none text-center"
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                        }}
+                        className="w-9 py-1 px-1.5 bg-transparent text-[11px] font-bold text-gray-700 outline-none text-center cursor-text"
                     />
                     <div className="flex flex-col border-l border-gray-200">
                         <button
