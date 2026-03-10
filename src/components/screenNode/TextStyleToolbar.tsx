@@ -33,6 +33,7 @@ interface TextStyleToolbarProps {
     selectedCellIndices: number[];
     editingTableId: string | null;
     tableCellSelectionRestoreRef?: React.MutableRefObject<{ tableId: string; cellIndex: number } | null>;
+    screenId: string;
 }
 
 // 피피티 기본 폰트: 한글(바탕, 굴림 등) + 영문
@@ -64,6 +65,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     selectedCellIndices,
     editingTableId,
     tableCellSelectionRestoreRef,
+    screenId,
 }) => {
     const { recentTextColors, addRecentTextColor } = useRecentTextColors();
     const [fonts, setFonts] = useState<FontInfo[]>([]);
@@ -549,7 +551,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     };
 
     return (
-        <div data-text-style-toolbar className="nodrag nopan flex items-center gap-2 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
+        <div data-text-style-toolbar data-screen-id={screenId} className="nodrag nopan flex items-center gap-2 rounded-lg px-2 py-1 animate-in fade-in duration-200" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
             {/* Bold, Italic, Underline */}
             <div className="flex items-center gap-0.5 border-r border-gray-200 pr-2">
                 <button
@@ -646,6 +648,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 {fontDropdownOpen && (
                     <div
                         data-font-dropdown
+                        data-screen-id={screenId}
                         className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[10000] max-h-48 overflow-y-auto overflow-x-hidden min-w-[140px] overscroll-contain"
                         onWheel={(e) => e.stopPropagation()}
                     >

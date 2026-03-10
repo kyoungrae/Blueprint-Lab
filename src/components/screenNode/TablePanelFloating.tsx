@@ -131,6 +131,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
     return createPortal(
         <div
             data-table-panel
+            data-screen-id={screenId}
             className="nodrag floating-panel fixed z-[9000] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[400px] animate-in fade-in zoom-in origin-top-left"
             style={{
                 left: tablePanelScreenPos.x,
@@ -388,7 +389,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                         </div>
                         <div className="flex gap-1.5">
                             <div className="flex-1 min-w-0">
-                                <PremiumTooltip label="선택한 셀들의 행 높이를 먼저 선택한 셀의 높이로 맞춥니다" wrapperClassName="w-full" offsetBottom={50}>
+                                <PremiumTooltip label="선택한 셀들의 행 높이를 먼저 선택한 셀의 높이로 맞춥니다" wrapperClassName="w-full" offsetBottom={50} screenId={screenId}>
                                     <button
                                         onMouseDown={e => e.stopPropagation()}
                                         onClick={() => handleEqualizeRowHeights(selectedEl)}
@@ -401,7 +402,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                 </PremiumTooltip>
                             </div>
                             <div className="flex-1 min-w-0">
-                                <PremiumTooltip label="선택한 셀들의 열 너비를 먼저 선택한 셀의 너비로 맞춥니다" wrapperClassName="w-full" offsetBottom={50}>
+                                <PremiumTooltip label="선택한 셀들의 열 너비를 먼저 선택한 셀의 너비로 맞춥니다" wrapperClassName="w-full" offsetBottom={50} screenId={screenId}>
                                     <button
                                         onMouseDown={e => e.stopPropagation()}
                                         onClick={() => handleEqualizeColWidths(selectedEl)}

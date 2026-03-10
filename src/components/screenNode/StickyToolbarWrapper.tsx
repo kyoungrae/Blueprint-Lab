@@ -7,7 +7,8 @@ const getPanelPortalRoot = () => document.getElementById('panel-portal-root') ||
 export const StickyToolbarWrapper: React.FC<{
     children: React.ReactNode;
     forceShow?: boolean;
-}> = ({ children, forceShow }) => {
+    screenId: string;
+}> = ({ children, forceShow, screenId }) => {
     const placeholderRef = useRef<HTMLDivElement>(null);
     const [isFloating, setIsFloating] = useState(false);
 
@@ -45,8 +46,16 @@ export const StickyToolbarWrapper: React.FC<{
         : "nodrag w-full flex flex-col border-b border-gray-200 shadow-sm z-[200] rounded-t-[15px]";
 
     const content = (
-        <div className={toolbarClassName}>
-            {children}
+        <div
+            data-sticky-toolbar
+            data-screen-id={screenId}
+            data-ignore-selection-clear="true"
+            className={toolbarClassName}
+            onMouseDown={(e) => e.stopPropagation()}
+        >
+            <div onMouseDown={(e) => e.stopPropagation()} className="w-full">
+                {children}
+            </div>
         </div>
     );
 

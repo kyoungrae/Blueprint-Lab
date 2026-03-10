@@ -134,6 +134,7 @@ interface StylePanelProps {
     onClose: () => void;
     onDragStart?: () => void;
     onDragEnd?: () => void;
+    screenId: string;
 }
 
 const StylePanel: React.FC<StylePanelProps> = ({
@@ -151,6 +152,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
     onClose,
     onDragStart,
     onDragEnd,
+    screenId,
 }) => {
     const isDraggingRef = useRef(false);
     // Force re-render on viewport transformation to keep position in sync
@@ -261,6 +263,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
     return (
         <div
             data-style-panel
+            data-screen-id={screenId}
             className="nodrag floating-panel fixed z-[9000] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in origin-top-left"
             style={{
                 left: flowToScreenPosition({ x: stylePanelPos.x, y: stylePanelPos.y }).x,
@@ -408,6 +411,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
                             return (
                                 <div
                                     data-font-dropdown
+                                    data-screen-id={screenId}
                                     className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9100] max-h-40 overflow-y-auto overflow-x-hidden overscroll-contain"
                                     onWheel={(e) => e.stopPropagation()}
                                 >

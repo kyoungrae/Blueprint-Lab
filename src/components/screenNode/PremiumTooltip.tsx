@@ -30,9 +30,10 @@ interface PremiumTooltipProps {
     wrapperClassName?: string;
     /** true면 항상 document.body에 툴팁 렌더 (overflow로 잘림 방지) */
     forceBodyPortal?: boolean;
+    screenId?: string;
 }
 
-const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement = 'bottom', offsetBottom, zIndex = DEFAULT_TOOLTIP_Z_INDEX, wrapperClassName, forceBodyPortal: forceBodyPortalProp }) => {
+const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement = 'bottom', offsetBottom, zIndex = DEFAULT_TOOLTIP_Z_INDEX, wrapperClassName, forceBodyPortal: forceBodyPortalProp, screenId }) => {
     const [visible, setVisible] = useState(false);
     const [portalPos, setPortalPos] = useState({ left: 0, top: 0 });
     const [viewportPos, setViewportPos] = useState({ left: 0, top: 0 });
@@ -135,6 +136,8 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
     return (
         <div
             ref={wrapperRef}
+            data-premium-tooltip
+            data-screen-id={screenId}
             className={`nodrag nopan relative inline-flex items-center justify-center ${wrapperClassName ?? ''}`.trim()}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseEnter={handleMouseEnter}

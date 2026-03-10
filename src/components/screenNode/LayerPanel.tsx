@@ -14,6 +14,7 @@ interface LayerPanelProps {
     onDragStart?: () => void;
     onDragEnd?: () => void;
     onLayerAction: (action: 'front' | 'back' | 'forward' | 'backward') => void;
+    screenId: string;
 }
 
 const LayerPanel: React.FC<LayerPanelProps> = ({
@@ -28,6 +29,7 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
     onDragStart,
     onDragEnd,
     onLayerAction,
+    screenId,
 }) => {
     const isDraggingRef = useRef(false);
     // Force re-render on viewport transformation to keep position in sync
@@ -62,6 +64,7 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
     return (
         <div
             data-layer-panel
+            data-screen-id={screenId}
             className="nodrag floating-panel fixed z-[9000] bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 min-w-[240px] animate-in fade-in zoom-in origin-top-left"
             style={{
                 left: flowToScreenPosition({ x: layerPanelPos.x, y: layerPanelPos.y }).x,

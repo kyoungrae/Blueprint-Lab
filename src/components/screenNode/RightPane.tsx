@@ -24,6 +24,7 @@ interface RightPaneProps {
     zoom: number | string;
     tableListPanelPos: { x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null;
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
+    screenId: string;
 }
 
 const getRows = (text: string | undefined, minRows = 2): number => {
@@ -47,6 +48,7 @@ const RightPane: React.FC<RightPaneProps> = ({
     zoom,
     tableListPanelPos,
     flowToScreenPosition,
+    screenId,
 }) => {
     const funcNos = (drawElements || [])
         .filter(el => el.type === 'func-no')
@@ -302,6 +304,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                             return (
                                                 <div
                                                     data-table-list-portal
+                                                    data-screen-id={screenId}
                                                     className="nodrag nopan nowheel floating-panel fixed w-48 max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
                                                     style={{
                                                         left: screenPos.x,
