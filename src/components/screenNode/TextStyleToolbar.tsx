@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, startTransition } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Type, Bold, Italic, Underline, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import type { DrawElement } from '../../types/screenDesign';
+import { FONT_SIZE_OVERRIDE_EVENT, COLOR_OVERRIDE_EVENT, TEXT_STYLE_OVERRIDE_EVENT } from './DrawTextComponent';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import { useRecentTextColors } from '../../contexts/RecentTextColorsContext';
@@ -20,7 +21,6 @@ interface TextStyleToolbarProps {
     el: DrawElement;
     fromTable: boolean;
     defaultColor: string;
-    defaultFontSize: number;
     displayFontSize: number;
     onBeforeFontSizeApply?: (elementId: string, px: number) => void;
     updateElement: (id: string, updates: Partial<DrawElement>) => void;
@@ -28,8 +28,6 @@ interface TextStyleToolbarProps {
     applyToSelection: (fn: () => void) => boolean;
     drawElements: DrawElement[];
     update: (updates: any) => void;
-    syncUpdate: (updates: any) => void;
-    saveHistory: (elements: DrawElement[]) => void;
     textSelectionFromTable: { tableId: string; cellIndex: number } | null;
     selectedCellIndices: number[];
     editingTableId: string | null;
@@ -49,7 +47,7 @@ function getPrimaryFontName(fontFamily: string | undefined): string {
     return first || 'Pretendard';
 }
 
-export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
+export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     el,
     fromTable,
     defaultColor,
@@ -80,6 +78,9 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
     const tableFontSizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** 디바운스 중 최신 nextElements를 보관 */
     const pendingTableFontSizeRef = useRef<DrawElement[] | null>(null);
+
+    const tableStyleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingTableStyleRef = useRef<DrawElement[] | null>(null);
     /** 로컬 강제 리렌더 (ScreenNode 전체 리렌더 우회) */
     // const [refresh, setRefresh] = useState(0);
 
@@ -100,23 +101,33 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 if (pending) {
                     pendingTableFontSizeRef.current = null;
                     update({ drawElements: pending });
-                    // syncUpdate({ drawElements: pending }); // 실시간 동기화 비활성화 - 딜레이 최소화
-                    // saveHistory(pending); // 히스토리 저장 비활성화 - 딜레이 최소화
+                }
+            }
+            if (tableStyleTimerRef.current) {
+                clearTimeout(tableStyleTimerRef.current);
+                tableStyleTimerRef.current = null;
+                const pending = pendingTableStyleRef.current;
+                if (pending) {
+                    pendingTableStyleRef.current = null;
+                    update({ drawElements: pending });
                 }
             }
         };
     }, []);
 
-    const applyFontSize = (px: number) => {
+    const applyFontSize = useCallback((px: number) => {
         const clamped = Math.min(72, Math.max(8, px));
         applyFontSizePx(clamped);
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             if (tableCellSelectionRestoreRef) tableCellSelectionRestoreRef.current = { tableId: textSelectionFromTable.tableId, cellIndex: textSelectionFromTable.cellIndex };
-            // 즉시 표시 (store 업데이트 전에 툴바 숫자만 갱신)
             setOptimisticFontSize(clamped);
+
+            // 🔥 즉시 피드백을 위해 이벤트 발생 (TableElement가 받음)
+            window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId: el.id, px: clamped } }));
+
             const cellIdx = textSelectionFromTable.cellIndex;
-            const rows = el.tableRows || 3;
-            const cols = el.tableCols || 3;
+            const rows = el.tableRows || 1;
+            const cols = el.tableCols || 1;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
             const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))].map((s, i) => {
@@ -124,7 +135,6 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 return { ...(s || {}), fontSize: clamped };
             });
             const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
-            // DOM은 applyFontSizePx로 이미 변경됨 → store 업데이트는 디바운스 + startTransition으로 지연
             pendingTableFontSizeRef.current = nextElements;
             if (tableFontSizeTimerRef.current) clearTimeout(tableFontSizeTimerRef.current);
             tableFontSizeTimerRef.current = setTimeout(() => {
@@ -132,21 +142,10 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 const toApply = pendingTableFontSizeRef.current;
                 if (!toApply) return;
                 pendingTableFontSizeRef.current = null;
-
-                // Zustand state update (debounced)
-                startTransition(() => {
-                    update({ drawElements: toApply });
-                });
-
-                // Heavy history and sync tasks moved to separate ticks to keep UI snappy
-                // setTimeout(() => {
-                //     syncUpdate({ drawElements: toApply });
-                // }, 0); // 실시간 동기화 비활성화 - 딜레이 최소화
-                // setTimeout(() => {
-                //     saveHistory(toApply);
-                // }, 0); // 히스토리 저장 비활성화 - 딜레이 최소화
+                update({ drawElements: toApply });
             }, TABLE_FONT_SIZE_DEBOUNCE_MS);
         } else if (!fromTable) {
+            window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId: el.id, px: clamped } }));
             if (onBeforeFontSizeApply) {
                 setOptimisticFontSize(clamped);
                 onBeforeFontSizeApply(el.id, clamped);
@@ -154,7 +153,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 updateElement(el.id, { fontSize: clamped });
             }
         }
-    };
+    }, [el.id, el.tableRows, el.tableCols, el.tableCellStyles, fromTable, textSelectionFromTable, editingTableId, selectedCellIndices, drawElements, update, onBeforeFontSizeApply, updateElement, applyFontSizePx, tableCellSelectionRestoreRef, setOptimisticFontSize]);
 
     useEffect(() => {
         fetch(`${API_BASE}/api/fonts`)
@@ -228,8 +227,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         ? getCellStyle(textSelectionFromTable.cellIndex).fontFamily
         : getFontFromSelection() ?? el.fontFamily ?? 'Pretendard';
     const currentFont = getPrimaryFontName(resolvedFont);
-    const baseFonts = [...SYSTEM_FONTS, ...fonts.map(f => f.name)];
-    const allFonts = baseFonts.includes(currentFont) ? baseFonts : [currentFont, ...baseFonts];
+    const baseFonts = useMemo(() => {
+        return [...SYSTEM_FONTS, ...fonts.map(f => f.name)];
+    }, [fonts]);
+
+    const allFonts = useMemo(() => {
+        return baseFonts.includes(currentFont) ? baseFonts : [currentFont, ...baseFonts];
+    }, [baseFonts, currentFont]);
 
     const applyBold = () => {
         const sel = window.getSelection();
@@ -240,24 +244,36 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         if (hasSelection) return;
 
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            const cellIdx = textSelectionFromTable.cellIndex;
-            const rows = el.tableRows || 3;
-            const cols = el.tableCols || 3;
-            const totalCells = rows * cols;
-            const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+            const currentVal = fromTable && textSelectionFromTable ? getCellStyle(textSelectionFromTable.cellIndex).fontWeight : el.fontWeight;
+            const nextVal = currentVal === 'bold' ? 'normal' : 'bold';
 
-            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
-            indices.forEach(idx => {
-                if (idx >= 0 && idx < totalCells) {
-                    const current = newStyles[idx] || {};
-                    newStyles[idx] = { ...current, fontWeight: current.fontWeight === 'bold' ? 'normal' : 'bold' };
-                }
+            // 🔥 즉시 피드백
+            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontWeight: nextVal } } }));
+
+            const newStyles = [...(el.tableCellStyles || Array((el.tableRows || 1) * (el.tableCols || 1)).fill(undefined))];
+            selectedCellIndices.forEach(idx => {
+                const s = { ...(newStyles[idx] || {}) };
+                s.fontWeight = nextVal;
+                newStyles[idx] = s;
             });
+            const nextElements = drawElements.map(it =>
+                it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
+            );
 
-            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
-            update({ drawElements: nextElements });
+            pendingTableStyleRef.current = nextElements;
+            if (tableStyleTimerRef.current) clearTimeout(tableStyleTimerRef.current);
+            tableStyleTimerRef.current = setTimeout(() => {
+                tableStyleTimerRef.current = null;
+                const toApply = pendingTableStyleRef.current;
+                if (toApply) {
+                    pendingTableStyleRef.current = null;
+                    update({ drawElements: toApply });
+                }
+            }, 200);
         } else {
-            updateElement(el.id, { fontWeight: (el.fontWeight === 'bold' ? 'normal' : 'bold') as any });
+            const newVal = el.fontWeight === 'bold' ? 'normal' : 'bold';
+            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontWeight: newVal } } }));
+            updateElement(el.id, { fontWeight: newVal });
         }
     };
 
@@ -270,24 +286,36 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         if (hasSelection) return;
 
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            const cellIdx = textSelectionFromTable.cellIndex;
-            const rows = el.tableRows || 3;
-            const cols = el.tableCols || 3;
-            const totalCells = rows * cols;
-            const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+            const currentVal = fromTable && textSelectionFromTable ? getCellStyle(textSelectionFromTable.cellIndex).fontStyle : el.fontStyle;
+            const nextVal = currentVal === 'italic' ? 'normal' : 'italic';
 
-            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
-            indices.forEach(idx => {
-                if (idx >= 0 && idx < totalCells) {
-                    const current = newStyles[idx] || {};
-                    newStyles[idx] = { ...current, fontStyle: current.fontStyle === 'italic' ? 'normal' : 'italic' };
-                }
+            // 🔥 즉시 피드백
+            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontStyle: nextVal } } }));
+
+            const newStyles = [...(el.tableCellStyles || Array((el.tableRows || 1) * (el.tableCols || 1)).fill(undefined))];
+            selectedCellIndices.forEach(idx => {
+                const s = { ...(newStyles[idx] || {}) };
+                s.fontStyle = nextVal;
+                newStyles[idx] = s;
             });
+            const nextElements = drawElements.map(it =>
+                it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
+            );
 
-            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
-            update({ drawElements: nextElements });
+            pendingTableStyleRef.current = nextElements;
+            if (tableStyleTimerRef.current) clearTimeout(tableStyleTimerRef.current);
+            tableStyleTimerRef.current = setTimeout(() => {
+                tableStyleTimerRef.current = null;
+                const toApply = pendingTableStyleRef.current;
+                if (toApply) {
+                    pendingTableStyleRef.current = null;
+                    update({ drawElements: toApply });
+                }
+            }, 200);
         } else {
-            updateElement(el.id, { fontStyle: (el.fontStyle === 'italic' ? 'normal' : 'italic') as any });
+            const newVal = el.fontStyle === 'italic' ? 'normal' : 'italic';
+            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontStyle: newVal } } }));
+            updateElement(el.id, { fontStyle: newVal });
         }
     };
 
@@ -300,24 +328,36 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
         if (hasSelection) return;
 
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            const cellIdx = textSelectionFromTable.cellIndex;
-            const rows = el.tableRows || 3;
-            const cols = el.tableCols || 3;
-            const totalCells = rows * cols;
-            const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+            const currentVal = fromTable && textSelectionFromTable ? getCellStyle(textSelectionFromTable.cellIndex).textDecoration : el.textDecoration;
+            const nextVal = currentVal === 'underline' ? 'none' : 'underline';
 
-            const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
-            indices.forEach(idx => {
-                if (idx >= 0 && idx < totalCells) {
-                    const current = newStyles[idx] || {};
-                    newStyles[idx] = { ...current, textDecoration: current.textDecoration === 'underline' ? 'none' : 'underline' };
-                }
+            // 🔥 즉시 피드백
+            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { textDecoration: nextVal } } }));
+
+            const newStyles = [...(el.tableCellStyles || Array((el.tableRows || 1) * (el.tableCols || 1)).fill(undefined))];
+            selectedCellIndices.forEach(idx => {
+                const s = { ...(newStyles[idx] || {}) };
+                s.textDecoration = nextVal;
+                newStyles[idx] = s;
             });
+            const nextElements = drawElements.map(it =>
+                it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
+            );
 
-            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
-            update({ drawElements: nextElements });
+            pendingTableStyleRef.current = nextElements;
+            if (tableStyleTimerRef.current) clearTimeout(tableStyleTimerRef.current);
+            tableStyleTimerRef.current = setTimeout(() => {
+                tableStyleTimerRef.current = null;
+                const toApply = pendingTableStyleRef.current;
+                if (toApply) {
+                    pendingTableStyleRef.current = null;
+                    update({ drawElements: toApply });
+                }
+            }, 200);
         } else {
-            updateElement(el.id, { textDecoration: (el.textDecoration === 'underline' ? 'none' : 'underline') as any });
+            const newVal = el.textDecoration === 'underline' ? 'none' : 'underline';
+            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { textDecoration: newVal } } }));
+            updateElement(el.id, { textDecoration: newVal });
         }
     };
 
@@ -334,10 +374,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
 
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             const cellIdx = textSelectionFromTable.cellIndex;
-            const rows = el.tableRows || 3;
-            const cols = el.tableCols || 3;
+            const rows = el.tableRows || 1;
+            const cols = el.tableCols || 1;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+
+            // 🔥 즉시 피드백
+            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontFamily: fontName } } }));
 
             const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
             indices.forEach(idx => {
@@ -346,9 +389,22 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 }
             });
 
-            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellStyles: newStyles } : it);
-            update({ drawElements: nextElements });
+            const nextElements = drawElements.map(it =>
+                it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
+            );
+
+            pendingTableStyleRef.current = nextElements;
+            if (tableStyleTimerRef.current) clearTimeout(tableStyleTimerRef.current);
+            tableStyleTimerRef.current = setTimeout(() => {
+                tableStyleTimerRef.current = null;
+                const toApply = pendingTableStyleRef.current;
+                if (toApply) {
+                    pendingTableStyleRef.current = null;
+                    update({ drawElements: toApply });
+                }
+            }, 200);
         } else {
+            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontFamily: fontName } } }));
             updateElement(el.id, { fontFamily: fontName });
         }
         setFontDropdownOpen(false);
@@ -398,14 +454,15 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
 
         // DOM 조작 제거 - 직접 상태 업데이트로 최적화
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
-            // 테이블 셀 색상 변경 최적화
             const cellIdx = textSelectionFromTable.cellIndex;
-            const rows = el.tableRows || 3;
-            const cols = el.tableCols || 3;
+            const rows = el.tableRows || 1;
+            const cols = el.tableCols || 1;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
 
-            // 효율적인 셀 스타일 업데이트
+            // 🔥 즉시 피드백
+            window.dispatchEvent(new CustomEvent(COLOR_OVERRIDE_EVENT, { detail: { elementId: el.id, color } }));
+
             const newStyles = [...(el.tableCellStyles || Array(totalCells).fill(undefined))];
             indices.forEach(idx => {
                 if (idx >= 0 && idx < totalCells) {
@@ -417,10 +474,19 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
                 it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
             );
 
-            // 직접 update 호출로 디바운싱 우회
-            update({ drawElements: nextElements });
+            pendingTableStyleRef.current = nextElements;
+            if (tableStyleTimerRef.current) clearTimeout(tableStyleTimerRef.current);
+            tableStyleTimerRef.current = setTimeout(() => {
+                tableStyleTimerRef.current = null;
+                const toApply = pendingTableStyleRef.current;
+                if (toApply) {
+                    pendingTableStyleRef.current = null;
+                    update({ drawElements: toApply });
+                }
+            }, 200);
         } else {
-            // 일반 텍스트 요소 색상 변경
+            // 일반 텍스트 요소 색상 변경 - 즉시 피드백을 위해 이벤트 발생
+            window.dispatchEvent(new CustomEvent(COLOR_OVERRIDE_EVENT, { detail: { elementId: el.id, color } }));
             updateElement(el.id, { color });
         }
 
@@ -605,4 +671,18 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = ({
             </div>
         </div>
     );
-};
+}, (prev, next) => {
+    return prev.el.id === next.el.id &&
+        prev.el.fontSize === next.el.fontSize &&
+        prev.el.color === next.el.color &&
+        prev.el.fontWeight === next.el.fontWeight &&
+        prev.el.fontStyle === next.el.fontStyle &&
+        prev.el.textDecoration === next.el.textDecoration &&
+        prev.el.fontFamily === next.el.fontFamily &&
+        prev.el.tableCellStyles === next.el.tableCellStyles &&
+        prev.displayFontSize === next.displayFontSize &&
+        prev.defaultColor === next.defaultColor &&
+        prev.editingTableId === next.editingTableId &&
+        prev.selectedCellIndices === next.selectedCellIndices &&
+        prev.textSelectionFromTable === next.textSelectionFromTable;
+});

@@ -34,15 +34,35 @@ export const useScreenCanvasStore = () => useContext(ScreenCanvasStoreContext);
 /** Use store from context if provided (ComponentCanvas), else fallback to screenDesignStore (ScreenDesignCanvas) */
 export const useScreenNodeStore = (): ScreenCanvasStoreValue => {
     const ctx = useScreenCanvasStore();
-    const screenDesign = useScreenDesignStore();
+
+    // 개별 값/액션별로 선택적으로 구독하거나 getState()를 사용하여 전체 리렌더 방지
+    const updateScreen = useScreenDesignStore(state => state.updateScreen);
+    const deleteScreen = useScreenDesignStore(state => state.deleteScreen);
+    const canvasClipboard = useScreenDesignStore(state => state.canvasClipboard);
+    const setCanvasClipboard = useScreenDesignStore(state => state.setCanvasClipboard);
+    const gridClipboard = useScreenDesignStore(state => state.gridClipboard);
+    const setGridClipboard = useScreenDesignStore(state => state.setGridClipboard);
+    const lastInteractedScreenId = useScreenDesignStore(state => state.lastInteractedScreenId);
+    const setLastInteractedScreenId = useScreenDesignStore(state => state.setLastInteractedScreenId);
+
     return useMemo(() => {
         if (ctx) return ctx;
-        const state = useScreenDesignStore.getState();
+
         return {
-            ...screenDesign,
-            getScreenById: (id: string) => state.screens.find((s) => s.id === id),
-            getPasteTargetScreenId: () =>
-                state.lastInteractedScreenId ?? (state.screens.length === 1 ? state.screens[0].id : null),
+            updateScreen,
+            deleteScreen,
+            canvasClipboard,
+            setCanvasClipboard,
+            gridClipboard,
+            setGridClipboard,
+            lastInteractedScreenId,
+            setLastInteractedScreenId,
+            screens: useScreenDesignStore.getState().screens,
+            getScreenById: (id: string) => useScreenDesignStore.getState().screens.find((s) => s.id === id),
+            getPasteTargetScreenId: () => {
+                const state = useScreenDesignStore.getState();
+                return state.lastInteractedScreenId ?? (state.screens.length === 1 ? state.screens[0].id : null);
+            },
         };
-    }, [ctx, screenDesign]);
+    }, [ctx, updateScreen, deleteScreen, canvasClipboard, setCanvasClipboard, gridClipboard, setGridClipboard, lastInteractedScreenId, setLastInteractedScreenId]);
 };

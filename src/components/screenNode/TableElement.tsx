@@ -1,0 +1,470 @@
+import React, { memo } from 'react';
+import type { DrawElement } from '../../types/screenDesign';
+import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './types';
+import { resolveFontFamilyCSS } from '../../utils/fontFamily';
+import EditableTableCell from './EditableTableCell';
+import { FONT_SIZE_OVERRIDE_EVENT, COLOR_OVERRIDE_EVENT, TEXT_STYLE_OVERRIDE_EVENT } from './DrawTextComponent';
+
+interface TableElementProps {
+    el: DrawElement;
+    isLocked: boolean;
+    editingTableId: string | null;
+    editingCellIndex: number | null;
+    selectedCellIndices: number[];
+    tableCellComposing: { cellIndex: number; value: string } | null;
+    tableCellSelectionRestoreRef: React.MutableRefObject<{ tableId: string; cellIndex: number } | null>;
+    setEditingTableId: (id: string | null) => void;
+    setEditingCellIndex: (idx: number | null) => void;
+    setSelectedCellIndices: (indices: number[]) => void;
+    setTableCellComposing: (val: { cellIndex: number; value: string } | null) => void;
+    setTextSelectionRect: (rect: DOMRect | null) => void;
+    setTextSelectionFromTable: (val: { tableId: string; cellIndex: number } | null) => void;
+    update: (updates: any) => void;
+    syncUpdate: (updates: any) => void;
+    updateElement: (id: string, updates: any) => void;
+    drawElements: DrawElement[];
+    isDraggingCellSelectionRef: React.MutableRefObject<boolean>;
+    dragStartCellIndexRef: React.MutableRefObject<number>;
+}
+
+const TableElement: React.FC<TableElementProps> = memo(({
+    el,
+    isLocked,
+    editingTableId,
+    editingCellIndex,
+    selectedCellIndices,
+    tableCellComposing,
+    tableCellSelectionRestoreRef,
+    setEditingTableId,
+    setEditingCellIndex,
+    setSelectedCellIndices,
+    setTableCellComposing,
+    setTextSelectionRect,
+    setTextSelectionFromTable,
+    update,
+    syncUpdate,
+    updateElement,
+    drawElements,
+    isDraggingCellSelectionRef,
+    dragStartCellIndexRef
+}) => {
+    const rows = el.tableRows || 3;
+    const cols = el.tableCols || 3;
+    const v2Cells = getV2Cells(el);
+    const totalCells = rows * cols;
+
+    // ── Local Overrides for instant feedback ──────────────────────────────
+    const [localCellStyles, setLocalCellStyles] = React.useState<Record<number, any>>({});
+
+    React.useEffect(() => {
+        const handleFontSize = (e: Event) => {
+            const { elementId, px } = (e as CustomEvent<{ elementId: string; px: number }>).detail;
+            if (elementId === el.id && selectedCellIndices.length > 0) {
+                const next = { ...localCellStyles };
+                selectedCellIndices.forEach(idx => {
+                    next[idx] = { ...(next[idx] || {}), fontSize: px };
+                });
+                setLocalCellStyles(next);
+            }
+        };
+        const handleColor = (e: Event) => {
+            const { elementId, color } = (e as CustomEvent<{ elementId: string; color: string }>).detail;
+            if (elementId === el.id && selectedCellIndices.length > 0) {
+                const next = { ...localCellStyles };
+                selectedCellIndices.forEach(idx => {
+                    next[idx] = { ...(next[idx] || {}), color };
+                });
+                setLocalCellStyles(next);
+            }
+        };
+        const handleStyle = (e: Event) => {
+            const { elementId, updates } = (e as CustomEvent<{ elementId: string; updates: any }>).detail;
+            if (elementId === el.id && selectedCellIndices.length > 0) {
+                const next = { ...localCellStyles };
+                selectedCellIndices.forEach(idx => {
+                    next[idx] = { ...(next[idx] || {}), ...updates };
+                });
+                setLocalCellStyles(next);
+            }
+        };
+        window.addEventListener(FONT_SIZE_OVERRIDE_EVENT, handleFontSize);
+        window.addEventListener(COLOR_OVERRIDE_EVENT, handleColor);
+        window.addEventListener(TEXT_STYLE_OVERRIDE_EVENT, handleStyle);
+        return () => {
+            window.removeEventListener(FONT_SIZE_OVERRIDE_EVENT, handleFontSize);
+            window.removeEventListener(COLOR_OVERRIDE_EVENT, handleColor);
+            window.removeEventListener(TEXT_STYLE_OVERRIDE_EVENT, handleStyle);
+        };
+    }, [el.id, selectedCellIndices, localCellStyles]);
+
+    // Clear overrides when main state catches up
+    React.useEffect(() => {
+        if (Object.keys(localCellStyles).length === 0) return;
+        const next = { ...localCellStyles };
+        let changed = false;
+        Object.entries(localCellStyles).forEach(([idxStr, local]) => {
+            const idx = parseInt(idxStr, 10);
+            const main = el.tableCellStyles?.[idx] || {};
+            let match = true;
+            if (local.fontSize && (main.fontSize ?? el.fontSize ?? 14) !== local.fontSize) match = false;
+            if (local.color && (main.color ?? el.color ?? '#333333') !== local.color) match = false;
+            if (local.fontWeight && (main.fontWeight || el.fontWeight || 'normal') !== local.fontWeight) match = false;
+            if (local.fontStyle && (main.fontStyle || el.fontStyle || 'normal') !== local.fontStyle) match = false;
+            if (local.textDecoration && (main.textDecoration || el.textDecoration || 'none') !== local.textDecoration) match = false;
+            if (local.fontFamily && (main.fontFamily || el.fontFamily) !== local.fontFamily) match = false;
+
+            if (match) {
+                delete next[idx];
+                changed = true;
+            }
+        });
+        if (changed) setLocalCellStyles(next);
+    }, [el.tableCellStyles, el.fontSize, el.color, el.fontWeight, el.fontStyle, el.textDecoration, el.fontFamily]);
+
+    return (
+        <div
+            className="w-full h-full overflow-hidden relative"
+            style={{
+                cursor: editingTableId === el.id ? 'default' : 'move',
+                outline: editingTableId === el.id ? '2px solid #3b82f6' : 'none',
+                outlineOffset: '1px',
+                userSelect: editingTableId === el.id ? 'none' : 'auto',
+                borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
+            }}
+            onMouseDown={(e) => {
+                if (editingTableId === el.id) {
+                    e.stopPropagation();
+                }
+            }}
+            onDoubleClick={(e) => {
+                if (isLocked) return;
+                e.stopPropagation();
+                setEditingTableId(el.id);
+                setSelectedCellIndices([]);
+                setEditingCellIndex(null);
+            }}
+            onClick={(e) => {
+                if (editingTableId === el.id && e.target === e.currentTarget) {
+                    setEditingTableId(null);
+                    setSelectedCellIndices([]);
+                    setEditingCellIndex(null);
+                }
+            }}
+        >
+            <div
+                className="w-full h-full overflow-hidden"
+                style={{
+                    display: 'grid',
+                    gridTemplateColumns: (() => {
+                        const widths = el.tableColWidths || Array(cols).fill(100 / cols);
+                        return widths.map(w => `${w}%`).join(' ');
+                    })(),
+                    gridTemplateRows: (() => {
+                        const heights = el.tableRowHeights || Array(rows).fill(100 / rows);
+                        return heights.map(h => `${h}%`).join(' ');
+                    })(),
+                    borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
+                    borderTop: `${el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderTopStyle ?? 'solid'} ${el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                    borderBottom: `${el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderBottomStyle ?? 'solid'} ${el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                    borderLeft: `${el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderLeftStyle ?? 'solid'} ${el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                    borderRight: `${el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderRightStyle ?? 'solid'} ${el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
+                }}
+            >
+                {(() => {
+                    const cellElements: React.ReactNode[] = [];
+                    for (let cellIndex = 0; cellIndex < totalCells; cellIndex++) {
+                        const { r, c } = flatIdxToRowCol(cellIndex, cols);
+                        const v2 = v2Cells[cellIndex];
+                        if (v2 && v2.isMerged) continue;
+
+                        const cellData = v2 ? v2.content : (() => { const raw = el.tableCellData?.[cellIndex]; return (raw != null && raw !== '') ? String(raw) : ''; })();
+                        const cellColor = el.tableCellColors?.[cellIndex];
+                        const cellStyle = { ...(el.tableCellStyles?.[cellIndex] || {}), ...(localCellStyles[cellIndex] || {}) };
+                        const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
+                        const hasComponentText = !!(el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex));
+                        const isCellEditing = !hasComponentText && editingTableId === el.id && editingCellIndex === cellIndex;
+                        const isHeaderRow = r === 0;
+                        const cellRowSpan = v2 ? v2.rowSpan : 1;
+                        const cellColSpan = v2 ? v2.colSpan : 1;
+                        const isLastCol = (c + cellColSpan) === cols;
+                        const isLastRow = (r + cellRowSpan) === rows;
+
+                        const globalBorderColor = hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6);
+                        const globalBorderWidth = el.strokeWidth ?? 1;
+                        const innerHColor = el.tableBorderInsideH || globalBorderColor;
+                        const innerVColor = el.tableBorderInsideV || globalBorderColor;
+                        const innerHWidth = el.tableBorderInsideHWidth ?? globalBorderWidth;
+                        const innerVWidth = el.tableBorderInsideVWidth ?? globalBorderWidth;
+                        const innerHStyle = el.tableBorderInsideHStyle ?? 'solid';
+                        const innerVStyle = el.tableBorderInsideVStyle ?? 'solid';
+
+                        const getBorder = (side: 'Top' | 'Bottom' | 'Left' | 'Right', isEdge: boolean) => {
+                            const colorKey = `border${side}` as keyof typeof cellStyle;
+                            const widthKey = `border${side}Width` as keyof typeof cellStyle;
+                            const styleKey = `border${side}Style` as keyof typeof cellStyle;
+
+                            const canUseCellOverride = side === 'Bottom' || side === 'Right' || isEdge;
+                            if (canUseCellOverride && (cellStyle[colorKey] !== undefined || cellStyle[widthKey] !== undefined || cellStyle[styleKey] !== undefined)) {
+                                const w = cellStyle[widthKey] ?? el[`tableBorder${side}Width`] ?? globalBorderWidth;
+                                const s = cellStyle[styleKey] ?? el[`tableBorder${side}Style`] ?? 'solid';
+                                const c = cellStyle[colorKey] || el[`tableBorder${side}`] || globalBorderColor;
+                                return `${w}px ${s} ${c}`;
+                            }
+                            if (side === 'Top' || side === 'Left') return 'none';
+                            if (side === 'Right' && isEdge) return 'none';
+                            if (side === 'Bottom' && isEdge) return 'none';
+                            if (side === 'Bottom') return `${innerHWidth}px ${innerHStyle} ${innerHColor}`;
+                            if (side === 'Right') return `${innerVWidth}px ${innerVStyle} ${innerVColor}`;
+                            return 'none';
+                        };
+
+                        const borderTop = getBorder('Top', r === 0);
+                        const borderBottom = getBorder('Bottom', isLastRow);
+                        const borderLeft = getBorder('Left', c === 0);
+                        const borderRight = getBorder('Right', isLastCol);
+                        const cellBg = hexToRgba(cellColor || el.fill || (isHeaderRow ? '#f1f5f9' : '#ffffff'), el.fillOpacity ?? 1);
+
+                        cellElements.push(
+                            <div
+                                key={cellIndex}
+                                className={`relative px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center ${isHeaderRow && !cellColor ? 'font-bold text-[#2c3e7c]' : 'text-gray-700'}`}
+                                style={{
+                                    gridColumn: cellColSpan > 1 ? `span ${cellColSpan}` : undefined,
+                                    gridRow: cellRowSpan > 1 ? `span ${cellRowSpan}` : undefined,
+                                    backgroundColor: cellBg,
+                                    borderTop, borderBottom, borderLeft, borderRight,
+                                    outline: isCellSelected ? '2px solid #3b82f6' : 'none',
+                                    outlineOffset: '-1px',
+                                    cursor: editingTableId === el.id ? (hasComponentText ? 'default' : 'crosshair') : 'default',
+                                    textAlign: cellStyle.textAlign || el.textAlign || 'center',
+                                    verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
+                                    overflow: 'hidden', minWidth: 0, minHeight: 0,
+                                }}
+                                onMouseDown={(e) => {
+                                    if (isLocked) return;
+                                    if (editingTableId !== el.id) return;
+                                    e.stopPropagation();
+                                    if (editingCellIndex !== null) setEditingCellIndex(null);
+                                    isDraggingCellSelectionRef.current = true;
+                                    dragStartCellIndexRef.current = cellIndex;
+                                    setSelectedCellIndices([cellIndex]);
+                                    const onMouseUp = () => {
+                                        isDraggingCellSelectionRef.current = false;
+                                        window.removeEventListener('mouseup', onMouseUp);
+                                    };
+                                    window.addEventListener('mouseup', onMouseUp);
+                                }}
+                                onMouseEnter={() => {
+                                    if (!isDraggingCellSelectionRef.current || editingTableId !== el.id) return;
+                                    const startIdx = dragStartCellIndexRef.current;
+                                    if (startIdx < 0) return;
+                                    const start = flatIdxToRowCol(startIdx, cols);
+                                    const rMin = Math.min(start.r, r);
+                                    const rMax = Math.max(start.r, r);
+                                    const cMin = Math.min(start.c, c);
+                                    const cMax = Math.max(start.c, c);
+                                    const newSelection: number[] = [];
+                                    for (let ri = rMin; ri <= rMax; ri++) {
+                                        for (let ci = cMin; ci <= cMax; ci++) {
+                                            newSelection.push(rowColToFlatIdx(ri, ci, cols));
+                                        }
+                                    }
+                                    setSelectedCellIndices(newSelection);
+                                }}
+                                onDoubleClick={(e) => {
+                                    if (isLocked) return;
+                                    if (editingTableId !== el.id) return;
+                                    if (el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex)) return;
+                                    e.stopPropagation();
+                                    setEditingCellIndex(cellIndex);
+                                }}
+                            >
+                                {isCellEditing ? (
+                                    <EditableTableCell
+                                        tableId={el.id}
+                                        value={cellData}
+                                        cellIndex={cellIndex}
+                                        isLocked={hasComponentText}
+                                        restoreSelectionRef={tableCellSelectionRestoreRef}
+                                        autoFocus
+                                        isComposing={tableCellComposing?.cellIndex === cellIndex}
+                                        composingValue={tableCellComposing?.cellIndex === cellIndex ? tableCellComposing.value : null}
+                                        onComposingChange={(v) => setTableCellComposing(v != null ? { cellIndex, value: v } : null)}
+                                        onValueChange={(html) => {
+                                            const newV2 = deepCopyCells(getV2Cells(el));
+                                            if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: html };
+                                            const newData = [...(el.tableCellData || [])];
+                                            newData[cellIndex] = html;
+                                            const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
+                                            update({ drawElements: nextElements });
+                                            syncUpdate({ drawElements: nextElements });
+                                        }}
+                                        onSelectionChange={(rect) => {
+                                            setTextSelectionRect(rect);
+                                            setTextSelectionFromTable(rect ? { tableId: el.id, cellIndex } : null);
+                                        }}
+                                        onBlur={() => {
+                                            setEditingCellIndex(null);
+                                            syncUpdate({ drawElements });
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingCellIndex(null); syncUpdate({ drawElements }); return; }
+                                            if (e.key === 'Tab') {
+                                                e.preventDefault();
+                                                syncUpdate({ drawElements });
+                                                const locked = el.fromComponentId ? (el.tableCellLockedIndices ?? []) : [];
+                                                const findNext = (start: number, dir: 1 | -1) => {
+                                                    for (let k = 1; k <= totalCells; k++) {
+                                                        const i = (start + k * dir + totalCells) % totalCells;
+                                                        if (!locked.includes(i)) return i;
+                                                    }
+                                                    return cellIndex;
+                                                };
+                                                const next = e.shiftKey ? findNext(cellIndex, -1) : findNext(cellIndex, 1);
+                                                if (next !== cellIndex) { setEditingCellIndex(next); setSelectedCellIndices([next]); }
+                                            }
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="w-full h-full bg-white border-none outline-none p-1 absolute inset-0 z-[20] nodrag nopan"
+                                        style={{
+                                            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                                            fontSize: (cellStyle.fontSize ?? el.fontSize ?? 14),
+                                            fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
+                                            fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
+                                            textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
+                                            fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
+                                            color: cellStyle.color ?? el.color ?? '#333333',
+                                        }}
+                                    />
+                                ) : (
+                                    <div
+                                        dir="ltr"
+                                        className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0"
+                                        style={{
+                                            alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
+                                            justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
+                                            wordBreak: 'break-word', unicodeBidi: 'isolate',
+                                            fontSize: cellStyle.fontSize ?? el.fontSize ?? 14,
+                                            fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
+                                            fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
+                                            textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
+                                            fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
+                                            color: cellStyle.color ?? el.color ?? '#333333',
+                                        }}
+                                        dangerouslySetInnerHTML={{ __html: cellData || '' }}
+                                    />
+                                )}
+                            </div>
+                        );
+                    }
+                    return cellElements;
+                })()}
+            </div>
+
+            {/* Column Resize Handles */}
+            {editingTableId === el.id && !isLocked && (() => {
+                const widthsLocal = el.tableColWidths || Array(cols).fill(100 / cols);
+                let accLeft = 0;
+                return Array.from({ length: cols - 1 }).map((_, colIdx) => {
+                    accLeft += widthsLocal[colIdx];
+                    return (
+                        <div
+                            key={`col-resize-${colIdx}`}
+                            className="nodrag absolute top-0 bottom-0 cursor-col-resize z-[115] group/colresize"
+                            style={{ left: `calc(${accLeft}% - 4px)`, width: 8 }}
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                const startX = e.clientX;
+                                const startWidths = [...widthsLocal];
+                                const tableRect = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
+                                const tableWidthPx = tableRect?.width ?? el.width;
+                                const minWidthPercent = Math.max(5, (20 / tableWidthPx) * 100);
+                                const handleMove = (moveE: MouseEvent) => {
+                                    moveE.preventDefault(); moveE.stopPropagation();
+                                    const deltaX = moveE.clientX - startX;
+                                    const deltaPercent = (deltaX / tableWidthPx) * 100;
+                                    const newWidths = [...startWidths];
+                                    let w1 = startWidths[colIdx] + deltaPercent;
+                                    let w2 = startWidths[colIdx + 1] - deltaPercent;
+                                    if (w1 < minWidthPercent) { w2 -= (minWidthPercent - w1); w1 = minWidthPercent; }
+                                    if (w2 < minWidthPercent) { w1 -= (minWidthPercent - w2); w2 = minWidthPercent; }
+                                    newWidths[colIdx] = w1; newWidths[colIdx + 1] = w2;
+                                    updateElement(el.id, { tableColWidths: newWidths });
+                                };
+                                const handleUp = () => {
+                                    window.removeEventListener('mousemove', handleMove, true);
+                                    window.removeEventListener('mouseup', handleUp, true);
+                                    syncUpdate({ drawElements });
+                                };
+                                window.addEventListener('mousemove', handleMove, true);
+                                window.addEventListener('mouseup', handleUp, true);
+                            }}
+                        >
+                            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
+                        </div>
+                    );
+                });
+            })()}
+
+            {/* Row Resize Handles */}
+            {editingTableId === el.id && !isLocked && (() => {
+                const heights = el.tableRowHeights || Array(rows).fill(100 / rows);
+                const colWidths = el.tableColWidths || Array(cols).fill(100 / cols);
+                const v2CellsLocal = v2Cells;
+
+                let accPercent = 0;
+                return Array.from({ length: rows - 1 }).map((_, idx) => {
+                    const currentRowHeight = heights[idx];
+                    accPercent += currentRowHeight;
+                    const segments: { left: number, width: number }[] = [];
+                    let currentLeft = 0;
+                    colWidths.forEach((w, cIdx) => {
+                        const cellIdx = rowColToFlatIdx(idx, cIdx, cols);
+                        const v2Cell = v2CellsLocal[cellIdx];
+                        const cellRowSpan = v2Cell ? (v2Cell.isMerged ? 0 : v2Cell.rowSpan) : 1;
+                        if (cellRowSpan === 0 || cellRowSpan === 1) segments.push({ left: currentLeft, width: w });
+                        currentLeft += w;
+                    });
+
+                    return segments.map((seg, segIdx) => (
+                        <div
+                            key={`row-resize-${idx}-${segIdx}`}
+                            className="nodrag absolute cursor-row-resize z-[120] group/rowresize"
+                            style={{ top: `${accPercent}%`, height: 8, marginTop: -4, left: `${seg.left}%`, width: `${seg.width}%` }}
+                            onMouseDown={(e) => {
+                                e.stopPropagation(); e.preventDefault();
+                                const startY = e.clientY;
+                                const startHeights = [...heights];
+                                const handleMove = (moveE: MouseEvent) => {
+                                    moveE.preventDefault();
+                                    const deltaY = moveE.clientY - startY;
+                                    const deltaPercent = (deltaY / el.height) * 100;
+                                    const newHeights = [...startHeights];
+                                    const minH = 2;
+                                    let h1 = startHeights[idx] + deltaPercent;
+                                    let h2 = startHeights[idx + 1] - deltaPercent;
+                                    if (h1 < minH) { h2 -= (minH - h1); h1 = minH; }
+                                    if (h2 < minH) { h1 -= (minH - h2); h2 = minH; }
+                                    newHeights[idx] = h1; newHeights[idx + 1] = h2;
+                                    updateElement(el.id, { tableRowHeights: newHeights });
+                                };
+                                const handleUp = () => {
+                                    window.removeEventListener('mousemove', handleMove, true);
+                                    window.removeEventListener('mouseup', handleUp, true);
+                                    syncUpdate({ drawElements });
+                                };
+                                window.addEventListener('mousemove', handleMove, true);
+                                window.addEventListener('mouseup', handleUp, true);
+                            }}
+                        >
+                            <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-[2px] bg-blue-400 opacity-0 group-hover/rowresize:opacity-100 transition-opacity" />
+                        </div>
+                    ));
+                });
+            })()}
+        </div>
+    );
+});
+
+export default TableElement;

@@ -3,10 +3,12 @@ import type { DrawElement } from '../../types/screenDesign';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
 
-const TEXT_UPDATE_DEBOUNCE_MS = 120;
+const TEXT_UPDATE_DEBOUNCE_MS = 500;
 
 /** 툴바 +/- 클릭 시 캔버스에 즉시 반영하기 위한 커스텀 이벤트 (ScreenNode 전체 리렌더 없이 해당 텍스트만 갱신) */
 export const FONT_SIZE_OVERRIDE_EVENT = 'font-size-override';
+export const COLOR_OVERRIDE_EVENT = 'color-override';
+export const TEXT_STYLE_OVERRIDE_EVENT = 'text-style-override';
 
 interface DrawTextComponentProps {
     element: DrawElement;
@@ -39,19 +41,59 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     const lastSentTextRef = useRef<string | null>(null);
     /** 툴바 +/- 클릭 시 즉시 표시 (이벤트로만 갱신해 ScreenNode 리렌더 없음) */
     const [localFontSizeOverride, setLocalFontSizeOverride] = useState<number | null>(null);
+    const [localColorOverride, setLocalColorOverride] = useState<string | null>(null);
+    const [localStyleOverrides, setLocalStyleOverrides] = useState<Partial<Pick<DrawElement, 'fontWeight' | 'fontStyle' | 'textDecoration' | 'fontFamily'>>>({});
 
     useEffect(() => {
-        const handler = (e: Event) => {
+        const handleFontSize = (e: Event) => {
             const { elementId, px } = (e as CustomEvent<{ elementId: string; px: number }>).detail;
             if (elementId === element.id) setLocalFontSizeOverride(px);
         };
-        window.addEventListener(FONT_SIZE_OVERRIDE_EVENT, handler);
-        return () => window.removeEventListener(FONT_SIZE_OVERRIDE_EVENT, handler);
+        const handleColor = (e: Event) => {
+            const { elementId, color } = (e as CustomEvent<{ elementId: string; color: string }>).detail;
+            if (elementId === element.id) setLocalColorOverride(color);
+        };
+        const handleStyle = (e: Event) => {
+            const { elementId, updates } = (e as CustomEvent<{ elementId: string; updates: any }>).detail;
+            if (elementId === element.id) {
+                setLocalStyleOverrides(prev => ({ ...prev, ...updates }));
+            }
+        };
+        window.addEventListener(FONT_SIZE_OVERRIDE_EVENT, handleFontSize);
+        window.addEventListener(COLOR_OVERRIDE_EVENT, handleColor);
+        window.addEventListener(TEXT_STYLE_OVERRIDE_EVENT, handleStyle);
+        return () => {
+            window.removeEventListener(FONT_SIZE_OVERRIDE_EVENT, handleFontSize);
+            window.removeEventListener(COLOR_OVERRIDE_EVENT, handleColor);
+            window.removeEventListener(TEXT_STYLE_OVERRIDE_EVENT, handleStyle);
+        };
     }, [element.id]);
 
     useEffect(() => {
         if (localFontSizeOverride != null && (element.fontSize ?? 14) === localFontSizeOverride) setLocalFontSizeOverride(null);
-    }, [element.fontSize, localFontSizeOverride]);
+        if (localColorOverride != null && (element.color || '#333333') === localColorOverride) setLocalColorOverride(null);
+
+        // Check if overrides are already reflected in the main state
+        const remainingOverrides = { ...localStyleOverrides };
+        let changed = false;
+        if (localStyleOverrides.fontWeight && (element.fontWeight || 'normal') === localStyleOverrides.fontWeight) {
+            delete remainingOverrides.fontWeight;
+            changed = true;
+        }
+        if (localStyleOverrides.fontStyle && (element.fontStyle || 'normal') === localStyleOverrides.fontStyle) {
+            delete remainingOverrides.fontStyle;
+            changed = true;
+        }
+        if (localStyleOverrides.textDecoration && (element.textDecoration || 'none') === localStyleOverrides.textDecoration) {
+            delete remainingOverrides.textDecoration;
+            changed = true;
+        }
+        if (localStyleOverrides.fontFamily && element.fontFamily === localStyleOverrides.fontFamily) {
+            delete remainingOverrides.fontFamily;
+            changed = true;
+        }
+        if (changed) setLocalStyleOverrides(remainingOverrides);
+    }, [element.fontSize, localFontSizeOverride, element.color, localColorOverride, element.fontWeight, element.fontStyle, element.textDecoration, element.fontFamily, localStyleOverrides]);
 
     // Sync content with element.text (undo/remote 등). 편집 중(포커스 있음)이면 덮어쓰지 않아 커서 유지·역순 입력 버그 방지
     useEffect(() => {
@@ -201,12 +243,12 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             }}
             className={`nodrag nopan outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0' : 'p-0 min-h-[1.4em] w-full'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
             style={{
-                fontSize: `${localFontSizeOverride ?? fontSizeOverride ?? element.fontSize ?? 14}px`,
-                color: element.color || '#333333',
-                fontWeight: element.fontWeight || 'normal',
-                fontStyle: element.fontStyle || 'normal',
-                textDecoration: element.textDecoration || 'none',
-                fontFamily: resolveFontFamilyCSS(element.fontFamily),
+                fontSize: `${localFontSizeOverride ?? fontSizeOverride ?? (element.fontSize ?? 14)}px`,
+                color: localColorOverride ?? (element.color || '#333333'),
+                fontWeight: localStyleOverrides.fontWeight ?? (element.fontWeight || 'normal'),
+                fontStyle: localStyleOverrides.fontStyle ?? (element.fontStyle || 'normal'),
+                textDecoration: localStyleOverrides.textDecoration ?? (element.textDecoration || 'none'),
+                fontFamily: resolveFontFamilyCSS(localStyleOverrides.fontFamily ?? element.fontFamily),
                 lineHeight: compact ? 1.5 : 1.4,
                 whiteSpace: 'pre-wrap',
                 cursor: isSelected && (element.type === 'text' || !element.hasComponentText) ? 'text' : 'default',

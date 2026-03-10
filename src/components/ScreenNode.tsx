@@ -1,4 +1,4 @@
-import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback, startTransition } from 'react';
+import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { type NodeProps, useReactFlow, useOnViewportChange, useStore as useRFStore } from 'reactflow';
 import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
@@ -20,7 +20,6 @@ import { CanvasOnlyModeContext } from '../contexts/CanvasOnlyModeContext';
 import { TooltipPortalContext } from '../contexts/TooltipPortalContext';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import DrawTextComponent, { FONT_SIZE_OVERRIDE_EVENT } from './screenNode/DrawTextComponent';
-import EditableTableCell from './screenNode/EditableTableCell';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import MetaInfoTable from './screenNode/MetaInfoTable';
 import RightPane from './screenNode/RightPane';
@@ -28,6 +27,8 @@ import StylePanel from './screenNode/StylePanel';
 import { TextStyleToolbar } from './screenNode/TextStyleToolbar';
 import LayerPanel from './screenNode/LayerPanel';
 import ImageElement from './screenNode/ImageElement';
+import TableElement from './screenNode/TableElement';
+import ShapeElement from './screenNode/ShapeElement';
 import { ImageStylePanel } from './screenNode/ImageStylePanel';
 import { normalizeImageUrlForStorage } from '../utils/imageUrl';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
@@ -43,7 +44,6 @@ import CanvasRulers from './screenNode/CanvasRulers';
 import TablePanelFloating from './screenNode/TablePanelFloating';
 import { parsePptHtmlToElements } from '../utils/pptHtmlParser';
 import { scaleElementsToFitCanvas } from '../utils/canvasPasteUtils';
-import { resolveFontFamilyCSS } from '../utils/fontFamily';
 import { Monitor } from 'lucide-react';
 import UndoRedoControls from './screenNode/UndoRedoControls';
 import CanvasAlignToolbar from './screenNode/CanvasAlignToolbar';
@@ -420,7 +420,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         setTableListPanelPos({ x: flowPos.x, y: flowPos.y, openUpward, spaceBelow, spaceAbove });
     }, [isTableListOpen]);
 
-    const tableRowResizeRef = useRef<{ elId: string, rowIdx: number, startY: number, startHeights: number[] } | null>(null);
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
 
@@ -1806,11 +1805,15 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             if (toSend) {
                 pendingSyncDrawElementsRef.current = null;
                 syncUpdate({ drawElements: toSend });
+                saveHistory(toSend);
             }
-        }, 100);
-    }, [screen.id, getScreenById, update, saveHistory, syncUpdate]);
+        }, 300);
+    }, [getScreenById, screen.id, update, saveHistory, syncUpdate]);
 
-    // ── Element Actions (extracted to useCanvasElementActions) ──────────────
+    const elementsRef = useRef(drawElements || []);
+    useEffect(() => { elementsRef.current = drawElements || []; }, [drawElements]);
+    const getDrawElements = useCallback(() => elementsRef.current, []);
+
     const {
         updateElement,
         updateElements,
@@ -1821,7 +1824,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         handleUngroup,
     } = useCanvasElementActions({
         screen,
-        drawElements,
+        getDrawElements,
         selectedElementIds,
         update,
         syncUpdate,
@@ -1836,6 +1839,53 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         flushPendingFontSize,
         PENDING_FONT_SIZE_DEBOUNCE_MS,
     });
+
+    // ── Font Panel Handlers (Memoized) ───────────────────────────────────────
+    const onBeforeFontSizeApply = useCallback((elementId: string, px: number) => {
+        window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId, px } }));
+        updateElement(elementId, { fontSize: px });
+    }, [updateElement]);
+
+    const applyToSelection = useCallback((fn: () => void, fromTable: boolean): boolean => {
+        // ...
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) {
+            fn();
+            const active = document.activeElement as HTMLElement;
+            if (active?.contentEditable === 'true') {
+                active.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            return false;
+        }
+        return !fromTable;
+    }, []);
+
+    const applyFontSizePx = useCallback((px: number): boolean => {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+        const editable = document.activeElement as HTMLElement;
+        if (!editable?.contentEditable) return false;
+        document.execCommand('fontSize', false, '7');
+        let node: Element | null = sel.anchorNode?.nodeType === Node.TEXT_NODE
+            ? (sel.anchorNode as Text).parentElement
+            : sel.anchorNode as Element;
+        while (node && node !== document.body) {
+            if (node.tagName === 'FONT' && node.getAttribute('size') === '7') {
+                node.removeAttribute('size');
+                (node as HTMLElement).style.fontSize = px + 'px';
+                editable.dispatchEvent(new Event('input', { bubbles: true }));
+                return true;
+            }
+            const span = node as HTMLElement;
+            if (node.tagName === 'SPAN' && span.style?.fontSize) {
+                span.style.fontSize = px + 'px';
+                editable.dispatchEvent(new Event('input', { bubbles: true }));
+                return true;
+            }
+            node = node.parentElement;
+        }
+        return false;
+    }, []);
 
     const handlePolygonVertexDragStart = (id: string, pointIndex: number, e: React.MouseEvent) => {
         if (isLocked) return;
@@ -3371,15 +3421,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                         {/* 폰트 스타일 패널 - 드롭다운 방식 (텍스트 선택 시 버튼 클릭으로 표시) */}
                         {showFontStylePanel && (textSelectionRect || textSelectionFromTable) && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
                             const fromTable = textSelectionFromTable != null;
-                            const el = fromTable
-                                ? drawElements.find(it => it.id === textSelectionFromTable!.tableId)
-                                : drawElements.find(it => it.id === selectedElementIds[0]);
+                            const elId = fromTable ? textSelectionFromTable!.tableId : selectedElementIds[0];
+                            const el = drawElements.find(it => it.id === elId);
                             if (!el) return null;
+
                             const defaultColor = fromTable && textSelectionFromTable
                                 ? (el.tableCellStyles?.[textSelectionFromTable.cellIndex]?.color ?? el.color ?? '#333333')
                                 : (el.color || '#333333');
                             const defaultFontSize = el.fontSize || 14;
-                            const getFontSizeFromSelection = (): number | null => {
+
+                            const getFontSizeFromSelection = () => {
                                 const sel = window.getSelection();
                                 if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
                                 const range = sel.getRangeAt(0);
@@ -3391,56 +3442,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                 const px = parseFloat(computed.fontSize);
                                 return isNaN(px) ? null : Math.round(px);
                             };
+
                             const tableCellFontSize = fromTable && textSelectionFromTable
                                 ? (el.tableCellStyles?.[textSelectionFromTable.cellIndex]?.fontSize ?? el.fontSize ?? 14)
                                 : null;
-                            const displayFontSize = fromTable && tableCellFontSize != null
+                            const displayFontSize = (fromTable && tableCellFontSize != null)
                                 ? tableCellFontSize
                                 : (getFontSizeFromSelection() ?? defaultFontSize);
-                            const onBeforeFontSizeApply = (elementId: string, px: number) => {
-                                window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId, px } }));
-                                requestAnimationFrame(() => {
-                                    startTransition(() => updateElement(elementId, { fontSize: px }));
-                                });
-                            };
-                            const applyToSelection = (fn: () => void): boolean => {
-                                const sel = window.getSelection();
-                                if (sel && !sel.isCollapsed) {
-                                    fn();
-                                    const active = document.activeElement as HTMLElement;
-                                    if (active?.contentEditable === 'true') {
-                                        active.dispatchEvent(new Event('input', { bubbles: true }));
-                                    }
-                                    return false;
-                                }
-                                return !fromTable;
-                            };
-                            const applyFontSizePx = (px: number): boolean => {
-                                const sel = window.getSelection();
-                                if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
-                                const editable = document.activeElement as HTMLElement;
-                                if (!editable?.contentEditable) return false;
-                                document.execCommand('fontSize', false, '7');
-                                let node: Element | null = sel.anchorNode?.nodeType === Node.TEXT_NODE
-                                    ? (sel.anchorNode as Text).parentElement
-                                    : sel.anchorNode as Element;
-                                while (node && node !== document.body) {
-                                    if (node.tagName === 'FONT' && node.getAttribute('size') === '7') {
-                                        node.removeAttribute('size');
-                                        (node as HTMLElement).style.fontSize = px + 'px';
-                                        editable.dispatchEvent(new Event('input', { bubbles: true }));
-                                        return true;
-                                    }
-                                    const span = node as HTMLElement;
-                                    if (node.tagName === 'SPAN' && span.style?.fontSize) {
-                                        span.style.fontSize = px + 'px';
-                                        editable.dispatchEvent(new Event('input', { bubbles: true }));
-                                        return true;
-                                    }
-                                    node = node.parentElement;
-                                }
-                                return false;
-                            };
+
                             const screenPos = flowToScreenPosition({ x: fontStylePanelPos.x, y: fontStylePanelPos.y });
                             return createPortal(
                                 <div
@@ -3474,16 +3483,13 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                         el={el}
                                         fromTable={fromTable}
                                         defaultColor={defaultColor}
-                                        defaultFontSize={defaultFontSize}
                                         displayFontSize={displayFontSize}
                                         onBeforeFontSizeApply={onBeforeFontSizeApply}
                                         updateElement={updateElement}
-                                        applyToSelection={applyToSelection}
+                                        applyToSelection={(fn) => applyToSelection(fn, fromTable)}
                                         applyFontSizePx={applyFontSizePx}
                                         drawElements={drawElements}
                                         update={update}
-                                        syncUpdate={syncUpdate}
-                                        saveHistory={saveHistory}
                                         textSelectionFromTable={textSelectionFromTable}
                                         selectedCellIndices={selectedCellIndices}
                                         editingTableId={editingTableId}
@@ -3591,48 +3597,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             className={`group-canvas-element ${isSelected && !(isUnifiedGroupSelection && selectedElementIds.length > 1) ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
                                                                             data-element-id={el.id}
                                                                         >
-                                                                            {el.type === 'rect' && (() => {
-                                                                                const isCompact = (el.width ?? 0) < 48 && (el.height ?? 0) < 48;
-                                                                                return (
-                                                                                    <div className={`w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
-                                                                                        } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
-                                                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius ?? 0 }}>
-                                                                                        {(el.text || editingTextId === el.id) && (
-                                                                                            <DrawTextComponent
-                                                                                                element={el}
-                                                                                                isLocked={isLocked}
-                                                                                                isSelected={isSelected}
-                                                                                                onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                                                onSelectionChange={handleElementTextSelectionChange}
-                                                                                                autoFocus={editingTextId === el.id}
-                                                                                                className={isCompact ? 'px-0' : 'px-2'}
-                                                                                                compact={isCompact}
-                                                                                            />
-                                                                                        )}
-                                                                                    </div>
-                                                                                );
-                                                                            })()}
-                                                                            {el.type === 'circle' && (() => {
-                                                                                const isCompact = (el.width ?? 0) < 48 && (el.height ?? 0) < 48;
-                                                                                return (
-                                                                                    <div className={`w-full h-full relative flex overflow-hidden ${isCompact ? 'items-stretch' : (el.verticalAlign === 'top' ? 'items-start' : el.verticalAlign === 'bottom' ? 'items-end' : 'items-center')
-                                                                                        } ${el.textAlign === 'left' ? 'justify-start' : el.textAlign === 'right' ? 'justify-end' : 'justify-center'
-                                                                                        }`} style={{ backgroundColor: hexToRgba(el.fill || '#ffffff', el.fillOpacity ?? 1), borderColor: hexToRgba(el.stroke || '#000000', el.strokeOpacity ?? 1), borderWidth: el.strokeWidth ?? 2, borderStyle: el.strokeStyle ?? 'solid', borderRadius: el.borderRadius !== undefined ? el.borderRadius : '50%' }}>
-                                                                                        {(el.text || editingTextId === el.id) && (
-                                                                                            <DrawTextComponent
-                                                                                                element={el}
-                                                                                                isLocked={isLocked}
-                                                                                                isSelected={isSelected}
-                                                                                                onUpdate={(updates) => updateElement(el.id, updates)}
-                                                                                                onSelectionChange={handleElementTextSelectionChange}
-                                                                                                autoFocus={editingTextId === el.id}
-                                                                                                className={isCompact ? 'px-0' : 'px-4'}
-                                                                                                compact={isCompact}
-                                                                                            />
-                                                                                        )}
-                                                                                    </div>
-                                                                                );
-                                                                            })()}
+                                                                            {(el.type === 'rect' || el.type === 'circle') && (
+                                                                                <ShapeElement
+                                                                                    el={el}
+                                                                                    isSelected={isSelected}
+                                                                                    isLocked={isLocked}
+                                                                                    editingTextId={editingTextId}
+                                                                                    updateElement={updateElement}
+                                                                                    onSelectionChange={setTextSelectionRect}
+                                                                                />
+                                                                            )}
                                                                             {el.type === 'polygon' && (() => {
                                                                                 const pts = (el.polygonPoints ?? []).map(p => ({ x: p.x - el.x, y: p.y - el.y }));
                                                                                 const pointsStr = pts.map(p => `${p.x},${p.y}`).join(' ');
@@ -3717,423 +3691,28 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                 />
                                                                             )}
                                                                             {el.type === 'table' && (
-                                                                                <div
-                                                                                    className="w-full h-full overflow-hidden relative"
-                                                                                    style={{
-                                                                                        cursor: editingTableId === el.id ? 'default' : 'move',
-                                                                                        outline: editingTableId === el.id ? '2px solid #3b82f6' : 'none',
-                                                                                        outlineOffset: '1px',
-                                                                                        userSelect: editingTableId === el.id ? 'none' : 'auto',
-                                                                                        borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
-                                                                                    }}
-                                                                                    onMouseDown={(e) => {
-                                                                                        // 표 편집 모드(editingTableId === el.id)일 때는 셀/텍스트를 잡아도 엔티티(노드)가 드래그되지 않도록 막아준다.
-                                                                                        if (editingTableId === el.id) {
-                                                                                            e.stopPropagation();
-                                                                                        }
-                                                                                    }}
-                                                                                    onDoubleClick={(e) => {
-                                                                                        if (isLocked) return;
-                                                                                        e.stopPropagation();
-                                                                                        setEditingTableId(el.id);
-                                                                                        setSelectedCellIndices([]);
-                                                                                        setEditingCellIndex(null);
-                                                                                    }}
-                                                                                    onClick={(e) => {
-                                                                                        if (editingTableId === el.id && e.target === e.currentTarget) {
-                                                                                            setEditingTableId(null);
-                                                                                            setSelectedCellIndices([]);
-                                                                                            setEditingCellIndex(null);
-                                                                                        }
-                                                                                    }}
-                                                                                >
-                                                                                    {/* CSS Grid Table Rendering */}
-                                                                                    <div
-                                                                                        className="w-full h-full overflow-hidden"
-                                                                                        style={{
-                                                                                            display: 'grid',
-                                                                                            gridTemplateColumns: (() => {
-                                                                                                const cols = el.tableCols || 3;
-                                                                                                const widths = el.tableColWidths || Array(cols).fill(100 / cols);
-                                                                                                return widths.map(w => `${w}%`).join(' ');
-                                                                                            })(),
-                                                                                            gridTemplateRows: (() => {
-                                                                                                const rows = el.tableRows || 3;
-                                                                                                const heights = el.tableRowHeights || Array(rows).fill(100 / rows);
-                                                                                                return heights.map(h => `${h}%`).join(' ');
-                                                                                            })(),
-                                                                                            borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
-                                                                                            borderTop: `${el.tableBorderTopWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderTopStyle ?? 'solid'} ${el.tableBorderTop || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
-                                                                                            borderBottom: `${el.tableBorderBottomWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderBottomStyle ?? 'solid'} ${el.tableBorderBottom || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
-                                                                                            borderLeft: `${el.tableBorderLeftWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderLeftStyle ?? 'solid'} ${el.tableBorderLeft || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
-                                                                                            borderRight: `${el.tableBorderRightWidth ?? el.strokeWidth ?? 1}px ${el.tableBorderRightStyle ?? 'solid'} ${el.tableBorderRight || hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6)}`,
-                                                                                        }}
-                                                                                    >
-                                                                                        {(() => {
-                                                                                            const rows = el.tableRows || 3;
-                                                                                            const cols = el.tableCols || 3;
-                                                                                            const v2Cells = getV2Cells(el);
-                                                                                            const totalCells = rows * cols;
-
-                                                                                            const cellElements: React.ReactNode[] = [];
-
-                                                                                            for (let cellIndex = 0; cellIndex < totalCells; cellIndex++) {
-                                                                                                const { r, c } = flatIdxToRowCol(cellIndex, cols);
-                                                                                                const v2 = v2Cells[cellIndex];
-
-                                                                                                // isMerged: true인 셀은 렌더링에서 제외
-                                                                                                if (v2 && v2.isMerged) continue;
-
-                                                                                                const cellData = v2 ? v2.content : (() => { const raw = el.tableCellData?.[cellIndex]; return (raw != null && raw !== '') ? String(raw) : ''; })();
-                                                                                                const cellColor = el.tableCellColors?.[cellIndex];
-                                                                                                const cellStyle = el.tableCellStyles?.[cellIndex] || {};
-                                                                                                const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
-                                                                                                const hasComponentText = !!(el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex));
-                                                                                                const isCellEditing = !hasComponentText && editingTableId === el.id && editingCellIndex === cellIndex;
-                                                                                                const isHeaderRow = r === 0;
-
-
-                                                                                                const cellRowSpan = v2 ? v2.rowSpan : 1;
-                                                                                                const cellColSpan = v2 ? v2.colSpan : 1;
-
-                                                                                                // Determine if edge cell
-                                                                                                const isLastCol = (c + cellColSpan) === cols;
-                                                                                                const isLastRow = (r + cellRowSpan) === rows;
-
-                                                                                                const globalBorderColor = hexToRgba(el.stroke || '#cbd5e1', el.strokeOpacity ?? 0.6);
-                                                                                                const globalBorderWidth = el.strokeWidth ?? 1;
-                                                                                                const innerHColor = el.tableBorderInsideH || globalBorderColor;
-                                                                                                const innerVColor = el.tableBorderInsideV || globalBorderColor;
-                                                                                                const innerHWidth = el.tableBorderInsideHWidth ?? globalBorderWidth;
-                                                                                                const innerVWidth = el.tableBorderInsideVWidth ?? globalBorderWidth;
-                                                                                                const innerHStyle = el.tableBorderInsideHStyle ?? 'solid';
-                                                                                                const innerVStyle = el.tableBorderInsideVStyle ?? 'solid';
-
-                                                                                                // 셀 테두리: 바깥쪽은 컨테이너가 그림. 셀은 Right/Bottom만 그려서 안쪽 가로·세로선 형성
-                                                                                                const getBorder = (side: 'Top' | 'Bottom' | 'Left' | 'Right', isEdge: boolean) => {
-                                                                                                    const colorKey = `border${side}` as keyof typeof cellStyle;
-                                                                                                    const widthKey = `border${side}Width` as keyof typeof cellStyle;
-                                                                                                    const styleKey = `border${side}Style` as keyof typeof cellStyle;
-
-                                                                                                    // 한 경계선은 한 셀만 그리도록 소유권 고정:
-                                                                                                    // 내부 경계는 Bottom/Right만 렌더링하고 Top/Left는 가장자리에서만 허용.
-                                                                                                    const canUseCellOverride = side === 'Bottom' || side === 'Right' || isEdge;
-                                                                                                    if (canUseCellOverride && (cellStyle[colorKey] !== undefined || cellStyle[widthKey] !== undefined || cellStyle[styleKey] !== undefined)) {
-                                                                                                        const w = cellStyle[widthKey] ?? el[`tableBorder${side}Width`] ?? globalBorderWidth;
-                                                                                                        const s = cellStyle[styleKey] ?? el[`tableBorder${side}Style`] ?? 'solid';
-                                                                                                        const c = cellStyle[colorKey] || el[`tableBorder${side}`] || globalBorderColor;
-                                                                                                        return `${w}px ${s} ${c}`;
-                                                                                                    }
-                                                                                                    if (side === 'Top' || side === 'Left') return 'none';
-                                                                                                    if (side === 'Right' && isEdge) return 'none';
-                                                                                                    if (side === 'Bottom' && isEdge) return 'none';
-                                                                                                    if (side === 'Bottom') return `${innerHWidth}px ${innerHStyle} ${innerHColor}`;
-                                                                                                    if (side === 'Right') return `${innerVWidth}px ${innerVStyle} ${innerVColor}`;
-                                                                                                    return 'none';
-                                                                                                };
-
-                                                                                                const borderTop = getBorder('Top', r === 0);
-                                                                                                const borderBottom = getBorder('Bottom', isLastRow);
-                                                                                                const borderLeft = getBorder('Left', c === 0);
-                                                                                                const borderRight = getBorder('Right', isLastCol);
-
-                                                                                                const cellBg = hexToRgba(cellColor || el.fill || (isHeaderRow ? '#f1f5f9' : '#ffffff'), el.fillOpacity ?? 1);
-
-                                                                                                cellElements.push(
-                                                                                                    <div
-                                                                                                        key={cellIndex}
-                                                                                                        className={`relative px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center ${isHeaderRow && !cellColor ? 'font-bold text-[#2c3e7c]' : 'text-gray-700'}`}
-                                                                                                        style={{
-                                                                                                            gridColumn: cellColSpan > 1 ? `span ${cellColSpan}` : undefined,
-                                                                                                            gridRow: cellRowSpan > 1 ? `span ${cellRowSpan}` : undefined,
-                                                                                                            backgroundColor: cellBg,
-                                                                                                            borderTop,
-                                                                                                            borderBottom,
-                                                                                                            borderLeft,
-                                                                                                            borderRight,
-                                                                                                            outline: isCellSelected ? '2px solid #3b82f6' : 'none',
-                                                                                                            outlineOffset: '-1px',
-                                                                                                            cursor: editingTableId === el.id ? (hasComponentText ? 'default' : 'crosshair') : 'default',
-                                                                                                            textAlign: cellStyle.textAlign || el.textAlign || 'center',
-                                                                                                            verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
-                                                                                                            overflow: 'hidden',
-                                                                                                            minWidth: 0,
-                                                                                                            minHeight: 0,
-                                                                                                        }}
-                                                                                                        onMouseDown={(e) => {
-                                                                                                            if (isLocked) return;
-                                                                                                            if (editingTableId !== el.id) return;
-                                                                                                            e.stopPropagation();
-                                                                                                            if (editingCellIndex !== null) setEditingCellIndex(null);
-
-                                                                                                            // Start selection
-                                                                                                            isDraggingCellSelectionRef.current = true;
-                                                                                                            dragStartCellIndexRef.current = cellIndex;
-                                                                                                            setSelectedCellIndices([cellIndex]);
-
-                                                                                                            const onMouseUp = () => {
-                                                                                                                isDraggingCellSelectionRef.current = false;
-                                                                                                                window.removeEventListener('mouseup', onMouseUp);
-                                                                                                            };
-                                                                                                            window.addEventListener('mouseup', onMouseUp);
-                                                                                                        }}
-                                                                                                        onMouseEnter={() => {
-                                                                                                            if (!isDraggingCellSelectionRef.current) return;
-                                                                                                            if (editingTableId !== el.id) return;
-                                                                                                            const startIdx = dragStartCellIndexRef.current;
-                                                                                                            if (startIdx < 0) return;
-
-                                                                                                            const start = flatIdxToRowCol(startIdx, cols);
-                                                                                                            const rMin = Math.min(start.r, r);
-                                                                                                            const rMax = Math.max(start.r, r);
-                                                                                                            const cMin = Math.min(start.c, c);
-                                                                                                            const cMax = Math.max(start.c, c);
-
-                                                                                                            const newSelection: number[] = [];
-                                                                                                            for (let ri = rMin; ri <= rMax; ri++) {
-                                                                                                                for (let ci = cMin; ci <= cMax; ci++) {
-                                                                                                                    newSelection.push(rowColToFlatIdx(ri, ci, cols));
-                                                                                                                }
-                                                                                                            }
-                                                                                                            setSelectedCellIndices(newSelection);
-                                                                                                        }}
-                                                                                                        onDoubleClick={(e) => {
-                                                                                                            if (isLocked) return;
-                                                                                                            if (editingTableId !== el.id) return;
-                                                                                                            if (el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex)) return;
-                                                                                                            e.stopPropagation();
-                                                                                                            setEditingCellIndex(cellIndex);
-                                                                                                        }}
-                                                                                                    >
-                                                                                                        {isCellEditing ? (
-                                                                                                            <EditableTableCell
-                                                                                                                tableId={el.id}
-                                                                                                                value={cellData}
-                                                                                                                cellIndex={cellIndex}
-                                                                                                                isLocked={hasComponentText}
-                                                                                                                restoreSelectionRef={tableCellSelectionRestoreRef}
-                                                                                                                autoFocus
-                                                                                                                isComposing={tableCellComposing?.cellIndex === cellIndex}
-                                                                                                                composingValue={tableCellComposing?.cellIndex === cellIndex ? tableCellComposing.value : null}
-                                                                                                                onComposingChange={(v) => setTableCellComposing(v != null ? { cellIndex, value: v } : null)}
-                                                                                                                onValueChange={(html) => {
-                                                                                                                    const newV2 = deepCopyCells(getV2Cells(el));
-                                                                                                                    if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: html };
-                                                                                                                    const newData = [...(el.tableCellData || [])];
-                                                                                                                    newData[cellIndex] = html;
-
-                                                                                                                    const nextElements = drawElements.map(it => it.id === el.id ? { ...it, tableCellData: newData, tableCellDataV2: newV2 } : it);
-                                                                                                                    update({ drawElements: nextElements });
-                                                                                                                    syncUpdate({ drawElements: nextElements });
-                                                                                                                }}
-                                                                                                                onSelectionChange={(rect) => {
-                                                                                                                    setTextSelectionRect(rect);
-                                                                                                                    setTextSelectionFromTable(rect ? { tableId: el.id, cellIndex } : null);
-                                                                                                                }}
-                                                                                                                onBlur={() => {
-                                                                                                                    setEditingCellIndex(null);
-                                                                                                                    syncUpdate({ drawElements });
-                                                                                                                }}
-                                                                                                                onKeyDown={(e) => {
-                                                                                                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingCellIndex(null); syncUpdate({ drawElements }); return; }
-                                                                                                                    if (e.key === 'Tab') {
-                                                                                                                        e.preventDefault();
-                                                                                                                        syncUpdate({ drawElements });
-                                                                                                                        const locked = el.fromComponentId ? (el.tableCellLockedIndices ?? []) : [];
-                                                                                                                        const findNext = (start: number, dir: 1 | -1) => {
-                                                                                                                            for (let k = 1; k <= totalCells; k++) {
-                                                                                                                                const i = (start + k * dir + totalCells) % totalCells;
-                                                                                                                                if (!locked.includes(i)) return i;
-                                                                                                                            }
-                                                                                                                            return cellIndex;
-                                                                                                                        };
-                                                                                                                        const next = e.shiftKey ? findNext(cellIndex, -1) : findNext(cellIndex, 1);
-                                                                                                                        if (next !== cellIndex) { setEditingCellIndex(next); setSelectedCellIndices([next]); }
-                                                                                                                    }
-                                                                                                                }}
-                                                                                                                onMouseDown={(e) => e.stopPropagation()}
-                                                                                                                className="w-full h-full bg-white border-none outline-none p-1 absolute inset-0 z-[20] nodrag nopan"
-                                                                                                                style={{
-                                                                                                                    whiteSpace: 'pre-wrap',
-                                                                                                                    wordBreak: 'break-word',
-                                                                                                                    fontSize: (cellStyle.fontSize ?? el.fontSize ?? 14),
-                                                                                                                    fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
-                                                                                                                    fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
-                                                                                                                    textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
-                                                                                                                    fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
-                                                                                                                    color: cellStyle.color ?? el.color ?? '#333333',
-                                                                                                                }}
-                                                                                                            />
-                                                                                                        ) : (
-                                                                                                            <div
-                                                                                                                dir="ltr"
-                                                                                                                className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0"
-                                                                                                                style={{
-                                                                                                                    alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
-                                                                                                                    justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
-                                                                                                                    wordBreak: 'break-word',
-                                                                                                                    unicodeBidi: 'isolate',
-                                                                                                                    fontSize: cellStyle.fontSize ?? el.fontSize ?? 14,
-                                                                                                                    fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
-                                                                                                                    fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
-                                                                                                                    textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
-                                                                                                                    fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
-                                                                                                                    color: cellStyle.color ?? el.color ?? '#333333',
-                                                                                                                }}
-                                                                                                                dangerouslySetInnerHTML={{ __html: cellData || '' }}
-                                                                                                            />
-                                                                                                        )}
-
-                                                                                                    </div>
-                                                                                                );
-                                                                                            }
-
-                                                                                            return cellElements;
-                                                                                        })()}
-                                                                                    </div>
-
-
-                                                                                    {/* Column Resize Handles (오버레이 - 인접 셀에 가리지 않도록) */}
-                                                                                    {editingTableId === el.id && !isLocked && (() => {
-                                                                                        const colsLocal = el.tableCols || 3;
-                                                                                        const widthsLocal = el.tableColWidths || Array(colsLocal).fill(100 / colsLocal);
-                                                                                        let accLeft = 0;
-                                                                                        return Array.from({ length: colsLocal - 1 }).map((_, colIdx) => {
-                                                                                            accLeft += widthsLocal[colIdx];
-                                                                                            return (
-                                                                                                <div
-                                                                                                    key={`col-resize-${colIdx}`}
-                                                                                                    className="nodrag absolute top-0 bottom-0 cursor-col-resize z-[115] group/colresize"
-                                                                                                    style={{
-                                                                                                        left: `calc(${accLeft}% - 4px)`,
-                                                                                                        width: 8,
-                                                                                                    }}
-                                                                                                    onMouseDown={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        e.preventDefault();
-                                                                                                        const startX = e.clientX;
-                                                                                                        const startWidths = [...widthsLocal];
-                                                                                                        const tableRect = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
-                                                                                                        const tableWidthPx = tableRect?.width ?? el.width;
-                                                                                                        const minWidthPercent = Math.max(5, (20 / tableWidthPx) * 100);
-
-                                                                                                        const handleMove = (moveE: MouseEvent) => {
-                                                                                                            moveE.preventDefault();
-                                                                                                            moveE.stopPropagation();
-                                                                                                            const deltaX = moveE.clientX - startX;
-                                                                                                            const deltaPercent = (deltaX / tableWidthPx) * 100;
-                                                                                                            const newWidths = [...startWidths];
-                                                                                                            let w1 = startWidths[colIdx] + deltaPercent;
-                                                                                                            let w2 = startWidths[colIdx + 1] - deltaPercent;
-
-                                                                                                            if (w1 < minWidthPercent) { w2 -= (minWidthPercent - w1); w1 = minWidthPercent; }
-                                                                                                            if (w2 < minWidthPercent) { w1 -= (minWidthPercent - w2); w2 = minWidthPercent; }
-
-                                                                                                            newWidths[colIdx] = w1;
-                                                                                                            newWidths[colIdx + 1] = w2;
-
-                                                                                                            updateElement(el.id, { tableColWidths: newWidths });
-                                                                                                        };
-
-                                                                                                        const handleUp = () => {
-                                                                                                            window.removeEventListener('mousemove', handleMove, true);
-                                                                                                            window.removeEventListener('mouseup', handleUp, true);
-                                                                                                            syncUpdate({ drawElements });
-                                                                                                        };
-
-                                                                                                        window.addEventListener('mousemove', handleMove, true);
-                                                                                                        window.addEventListener('mouseup', handleUp, true);
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
-                                                                                                </div>
-                                                                                            );
-                                                                                        });
-                                                                                    })()}
-
-                                                                                    {/* Row Resize Handles */}
-                                                                                    {editingTableId === el.id && !isLocked && (() => {
-                                                                                        const rows = el.tableRows || 3;
-                                                                                        const cols = el.tableCols || 3;
-                                                                                        const heights = el.tableRowHeights || Array(rows).fill(100 / rows);
-                                                                                        const colWidths = el.tableColWidths || Array(cols).fill(100 / cols);
-                                                                                        const v2CellsLocal = getV2Cells(el);
-
-                                                                                        let accPercent = 0;
-
-                                                                                        return Array.from({ length: rows - 1 }).map((_, idx) => {
-                                                                                            const currentRowHeight = heights[idx];
-                                                                                            accPercent += currentRowHeight;
-
-                                                                                            const segments: { left: number, width: number }[] = [];
-
-                                                                                            let currentLeft = 0;
-                                                                                            colWidths.forEach((w, cIdx) => {
-                                                                                                const cellIdx = rowColToFlatIdx(idx, cIdx, cols);
-                                                                                                const v2Cell = v2CellsLocal[cellIdx];
-
-                                                                                                // Only show handle if the cell ends at this row (not spanning down)
-                                                                                                const cellRowSpan = v2Cell ? (v2Cell.isMerged ? 0 : v2Cell.rowSpan) : 1;
-                                                                                                if (cellRowSpan === 0 || cellRowSpan === 1) {
-                                                                                                    segments.push({ left: currentLeft, width: w });
-                                                                                                }
-                                                                                                currentLeft += w;
-                                                                                            });
-
-                                                                                            return segments.map((seg, segIdx) => (
-                                                                                                <div
-                                                                                                    key={`row-resize-${idx}-${segIdx}`}
-                                                                                                    className="nodrag absolute cursor-row-resize z-[120] group/rowresize"
-                                                                                                    style={{
-                                                                                                        top: `${accPercent}%`,
-                                                                                                        height: 8,
-                                                                                                        marginTop: -4,
-                                                                                                        left: `${seg.left}%`,
-                                                                                                        width: `${seg.width}%`
-                                                                                                    }}
-                                                                                                    onMouseDown={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        e.preventDefault();
-                                                                                                        tableRowResizeRef.current = {
-                                                                                                            elId: el.id,
-                                                                                                            rowIdx: idx,
-                                                                                                            startY: e.clientY,
-                                                                                                            startHeights: [...heights]
-                                                                                                        };
-                                                                                                        const handleMove = (moveE: MouseEvent) => {
-                                                                                                            if (!tableRowResizeRef.current) return;
-                                                                                                            moveE.preventDefault();
-                                                                                                            const { rowIdx: ri, startY, startHeights: sh } = tableRowResizeRef.current;
-                                                                                                            const deltaY = moveE.clientY - startY;
-                                                                                                            const deltaPercent = (deltaY / el.height) * 100;
-                                                                                                            const newHeights = [...sh];
-                                                                                                            const minH = 2;
-                                                                                                            let h1 = sh[ri] + deltaPercent;
-                                                                                                            let h2 = sh[ri + 1] - deltaPercent;
-                                                                                                            if (h1 < minH) { h2 -= (minH - h1); h1 = minH; }
-                                                                                                            if (h2 < minH) { h1 -= (minH - h2); h2 = minH; }
-                                                                                                            newHeights[ri] = h1;
-                                                                                                            newHeights[ri + 1] = h2;
-                                                                                                            updateElement(el.id, { tableRowHeights: newHeights });
-                                                                                                        };
-                                                                                                        const handleUp = () => {
-                                                                                                            window.removeEventListener('mousemove', handleMove, true);
-                                                                                                            window.removeEventListener('mouseup', handleUp, true);
-                                                                                                            syncUpdate({ drawElements });
-                                                                                                            tableRowResizeRef.current = null;
-                                                                                                        };
-                                                                                                        window.addEventListener('mousemove', handleMove, true);
-                                                                                                        window.addEventListener('mouseup', handleUp, true);
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-[2px] bg-blue-400 opacity-0 group-hover/rowresize:opacity-100 transition-opacity" />
-                                                                                                </div>
-                                                                                            ));
-                                                                                        });
-                                                                                    })()}
-                                                                                </div>
-                                                                            )
-                                                                            }
+                                                                                <TableElement
+                                                                                    el={el}
+                                                                                    isLocked={isLocked}
+                                                                                    editingTableId={editingTableId}
+                                                                                    editingCellIndex={editingCellIndex}
+                                                                                    selectedCellIndices={selectedCellIndices}
+                                                                                    tableCellComposing={tableCellComposing}
+                                                                                    tableCellSelectionRestoreRef={tableCellSelectionRestoreRef}
+                                                                                    setEditingTableId={setEditingTableId}
+                                                                                    setEditingCellIndex={setEditingCellIndex}
+                                                                                    setSelectedCellIndices={setSelectedCellIndices}
+                                                                                    setTableCellComposing={setTableCellComposing}
+                                                                                    setTextSelectionRect={setTextSelectionRect}
+                                                                                    setTextSelectionFromTable={setTextSelectionFromTable}
+                                                                                    update={update}
+                                                                                    syncUpdate={syncUpdate}
+                                                                                    updateElement={updateElement}
+                                                                                    drawElements={drawElements}
+                                                                                    isDraggingCellSelectionRef={isDraggingCellSelectionRef}
+                                                                                    dragStartCellIndexRef={dragStartCellIndexRef}
+                                                                                />
+                                                                            )}
                                                                             {el.type === 'func-no' && (
                                                                                 <div
                                                                                     className="w-full h-full rounded-full flex items-center justify-center font-bold text-white select-none group/func"
