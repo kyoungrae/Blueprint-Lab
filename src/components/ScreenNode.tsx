@@ -1912,7 +1912,17 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         PENDING_FONT_SIZE_DEBOUNCE_MS,
     });
 
-    // ── Font Panel Handlers (Memoized) ───────────────────────────────────────
+    // 텍스트 선택 상태를 저장하는 함수
+    const saveTextSelection = useCallback(() => {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+            return {
+                range: sel.getRangeAt(0).cloneRange(),
+                element: sel.anchorNode?.parentElement || null
+            };
+        }
+        return null;
+    }, []);
 
     const applyToSelection = useCallback((fn: () => void, fromTable: boolean): boolean => {
         // ...
@@ -3512,9 +3522,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                             }}
                                                             onClick={(e) => {
                                                                 if (!showFontStylePanel) {
-                                                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                                                    const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
-                                                                    setFontStylePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                    // 패널 열기 전 텍스트 선택 저장
+                                                                    const savedSelection = saveTextSelection();
+                                                                    if (savedSelection) {
+                                                                        // 전역 상태에 저장 (TextStyleToolbar에서 사용)
+                                                                        (window as any).__savedTextSelection = savedSelection;
+                                                                    }
+                                                                    
+                                                                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                     const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
+                                                                     setFontStylePanelPos({ x: flowPos.x, y: flowPos.y });
                                                                 }
                                                                 setShowFontStylePanel(!showFontStylePanel);
                                                             }}

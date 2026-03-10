@@ -143,11 +143,52 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(optimisticFontSize ?? computedSelection.fontSize ?? displayFontSize);
 
 
+    // 패널이 마운트되면 현재 텍스트 스타일 즉시 계산
     useEffect(() => {
-        if (optimisticFontSize != null && displayFontSize === optimisticFontSize && fontSizeInputStr == null) {
-            setOptimisticFontSize(null);
+        const updateComputedStyleImmediate = () => {
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+                const range = selection.getRangeAt(0);
+                let element = range.commonAncestorContainer;
+                if (element.nodeType === Node.TEXT_NODE) element = element.parentElement!;
+                if (element instanceof HTMLElement) {
+                    const computed = window.getComputedStyle(element);
+                    const fontSize = parseFloat(computed.fontSize);
+                    const fontFamily = computed.fontFamily.split(',')[0].trim().replace(/^"|"$/g, '');
+                    const isBoldSelection = document.queryCommandState('bold');
+                    const isItalicSelection = document.queryCommandState('italic');
+                    const isUnderlineSelection = document.queryCommandState('underline');
+                    setComputedSelection({
+                        fontSize,
+                        fontFamily,
+                        bold: isBoldSelection,
+                        italic: isItalicSelection,
+                        underline: isUnderlineSelection
+                    });
+                }
+            }
+        };
+        
+        // 전역 저장된 텍스트 선택이 있으면 복원 후 스타일 계산
+        const globalSelection = (window as any).__savedTextSelection;
+        if (globalSelection) {
+            setTimeout(() => {
+                const sel = window.getSelection();
+                if (sel && globalSelection.range) {
+                    try {
+                        sel.removeAllRanges();
+                        sel.addRange(globalSelection.range);
+                        updateComputedStyleImmediate();
+                    } catch (e) {
+                        // 선택 복원 실패 시 무시
+                    }
+                }
+                delete (window as any).__savedTextSelection;
+            }, 50);
+        } else {
+            updateComputedStyleImmediate();
         }
-    }, [displayFontSize, optimisticFontSize, fontSizeInputStr]);
+    }, [el.id, fromTable, textSelectionFromTable, editingTableId]);
 
     // 테이블 폰트 사이즈 디바운스 타이머 정리
     useEffect(() => {
@@ -593,13 +634,33 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                         value={displayValue}
                         readOnly={false}
                         onFocus={() => {
-                            // 텍스트 선택 상태 저장
-                            const sel = window.getSelection();
-                            if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
-                                savedSelectionRef.current = {
-                                    range: sel.getRangeAt(0).cloneRange(),
-                                    element: sel.anchorNode?.parentElement || null
-                                };
+                            // 전역 저장된 텍스트 선택이 있으면 복원
+                            const globalSelection = (window as any).__savedTextSelection;
+                            if (globalSelection) {
+                                savedSelectionRef.current = globalSelection;
+                                delete (window as any).__savedTextSelection;
+                                
+                                // 즉시 선택 복원
+                                setTimeout(() => {
+                                    const sel = window.getSelection();
+                                    if (sel && savedSelectionRef.current?.range) {
+                                        try {
+                                            sel.removeAllRanges();
+                                            sel.addRange(savedSelectionRef.current.range);
+                                        } catch (e) {
+                                            // 선택 복원 실패 시 무시
+                                        }
+                                    }
+                                }, 10);
+                            } else {
+                                // 기존 로직: 텍스트 선택 상태 저장
+                                const sel = window.getSelection();
+                                if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+                                    savedSelectionRef.current = {
+                                        range: sel.getRangeAt(0).cloneRange(),
+                                        element: sel.anchorNode?.parentElement || null
+                                    };
+                                }
                             }
                             setFontSizeInputStr(String(optimisticFontSize ?? displayFontSize));
                         }}
@@ -634,7 +695,36 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                         }}
                         onMouseDown={(e) => {
                             e.stopPropagation();
-                            e.preventDefault();
+                            e.preventDefault(); // 모든 기본 동작 막기
+                        }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault(); // 클릭 기본 동작도 막기
+                            
+                            // 수동으로 포커스 처리
+                            const input = e.target as HTMLInputElement;
+                            if (document.activeElement !== input) {
+                                input.focus();
+                            }
+                            
+                            // 텍스트 선택이 해제되었다면 즉시 복원
+                            const sel = window.getSelection();
+                            if (!sel || sel.isCollapsed) {
+                                const globalSelection = (window as any).__savedTextSelection;
+                                if (globalSelection) {
+                                    setTimeout(() => {
+                                        const newSel = window.getSelection();
+                                        if (newSel && globalSelection.range) {
+                                            try {
+                                                newSel.removeAllRanges();
+                                                newSel.addRange(globalSelection.range);
+                                            } catch (e) {
+                                                // 선택 복원 실패 시 무시
+                                            }
+                                        }
+                                    }, 0);
+                                }
+                            }
                         }}
                         className="w-9 py-1 px-1.5 bg-transparent text-[11px] font-bold text-gray-700 outline-none text-center cursor-text"
                     />
