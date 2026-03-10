@@ -1,4 +1,4 @@
-import React, { memo, useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Trash2, Database, GripHorizontal, Edit3, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
@@ -39,54 +39,54 @@ const AutoResizeTextarea: React.FC<{
     minRows?: number;
     className?: string;
     id?: string;
-}> = ({ 
-    value, 
-    onChange, 
-    onCompositionEnd, 
-    onBlur, 
-    onMouseDown, 
-    placeholder, 
-    disabled, 
-    minRows = 1, 
+}> = ({
+    value,
+    onChange,
+    onCompositionEnd,
+    onBlur,
+    onMouseDown,
+    placeholder,
+    disabled,
+    minRows = 1,
     className,
-    id 
+    id
 }) => {
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+        const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    useEffect(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
+        useEffect(() => {
+            const textarea = textareaRef.current;
+            if (!textarea) return;
 
-        // 높이 초기화 후 자동 조절
-        textarea.style.height = 'auto';
-        const scrollHeight = textarea.scrollHeight;
-        const lineHeight = 16; // text-[11px] leading-relaxed의 대략적인 높이
-        const minHeight = lineHeight * minRows;
-        const newHeight = Math.max(minHeight, scrollHeight);
-        textarea.style.height = `${newHeight}px`;
-    }, [value, minRows]);
+            // 높이 초기화 후 자동 조절
+            textarea.style.height = 'auto';
+            const scrollHeight = textarea.scrollHeight;
+            const lineHeight = 16; // text-[11px] leading-relaxed의 대략적인 높이
+            const minHeight = lineHeight * minRows;
+            const newHeight = Math.max(minHeight, scrollHeight);
+            textarea.style.height = `${newHeight}px`;
+        }, [value, minRows]);
 
-    return (
-        <textarea
-            ref={textareaRef}
-            id={id}
-            value={value}
-            onChange={onChange}
-            onCompositionEnd={onCompositionEnd}
-            onBlur={onBlur}
-            onMouseDown={onMouseDown}
-            placeholder={placeholder}
-            disabled={disabled}
-            rows={1}
-            className={className}
-            style={{ 
-                resize: 'none', 
-                overflow: 'hidden',
-                height: 'auto'
-            }}
-        />
-    );
-};
+        return (
+            <textarea
+                ref={textareaRef}
+                id={id}
+                value={value}
+                onChange={onChange}
+                onCompositionEnd={onCompositionEnd}
+                onBlur={onBlur}
+                onMouseDown={onMouseDown}
+                placeholder={placeholder}
+                disabled={disabled}
+                rows={1}
+                className={className}
+                style={{
+                    resize: 'none',
+                    overflow: 'hidden',
+                    height: 'auto'
+                }}
+            />
+        );
+    };
 
 const getRows = (text: string | undefined, minRows = 2): number => {
     if (!text) return minRows;
