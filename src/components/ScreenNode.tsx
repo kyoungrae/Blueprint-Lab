@@ -839,7 +839,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             if (dx === 0 && dy === 0) return;
             e.preventDefault();
             e.stopPropagation();
-            const nextElements = drawElements.map(el => {
+            const nextElements = getDrawElements().map(el => {
                 if (!selectedElementIds.includes(el.id)) return el;
                 if (el.type === 'polygon' && el.polygonPoints?.length) {
                     const newPoints = el.polygonPoints.map(p => ({ x: p.x + dx, y: p.y + dy }));
@@ -888,7 +888,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         maxX: number;
         maxY: number;
         dir: string;
-        groupId: string;
+        groupId?: string;
         elements: Array<{ id: string; x: number; y: number; width: number; height: number; polygonPoints?: { x: number; y: number }[]; lineX1?: number; lineY1?: number; lineX2?: number; lineY2?: number }>;
     } | null>(null);
 
@@ -952,86 +952,239 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 const aspectRatio = w / h;
                 let fitW = Math.max(newW, newH * aspectRatio);
                 let fitH = fitW / aspectRatio;
-                if (fitH < RESIZE_MIN) {
-                    fitH = RESIZE_MIN;
-                    fitW = fitH * aspectRatio;
+                if (dir.includes('w')) {
+                    nextMinX = ref.maxX - fitW;
+                    newW = fitW;
                 }
-                if (fitW < RESIZE_MIN) {
-                    fitW = RESIZE_MIN;
-                    fitH = fitW / aspectRatio;
+                if (dir.includes('n')) {
+                    nextMinY = ref.maxY - fitH;
+                    newH = fitH;
                 }
-                newW = fitW;
-                newH = fitH;
-                if (dir.includes('e') && dir.includes('s')) {
-                    nextMinX = ref.minX;
-                    nextMinY = ref.minY;
-                    nextMaxX = nextMinX + newW;
-                    nextMaxY = nextMinY + newH;
-                } else if (dir.includes('w') && dir.includes('s')) {
-                    nextMaxX = ref.maxX;
-                    nextMinY = ref.minY;
-                    nextMinX = nextMaxX - newW;
-                    nextMaxY = nextMinY + newH;
-                } else if (dir.includes('e') && dir.includes('n')) {
-                    nextMinX = ref.minX;
-                    nextMaxY = ref.maxY;
-                    nextMaxX = nextMinX + newW;
-                    nextMinY = nextMaxY - newH;
-                } else if (dir.includes('w') && dir.includes('n')) {
-                    nextMaxX = ref.maxX;
-                    nextMaxY = ref.maxY;
-                    nextMinX = nextMaxX - newW;
-                    nextMinY = nextMaxY - newH;
-                }
-            } else {
-                if (dir.includes('w')) nextMinX = nextMaxX - newW;
-                if (dir.includes('n')) nextMinY = nextMaxY - newH;
             }
-            const currentElements = getScreenById(screen.id)?.drawElements || [];
-            const updated = currentElements.map((it) => {
-                const snap = ref.elements.find((s) => s.id === it.id);
-                if (!snap) return it;
-                const relX = (snap.x - ref.minX) / w;
-                const relY = (snap.y - ref.minY) / h;
-                const relW = snap.width / w;
-                const relH = snap.height / h;
-                const newX = nextMinX + relX * newW;
-                const newY = nextMinY + relY * newH;
-                const newWidth = relW * newW;
-                const newHeight = relH * newH;
-                const base = { ...it, x: newX, y: newY, width: newWidth, height: newHeight };
-                if (it.type === 'polygon' && it.polygonPoints?.length && snap.polygonPoints?.length) {
-                    base.polygonPoints = snap.polygonPoints.map((p) => ({
-                        x: nextMinX + ((p.x - ref.minX) / w) * newW,
-                        y: nextMinY + ((p.y - ref.minY) / h) * newH,
-                    }));
+            const scaleX = newW / w;
+            const scaleY = newH / h;
+            const nextElements = getDrawElements().map(el => {
+                if (!ref.elements.find(re => re.id === el.id)) return el;
+                const rel = ref.elements.find(re => re.id === el.id)!;
+                const nextEl = { ...el };
+                if (el.type === 'polygon' && el.polygonPoints?.length) {
+                    const centerPoints = ref.elements.map(re => {
+                        const cx = re.x + re.width / 2;
+                        const cy = re.y + re.height / 2;
+                        return { cx, cy };
+                    });
+                    const avgCenterX = centerPoints.reduce((sum, p) => sum + p.cx, 0) / centerPoints.length;
+                    const avgCenterY = centerPoints.reduce((sum, p) => sum + p.cy, 0) / centerPoints.length;
+                    const oldCenterX = rel.x + rel.width / 2;
+                    const oldCenterY = rel.y + rel.height / 2;
+                    const offsetX = (oldCenterX - avgCenterX) * scaleX;
+                    const offsetY = (oldCenterY - avgCenterY) * scaleY;
+                    const newCenterX = avgCenterX + offsetX;
+                    const newCenterY = avgCenterY + offsetY;
+                    const oldRelX = rel.x - avgCenterX;
+                    const oldRelY = rel.y - avgCenterY;
+                    const newRelX = oldRelX * scaleX;
+                    const newRelY = oldRelY * scaleY;
+                    nextEl.x = avgCenterX + newRelX;
+                    nextEl.y = avgCenterY + newRelY;
+                    nextEl.polygonPoints = rel.polygonPoints?.map(p => {
+                        const oldPx = p.x - avgCenterX;
+                        const oldPy = p.y - avgCenterY;
+                        return {
+                            x: avgCenterX + oldPx * scaleX,
+                            y: avgCenterY + oldPy * scaleY,
+                        };
+                    });
+                } else if (el.type === 'line' && el.lineX1 !== undefined && el.lineY1 !== undefined && el.lineX2 !== undefined && el.lineY2 !== undefined) {
+                    const oldRelX1 = rel.lineX1! - ref.minX;
+                    const oldRelY1 = rel.lineY1! - ref.minY;
+                    const oldRelX2 = rel.lineX2! - ref.minX;
+                    const oldRelY2 = rel.lineY2! - ref.minY;
+                    nextEl.lineX1 = nextMinX + oldRelX1 * scaleX;
+                    nextEl.lineY1 = nextMinY + oldRelY1 * scaleY;
+                    nextEl.lineX2 = nextMinX + oldRelX2 * scaleX;
+                    nextEl.lineY2 = nextMinY + oldRelY2 * scaleY;
+                } else {
+                    const oldRelX = rel.x - ref.minX;
+                    const oldRelY = rel.y - ref.minY;
+                    nextEl.x = nextMinX + oldRelX * scaleX;
+                    nextEl.y = nextMinY + oldRelY * scaleY;
+                    nextEl.width = Math.max(RESIZE_MIN, rel.width * scaleX);
+                    nextEl.height = Math.max(RESIZE_MIN, rel.height * scaleY);
                 }
-                if (it.type === 'line' && snap.lineX1 != null && snap.lineY1 != null && snap.lineX2 != null && snap.lineY2 != null) {
-                    base.lineX1 = nextMinX + ((snap.lineX1 - ref.minX) / w) * newW;
-                    base.lineY1 = nextMinY + ((snap.lineY1 - ref.minY) / h) * newH;
-                    base.lineX2 = nextMinX + ((snap.lineX2 - ref.minX) / w) * newW;
-                    base.lineY2 = nextMinY + ((snap.lineY2 - ref.minY) / h) * newH;
-                }
-                return base;
+                return nextEl;
             });
-            // rAF throttle: 그룹 리사이즈 중 Zustand 업데이트를 60fps로 제한
-            if (groupResizeRafIdRef.current !== undefined) cancelAnimationFrame(groupResizeRafIdRef.current);
-            groupResizeRafIdRef.current = requestAnimationFrame(() => {
-                groupResizeRafIdRef.current = undefined;
-                update({ drawElements: updated });
-            });
+            update({ drawElements: nextElements });
         };
         const handleUp = () => {
-            if (groupResizeRafIdRef.current !== undefined) {
-                cancelAnimationFrame(groupResizeRafIdRef.current);
-                groupResizeRafIdRef.current = undefined;
+            const ref = groupResizeStartRef.current;
+            if (ref) {
+                const nextElements = getDrawElements().map(el => {
+                    if (!ref.elements.find(re => re.id === el.id)) return el;
+                    const nextEl = { ...el };
+                    if (el.type === 'polygon' && el.polygonPoints?.length) {
+                        const rel = ref.elements.find(re => re.id === el.id)!;
+                        nextEl.polygonPoints = rel.polygonPoints;
+                    } else if (el.type === 'line' && el.lineX1 !== undefined && el.lineY1 !== undefined && el.lineX2 !== undefined && el.lineY2 !== undefined) {
+                        const rel = ref.elements.find(re => re.id === el.id)!;
+                        nextEl.lineX1 = rel.lineX1;
+                        nextEl.lineY1 = rel.lineY1;
+                        nextEl.lineX2 = rel.lineX2;
+                        nextEl.lineY2 = rel.lineY2;
+                    } else {
+                        const rel = ref.elements.find(re => re.id === el.id)!;
+                        nextEl.x = rel.x;
+                        nextEl.y = rel.y;
+                        nextEl.width = rel.width;
+                        nextEl.height = rel.height;
+                    }
+                    return nextEl;
+                });
+                update({ drawElements: nextElements });
+                saveHistory(nextElements);
+                groupResizeStartRef.current = null;
             }
-            if (groupResizeStartRef.current) {
-                const currentElements = getScreenById(screen.id)?.drawElements || [];
-                syncUpdate({ drawElements: currentElements });
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+        };
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleUp);
+    };
+
+    const handleMultiSelectionResizeStart = (dir: string, e: React.MouseEvent) => {
+        if (isLocked) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const currentElements = getDrawElements(); // getDrawElements() 사용
+        const selectedEls = currentElements.filter((el) => selectedElementIds.includes(el.id));
+        if (selectedEls.length === 0) return;
+        const minX = Math.min(...selectedEls.map((el) => el.x));
+        const minY = Math.min(...selectedEls.map((el) => el.y));
+        const maxX = Math.max(...selectedEls.map((el) => el.x + el.width));
+        const maxY = Math.max(...selectedEls.map((el) => el.y + el.height));
+        const elements = selectedEls.map((el) => ({
+            id: el.id,
+            x: el.x,
+            y: el.y,
+            width: el.width,
+            height: el.height,
+            polygonPoints: el.polygonPoints ? el.polygonPoints.map((p) => ({ ...p })) : undefined,
+            lineX1: el.lineX1,
+            lineY1: el.lineY1,
+            lineX2: el.lineX2,
+            lineY2: el.lineY2,
+        }));
+        groupResizeStartRef.current = {
+            clientX: e.clientX,
+            clientY: e.clientY,
+            minX,
+            minY,
+            maxX,
+            maxY,
+            dir,
+            elements,
+        };
+        const handleMove = (moveEvent: MouseEvent) => {
+            const ref = groupResizeStartRef.current;
+            if (!ref || !canvasRef.current) return;
+            const cRect = canvasRef.current.getBoundingClientRect();
+            const sX = canvasRef.current.clientWidth / cRect.width;
+            const sY = canvasRef.current.clientHeight / cRect.height;
+            const dx = (moveEvent.clientX - ref.clientX) * sX;
+            const dy = (moveEvent.clientY - ref.clientY) * sY;
+            let nextMinX = ref.minX;
+            let nextMinY = ref.minY;
+            let nextMaxX = ref.maxX;
+            let nextMaxY = ref.maxY;
+            const w = ref.maxX - ref.minX;
+            const h = ref.maxY - ref.minY;
+            if (dir.includes('e')) nextMaxX = ref.maxX + dx;
+            if (dir.includes('w')) nextMinX = ref.minX + dx;
+            if (dir.includes('s')) nextMaxY = ref.maxY + dy;
+            if (dir.includes('n')) nextMinY = ref.minY + dy;
+            const RESIZE_MIN = 16;
+            let newW = Math.max(RESIZE_MIN, nextMaxX - nextMinX);
+            let newH = Math.max(RESIZE_MIN, nextMaxY - nextMinY);
+            const isCorner = (dir.includes('n') || dir.includes('s')) && (dir.includes('e') || dir.includes('w'));
+            const shiftLockAspect = moveEvent.shiftKey && isCorner && h > 0;
+            if (shiftLockAspect) {
+                const aspectRatio = w / h;
+                let fitW = Math.max(newW, newH * aspectRatio);
+                let fitH = fitW / aspectRatio;
+                if (dir.includes('w')) {
+                    nextMinX = ref.maxX - fitW;
+                    newW = fitW;
+                }
+                if (dir.includes('n')) {
+                    nextMinY = ref.maxY - fitH;
+                    newH = fitH;
+                }
+            }
+            const scaleX = newW / w;
+            const scaleY = newH / h;
+            const nextElements = getDrawElements().map(el => {
+                if (!ref.elements.find(re => re.id === el.id)) return el;
+                const rel = ref.elements.find(re => re.id === el.id)!;
+                const nextEl = { ...el };
+                if (el.type === 'polygon' && el.polygonPoints?.length) {
+                    const centerPoints = ref.elements.map(re => {
+                        const cx = re.x + re.width / 2;
+                        const cy = re.y + re.height / 2;
+                        return { cx, cy };
+                    });
+                    const avgCenterX = centerPoints.reduce((sum, p) => sum + p.cx, 0) / centerPoints.length;
+                    const avgCenterY = centerPoints.reduce((sum, p) => sum + p.cy, 0) / centerPoints.length;
+                    const oldCenterX = rel.x + rel.width / 2;
+                    const oldCenterY = rel.y + rel.height / 2;
+                    const offsetX = (oldCenterX - avgCenterX) * scaleX;
+                    const offsetY = (oldCenterY - avgCenterY) * scaleY;
+                    const newCenterX = avgCenterX + offsetX;
+                    const newCenterY = avgCenterY + offsetY;
+                    const oldRelX = rel.x - avgCenterX;
+                    const oldRelY = rel.y - avgCenterY;
+                    const newRelX = oldRelX * scaleX;
+                    const newRelY = oldRelY * scaleY;
+                    nextEl.x = avgCenterX + newRelX;
+                    nextEl.y = avgCenterY + newRelY;
+                    nextEl.polygonPoints = rel.polygonPoints?.map(p => {
+                        const oldPx = p.x - avgCenterX;
+                        const oldPy = p.y - avgCenterY;
+                        return {
+                            x: avgCenterX + oldPx * scaleX,
+                            y: avgCenterY + oldPy * scaleY,
+                        };
+                    });
+                } else if (el.type === 'line' && el.lineX1 !== undefined && el.lineY1 !== undefined && el.lineX2 !== undefined && el.lineY2 !== undefined) {
+                    const oldRelX1 = rel.lineX1! - ref.minX;
+                    const oldRelY1 = rel.lineY1! - ref.minY;
+                    const oldRelX2 = rel.lineX2! - ref.minX;
+                    const oldRelY2 = rel.lineY2! - ref.minY;
+                    nextEl.lineX1 = nextMinX + oldRelX1 * scaleX;
+                    nextEl.lineY1 = nextMinY + oldRelY1 * scaleY;
+                    nextEl.lineX2 = nextMinX + oldRelX2 * scaleX;
+                    nextEl.lineY2 = nextMinY + oldRelY2 * scaleY;
+                } else {
+                    const oldRelX = rel.x - ref.minX;
+                    const oldRelY = rel.y - ref.minY;
+                    nextEl.x = nextMinX + oldRelX * scaleX;
+                    nextEl.y = nextMinY + oldRelY * scaleY;
+                    nextEl.width = Math.max(RESIZE_MIN, rel.width * scaleX);
+                    nextEl.height = Math.max(RESIZE_MIN, rel.height * scaleY);
+                }
+                return nextEl;
+            });
+            update({ drawElements: nextElements });
+            syncUpdate({ drawElements: nextElements }); // 즉시 상태 동기화
+        };
+        const handleUp = () => {
+            const ref = groupResizeStartRef.current;
+            if (ref) {
+                // 현재 drawElements 상태를 그대로 저장 (리사이즈된 상태 유지)
+                const currentElements = getDrawElements();
+                update({ drawElements: currentElements });
                 saveHistory(currentElements);
+                groupResizeStartRef.current = null;
             }
-            groupResizeStartRef.current = null;
             window.removeEventListener('mousemove', handleMove);
             window.removeEventListener('mouseup', handleUp);
         };
@@ -1702,7 +1855,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             const corrX = Math.max(-snappedMinX, Math.min(cw - snappedMaxRight, 0));
             const corrY = Math.max(-snappedMinY, Math.min(ch - snappedMaxBottom, 0));
 
-            const nextElements = drawElements.map(item => {
+            const nextElements = getDrawElements().map(item => {
                 const o = withOffsets.find(w => w.id === item.id);
                 if (o) {
                     return { ...item, x: o.newX + snapX + corrX, y: o.newY + snapY + corrY };
@@ -2516,7 +2669,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             tableRowColWidths: undefined,
         };
 
-        const nextElements = drawElements.map(it => it.id === el.id ? targetEl : it);
+        const nextElements = getDrawElements().map(it => it.id === el.id ? targetEl : it);
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
@@ -2585,7 +2738,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             tableCellSpans: nextSpans,
             tableRowColWidths: undefined, // jagged 구조 제거, uniform grid만 사용
         };
-        const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
+        const nextElements = getDrawElements().map(el => el.id === selectedEl.id ? targetEl : el);
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
@@ -2644,7 +2797,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 tableCellDataV2: undefined, // Reset V2 to re-derive
                 tableRowColWidths: undefined,
             };
-            const nextElements = drawElements.map(el => el.id === selectedEl.id ? targetEl : el);
+            const nextElements = getDrawElements().map(el => el.id === selectedEl.id ? targetEl : el);
             update({ drawElements: nextElements });
             syncUpdate({ drawElements: nextElements });
             saveHistory(nextElements);
@@ -2673,7 +2826,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         const sum = rowHeights.reduce((a, b) => a + b, 0);
         if (sum <= 0) return;
         const normalized = rowHeights.map(h => (h / sum) * 100);
-        const nextElements = drawElements.map(el =>
+        const nextElements = getDrawElements().map(el =>
             el.id === selectedEl.id ? { ...el, tableRowHeights: normalized } : el
         );
         update({ drawElements: nextElements });
@@ -2694,7 +2847,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         const sum = colWidths.reduce((a, b) => a + b, 0);
         if (sum <= 0) return;
         const normalized = colWidths.map(w => (w / sum) * 100);
-        const nextElements = drawElements.map(el =>
+        const nextElements = getDrawElements().map(el =>
             el.id === selectedEl.id ? { ...el, tableColWidths: normalized } : el
         );
         update({ drawElements: nextElements });
@@ -3786,6 +3939,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 />
 
                                                                 {/* Overlays (Group handles, previews, etc.) - rendered once per canvas */}
+                                                                {/* 통합 그룹 선택 시 아웃라인 */}
                                                                 {isUnifiedGroupSelection && selectionBounds && !isLocked && (() => {
                                                                     const gid = drawElements.find((el) => selectedElementIds.includes(el.id))?.groupId;
                                                                     if (!gid) return null;
@@ -3810,6 +3964,28 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         </div>
                                                                     );
                                                                 })()}
+
+                                                                {/* 일반 다중 선택 시 아웃라인 */}
+                                                                {!isUnifiedGroupSelection && selectedElementIds.length > 1 && selectionBounds && !isLocked && (
+                                                                    <div
+                                                                        className="absolute pointer-events-none border-2 border-blue-500 z-[125]"
+                                                                        style={{
+                                                                            left: selectionBounds.minX,
+                                                                            top: selectionBounds.minY,
+                                                                            width: selectionBounds.maxX - selectionBounds.minX,
+                                                                            height: selectionBounds.maxY - selectionBounds.minY
+                                                                        }}
+                                                                    >
+                                                                        <div onMouseDown={(e) => handleMultiSelectionResizeStart('nw', e)} className="absolute -top-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-nw-resize pointer-events-auto z-[130]" />
+                                                                        <div onMouseDown={(e) => handleMultiSelectionResizeStart('ne', e)} className="absolute -top-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-ne-resize pointer-events-auto z-[130]" />
+                                                                        <div onMouseDown={(e) => handleMultiSelectionResizeStart('sw', e)} className="absolute -bottom-[2.5px] -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-sw-resize pointer-events-auto z-[130]" />
+                                                                        <div onMouseDown={(e) => handleMultiSelectionResizeStart('se', e)} className="absolute -bottom-[2.5px] -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-se-resize pointer-events-auto z-[130]" />
+                                                                        <div onMouseDown={(e) => handleMultiSelectionResizeStart('n', e)} className="absolute -top-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-n-resize pointer-events-auto z-[130]" />
+                                                                        <div onMouseDown={(e) => handleMultiSelectionResizeStart('s', e)} className="absolute -bottom-[2.5px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-s-resize pointer-events-auto z-[130]" />
+                                                                        <div onMouseDown={(e) => handleMultiSelectionResizeStart('w', e)} className="absolute top-1/2 -translate-y-1/2 -left-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-w-resize pointer-events-auto z-[130]" />
+                                                                        <div onMouseDown={(e) => handleMultiSelectionResizeStart('e', e)} className="absolute top-1/2 -translate-y-1/2 -right-[2.5px] w-[5px] h-[5px] bg-white border-[1px] border-blue-500 rounded-full shadow-sm hover:scale-125 cursor-e-resize pointer-events-auto z-[130]" />
+                                                                    </div>
+                                                                )}
 
                                                                 {/* 부분 컴포넌트화 버튼 */}
                                                                 {screen.screenId?.startsWith('CMP-') && selectionBounds && selectedElementIds.length >= 1 && !isLocked && (() => {
