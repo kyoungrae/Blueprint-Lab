@@ -61,9 +61,15 @@ export function useCanvasElementActions({
             const isThrottledOnly = Object.keys(updates).every(key => throttledKeys.includes(key));
 
             if (isThrottledOnly) {
+                const finalUpdates = { ...updates };
+                // 텍스트를 수정하는 경우, 더 이상 컴포넌트 스타일 동기화(text) 대상이 되지 않도록 플래그 설정
+                if ('text' in updates && drawElements.find(e => e.id === id)?.fromComponentId) {
+                    finalUpdates.hasComponentText = false;
+                }
+
                 // 1. 즉시 반영을 위한 데이터 계산
                 const nextElements = drawElements.map((el) =>
-                    el.id === id ? { ...el, ...updates } : el
+                    el.id === id ? { ...el, ...finalUpdates } : el
                 );
 
                 // 2. 폰트 사이즈 전용 디바운스 (가장 긴 대기시간)
@@ -107,8 +113,14 @@ export function useCanvasElementActions({
                 );
             }
 
+            const finalUpdates = { ...updates };
+            // 컴포넌트 인스턴스의 텍스트를 수정하는 경우, 더 이상 컴포넌트 스타일 동기화 대상이 되지 않도록 플래그 설정
+            if ('text' in updates && drawElements.find(e => e.id === id)?.fromComponentId) {
+                finalUpdates.hasComponentText = false;
+            }
+
             const nextElements = elements.map((el) =>
-                el.id === id ? { ...el, ...updates } : el
+                el.id === id ? { ...el, ...finalUpdates } : el
             );
             update({ drawElements: nextElements });
 

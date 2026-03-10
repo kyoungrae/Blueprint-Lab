@@ -1,5 +1,4 @@
 import React from 'react';
-import type { DrawElement } from '../../types/screenDesign';
 import PremiumTooltip from './PremiumTooltip';
 import {
     AlignHorizontalJustifyStart,
@@ -24,11 +23,10 @@ type Action =
 
 type Props = {
     selectedElementIds: string[];
-    drawElements: DrawElement[];
     onAlign: (action: Action) => void;
 };
 
-const ObjectAlignToolbar: React.FC<Props> = ({ selectedElementIds, drawElements, onAlign }) => {
+const ObjectAlignToolbar: React.FC<Props> = ({ selectedElementIds, onAlign }) => {
     if (selectedElementIds.length < 2) return null;
 
     const canDistribute = selectedElementIds.length >= 3;

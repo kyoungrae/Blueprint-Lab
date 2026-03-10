@@ -35,14 +35,18 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
     const io = new SocketIOServer(httpServer, {
         cors: {
             origin: (origin, callback) => {
+                const normalize = (url: string) => url.replace(/\/$/, '');
+                const normalizedOrigin = origin ? normalize(origin) : null;
+
                 const allowed = [
-                    config.frontendUrl,
+                    normalize(config.frontendUrl),
                     'http://localhost:5173',
                     'http://127.0.0.1:5173',
                 ];
-                if (!origin || allowed.includes(origin) || origin.startsWith('http://192.168.')) {
+                if (!normalizedOrigin || allowed.includes(normalizedOrigin) || normalizedOrigin.startsWith('http://192.168.')) {
                     callback(null, true);
                 } else {
+                    console.warn(`🛑 Socket CORS Rejected: ${origin}`);
                     callback(new Error('Not allowed by CORS'));
                 }
             },

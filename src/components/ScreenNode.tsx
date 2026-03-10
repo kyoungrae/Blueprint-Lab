@@ -1468,13 +1468,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     };
 
     const handleElementDoubleClick = (id: string, e: React.MouseEvent) => {
-        if (isLocked) return;
         e.stopPropagation();
+        if (isLocked) return;
         const el = drawElements.find(item => item.id === id);
         if (el && (el.type === 'rect' || el.type === 'circle' || el.type === 'text')) {
-            // 텍스트 상자(type === 'text')는 컴포넌트에서 와도 항상 편집 가능. 도형(rect/circle)만 컴포넌트에 텍스트 있으면 수정 불가
-            if (el.type === 'text') setEditingTextId(id);
-            else if (!el.hasComponentText) setEditingTextId(id);
+            // 모든 도형 및 텍스트 상은 더블 클릭 시 편집 모드로 진입 허용 (컴포넌트 인스턴스 포함)
+            setEditingTextId(id);
         }
         // Table double-click is handled at the cell level
     };
@@ -3483,7 +3482,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             {/* Object-to-Object Alignment (2+ selected) */}
                                             <ObjectAlignToolbar
                                                 selectedElementIds={selectedElementIds}
-                                                drawElements={drawElements}
                                                 onAlign={handleObjectAlign}
                                             />
 

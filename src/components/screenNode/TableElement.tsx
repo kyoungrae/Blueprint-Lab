@@ -117,7 +117,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
 
     return (
         <div
-            className="w-full h-full overflow-hidden relative"
+            className="w-full h-full overflow-hidden relative nodrag nopan"
             style={{
                 cursor: editingTableId === el.id ? 'default' : 'move',
                 outline: editingTableId === el.id ? '2px solid #3b82f6' : 'none',
@@ -129,10 +129,11 @@ const TableElement: React.FC<TableElementProps> = memo(({
                 if (editingTableId === el.id) {
                     e.stopPropagation();
                 }
+                if (isLocked) return;
             }}
             onDoubleClick={(e) => {
-                if (isLocked) return;
                 e.stopPropagation();
+                if (isLocked) return;
                 setEditingTableId(el.id);
                 setSelectedCellIndices([]);
                 setEditingCellIndex(null);
@@ -175,8 +176,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                         const cellColor = el.tableCellColors?.[cellIndex];
                         const cellStyle = { ...(el.tableCellStyles?.[cellIndex] || {}), ...(localCellStyles[cellIndex] || {}) };
                         const isCellSelected = editingTableId === el.id && selectedCellIndices.includes(cellIndex);
-                        const hasComponentText = !!(el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex));
-                        const isCellEditing = !hasComponentText && editingTableId === el.id && editingCellIndex === cellIndex;
+                        const isCellEditing = editingTableId === el.id && editingCellIndex === cellIndex;
                         const isHeaderRow = r === 0;
                         const cellRowSpan = v2 ? v2.rowSpan : 1;
                         const cellColSpan = v2 ? v2.colSpan : 1;
@@ -229,15 +229,17 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                     borderTop, borderBottom, borderLeft, borderRight,
                                     outline: isCellSelected ? '2px solid #3b82f6' : 'none',
                                     outlineOffset: '-1px',
-                                    cursor: editingTableId === el.id ? (hasComponentText ? 'default' : 'crosshair') : 'default',
+                                    cursor: editingTableId === el.id ? 'crosshair' : 'default',
                                     textAlign: cellStyle.textAlign || el.textAlign || 'center',
                                     verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
                                     overflow: 'hidden', minWidth: 0, minHeight: 0,
                                 }}
                                 onMouseDown={(e) => {
+                                    if (editingTableId === el.id) {
+                                        e.stopPropagation();
+                                    }
                                     if (isLocked) return;
                                     if (editingTableId !== el.id) return;
-                                    e.stopPropagation();
                                     if (editingCellIndex !== null) setEditingCellIndex(null);
                                     isDraggingCellSelectionRef.current = true;
                                     dragStartCellIndexRef.current = cellIndex;
@@ -266,10 +268,9 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                     setSelectedCellIndices(newSelection);
                                 }}
                                 onDoubleClick={(e) => {
-                                    if (isLocked) return;
-                                    if (editingTableId !== el.id) return;
-                                    if (el.fromComponentId && el.tableCellLockedIndices?.includes(cellIndex)) return;
                                     e.stopPropagation();
+                                    if (isLocked) return;
+                                    setEditingTableId(el.id);
                                     setEditingCellIndex(cellIndex);
                                 }}
                             >
@@ -278,7 +279,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         tableId={el.id}
                                         value={cellData}
                                         cellIndex={cellIndex}
-                                        isLocked={hasComponentText}
+                                        isLocked={isLocked}
                                         restoreSelectionRef={tableCellSelectionRestoreRef}
                                         autoFocus
                                         onValueChange={(html) => {
@@ -286,7 +287,15 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                             if (newV2[cellIndex]) newV2[cellIndex] = { ...newV2[cellIndex], content: html };
                                             const newData = [...(el.tableCellData || [])];
                                             newData[cellIndex] = html;
-                                            updateElement(el.id, { tableCellData: newData, tableCellDataV2: newV2 });
+
+                                            // 편집된 셀은 더 이상 컴포넌트 잠금 대상이 아니도록 인덱스 제거
+                                            const newLocked = el.tableCellLockedIndices?.filter(idx => idx !== cellIndex);
+
+                                            updateElement(el.id, {
+                                                tableCellData: newData,
+                                                tableCellDataV2: newV2,
+                                                tableCellLockedIndices: newLocked && newLocked.length > 0 ? newLocked : undefined
+                                            });
                                         }}
                                         onSelectionChange={(rect) => {
                                             setTextSelectionRect(rect);

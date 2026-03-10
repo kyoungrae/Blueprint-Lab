@@ -251,7 +251,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                 fontFamily: resolveFontFamilyCSS(localStyleOverrides.fontFamily ?? element.fontFamily),
                 lineHeight: compact ? 1.5 : 1.4,
                 whiteSpace: 'pre-wrap',
-                cursor: isSelected && (element.type === 'text' || !element.hasComponentText) ? 'text' : 'default',
+                cursor: isSelected ? 'text' : 'default',
                 ...(compact ? { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: 0 } : {})
             }}
         />

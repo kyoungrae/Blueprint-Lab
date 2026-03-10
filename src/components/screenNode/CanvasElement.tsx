@@ -153,7 +153,7 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
             style={commonStyle}
             onMouseDown={(e) => handleElementMouseDown(el.id, e)}
             onDoubleClick={(e) => handleElementDoubleClick(el.id, e)}
-            className={`group-canvas-element ${isSelected && !(isUnifiedGroupSelection && selectedElementIds.length > 1) ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
+            className={`group-canvas-element nodrag nopan ${isSelected && !(isUnifiedGroupSelection && selectedElementIds.length > 1) ? (el.fromComponentId ? 'ring-2 ring-violet-500 ring-offset-2' : 'ring-2 ring-offset-2') : ''} ${!isLocked && activeTool === 'select' ? 'cursor-grab' : ''} ${!isSelected && !isLocked && activeTool === 'select' ? 'hover:shadow-[0_0_0_2px_rgba(250,204,21,0.35)]' : ''}`}
             data-element-id={el.id}
         >
             {(el.type === 'rect' || el.type === 'circle') && (

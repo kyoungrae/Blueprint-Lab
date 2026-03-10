@@ -10,7 +10,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL
     || (import.meta.env.DEV
         ? 'http://localhost:3001'
         : (typeof window !== 'undefined'
-            ? `${window.location.protocol}//${window.location.hostname}:3001`
+            ? window.location.origin
             : 'http://localhost:3001'));
 
 console.log('📡 Collaboration Server URL:', SOCKET_URL);

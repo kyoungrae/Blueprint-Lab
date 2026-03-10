@@ -25,19 +25,22 @@ app.use(helmet({
 }));
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin
         if (!origin) return callback(null, true);
 
-        // Allow specific origins and dynamic patterns
+        // Normalize URLs (remove trailing slashes) for comparison
+        const normalize = (url: string) => url.replace(/\/$/, '');
+        const normalizedOrigin = normalize(origin);
+
         const allowed = [
-            config.frontendUrl,
+            normalize(config.frontendUrl),
             'http://localhost:5173',
             'http://127.0.0.1:5173',
         ];
 
-        if (allowed.includes(origin) || origin.startsWith('http://192.168.')) {
+        if (allowed.includes(normalizedOrigin) || normalizedOrigin.startsWith('http://192.168.')) {
             callback(null, true);
         } else {
+            console.warn(`🛑 CORS Rejected: ${origin}`);
             callback(new Error('Not allowed by CORS'));
         }
     },
