@@ -309,6 +309,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const polygonVertexSnapStateRef = useRef<SnapState>({});
     const lineVertexDragRef = useRef<{ elementId: string; pointIndex: 0 | 1 } | null>(null);
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+    const tableSelectionTimeRef = useRef<number | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const tooltipContainerRef = useRef<HTMLDivElement>(null);
@@ -1592,9 +1593,33 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             setEditingCellIndex(null);
         }
 
+        // 테이블 선택 해제 시 셀 선택도 초기화
+        if (clickedEl?.type === 'table' && e.shiftKey && !nextSelected.includes(id)) {
+            setEditingTableId(null);
+            setSelectedCellIndices([]);
+            setEditingCellIndex(null);
+        }
+
         // Disable moving if we are in an editing mode for this specific element
         if (editingTableId === id || editingTextId === id) {
             return;
+        }
+
+        // 테이블 단독 선택 시 즉시 움직이는 것을 막기 위해 타이머 기반 지연 추가
+        if (clickedEl?.type === 'table' && nextSelected.length === 1 && nextSelected[0] === id) {
+            const now = Date.now();
+            if (!tableSelectionTimeRef.current) {
+                tableSelectionTimeRef.current = now;
+                return; // 선택 직후에는 움직이지 못하도록 막음
+            }
+            
+            // 300ms 후에 움직일 수 있도록 허용
+            if (now - tableSelectionTimeRef.current < 300) {
+                return;
+            }
+        } else {
+            // 다른 요소가 선택되거나 다중 선택 시 타이머 초기화
+            tableSelectionTimeRef.current = null;
         }
 
         // Prepare for dragging all selected elements

@@ -135,6 +135,13 @@ const TableElement: React.FC<TableElementProps> = memo(({
                 if (isSelected || editingTableId === el.id) {
                     e.stopPropagation();
                 }
+                
+                // Shift+클릭 시 테이블 선택 해제
+                if (e.shiftKey && isSelected) {
+                    // 상위로 이벤트를 전파하여 handleElementMouseDown에서 선택 해제 처리
+                    return;
+                }
+                
                 if (isLocked) return;
             }}
             onDoubleClick={(e) => {
@@ -248,6 +255,13 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         e.stopPropagation();
                                     }
 
+                                    // Shift+클릭 시 셀 선택 해제
+                                    if (e.shiftKey && selectedCellIndices.includes(cellIndex)) {
+                                        e.stopPropagation();
+                                        setSelectedCellIndices(selectedCellIndices.filter(idx => idx !== cellIndex));
+                                        return;
+                                    }
+
                                     if (isLocked) return;
                                     if (editingTableId !== el.id) return;
                                     if (editingCellIndex !== null) setEditingCellIndex(null);
@@ -259,6 +273,14 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         window.removeEventListener('mouseup', onMouseUp);
                                     };
                                     window.addEventListener('mouseup', onMouseUp);
+                                }}
+                                onClick={(e) => {
+                                    // Shift+클릭 시 처리 - 간단한 이벤트 전파 방식으로 수정
+                                    if (e.shiftKey && isSelected) {
+                                        // 선택된 경우에만 이벤트 중단, 그렇지 않으면 상위로 전파
+                                        e.stopPropagation();
+                                    }
+                                    // 테이블이 선택되지 않은 경우에는 이벤트를 전파하여 다른 객체 선택 가능하도록 함
                                 }}
                                 onMouseEnter={() => {
                                     if (!isDraggingCellSelectionRef.current || editingTableId !== el.id) return;
@@ -354,7 +376,6 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         dir="ltr"
                                         className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0 nodrag nopan"
                                         style={{
-                                            pointerEvents: 'none', // 텍스트 영역(특히 <font> 등 내부 태그)이 이벤트를 가로채지 않도록 하여 부모 셀 컨테이너가 항상 이벤트를 받게 함
                                             alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
                                             justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
                                             wordBreak: 'break-word', unicodeBidi: 'isolate',
