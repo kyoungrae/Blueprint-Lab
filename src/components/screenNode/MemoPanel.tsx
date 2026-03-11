@@ -78,8 +78,17 @@ export const MemoPanel: React.FC<MemoPanelProps> = ({
             );
         }
 
-        update({ memos: newMemos });
-        syncUpdate({ memos: newMemos });
+        const logAction = viewMode === 'ADD' ? '추가' : '수정';
+        const updates = { memos: newMemos };
+        update(updates);
+        syncUpdate({
+            ...updates,
+            historyLog: {
+                targetType: 'SCREEN',
+                targetName: screen.name,
+                details: `화면 메모 ${logAction}`
+            }
+        } as any);
         setViewMode('LIST');
         setEditorContent('');
         setSelectedMemoId(null);
@@ -88,8 +97,16 @@ export const MemoPanel: React.FC<MemoPanelProps> = ({
     const handleDelete = (id: string) => {
         if (!window.confirm('이 메모를 삭제하시겠습니까?')) return;
         const newMemos = memos.filter(m => m.id !== id);
-        update({ memos: newMemos });
-        syncUpdate({ memos: newMemos });
+        const updates = { memos: newMemos };
+        update(updates);
+        syncUpdate({
+            ...updates,
+            historyLog: {
+                targetType: 'SCREEN',
+                targetName: screen.name,
+                details: `화면 메모 삭제`
+            }
+        } as any);
         setViewMode('LIST');
         setSelectedMemoId(null);
     };
