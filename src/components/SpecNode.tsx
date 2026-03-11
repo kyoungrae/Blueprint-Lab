@@ -11,8 +11,8 @@ import { useAuthStore } from '../store/authStore';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 
-// 명세 그리드 기본 컬럼 너비(px): [항목명, 필드명, 항목타입, Format, 자릿수, 초기값, Validation, 비고]
-const DEFAULT_SPEC_COLUMN_WIDTHS = [128, 128, 96, 80, 64, 64, 80, 96];
+// 명세 그리드 기본 컬럼 너비(px): [테이블명(한글), 테이블명(영어), 항목명(한글), 필드명(영문), 항목타입, Format, 자릿수, 초기값, Validation, 비고]
+const DEFAULT_SPEC_COLUMN_WIDTHS = [110, 110, 128, 128, 96, 80, 64, 64, 80, 96];
 const MIN_COL_WIDTH = 48;
 const MAX_COL_WIDTH = 400;
 
@@ -105,6 +105,35 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     </div>
                 </td>
             )}
+
+            {/* 테이블명(한글) */}
+            <td className={cellClass}>
+                <input
+                    type="text"
+                    value={displayValue('tableNameKr', item.tableNameKr || '')}
+                    onChange={(e) => handleChange('tableNameKr', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('tableNameKr', (e.target as HTMLInputElement).value)}
+                    onBlur={(e) => { if (!composing?.field) onBlur?.({ tableNameKr: e.target.value }); }}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                    disabled={isLocked}
+                    className={`${inputClass}`}
+                    placeholder="테이블명(한글)"
+                />
+            </td>
+            {/* 테이블명(영문) */}
+            <td className={cellClass}>
+                <input
+                    type="text"
+                    value={displayValue('tableNameEn', item.tableNameEn || '')}
+                    onChange={(e) => handleChange('tableNameEn', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('tableNameEn', (e.target as HTMLInputElement).value)}
+                    onBlur={(e) => { if (!composing?.field) onBlur?.({ tableNameEn: e.target.value }); }}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                    disabled={isLocked}
+                    className={`${inputClass} font-mono`}
+                    placeholder="TABLE_NAME"
+                />
+            </td>
 
             {/* 항목명(한글) */}
             <td className={cellClass}>
@@ -431,7 +460,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     // 명세 그리드 컬럼 너비
     const colWidths = React.useMemo(() => {
         const saved = screen.specColumnWidths;
-        if (saved && saved.length === 8) return [...saved];
+        if (saved && saved.length === 10) return [...saved];
         return [...DEFAULT_SPEC_COLUMN_WIDTHS];
     }, [screen.specColumnWidths]);
 
@@ -587,6 +616,8 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
         if (isLocked) return;
         const newSpec: ScreenSpecItem = {
             id: `spec_${Date.now()}`,
+            tableNameKr: '',
+            tableNameEn: '',
             fieldName: '',
             controlName: '',
             dataType: 'INPUT',
@@ -783,11 +814,10 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                                     key={s}
                                                     type="button"
                                                     onClick={() => { update({ pageSize: s }); syncUpdate({ pageSize: s }); }}
-                                                    className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                                                        (screen.pageSize || 'A4') === s
-                                                            ? 'bg-[#2c3e7c] text-white'
-                                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                    }`}
+                                                    className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${(screen.pageSize || 'A4') === s
+                                                        ? 'bg-[#2c3e7c] text-white'
+                                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                        }`}
                                                 >
                                                     <span className="block">{s}</span>
                                                     <span className="block text-[8px] font-normal opacity-90">{labelW}×{labelH}mm</span>
@@ -915,6 +945,8 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                 <col style={{ width: colWidths[5] }} />
                                 <col style={{ width: colWidths[6] }} />
                                 <col style={{ width: colWidths[7] }} />
+                                <col style={{ width: colWidths[8] }} />
+                                <col style={{ width: colWidths[9] }} />
                                 {!isLocked && <col style={{ width: 40 }} />}
                             </colgroup>
                             {/* Table Header with sticky */}
@@ -923,21 +955,29 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                 <tr className="bg-blue-50/80 border-b border-gray-200">
                                     {!isLocked && <th rowSpan={2} className="w-8 bg-gray-50 border-r border-gray-200"></th>}
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
-                                        항목명(한글)
+                                        테이블명(한글)
                                         {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={0} />}
                                     </th>
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
-                                        필드명(영문)
+                                        테이블명(영어)
                                         {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={1} />}
                                     </th>
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
-                                        항목타입
+                                        항목명(한글)
                                         {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={2} />}
+                                    </th>
+                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
+                                        필드명(영문)
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={3} />}
+                                    </th>
+                                    <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
+                                        항목타입
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={4} />}
                                     </th>
                                     <th colSpan={4} className="border-r border-gray-200 border-b px-2 py-1 font-bold text-gray-700 bg-blue-100/50">항목정의</th>
                                     <th rowSpan={2} className="px-2 py-1.5 font-bold text-gray-700 border-r border-gray-200 relative">
                                         비고
-                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={7} />}
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={9} />}
                                     </th>
                                     {!isLocked && <th rowSpan={2} className="w-10 bg-gray-50 border-l border-gray-200"></th>}
                                 </tr>
@@ -945,19 +985,19 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                 <tr className="bg-blue-50/80 border-b border-gray-200">
                                     <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
                                         Format
-                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={3} />}
-                                    </th>
-                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
-                                        자릿수
-                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={4} />}
-                                    </th>
-                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
-                                        초기값
                                         {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={5} />}
                                     </th>
                                     <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
-                                        Validation
+                                        자릿수
                                         {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={6} />}
+                                    </th>
+                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
+                                        초기값
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={7} />}
+                                    </th>
+                                    <th className="border-r border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 relative">
+                                        Validation
+                                        {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={8} />}
                                     </th>
                                 </tr>
                             </thead>

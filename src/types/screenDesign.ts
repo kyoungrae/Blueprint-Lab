@@ -1,8 +1,9 @@
 // 화면 설계서(Screen Design) 타입 정의
 
-/** 기능 명세서 상세 항목 (New) */
 export interface ScreenSpecItem {
     id: string;
+    tableNameKr: string;    // 테이블명(한글)
+    tableNameEn: string;    // 테이블명(영문)
     fieldName: string;      // 항목명(한글)
     controlName: string;    // 필드명(영문)
     dataType: string;       // 항목타입

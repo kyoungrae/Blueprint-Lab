@@ -591,21 +591,33 @@ const ComponentCanvasContent: React.FC = () => {
                 // Component project: no ERD linking - skip spec auto-populate from ERD
                 if (tableNames.length > 0 && linkedErdProjects.length > 0) {
                     const existingSpecs = specScreen.specs || [];
-                    const existingControlNames = new Set(existingSpecs.map(s => s.controlName));
+                    const existingKeys = new Set(existingSpecs.map(s => `${s.tableNameEn}.${s.controlName}`));
                     const newSpecs: any[] = [];
 
-                    tableNames.forEach(tableName => {
-                        let entity: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] } | undefined;
+                    tableNames.forEach(rawName => {
+                        let entity: { name: string; comment?: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] } | undefined;
+
+                        // Extract physical name if "Comment(Name)" format
+                        const match = rawName.match(/\(([^)]+)\)$/);
+                        const physicalFromRaw = match ? match[1] : rawName;
+
                         for (const erdProj of linkedErdProjects) {
-                            const erdData = erdProj?.data as { entities?: { name: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] }[] } | undefined;
-                            entity = erdData?.entities?.find((e: { name: string }) => e.name === tableName);
+                            const erdData = erdProj?.data as { entities?: { name: string; comment?: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] }[] } | undefined;
+
+                            entity = erdData?.entities?.find((e: { name: string; comment?: string }) =>
+                                e.name === physicalFromRaw || e.name === rawName || e.comment === rawName
+                            );
                             if (entity) break;
                         }
+
                         if (entity) {
                             entity.attributes.forEach((attr: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }) => {
-                                if (!existingControlNames.has(attr.name)) {
+                                const itemKey = `${entity!.name}.${attr.name}`;
+                                if (!existingKeys.has(itemKey)) {
                                     newSpecs.push({
                                         id: `spec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                        tableNameKr: entity!.comment || entity!.name,
+                                        tableNameEn: entity!.name,
                                         fieldName: attr.comment || attr.name,
                                         controlName: attr.name,
                                         dataType: 'INPUT',
@@ -615,7 +627,7 @@ const ComponentCanvasContent: React.FC = () => {
                                         validation: '',
                                         memo: '',
                                     });
-                                    existingControlNames.add(attr.name);
+                                    existingKeys.add(itemKey);
                                 }
                             });
                         }
