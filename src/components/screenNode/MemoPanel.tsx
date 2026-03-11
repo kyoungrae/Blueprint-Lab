@@ -33,7 +33,8 @@ export const MemoPanel: React.FC<MemoPanelProps> = ({
 
     return (
         <div
-            className="fixed top-0 right-0 w-80 h-full bg-white border-l border-gray-200 shadow-2xl z-[100] animate-in slide-in-from-right duration-300"
+            className="absolute top-0 right-0 w-80 bg-white border-l border-gray-200 shadow-2xl z-50 animate-in slide-in-from-right duration-300"
+            style={{ height: '98%'}}
             onMouseDown={(e) => e.stopPropagation()}
         >
             <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
