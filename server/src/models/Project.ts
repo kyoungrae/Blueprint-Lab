@@ -66,13 +66,7 @@ export interface IScreenSpecItem {
     memo: string;
 }
 
-// Screen Memo Interface
-export interface IScreenMemo {
-    id: string;
-    content: string;
-    author: string;
-    updatedAt: string;
-}
+
 
 // Screen Interface
 export interface IScreen {
@@ -106,12 +100,8 @@ export interface IScreen {
     pageOrientation?: string;
     /** 하위 컴포넌트 (부분 컴포넌트화) */
     subComponents?: Array<{ id: string; name: string; elementIds: string[] }>;
-    /** 화면 메모 (Legacy) */
+    /** 화면 메모 */
     memo?: string;
-    memoAuthor?: string;
-    memoUpdatedAt?: string;
-    /** 화면 메모 목록 */
-    memos?: IScreenMemo[];
 }
 
 // Screen Flow Interface
@@ -206,12 +196,7 @@ const AttributeSchema = new Schema<IAttribute>({
     length: { type: String },
 }, { _id: false });
 
-const ScreenMemoSchema = new Schema<IScreenMemo>({
-    id: { type: String, required: true },
-    content: { type: String, required: true },
-    author: { type: String, required: true },
-    updatedAt: { type: String, required: true },
-}, { _id: false });
+
 
 const EntitySchema = new Schema<IEntity>({
     id: { type: String, required: true },
@@ -295,12 +280,8 @@ const ScreenSchema = new Schema<IScreen>({
     pageSize: { type: String },
     pageOrientation: { type: String },
     subComponents: { type: [Schema.Types.Mixed], default: [] },
-    /** 화면 메모 (Legacy) */
+    /** 화면 메모 */
     memo: { type: String },
-    memoAuthor: { type: String },
-    memoUpdatedAt: { type: String },
-    /** 화면 메모 목록 */
-    memos: [ScreenMemoSchema],
 }, { _id: false });
 
 const ScreenFlowSchema = new Schema<IScreenFlow>({

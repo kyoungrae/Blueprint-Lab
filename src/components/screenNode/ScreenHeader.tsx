@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Screen } from '../../types/screenDesign';
 import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM, getCanvasDimensions } from '../../types/screenDesign';
-import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal, MessageSquare } from 'lucide-react';
+import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal } from 'lucide-react';
 import PremiumTooltip from './PremiumTooltip';
 
 interface ScreenHeaderProps {
@@ -13,7 +13,7 @@ interface ScreenHeaderProps {
     syncUpdate: (updates: Partial<Screen>) => void;
     onToggleLock: (e?: React.MouseEvent) => void;
     onDelete: (e: React.MouseEvent) => void;
-    onToggleMemoPanel: () => void;
+
     showScreenOptionsPanel: boolean;
     setShowScreenOptionsPanel: (v: boolean | ((prev: boolean) => boolean)) => void;
     screenOptionsRef: React.RefObject<HTMLDivElement | null>;
@@ -28,7 +28,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
     syncUpdate,
     onToggleLock,
     onDelete,
-    onToggleMemoPanel,
+
     showScreenOptionsPanel,
     setShowScreenOptionsPanel,
     screenOptionsRef,
@@ -274,17 +274,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                         </div>
                     )}
                 </div>
-                <button
-                    onClick={() => {
-                        // 메모 패널 토글
-                        onToggleMemoPanel();
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
-                    title="메모"
-                >
-                    <MessageSquare size={16} />
-                </button>
+
                 <button
                     onClick={onToggleLock}
                     onMouseDown={(e) => e.stopPropagation()}

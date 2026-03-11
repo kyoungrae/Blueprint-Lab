@@ -40,7 +40,7 @@ import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { GRID_STEP } from '../constants/canvasGrid';
 import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
-import { MemoPanel } from './screenNode/MemoPanel';
+
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
 import CanvasRulers from './screenNode/CanvasRulers';
 import TablePanelFloating from './screenNode/TablePanelFloating';
@@ -248,11 +248,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
     const [tableListPanelPos, setTableListPanelPos] = React.useState<{ x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
-    const [showMemoPanel, setShowMemoPanel] = useState(false);
 
-    const toggleMemoPanel = useCallback(() => {
-        setShowMemoPanel(prev => !prev);
-    }, []);
     const tableListRef = useRef<HTMLDivElement>(null);
     const screenOptionsRef = useRef<HTMLDivElement>(null);
     const rightPaneRef = useRef<HTMLDivElement>(null);
@@ -2939,7 +2935,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             syncUpdate={syncUpdate}
                             onToggleLock={handleToggleLock}
                             onDelete={handleDelete}
-                            onToggleMemoPanel={toggleMemoPanel}
+
                             showScreenOptionsPanel={showScreenOptionsPanel}
                             setShowScreenOptionsPanel={setShowScreenOptionsPanel}
                             screenOptionsRef={screenOptionsRef}
@@ -4295,13 +4291,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 <ScreenHandles />
             </TooltipPortalContext.Provider >
             </div>
-            <MemoPanel
-                screen={screen}
-                isVisible={showMemoPanel}
-                onClose={() => setShowMemoPanel(false)}
-                update={update}
-                syncUpdate={syncUpdate}
-            />
+
         </>
     );
 });

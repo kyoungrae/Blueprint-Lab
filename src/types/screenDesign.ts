@@ -17,12 +17,7 @@ export interface ScreenSpecItem {
     memo: string;           // 비고
 }
 
-export interface ScreenMemo {
-    id: string;
-    content: string;
-    author: string;
-    updatedAt: string;
-}
+
 
 /** 화면 내 개별 필드/항목 (기능 번호가 붙는 항목 - UI 설계용) */
 export interface ScreenField {
@@ -110,12 +105,8 @@ export interface Screen {
         name: string;
         elementIds: string[];  // drawElements 중 포함할 ID 목록
     }>;
-    /** 화면 메모 (Legacy) */
+    /** 화면 메모 */
     memo?: string;
-    memoAuthor?: string;
-    memoUpdatedAt?: string;
-    /** 화면 메모 목록 */
-    memos?: ScreenMemo[];
 }
 
 /** 테이블 셀 데이터 (엑셀형 고도화) */
