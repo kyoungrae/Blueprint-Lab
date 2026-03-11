@@ -203,6 +203,9 @@ const RightPane: React.FC<RightPaneProps> = ({
     };
 
     const handleResizeStart = useCallback((divider: 'func' | 'table', e: React.MouseEvent) => {
+        // 잠금 상태에서는 높이 조절 불가
+        if (isLocked) return;
+        
         e.preventDefault();
         e.stopPropagation();
         const onMove = (ev: MouseEvent) => {
@@ -231,7 +234,8 @@ const RightPane: React.FC<RightPaneProps> = ({
             const clamped = clampRatios(next);
             // 잠금 상태가 아닐 때만 높이 조절 가능
             if (!isLocked) {
-                updateScreen(screen.id, { rightPaneRatios: clamped }); // 잠금 상태와 관계없이 즉시 업데이트
+                // 로컬 상태 즉시 업데이트 후 서버 동기화
+                updateScreen(screen.id, { rightPaneRatios: clamped });
                 syncUpdate({ rightPaneRatios: clamped });
             }
         };
