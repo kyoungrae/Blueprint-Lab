@@ -234,9 +234,10 @@ const RightPane: React.FC<RightPaneProps> = ({
             const clamped = clampRatios(next);
             // 잠금 상태가 아닐 때만 높이 조절 가능
             if (!isLocked) {
+                const updatedRatios = { rightPaneRatios: clamped };
                 // 로컬 상태 즉시 업데이트 후 서버 동기화
-                updateScreen(screen.id, { rightPaneRatios: clamped });
-                syncUpdate({ rightPaneRatios: clamped });
+                updateScreen(screen.id, updatedRatios);
+                syncUpdate(updatedRatios);
             }
         };
         const onUp = () => {

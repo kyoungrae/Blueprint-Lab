@@ -229,6 +229,17 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 })),
             });
 
+            // Initialize Redis state from MongoDB
+            await projectStateManager.initializeFromDB(
+                projectId,
+                state.entities,
+                state.relationships,
+                state.version,
+                state.screens,
+                state.flows,
+                state.sections || []
+            );
+
             // Notify others of new user
             socket.to(`project:${projectId}`).emit('user_joined', {
                 user: socketData.user,
@@ -295,16 +306,10 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     newState.entities,
                     newState.relationships,
                     newState.version,
-                    newState.screens || [],
-                    newState.flows || [],
+                    newState.screens,
+                    newState.flows,
                     newState.sections || []
                 );
-
-                // Broadcast to all other clients in the project
-                socket.to(`project:${projectId}`).emit('operation', {
-                    ...operation,
-                    appliedAt: Date.now(),
-                });
 
                 // Save to MongoDB
                 // Force immediate save for critical operations to prevent data loss on refresh
@@ -534,7 +539,7 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
             // 화면 설계(Screen Design)의 섹션은 REST PATCH를 통해 screenSnapshot.sections에만 저장하므로
             // 여기서 state.sections로 덮어쓰지 않는다.
             if (projectType === 'SCREEN_DESIGN') {
-                await Project.findByIdAndUpdate(projectId, {
+                const updateResult = await Project.findByIdAndUpdate(projectId, {
                     currentSnapshot: {
                         version: stateToSave.version,
                         entities: stateToSave.entities,
@@ -573,7 +578,6 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
                 });
             }
         }
-        console.log(`💾 Project ${projectId} FLUSHED to MongoDB (immediate)`);
     } catch (error) {
         console.error('MongoDB flush error:', error);
     }

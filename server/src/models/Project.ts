@@ -90,6 +90,8 @@ export interface IScreen {
     imageWidth?: number;
     imageHeight?: number;
     isLocked?: boolean;
+    /** RightPane 패널 비율 (0–100, 합 100). [초기화면설정, 기능상세, 관련테이블] */
+    rightPaneRatios?: [number, number, number];
     contentMode?: 'IMAGE' | 'DRAW';
     drawElements?: Record<string, unknown>[];  // 직접 그리기 요소 (이미지 포함)
     pageSize?: string;
@@ -265,6 +267,8 @@ const ScreenSchema = new Schema<IScreen>({
     imageWidth: { type: Number },
     imageHeight: { type: Number },
     isLocked: { type: Boolean, default: false },
+    /** RightPane 패널 비율 (0–100, 합 100). [초기화면설정, 기능상세, 관련테이블] */
+    rightPaneRatios: { type: [Number], default: undefined },
     contentMode: { type: String, enum: ['IMAGE', 'DRAW'] },
     drawElements: { type: [Schema.Types.Mixed], default: [] },
     pageSize: { type: String },

@@ -241,13 +241,79 @@ export class ProjectStateManager {
         const data = await redis.hgetall(stateKey);
 
         if (!data || !data.entities) {
+            console.log('🔧 Redis GET - no data in Redis, attempting to load from DB');
+            // Try to load from database if Redis is empty
+            try {
+                const Types = (await import('mongoose')).Types;
+                if (Types.ObjectId.isValid(projectId)) {
+                    const Project = (await import('../models')).Project;
+                    const project = await Project.findById(projectId).lean();
+                    if (project) {
+                        const projAny = project as any;
+                        const projectType = projAny.projectType || 'ERD';
+                        const screenSnap = projAny.screenSnapshot;
+                        if (screenSnap && Array.isArray(screenSnap.screens)) {
+                            console.log(`🔧 Redis GET - loaded ${screenSnap.screens.length} screens from DB`);
+                            return {
+                                entities: projAny.currentSnapshot?.entities || [],
+                                relationships: projAny.currentSnapshot?.relationships || [],
+                                screens: screenSnap.screens,
+                                flows: screenSnap.flows || [],
+                                sections: screenSnap.sections || [],
+                                version: (screenSnap.version ?? projAny.currentSnapshot?.version) || 0,
+                            };
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('🔧 Redis GET - failed to load from DB:', error);
+            }
             return null;
+        }
+
+        const parsedScreens = data.screens ? JSON.parse(data.screens) : [];
+        if (parsedScreens.length === 0) {
+            // Try to load from database if Redis has empty screens
+            try {
+                const Types = (await import('mongoose')).Types;
+                if (Types.ObjectId.isValid(projectId)) {
+                    const Project = (await import('../models')).Project;
+                    const project = await Project.findById(projectId).lean();
+                    if (project) {
+                        const projAny = project as any;
+                        const screenSnap = projAny.screenSnapshot;
+                        if (screenSnap && Array.isArray(screenSnap.screens)) {
+                            console.log(`🔧 Redis GET - loaded ${screenSnap.screens.length} screens from DB fallback`);
+                            // Update Redis with the loaded data
+                            await this.saveState(
+                                projectId,
+                                projAny.currentSnapshot?.entities || [],
+                                projAny.currentSnapshot?.relationships || [],
+                                (screenSnap.version ?? projAny.currentSnapshot?.version) || 0,
+                                screenSnap.screens,
+                                screenSnap.flows || [],
+                                screenSnap.sections || []
+                            );
+                            return {
+                                entities: projAny.currentSnapshot?.entities || [],
+                                relationships: projAny.currentSnapshot?.relationships || [],
+                                screens: screenSnap.screens,
+                                flows: screenSnap.flows || [],
+                                sections: screenSnap.sections || [],
+                                version: (screenSnap.version ?? projAny.currentSnapshot?.version) || 0,
+                            };
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('🔧 Redis GET - failed to load from DB fallback:', error);
+            }
         }
 
         return {
             entities: JSON.parse(data.entities),
             relationships: JSON.parse(data.relationships),
-            screens: data.screens ? JSON.parse(data.screens) : [],
+            screens: parsedScreens,
             flows: data.flows ? JSON.parse(data.flows) : [],
             sections: data.sections ? JSON.parse(data.sections) : [],
             version: parseInt(data.version || '0', 10),
@@ -266,12 +332,8 @@ export class ProjectStateManager {
         flows: IScreenFlow[] = [],
         sections: Array<{ id: string; name?: string; position: { x: number; y: number }; size: { width: number; height: number } }> = []
     ): Promise<void> {
-        const existing = await this.getState(projectId);
-
-        // Only initialize if Redis doesn't have state
-        if (!existing) {
-            await this.saveState(projectId, entities, relationships, version, screens, flows, sections);
-        }
+        // Always initialize from database, overwriting any existing Redis state
+        await this.saveState(projectId, entities, relationships, version, screens, flows, sections);
     }
     /**
      * Clear project state from Redis (when project is deleted)
