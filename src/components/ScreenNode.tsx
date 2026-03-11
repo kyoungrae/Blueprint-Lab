@@ -40,6 +40,7 @@ import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { GRID_STEP } from '../constants/canvasGrid';
 import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
+import { MemoPanel } from './screenNode/MemoPanel';
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
 import CanvasRulers from './screenNode/CanvasRulers';
 import TablePanelFloating from './screenNode/TablePanelFloating';
@@ -247,6 +248,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
     const [tableListPanelPos, setTableListPanelPos] = React.useState<{ x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
+    const [showMemoPanel, setShowMemoPanel] = useState(false);
+
+    const toggleMemoPanel = useCallback(() => {
+        setShowMemoPanel(prev => !prev);
+    }, []);
     const tableListRef = useRef<HTMLDivElement>(null);
     const screenOptionsRef = useRef<HTMLDivElement>(null);
     const rightPaneRef = useRef<HTMLDivElement>(null);
@@ -2895,14 +2901,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         canvasH + ENTITY_CANVAS_GAP * 2 + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
     // 잠금 해제 시 항상 inset 고정 → 격자 ON/OFF 전환해도 그리기 영역·스케일 동일하게 유지 (객체 위치 밀림 방지)
     const canvasInset = !isLocked ? CANVAS_INSET : 0;
-
     return (
-        <div
-            ref={containerRef}
-            className={`transition-all group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''}`}
-            style={{ width: entityWidth, height: entityHeight }}
-        >
-            <TooltipPortalContext.Provider value={tooltipContainerRef}>
+        <>
+            <div
+                ref={containerRef}
+                className={`transition-all group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''}`}
+                style={{ width: entityWidth, height: entityHeight }}
+            >
+                <TooltipPortalContext.Provider value={tooltipContainerRef}>
                 {/* 툴팁 포탈: overflow-hidden 밖에 있어서 잘리지 않고, 노드와 함께 줌/이동됨 */}
                 <div ref={tooltipContainerRef} className="absolute inset-0 pointer-events-none overflow-visible z-[99999]" aria-hidden />
                 <EntityLockBadge entityId={screen.id} />
@@ -2933,6 +2939,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             syncUpdate={syncUpdate}
                             onToggleLock={handleToggleLock}
                             onDelete={handleDelete}
+                            onToggleMemoPanel={toggleMemoPanel}
                             showScreenOptionsPanel={showScreenOptionsPanel}
                             setShowScreenOptionsPanel={setShowScreenOptionsPanel}
                             screenOptionsRef={screenOptionsRef}
@@ -4287,7 +4294,15 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 </div >
                 <ScreenHandles />
             </TooltipPortalContext.Provider >
-        </div >
+            </div>
+            <MemoPanel
+                screen={screen}
+                isVisible={showMemoPanel}
+                onClose={() => setShowMemoPanel(false)}
+                update={update}
+                syncUpdate={syncUpdate}
+            />
+        </>
     );
 });
 

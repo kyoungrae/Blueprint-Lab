@@ -102,6 +102,8 @@ export interface Screen {
         name: string;
         elementIds: string[];  // drawElements 중 포함할 ID 목록
     }>;
+    /** 화면 메모 */
+    memo?: string;
 }
 
 /** 테이블 셀 데이터 (엑셀형 고도화) */
