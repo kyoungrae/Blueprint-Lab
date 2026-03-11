@@ -116,7 +116,7 @@ export const MemoPanel: React.FC<MemoPanelProps> = ({
     return (
         <div
             className="absolute top-0 right-0 w-[340px] bg-white border-l border-gray-200 shadow-2xl z-50 animate-in slide-in-from-right duration-300 flex flex-col pointer-events-auto"
-            style={{ height: '100%' }}
+            style={{ height: '98%' }}
             onMouseDown={(e) => e.stopPropagation()}
         >
             {/* Header */}
