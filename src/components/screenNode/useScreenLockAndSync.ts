@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type { Screen } from '../../types/screenDesign';
 import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
 import { useSyncStore } from '../../store/syncStore';
@@ -38,6 +38,26 @@ export const useScreenLockAndSync = (screen: Screen) => {
         [sendOperation, screen.id, user?.id, user?.name],
     );
 
+    // 1초 후 자동 잠금 타이머
+    const autoLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const startAutoLockTimer = useCallback(() => {
+        // 기존 타이머 클리어
+        if (autoLockTimerRef.current) {
+            clearTimeout(autoLockTimerRef.current);
+        }
+        
+        // 1시간 후 자동 잠금 설정
+        autoLockTimerRef.current = setTimeout(() => {
+            if (!isLockedByOther && screen.unlockedAt) {
+                const updates = { isLocked: true, unlockedAt: undefined };
+                updateScreen(screen.id, updates);
+                syncUpdate(updates);
+                releaseLock();
+            }
+        }, 3600000); // 1시간
+    }, [isLockedByOther, screen.unlockedAt, updateScreen, syncUpdate, releaseLock]);
+
     const update = useCallback(
         (updates: Partial<Screen>) => {
             if (isLocked) return;
@@ -49,8 +69,13 @@ export const useScreenLockAndSync = (screen: Screen) => {
             } else {
                 updateScreen(screen.id, updates);
             }
+            
+            // 업데이트 시 자동 잠금 타이머 리셋
+            if (updates.isLocked === false && updates.unlockedAt !== undefined) {
+                startAutoLockTimer();
+            }
         },
-        [isLocked, updateScreen, updateDrawElements, screen.id],
+        [isLocked, updateScreen, updateDrawElements, screen.id, startAutoLockTimer],
     );
 
     const handleToggleLock = useCallback(
