@@ -61,8 +61,17 @@ export const useScreenLockAndSync = (screen: Screen) => {
                 return;
             }
             const newLockedState = !isLocalLocked;
-            updateScreen(screen.id, { isLocked: newLockedState });
-            syncUpdate({ isLocked: newLockedState });
+            const updates: Partial<Screen> = { isLocked: newLockedState };
+            
+            // 잠금 해제 시 현재 시간 기록
+            if (!newLockedState) {
+                updates.unlockedAt = Date.now();
+            } else {
+                updates.unlockedAt = undefined;
+            }
+            
+            updateScreen(screen.id, updates);
+            syncUpdate(updates);
             if (!newLockedState) {
                 requestLock();
             } else {
@@ -99,6 +108,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
         syncUpdate,
         handleToggleLock,
         handleDelete,
+        releaseLock,
         sendOperation,
         user,
         canvasClipboard,

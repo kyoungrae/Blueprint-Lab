@@ -210,6 +210,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         syncUpdate,
         handleToggleLock,
         handleDelete,
+        releaseLock,
         canvasClipboard,
         setCanvasClipboard,
         gridClipboard,
@@ -667,6 +668,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         setStylePanelPos({ x: 200, y: 240 });
         setLayerPanelPos({ x: 200, y: 240 });
     }, [isLocked]);
+
+    // 새로고침 시 잠금 해제 엔티티 즉시 잠금
+    useEffect(() => {
+        // 잠금 해제 상태이고, unlockedAt이 있으면 새로고침 시 즉시 잠금
+        if (!isLocked && !isLockedByOther && screen.unlockedAt) {
+            updateScreen(screen.id, { isLocked: true, unlockedAt: undefined });
+            syncUpdate({ isLocked: true, unlockedAt: undefined });
+            releaseLock();
+        }
+    }, [screen.id]); // screen.id가 변경될 때(새로고침)만 실행
 
     // 텍스트 선택 해제 시 스타일 패널 숨김 (selectionchange + 선택 요소 변경 시)
     useEffect(() => {

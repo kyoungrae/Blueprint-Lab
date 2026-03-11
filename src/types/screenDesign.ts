@@ -83,6 +83,8 @@ export interface Screen {
     /** RightPane 패널 비율 (0–100, 합 100). [초기화면설정, 기능상세, 관련테이블] */
     rightPaneRatios?: [number, number, number];
     isLocked?: boolean;
+    /** 사용자가 잠금 해제한 시간 (자동 잠금용) */
+    unlockedAt?: number;
     contentMode?: 'IMAGE' | 'DRAW'; // UI 콘텐츠 모드 (이미지 업로드 vs 직접 그리기)
     drawElements?: DrawElement[];   // 직접 그리기 영역의 요소들
     /** 캔버스 격자 보조선 (draw 요소와 분리 관리) */

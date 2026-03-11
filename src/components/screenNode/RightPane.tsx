@@ -229,8 +229,11 @@ const RightPane: React.FC<RightPaneProps> = ({
                 next = [r0, r1, r2];
             }
             const clamped = clampRatios(next);
-            updateScreen(screen.id, { rightPaneRatios: clamped }); // 잠금 상태와 관계없이 즉시 업데이트
-            syncUpdate({ rightPaneRatios: clamped });
+            // 잠금 상태가 아닐 때만 높이 조절 가능
+            if (!isLocked) {
+                updateScreen(screen.id, { rightPaneRatios: clamped }); // 잠금 상태와 관계없이 즉시 업데이트
+                syncUpdate({ rightPaneRatios: clamped });
+            }
         };
         const onUp = () => {
             window.removeEventListener('mousemove', onMove);
@@ -253,7 +256,13 @@ const RightPane: React.FC<RightPaneProps> = ({
                         value={displayValue('initialSettings', screen.initialSettings || '')}
                         onChange={(e) => handleChange('initialSettings', e.target.value, e)}
                         onCompositionEnd={(e) => handleCompositionEnd('initialSettings', (e.target as HTMLTextAreaElement).value)}
-                        onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; setComposing(null); update({ initialSettings: v }); syncUpdate({ initialSettings: v }); }}
+                        onBlur={(e) => { 
+    if (isLocked) return; // 잠금 상태에서는 업데이트 방지
+    const v = (e.target as HTMLTextAreaElement).value; 
+    setComposing(null); 
+    update({ initialSettings: v }); 
+    syncUpdate({ initialSettings: v }); 
+}}
                         onMouseDown={(e) => e.stopPropagation()}
                         disabled={isLocked}
                         rows={getRows(screen.initialSettings, 2)}
@@ -311,7 +320,13 @@ const RightPane: React.FC<RightPaneProps> = ({
                         value={displayValue('functionDetails', screen.functionDetails || '')}
                         onChange={(e) => handleChange('functionDetails', e.target.value, e)}
                         onCompositionEnd={(e) => handleCompositionEnd('functionDetails', (e.target as HTMLTextAreaElement).value)}
-                        onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; setComposing(null); update({ functionDetails: v }); syncUpdate({ functionDetails: v }); }}
+                        onBlur={(e) => { 
+    if (isLocked) return; // 잠금 상태에서는 업데이트 방지
+    const v = (e.target as HTMLTextAreaElement).value; 
+    setComposing(null); 
+    update({ functionDetails: v }); 
+    syncUpdate({ functionDetails: v }); 
+}}
                         onMouseDown={(e) => e.stopPropagation()}
                         disabled={isLocked}
                         minRows={3}
@@ -394,6 +409,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                                 className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
+                                                                    if (isLocked) return; // 잠금 상태에서는 업데이트 방지
                                                                     const current = screen.relatedTables || '';
                                                                     const toAdd = `• ${table}`;
                                                                     if (!current.includes(table)) {
@@ -454,6 +470,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter' && !(e.nativeEvent as { isComposing?: boolean }).isComposing) {
                                             e.preventDefault();
+                                            if (isLocked) return; // 잠금 상태에서는 업데이트 방지
                                             const val = directInputValue.trim();
                                             if (val) {
                                                 const current = screen.relatedTables || '';
@@ -478,6 +495,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                     <button
                                         type="button"
                                         onClick={() => {
+                                            if (isLocked) return; // 잠금 상태에서는 업데이트 방지
                                             const val = directInputValue.trim();
                                             if (val) {
                                                 const current = screen.relatedTables || '';
@@ -486,6 +504,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                 update({ relatedTables: newValue });
                                                 syncUpdate({ relatedTables: newValue });
                                                 setDirectInputValue('');
+                                                setShowDirectInputPanel(false);
                                             }
                                         }}
                                         className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
