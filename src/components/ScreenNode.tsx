@@ -674,15 +674,15 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         setLayerPanelPos({ x: 200, y: 240 });
     }, [isLocked]);
 
-    // 새로고침 시 잠금 해제 엔티티 즉시 잠금
+    // 새로고침 시 자동 잠금 타이머 재설정
     useEffect(() => {
-        // 잠금 해제 상태이고, unlockedAt이 있으면 새로고침 시 즉시 잠금
+        // 잠금 해제 상태이고, unlockedAt이 있으면 자동 잠금 타이머 시작
         if (!isLocked && !isLockedByOther && screen.unlockedAt) {
-            updateScreen(screen.id, { isLocked: true, unlockedAt: undefined });
-            syncUpdate({ isLocked: true, unlockedAt: undefined });
-            releaseLock();
+            console.log(`🔒 [AutoLock] Resetting auto-lock timer for screen ${screen.id} (unlocked at: ${new Date(screen.unlockedAt).toLocaleTimeString()})`);
+            // useScreenLockAndSync의 startAutoLockTimer가 이미 호출되어 있음
+            // 여기서는 로깅만 함
         }
-    }, [screen.id]); // screen.id가 변경될 때(새로고침)만 실행
+    }, [screen.id, isLocked, isLockedByOther, screen.unlockedAt]);
 
     // 텍스트 선택 해제 시 스타일 패널 숨김 (selectionchange + 선택 요소 변경 시)
     useEffect(() => {

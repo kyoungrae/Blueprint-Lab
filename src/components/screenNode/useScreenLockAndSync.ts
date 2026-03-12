@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
 import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
 import { useSyncStore } from '../../store/syncStore';
@@ -53,7 +53,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
         [sendOperation, screen.id, user?.id, user?.name],
     );
 
-    // 1초 후 자동 잠금 타이머
+    // 1시간 후 자동 잠금 타이머
     const autoLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const startAutoLockTimer = useCallback(() => {
@@ -65,6 +65,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
         // 1시간 후 자동 잠금 설정
         autoLockTimerRef.current = setTimeout(() => {
             if (!isLockedByOther && screen.unlockedAt) {
+                console.log(`🔒 [AutoLock] Auto-locking screen ${screen.id} after 1 hour`);
                 const updates = { isLocked: true, unlockedAt: undefined };
                 updateScreen(screen.id, updates);
                 syncUpdate(updates);
@@ -72,6 +73,28 @@ export const useScreenLockAndSync = (screen: Screen) => {
             }
         }, 3600000); // 1시간
     }, [isLockedByOther, screen.unlockedAt, updateScreen, syncUpdate, releaseLock]);
+
+    // 새로고침 시 자동 잠금 타이머 재설정
+    useEffect(() => {
+        if (!isLockedByOther && screen.unlockedAt) {
+            const unlockedTime = screen.unlockedAt;
+            const now = Date.now();
+            const elapsed = now - unlockedTime;
+            const remaining = 3600000 - elapsed; // 1시간 - 경과 시간
+            
+            if (remaining > 0) {
+                console.log(`🔒 [AutoLock] Screen ${screen.id} will auto-lock in ${Math.round(remaining/60000)} minutes`);
+                startAutoLockTimer();
+            } else {
+                // 1시간이 지났으면 즉시 잠금
+                console.log(`🔒 [AutoLock] Screen ${screen.id} exceeded 1 hour, locking immediately`);
+                const updates = { isLocked: true, unlockedAt: undefined };
+                updateScreen(screen.id, updates);
+                syncUpdate(updates);
+                releaseLock();
+            }
+        }
+    }, [screen.id, screen.unlockedAt, isLockedByOther, startAutoLockTimer, updateScreen, syncUpdate, releaseLock]);
 
     const update = useCallback(
         (updates: Partial<Screen>) => {
