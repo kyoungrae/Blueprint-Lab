@@ -312,13 +312,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
         sidebarResizingRef.current = true;
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
-        
+
         const onMouseMove = (moveEvent: MouseEvent) => {
             if (!sidebarResizingRef.current) return;
             const newWidth = Math.max(200, Math.min(600, moveEvent.clientX));
             setSidebarWidth(newWidth);
         };
-        
+
         const onMouseUp = () => {
             sidebarResizingRef.current = false;
             document.body.style.cursor = '';
@@ -326,7 +326,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
         };
-        
+
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onMouseUp);
     }, []);
@@ -1215,7 +1215,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     });
 
                     if (newSpecsToProcess.length > 0) {
-                        const ITEMS_PER_PAGE = 21;
+                        const ITEMS_PER_PAGE = 20;
                         const allSpecs = [...existingSpecs, ...newSpecsToProcess];
                         const totalNeededPages = Math.ceil(allSpecs.length / ITEMS_PER_PAGE);
 
@@ -1229,7 +1229,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                             // ── Split Logic: Multiple Pages ──
                             // 1. Update the first page (original specScreen)
                             const page1Specs = allSpecs.slice(0, ITEMS_PER_PAGE);
-                            const page1Updates = { 
+                            const page1Updates = {
                                 ...metaUpdates,
                                 ...orientationUpdates,
                                 specs: page1Specs,
@@ -1260,7 +1260,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                             for (let p = 2; p <= totalNeededPages; p++) {
                                 const newId = `screen_${Date.now()}_${p}`;
                                 const pageSpecs = allSpecs.slice((p - 1) * ITEMS_PER_PAGE, p * ITEMS_PER_PAGE);
-                                
+
                                 const newSpecNode: Screen = {
                                     ...specScreen, // Copy properties from original spec
                                     ...metaUpdates, // Ensure meta is up to date
@@ -1273,7 +1273,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     isLocked: true, // Default to locked state
                                     unlockedAt: undefined,
                                 };
-                                
+
                                 addScreen(newSpecNode);
                                 sendOperation({
                                     type: 'SCREEN_CREATE',
@@ -1308,15 +1308,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     userName: user?.name || 'Anonymous',
                                     payload: pagingFlow as any
                                 });
-                                
+
                                 prevId = newId;
                             }
                         } else {
                             // ── Single Page Logic ──
-                            const finalUpdates = { 
-                                ...metaUpdates, 
+                            const finalUpdates = {
+                                ...metaUpdates,
                                 ...orientationUpdates,
-                                specs: allSpecs 
+                                specs: allSpecs
                             };
                             updateScreen(specScreen.id, finalUpdates);
                             sendOperation({
@@ -1837,7 +1837,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     <div className="h-full min-w-0" style={{ width: sidebarWidth }}>
                                         <ScreenSidebar key={`sidebar-${sidebarListKey}`} screens={screens} sections={sections} />
                                     </div>
-                                    
+
                                     {/* Sidebar Resizer Handle */}
                                     {isSidebarOpen && (
                                         <div
