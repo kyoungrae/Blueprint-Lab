@@ -207,6 +207,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         isLocked,
         isLockedByOther,
         lockedBy,
+        canEdit,
         update,
         updateScreen,
         syncUpdate,
@@ -1431,7 +1432,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     };
 
     const handleCanvasMouseDown = (e: React.MouseEvent) => {
-        if (isLocked || !canvasRef.current) return;
+        if (!canEdit || !canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect();
         const scaleX = canvasRef.current.clientWidth / rect.width;
         const scaleY = canvasRef.current.clientHeight / rect.height;
@@ -1551,7 +1552,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     };
 
     const handleElementMouseDown = (id: string, e: React.MouseEvent) => {
-        if (isLocked) return;
+        if (!canEdit) return;
 
         // 그리기 도구일 때는 객체 위에서도 드래그로 새 객체 생성 가능하도록 이벤트를 캔버스까지 전파
         const isDrawingTool = ['rect', 'circle', 'polygon', 'line', 'func-no', 'table', 'text', 'image'].includes(activeTool) ||
@@ -1654,7 +1655,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
     const handleElementDoubleClick = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isLocked) return;
+        if (!canEdit) return;
         const el = drawElements.find(item => item.id === id);
         if (el && (el.type === 'rect' || el.type === 'circle' || el.type === 'text')) {
             // 모든 도형 및 텍스트 상은 더블 클릭 시 편집 모드로 진입 허용 (컴포넌트 인스턴스 포함)

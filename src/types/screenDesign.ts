@@ -88,6 +88,8 @@ export interface Screen {
     isLocked?: boolean;
     /** 사용자가 잠금 해제한 시간 (자동 잠금용) */
     unlockedAt?: number;
+    /** 잠금 해제한 사용자 ID (수정 권한 제어용) */
+    unlockedUserId?: string;
     contentMode?: 'IMAGE' | 'DRAW'; // UI 콘텐츠 모드 (이미지 업로드 vs 직접 그리기)
     drawElements?: DrawElement[];   // 직접 그리기 영역의 요소들
     /** 캔버스 격자 보조선 (draw 요소와 분리 관리) */

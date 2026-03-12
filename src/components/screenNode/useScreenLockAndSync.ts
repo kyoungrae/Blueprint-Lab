@@ -24,6 +24,9 @@ export const useScreenLockAndSync = (screen: Screen) => {
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
     const isLocalLocked = screen.isLocked ?? true;
     const isLocked = isLocalLocked || isLockedByOther;
+    
+    // 수정 가능 여부: 잠금 해제 상태이고, 자신이 잠금 해제한 사용자여야 함
+    const canEdit = !isLocked && (!screen.unlockedUserId || screen.unlockedUserId === user?.id);
 
     const syncUpdate = useCallback(
         (updates: Partial<Screen>) => {
@@ -128,11 +131,13 @@ export const useScreenLockAndSync = (screen: Screen) => {
             const newLockedState = !isLocalLocked;
             const updates: Partial<Screen> = { isLocked: newLockedState };
             
-            // 잠금 해제 시 현재 시간 기록
+            // 잠금 해제 시 현재 시간과 사용자 ID 기록
             if (!newLockedState) {
                 updates.unlockedAt = Date.now();
+                updates.unlockedUserId = user?.id;
             } else {
                 updates.unlockedAt = undefined;
+                updates.unlockedUserId = undefined;
             }
             
             updateScreen(screen.id, updates);
@@ -168,6 +173,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
         isLocked,
         isLockedByOther,
         lockedBy,
+        canEdit,
         update,
         updateScreen,
         syncUpdate,
