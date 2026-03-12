@@ -8,11 +8,12 @@ interface MemoPanelProps {
     show: boolean;
     onClose: () => void;
     screen: Screen;
+    update: (updates: Partial<Screen>) => void;
     syncUpdate: (updates: Partial<Screen>) => void;
     user: { id: string; name: string } | null;
 }
 
-const MemoPanel: React.FC<MemoPanelProps> = ({ show, onClose, screen, syncUpdate, user }) => {
+const MemoPanel: React.FC<MemoPanelProps> = ({ show, onClose, screen, update, syncUpdate, user }) => {
     const [memos, setMemos] = useState<ScreenMemo[]>(screen.memos || []);
     const [content, setContent] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -28,6 +29,7 @@ const MemoPanel: React.FC<MemoPanelProps> = ({ show, onClose, screen, syncUpdate
 
         let nextMemos: ScreenMemo[];
         const now = new Date().toISOString();
+        let logDetails = '';
 
         if (editingId) {
             nextMemos = memos.map(m => 
@@ -36,6 +38,7 @@ const MemoPanel: React.FC<MemoPanelProps> = ({ show, onClose, screen, syncUpdate
                     : m
             );
             setEditingId(null);
+            logDetails = `화면 메모를 수정했습니다.`;
         } else {
             const newMemo: ScreenMemo = {
                 id: `memo_${Date.now()}`,
@@ -46,10 +49,20 @@ const MemoPanel: React.FC<MemoPanelProps> = ({ show, onClose, screen, syncUpdate
                 updatedAt: now,
             };
             nextMemos = [newMemo, ...memos];
+            logDetails = `새로운 화면 메모를 작성했습니다.`;
         }
 
         setMemos(nextMemos);
-        syncUpdate({ memos: nextMemos });
+        update({ memos: nextMemos });
+        syncUpdate({ 
+            memos: nextMemos,
+            //@ts-ignore
+            historyLog: {
+                details: logDetails,
+                targetName: screen.name,
+                targetType: 'SCREEN'
+            }
+        });
         setContent('');
         
         // Scroll to top after adding
@@ -62,7 +75,16 @@ const MemoPanel: React.FC<MemoPanelProps> = ({ show, onClose, screen, syncUpdate
         if (!window.confirm('메모를 삭제하시겠습니까?')) return;
         const nextMemos = memos.filter(m => m.id !== id);
         setMemos(nextMemos);
-        syncUpdate({ memos: nextMemos });
+        update({ memos: nextMemos });
+        syncUpdate({ 
+            memos: nextMemos,
+            //@ts-ignore
+            historyLog: {
+                details: `화면 메모를 삭제했습니다.`,
+                targetName: screen.name,
+                targetType: 'SCREEN'
+            }
+        });
     };
 
     const handleEdit = (memo: ScreenMemo) => {

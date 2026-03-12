@@ -2930,6 +2930,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                         show={showMemoPanel}
                         onClose={() => setShowMemoPanel(false)}
                         screen={screen}
+                        update={update}
                         syncUpdate={syncUpdate}
                         user={user}
                     />

@@ -257,6 +257,15 @@ const ScreenSpecItemSchema = new Schema<IScreenSpecItem>({
     memo: { type: String, default: '' },
 }, { _id: false });
 
+const ScreenMemoSchema = new Schema({
+    id: { type: String, required: true },
+    content: { type: String, required: true },
+    authorId: { type: String },
+    authorName: { type: String },
+    createdAt: { type: String },
+    updatedAt: { type: String },
+}, { _id: false });
+
 const ScreenSchema = new Schema<IScreen>({
     id: { type: String, required: true },
     systemName: { type: String, default: '' },
@@ -293,14 +302,7 @@ const ScreenSchema = new Schema<IScreen>({
     memo: { type: String },
     /** 화면 메모 리스트 (고도화용) */
     memos: {
-        type: [{
-            id: { type: String, required: true },
-            content: { type: String, required: true },
-            authorId: { type: String },
-            authorName: { type: String },
-            createdAt: { type: String },
-            updatedAt: { type: String },
-        }],
+        type: [ScreenMemoSchema],
         default: []
     },
 }, { _id: false });

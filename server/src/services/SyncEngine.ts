@@ -177,11 +177,13 @@ export class SyncEngine {
             case 'SCREEN_UPDATE':
             case 'SCREEN_MOVE':
             case 'SCREEN_DRAW_DELETE':
-                newState.screens = (state.screens || []).map(s =>
-                    s.id === operation.targetId
-                        ? { ...s, ...operation.payload }
-                        : s
-                );
+                newState.screens = (state.screens || []).map(s => {
+                    if (s.id === operation.targetId) {
+                        const { historyLog, ...purePayload } = operation.payload as any;
+                        return { ...s, ...purePayload };
+                    }
+                    return s;
+                });
                 break;
 
             case 'SCREEN_DELETE':

@@ -316,10 +316,11 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 const payload = operation.payload as Record<string, unknown>;
                 const hasDrawElements = payload && 'drawElements' in payload;
                 const hasRightPaneRatios = payload && 'rightPaneRatios' in payload;
+                const hasMemos = payload && 'memos' in payload;
                 const isCriticalOperation =
                     operation.type.includes('DELETE') ||
                     operation.type === 'ERD_IMPORT' ||
-                    (operation.type === 'SCREEN_UPDATE' && (hasDrawElements || hasRightPaneRatios)) ||
+                    (operation.type === 'SCREEN_UPDATE' && (hasDrawElements || hasRightPaneRatios || hasMemos)) ||
                     operation.type === 'SCREEN_DRAW_DELETE';
                 const savePromise = debouncedSaveToMongo(projectId, newState, isCriticalOperation);
                 if (savePromise) await savePromise;
