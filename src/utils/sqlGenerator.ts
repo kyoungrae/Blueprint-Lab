@@ -65,42 +65,59 @@ export const generateSQLFromERD = (entities: Entity[], relationships: Relationsh
     });
 
     // 2. Generate ALTER TABLE for Foreign Keys
+    if (relationships.length > 0) {
+        sql += `-- Foreign Key Constraints\n`;
+        sql += `-- ======================\n\n`;
+    }
+
     relationships.forEach(rel => {
         const sourceEntity = entities.find(e => e.id === rel.source);
         const targetEntity = entities.find(e => e.id === rel.target);
 
         if (sourceEntity && targetEntity) {
-            // Find the handle attributes if possible, otherwise guess/default
-            // In the current system, sourceHandle/targetHandle might be names or positions.
-            // For now, we assume the relationship links the entities.
-            // If the system stores which attribute is the FK, we can use that.
+            // 관계 타입에 따른 FK 제약조건 생성
+            const constraintName = `FK_${sourceEntity.name}_${targetEntity.name}_${rel.type}`;
+            
+            // PK 컬럼 찾기 (우선순위: 명시적 PK > id 컬럼)
+            const pkAttr = targetEntity.attributes.find(a => a.isPK) || 
+                          targetEntity.attributes.find(a => a.name.toLowerCase() === 'id');
 
-            // Look for attributes marked as FK that might correspond to this relationship
-            const fkAttr = sourceEntity.attributes.find(a => a.isFK && a.name.toLowerCase().includes(targetEntity.name.toLowerCase()));
-            const pkAttr = targetEntity.attributes.find(a => a.isPK);
+            // FK 컬럼 찾기 (우선순위: 명시적 FK > target_name_id > handle 기반)
+            let fkAttr = sourceEntity.attributes.find(a => a.isFK);
+            
+            if (!fkAttr) {
+                // 관계의 sourceHandle/targetHandle에서 컬럼명 추출 시도
+                if (rel.sourceHandle && typeof rel.sourceHandle === 'string') {
+                    fkAttr = sourceEntity.attributes.find(a => a.name === rel.sourceHandle);
+                }
+            }
+            
+            if (!fkAttr) {
+                // target_name_id 패턴으로 찾기
+                const targetNamePattern = `${targetEntity.name.toLowerCase()}_id`;
+                fkAttr = sourceEntity.attributes.find(a => 
+                    a.name.toLowerCase() === targetNamePattern ||
+                    a.name.toLowerCase() === `${targetNamePattern.toUpperCase()}`
+                );
+            }
 
-            if (fkAttr && pkAttr) {
-                const fkName = `FK_${sourceEntity.name}_${targetEntity.name}_${fkAttr.name}`;
+            if (pkAttr && fkAttr) {
                 sql += `-- Relationship: ${sourceEntity.name} -> ${targetEntity.name} (${rel.type})\n`;
                 sql += `ALTER TABLE ${quoteIdentifier(sourceEntity.name, dbType)}\n`;
-                sql += `    ADD CONSTRAINT ${quoteIdentifier(fkName, dbType)}\n`;
+                sql += `    ADD CONSTRAINT ${quoteIdentifier(constraintName, dbType)}\n`;
                 sql += `    FOREIGN KEY (${quoteIdentifier(fkAttr.name, dbType)})\n`;
-                sql += `    REFERENCES ${quoteIdentifier(targetEntity.name, dbType)} (${quoteIdentifier(pkAttr.name, dbType)});\n\n`;
-            } else {
-                // Fallback: search for any _id column in source that matches target entity name
-                const fallbackFk = sourceEntity.attributes.find(a =>
-                    a.name.toLowerCase() === `${targetEntity.name.toLowerCase()}_id` ||
-                    a.name.toLowerCase() === `${targetEntity.name.toLowerCase()}_ID`
-                );
-
-                if (fallbackFk && pkAttr) {
-                    const fkName = `FK_${sourceEntity.name}_${targetEntity.name}_${fallbackFk.name}`;
-                    sql += `-- Relationship: ${sourceEntity.name} -> ${targetEntity.name} (Guess based on name)\n`;
-                    sql += `ALTER TABLE ${quoteIdentifier(sourceEntity.name, dbType)}\n`;
-                    sql += `    ADD CONSTRAINT ${quoteIdentifier(fkName, dbType)}\n`;
-                    sql += `    FOREIGN KEY (${quoteIdentifier(fallbackFk.name, dbType)})\n`;
-                    sql += `    REFERENCES ${quoteIdentifier(targetEntity.name, dbType)} (${quoteIdentifier(pkAttr.name, dbType)});\n\n`;
+                sql += `    REFERENCES ${quoteIdentifier(targetEntity.name, dbType)} (${quoteIdentifier(pkAttr.name, dbType)})`;
+                
+                // ON DELETE/UPDATE 옵션 추가 (관계 타입에 따라)
+                if (rel.type === '1:N') {
+                    sql += `\n    ON DELETE CASCADE`;
                 }
+                
+                sql += `;\n\n`;
+            } else {
+                // 경고: FK 또는 PK를 찾지 못한 경우
+                sql += `-- WARNING: Could not create foreign key for ${sourceEntity.name} -> ${targetEntity.name}\n`;
+                sql += `-- Reason: ${!pkAttr ? 'Primary key not found in target table' : 'Foreign key column not found in source table'}\n\n`;
             }
         }
     });
