@@ -117,8 +117,9 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             path: import.meta.env.VITE_SOCKET_PATH || '/socket.io',
             autoConnect: true,
             reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
+            reconnectionAttempts: 10,
+            reconnectionDelay: 2000,
+            reconnectionDelayMax: 5000,
         });
 
         // Set socket immediately

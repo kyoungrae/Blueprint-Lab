@@ -251,6 +251,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
 
         // Handle ERD operations
         socket.on('operation', async (operation: CRDTOperation) => {
+            console.log(`📥 [Server] Received operation: ${operation.type} for ${operation.targetId} from ${socketData.user.name}`);
             if (!socketData.projectId) return;
 
             const projectId = socketData.projectId;
