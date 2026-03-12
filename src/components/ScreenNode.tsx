@@ -214,7 +214,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         syncDrawElements,
         handleToggleLock,
         handleDelete,
-        releaseLock,
         sendOperation,
         user,
         canvasClipboard,
@@ -679,7 +678,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     useEffect(() => {
         // 잠금 해제 상태이고, unlockedAt이 있으면 자동 잠금 타이머 시작
         if (!isLocked && !isLockedByOther && screen.unlockedAt) {
-            console.log(`🔒 [AutoLock] Resetting auto-lock timer for screen ${screen.id} (unlocked at: ${new Date(screen.unlockedAt).toLocaleTimeString()})`);
+            // console.log(`🔒 [AutoLock] Resetting auto-lock timer for screen ${screen.id} (unlocked at: ${new Date(screen.unlockedAt).toLocaleTimeString()})`);
             // useScreenLockAndSync의 startAutoLockTimer가 이미 호출되어 있음
             // 여기서는 로깅만 함
         }
@@ -1909,7 +1908,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 
                 // 드래그 중에도 실시간 동기화 전송 (자신의 작업은 걸러짐)
                 if (draggingElementIds.length > 0) {
-                    console.log(`📤 [Drag] Syncing ${nextElements.length} elements during drag`);
+                    // console.log(`📤 [Drag] Syncing ${nextElements.length} elements during drag`);
                     syncDrawElements(nextElements);
                 }
             });
@@ -2402,12 +2401,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             const htmlData = cd.getData('text/html');
             if (htmlData) {
                 if (import.meta.env.DEV) {
-                    console.log('[Paste] text/html length:', htmlData.length);
-                    console.log('[Paste] text/html sample:', htmlData.slice(0, 500));
+                    // console.log('[Paste] text/html length:', htmlData.length);
+                    // console.log('[Paste] text/html sample:', htmlData.slice(0, 500));
                 }
                 const pptElements = parsePptHtmlToElements(htmlData);
                 if (import.meta.env.DEV) {
-                    console.log('[Paste] pptElements:', pptElements);
+                    // console.log('[Paste] pptElements:', pptElements);
                 }
                 if (pptElements.length > 0) {
                     e.preventDefault();

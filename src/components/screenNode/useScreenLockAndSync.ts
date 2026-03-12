@@ -44,7 +44,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
     // drawElements 전용 실시간 동기화 함수
     const syncDrawElements = useCallback(
         (drawElements: DrawElement[]) => {
-            console.log(`📤 [Sync] Sending SCREEN_DRAW_ELEMENTS_UPDATE for screen ${screen.id}:`, drawElements.length, 'elements');
+            // console.log(`📤 [Sync] Sending SCREEN_DRAW_ELEMENTS_UPDATE for screen ${screen.id}:`, drawElements.length, 'elements');
             sendOperation({
                 type: 'SCREEN_DRAW_ELEMENTS_UPDATE',
                 targetId: screen.id,
@@ -68,7 +68,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
         // 1시간 후 자동 잠금 설정
         autoLockTimerRef.current = setTimeout(() => {
             if (!isLockedByOther && screen.unlockedAt) {
-                console.log(`🔒 [AutoLock] Auto-locking screen ${screen.id} after 1 hour`);
+                // console.log(`🔒 [AutoLock] Auto-locking screen ${screen.id} after 1 hour`);
                 const updates = { isLocked: true, unlockedAt: undefined };
                 updateScreen(screen.id, updates);
                 syncUpdate(updates);
@@ -86,11 +86,11 @@ export const useScreenLockAndSync = (screen: Screen) => {
             const remaining = 3600000 - elapsed; // 1시간 - 경과 시간
             
             if (remaining > 0) {
-                console.log(`🔒 [AutoLock] Screen ${screen.id} will auto-lock in ${Math.round(remaining/60000)} minutes`);
+                // console.log(`🔒 [AutoLock] Screen ${screen.id} will auto-lock in ${Math.round(remaining/60000)} minutes`);
                 startAutoLockTimer();
             } else {
                 // 1시간이 지났으면 즉시 잠금
-                console.log(`🔒 [AutoLock] Screen ${screen.id} exceeded 1 hour, locking immediately`);
+                // console.log(`🔒 [AutoLock] Screen ${screen.id} exceeded 1 hour, locking immediately`);
                 const updates = { isLocked: true, unlockedAt: undefined };
                 updateScreen(screen.id, updates);
                 syncUpdate(updates);

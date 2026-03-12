@@ -243,7 +243,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                     }
                     return true;
                 } catch (e) {
-                    console.error("Text selection restore failed:", e);
+                    // console.error("Text selection restore failed:", e);
                 }
             }
         }
@@ -560,7 +560,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             setFonts(prev => [...prev, data]);
             applyFont(data.name);
         } catch (err) {
-            console.error('Font upload error:', err);
+            // console.error('Font upload error:', err);
         } finally {
             setUploadingFont(false);
             e.target.value = '';

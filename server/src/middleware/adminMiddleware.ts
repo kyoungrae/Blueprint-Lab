@@ -29,7 +29,7 @@ export const adminMiddleware = async (req: AuthRequest, res: Response, next: Nex
 
         next();
     } catch (error) {
-        console.error('Admin middleware error:', error);
+        // console.error('Admin middleware error:', error);
         res.status(500).json({ message: '권한 확인 중 오류가 발생했습니다.' });
     }
 };

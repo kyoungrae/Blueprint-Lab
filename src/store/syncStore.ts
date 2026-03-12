@@ -13,7 +13,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL
             ? window.location.origin
             : 'http://localhost:3001'));
 
-console.log('📡 Collaboration Server URL:', SOCKET_URL);
+// console.log('📡 Collaboration Server URL:', SOCKET_URL);
 
 // Online User Interface
 export interface OnlineUser {
@@ -110,13 +110,13 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
     connect: () => {
         const { socket: existingSocket } = get();
         if (existingSocket) {
-            console.log('🔌 Socket already exists, skipping connect');
+            // console.log('🔌 Socket already exists, skipping connect');
             return;
         }
 
         // 중복 실행 방지 플래그
         if (get().isConnecting) {
-            console.log('🔄 Already connecting, skipping...');
+            // console.log('🔄 Already connecting, skipping...');
             return;
         }
         
@@ -129,8 +129,8 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             sessionStorage.setItem('socketClientId', clientId);
         }
         
-        console.log('🔌 Creating new socket connection...');
-        console.log(`🏷️ Client ID: ${clientId}`);
+        // console.log('🔌 Creating new socket connection...');
+        // console.log(`🏷️ Client ID: ${clientId}`);
         const socket = io(SOCKET_URL, {
             path: import.meta.env.VITE_SOCKET_PATH || '/socket.io',
             autoConnect: true,
@@ -146,27 +146,27 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
         set({ socket });
 
         socket.on('connect', () => {
-            console.log('🔌 Connected to collaboration server');
+            // console.log('🔌 Connected to collaboration server');
             set({ isConnected: true, isConnecting: false });
         });
 
         socket.on('authenticated', (data: { success: boolean }) => {
             if (data.success) {
-                console.log('✅ Identity confirmed by server');
+                // console.log('✅ Identity confirmed by server');
                 set({ isAuthenticatedOnSocket: true });
             }
         });
 
         socket.on('disconnect', () => {
-            console.log('🔌 Disconnected from collaboration server');
+            // console.log('🔌 Disconnected from collaboration server');
             set({
                 isConnected: false,
                 isConnecting: false,
             });
         });
 
-        socket.on('connect_error', (error) => {
-            console.error('Connection error:', error.message);
+        socket.on('connect_error', (_error) => {
+            // console.error('Connection error:', _error.message);
         });
 
         // State sync on join
@@ -176,7 +176,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             locks: Record<string, LockInfo>;
             history: HistoryLog[];
         }) => {
-            console.log('📥 State synced from server (including history)');
+            // console.log('📥 State synced from server (including history)');
             set({
                 onlineUsers: data.onlineUsers,
                 isSynced: true // Mark as synced
@@ -199,12 +199,12 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
         // User events
         socket.on('user_joined', (data: { user: OnlineUser; onlineUsers: OnlineUser[] }) => {
-            console.log(`👤 ${data.user.name} joined`);
+            // console.log(`👤 ${data.user.name} joined`);
             set({ onlineUsers: data.onlineUsers });
         });
 
         socket.on('user_left', (data: { userId: string; clientId?: string; onlineUsers: OnlineUser[] }) => {
-            console.log(`👤 User left`);
+            // console.log(`👤 User left`);
             set({ onlineUsers: data.onlineUsers });
             if (data.clientId) {
                 get()._removeCursor(data.clientId);
@@ -215,7 +215,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
         // Operation from other users
         socket.on('operation', (operation: CRDTOperation) => {
-            console.log(`📥 [Collaboration] Received remote operation: ${operation.type} for ${operation.targetId}`);
+            // console.log(`📥 [Collaboration] Received remote operation: ${operation.type} for ${operation.targetId}`);
             // Update local clock
             const { lamportClock } = get();
             set({ lamportClock: Math.max(lamportClock, operation.lamportClock) + 1 });
@@ -277,7 +277,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
     joinProject: (projectId) => {
         // Handle local project
         if (projectId.startsWith('local_')) {
-            console.log('🏠 Joining local project (Guest Mode)');
+            // console.log('🏠 Joining local project (Guest Mode)');
             set({
                 currentProjectId: projectId,
                 isSynced: true, // Local state is always "synced"

@@ -44,7 +44,7 @@ export class LockManager {
             return { success: true };
 
         } catch (error) {
-            console.error('Lock acquisition error:', error);
+            // console.error('Lock acquisition error:', error);
             return { success: false };
         }
     }
@@ -74,7 +74,7 @@ export class LockManager {
 
             return false;
         } catch (error) {
-            console.error('Lock release error:', error);
+            // console.error('Lock release error:', error);
             return false;
         }
     }
@@ -104,7 +104,7 @@ export class LockManager {
 
             return false;
         } catch (error) {
-            console.error('Lock extend error:', error);
+            // console.error('Lock extend error:', error);
             return false;
         }
     }
@@ -133,7 +133,7 @@ export class LockManager {
             }
 
         } catch (error) {
-            console.error('Get locks error:', error);
+            // console.error('Get locks error:', error);
         }
 
         return locks;
@@ -156,7 +156,7 @@ export class LockManager {
                 }
             }
         } catch (error) {
-            console.error('Release all user locks error:', error);
+            // console.error('Release all user locks error:', error);
         }
     }
 
@@ -168,7 +168,7 @@ export class LockManager {
         try {
             await redis.del(lockKey);
         } catch (error) {
-            console.error('Clear project locks error:', error);
+            // console.error('Clear project locks error:', error);
         }
     }
 }

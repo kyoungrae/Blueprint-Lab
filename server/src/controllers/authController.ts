@@ -29,7 +29,7 @@ export const requestVerification = async (req: Request, res: Response) => {
 
         res.json({ message: '인증 코드가 발송되었습니다.' });
     } catch (error: any) {
-        console.error('Request verification error:', error);
+        // console.error('Request verification error:', error);
         res.status(500).json({ message: error.message || '인증 코드 발송에 실패했습니다.' });
     }
 };
@@ -76,7 +76,7 @@ export const signup = async (req: Request, res: Response) => {
             },
         });
     } catch (error) {
-        console.error('Signup error:', error);
+        // console.error('Signup error:', error);
         res.status(500).json({ message: '회원가입 중 오류가 발생했습니다.' });
     }
 };
@@ -113,7 +113,7 @@ export const login = async (req: Request, res: Response) => {
             },
         });
     } catch (error) {
-        console.error('Login error:', error);
+        // console.error('Login error:', error);
         res.status(500).json({ message: '로그인 중 오류가 발생했습니다.' });
     }
 };
@@ -138,7 +138,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
             tier: user.tier || 'FREE',
         });
     } catch (error) {
-        console.error('Get me error:', error);
+        // console.error('Get me error:', error);
         res.status(500).json({ message: '사용자 정보를 가져오는 중 오류가 발생했습니다.' });
     }
 };
@@ -164,7 +164,7 @@ export const verifyPassword = async (req: AuthRequest, res: Response) => {
         }
         res.json({ ok: true });
     } catch (error: any) {
-        console.error('Verify password error:', error);
+        // console.error('Verify password error:', error);
         res.status(500).json({ message: '비밀번호 확인 중 오류가 발생했습니다.' });
     }
 };
@@ -179,7 +179,7 @@ export const checkEmail = async (req: Request, res: Response) => {
         const user = await User.findOne({ email });
         res.json({ exists: !!user });
     } catch (error) {
-        console.error('Check email error:', error);
+        // console.error('Check email error:', error);
         res.status(500).json({ message: '이메일 확인 중 오류가 발생했습니다.' });
     }
 };

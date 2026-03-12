@@ -13,15 +13,15 @@ export const redis = new Redis({
 });
 
 redis.on('connect', () => {
-    console.log('✅ Redis connected successfully');
+    // console.log('✅ Redis connected successfully');
 });
 
 redis.on('error', (err) => {
-    console.error('❌ Redis error:', err.message);
+    // console.error('❌ Redis error:', err.message);
 });
 
 redis.on('close', () => {
-    console.log('⚠️ Redis connection closed');
+    // console.log('⚠️ Redis connection closed');
 });
 
 // Pub/Sub용 별도 클라이언트

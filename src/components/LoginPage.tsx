@@ -71,7 +71,7 @@ const LoginPage: React.FC = () => {
                         setIsSignup(true);
                     }
                 } catch (err) {
-                    console.error('Check email failed:', err);
+                    // console.error('Check email failed:', err);
                 }
             };
             checkUser();

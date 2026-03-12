@@ -322,7 +322,7 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                         onLoad={() => setLoadFailed(false)}
                         onError={() => {
                             setLoadFailed(true);
-                            console.warn('[ImageElement] 이미지 로드 실패:', displayUrl);
+                            // console.warn('[ImageElement] 이미지 로드 실패:', displayUrl);
                         }}
                     />
                     {isSelected && isCropMode && (

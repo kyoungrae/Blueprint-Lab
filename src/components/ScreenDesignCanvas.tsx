@@ -1054,11 +1054,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 }
                 else if (op.type === 'SCREEN_DRAW_ELEMENTS_UPDATE') {
                     // drawElements 실시간 동기화 처리
-                    console.log(`📥 [Canvas] Received SCREEN_DRAW_ELEMENTS_UPDATE for screen ${op.targetId}`);
+                    // console.log(`📥 [Canvas] Received SCREEN_DRAW_ELEMENTS_UPDATE for screen ${op.targetId}`);
                     setLastRemoteUpdateScreenId(op.targetId);
                     const { drawElements } = op.payload as any;
                     if (drawElements) {
-                        console.log(`📥 [Canvas] Updating ${drawElements.length} drawElements`);
+                        // console.log(`📥 [Canvas] Updating ${drawElements.length} drawElements`);
                         updateDrawElements(op.targetId, drawElements);
                     }
                 }
@@ -1773,8 +1773,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     });
                 };
 
-                captureNext(0).catch((err: unknown) => {
-                    console.error('PDF export failed:', err);
+                captureNext(0).catch((_err: unknown) => {
+                    // console.error('PDF export failed:', _err);
                     alert('PDF 내보내기에 실패했습니다.');
                     setIsExporting(false);
                 });
@@ -1809,8 +1809,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     .catch(() =>
                                         doCapture({})
                                             .then(downloadPng)
-                                            .catch((err: unknown) => {
-                                                console.error('Export failed:', err);
+                                            .catch((_err: unknown) => {
+                                                // console.error('Export failed:', _err);
                                                 alert('이미지 내보내기에 실패했습니다.');
                                             })
                                     )

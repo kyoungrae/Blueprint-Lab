@@ -722,7 +722,7 @@ const ERDCanvasContent: React.FC = () => {
         const handleStateSync = (e: CustomEvent<any>) => {
             const state = e.detail;
             if (!state) return;
-            console.log('Applying synced state:', state);
+            // console.log('Applying synced state:', state);
             importData(state);
         };
 

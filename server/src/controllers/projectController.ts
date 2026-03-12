@@ -50,7 +50,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
 
         res.status(201).json(project);
     } catch (error) {
-        console.error('Create project error:', error);
+        // console.error('Create project error:', error);
         res.status(500).json({ message: '프로젝트 생성 중 오류가 발생했습니다.' });
     }
 };
@@ -72,7 +72,7 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
         res.set('Cache-Control', 'no-store');
         res.json(projects);
     } catch (error) {
-        console.error('Get projects error:', error);
+        // console.error('Get projects error:', error);
         res.status(500).json({ message: '프로젝트 목록을 가져오는 중 오류가 발생했습니다.' });
     }
 };
@@ -103,7 +103,7 @@ export const deleteProject = async (req: AuthRequest, res: Response) => {
 
         res.json({ message: '프로젝트가 삭제되었습니다.' });
     } catch (error) {
-        console.error('Delete project error:', error);
+        // console.error('Delete project error:', error);
         res.status(500).json({ message: '프로젝트 삭제 중 오류가 발생했습니다.' });
     }
 };
@@ -242,7 +242,7 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         await project.save();
         res.json(project);
     } catch (error: any) {
-        console.error('Update project error:', error);
+        // console.error('Update project error:', error);
         const msg = error?.message ?? (error ? String(error) : '');
         const isMongoTooLarge = error?.code === 10334 || msg.includes('document is too large') || msg.includes('BSON');
         if (isMongoTooLarge) {
@@ -277,7 +277,7 @@ export const getProjectScreensDebug = async (req: AuthRequest, res: Response) =>
         }));
         res.json({ screens: summary });
     } catch (error) {
-        console.error('getProjectScreensDebug error:', error);
+        // console.error('getProjectScreensDebug error:', error);
         res.status(500).json({ message: 'Error fetching screens' });
     }
 };
@@ -298,7 +298,7 @@ export const getProject = async (req: AuthRequest, res: Response) => {
 
         res.json(project);
     } catch (error) {
-        console.error('Get project error:', error);
+        // console.error('Get project error:', error);
         res.status(500).json({ message: '프로젝트 정보를 가져오는 중 오류가 발생했습니다.' });
     }
 };
@@ -342,7 +342,7 @@ export const createInvitation = async (req: AuthRequest, res: Response) => {
 
         res.json({ message: '초대 메일이 발송되었습니다.', code });
     } catch (error) {
-        console.error('Create invitation error:', error);
+        // console.error('Create invitation error:', error);
         res.status(500).json({ message: '초대 생성 중 오류가 발생했습니다.' });
     }
 };
@@ -390,7 +390,7 @@ export const joinProjectWithCode = async (req: AuthRequest, res: Response) => {
 
         res.json({ message: '프로젝트에 참여되었습니다.', projectId: project._id });
     } catch (error) {
-        console.error('Join project error:', error);
+        // console.error('Join project error:', error);
         res.status(500).json({ message: '프로젝트 참여 중 오류가 발생했습니다.' });
     }
 };
@@ -422,7 +422,7 @@ export const joinProjectById = async (req: AuthRequest, res: Response) => {
 
         res.json({ message: '프로젝트에 참여되었습니다.', projectId: project._id });
     } catch (error) {
-        console.error('Join project by ID error:', error);
+        // console.error('Join project by ID error:', error);
         res.status(500).json({ message: '프로젝트 참여 중 오류가 발생했습니다.' });
     }
 };

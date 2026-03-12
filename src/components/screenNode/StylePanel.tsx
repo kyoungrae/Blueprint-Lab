@@ -497,8 +497,11 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                                     }
                                                     return { fontFamily: data.name };
                                                 });
-                                            } catch (err) { console.error(err); }
-                                            e.target.value = '';
+                                            } catch (err) { 
+                                                // console.error(err); 
+                                            } finally {
+                                                e.target.value = '';
+                                            }
                                         }} />
                                         <button
                                             type="button"

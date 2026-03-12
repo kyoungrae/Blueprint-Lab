@@ -154,9 +154,9 @@ export class PresenceManager {
                     await redis.del(...keys);
                 }
             } while (cursor !== '0');
-            console.log(`🧹 Cleaned up all Redis keys for project: ${projectId}`);
+            // console.log(`🧹 Cleaned up all Redis keys for project: ${projectId}`);
         } catch (error) {
-            console.error('Clear all project keys error:', error);
+            // console.error('Clear all project keys error:', error);
         }
     }
 
@@ -194,7 +194,7 @@ export class PresenceManager {
                 }
             }
         } catch (error) {
-            console.error('Remove user presence error:', error);
+            // console.error('Remove user presence error:', error);
         }
     }
 }
@@ -241,7 +241,7 @@ export class ProjectStateManager {
         const data = await redis.hgetall(stateKey);
 
         if (!data || !data.entities) {
-            console.log('🔧 Redis GET - no data in Redis, attempting to load from DB');
+            // console.log('🔧 Redis GET - no data in Redis, attempting to load from DB');
             // Try to load from database if Redis is empty
             try {
                 const Types = (await import('mongoose')).Types;
@@ -253,7 +253,7 @@ export class ProjectStateManager {
                         const projectType = projAny.projectType || 'ERD';
                         const screenSnap = projAny.screenSnapshot;
                         if (screenSnap && Array.isArray(screenSnap.screens)) {
-                            console.log(`🔧 Redis GET - loaded ${screenSnap.screens.length} screens from DB`);
+                            // console.log(`🔧 Redis GET - loaded ${screenSnap.screens.length} screens from DB`);
                             return {
                                 entities: projAny.currentSnapshot?.entities || [],
                                 relationships: projAny.currentSnapshot?.relationships || [],
@@ -266,7 +266,7 @@ export class ProjectStateManager {
                     }
                 }
             } catch (error) {
-                console.error('🔧 Redis GET - failed to load from DB:', error);
+                // console.error('🔧 Redis GET - failed to load from DB:', error);
             }
             return null;
         }
@@ -283,7 +283,7 @@ export class ProjectStateManager {
                         const projAny = project as any;
                         const screenSnap = projAny.screenSnapshot;
                         if (screenSnap && Array.isArray(screenSnap.screens)) {
-                            console.log(`🔧 Redis GET - loaded ${screenSnap.screens.length} screens from DB fallback`);
+                            // console.log(`🔧 Redis GET - loaded ${screenSnap.screens.length} screens from DB fallback`);
                             // Update Redis with the loaded data
                             await this.saveState(
                                 projectId,
@@ -306,7 +306,7 @@ export class ProjectStateManager {
                     }
                 }
             } catch (error) {
-                console.error('🔧 Redis GET - failed to load from DB fallback:', error);
+                // console.error('🔧 Redis GET - failed to load from DB fallback:', error);
             }
         }
 
@@ -343,7 +343,7 @@ export class ProjectStateManager {
         try {
             await redis.del(stateKey);
         } catch (error) {
-            console.error('Clear project state error:', error);
+            // console.error('Clear project state error:', error);
         }
     }
 }

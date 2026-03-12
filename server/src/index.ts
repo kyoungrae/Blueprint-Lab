@@ -40,7 +40,7 @@ app.use(cors({
         if (allowed.includes(normalizedOrigin) || normalizedOrigin.startsWith('http://192.168.')) {
             callback(null, true);
         } else {
-            console.warn(`🛑 CORS Rejected: ${origin}`);
+            // console.warn(`🛑 CORS Rejected: ${origin}`);
             callback(new Error('Not allowed by CORS'));
         }
     },

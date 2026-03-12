@@ -25,7 +25,7 @@ export function useDatabasePolling({ interval = 5000, projectId }: PollingOption
                     await fetchProjects();
                     lastUpdateRef.current = Date.now();
                 } catch (error) {
-                    console.warn('Database polling error:', error);
+                    // console.warn('Database polling error:', error);
                 }
             }, interval);
         };
@@ -51,7 +51,7 @@ export function useDatabasePolling({ interval = 5000, projectId }: PollingOption
                 await fetchProjects();
                 lastUpdateRef.current = Date.now();
             } catch (error) {
-                console.error('Manual refresh error:', error);
+                // console.error('Manual refresh error:', error);
             }
         }
     };

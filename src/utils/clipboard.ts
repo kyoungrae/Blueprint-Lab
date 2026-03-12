@@ -10,7 +10,7 @@ export const copyToClipboard = async (text: string): Promise<boolean> => {
             await navigator.clipboard.writeText(text);
             return true;
         } catch (err) {
-            console.error('Failed to copy using navigator.clipboard:', err);
+            // console.error('Failed to copy using navigator.clipboard:', err);
             // Fall through to fallback
         }
     }
@@ -34,7 +34,7 @@ export const copyToClipboard = async (text: string): Promise<boolean> => {
 
         return successful;
     } catch (err) {
-        console.error('Fallback copy failed:', err);
+        // console.error('Fallback copy failed:', err);
         return false;
     }
 };

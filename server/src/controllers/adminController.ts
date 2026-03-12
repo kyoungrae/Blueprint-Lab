@@ -30,7 +30,7 @@ export const getAdminUsers = async (req: AuthRequest, res: Response) => {
 
         res.json(data);
     } catch (error) {
-        console.error('Get admin users error:', error);
+        // console.error('Get admin users error:', error);
         res.status(500).json({ message: '회원 목록을 가져오는 중 오류가 발생했습니다.' });
     }
 };
@@ -54,7 +54,7 @@ export const updateUserTier = async (req: AuthRequest, res: Response) => {
 
         res.json({ id: user._id, tier: user.tier });
     } catch (error) {
-        console.error('Update user tier error:', error);
+        // console.error('Update user tier error:', error);
         res.status(500).json({ message: '티어 변경 중 오류가 발생했습니다.' });
     }
 };
@@ -81,7 +81,7 @@ export const updateUserName = async (req: AuthRequest, res: Response) => {
 
         res.json({ id: user._id, name: user.name });
     } catch (error) {
-        console.error('Update user name error:', error);
+        // console.error('Update user name error:', error);
         res.status(500).json({ message: '이름 변경 중 오류가 발생했습니다.' });
     }
 };
@@ -136,7 +136,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
 
         res.json({ message: '회원이 삭제되었습니다.' });
     } catch (error) {
-        console.error('Delete user error:', error);
+        // console.error('Delete user error:', error);
         res.status(500).json({ message: '회원 삭제 중 오류가 발생했습니다.' });
     }
 };
@@ -168,7 +168,7 @@ export const getUserProjects = async (req: AuthRequest, res: Response) => {
 
         res.json(data);
     } catch (error) {
-        console.error('Get user projects error:', error);
+        // console.error('Get user projects error:', error);
         res.status(500).json({ message: '프로젝트 목록을 가져오는 중 오류가 발생했습니다.' });
     }
 };
@@ -197,7 +197,7 @@ export const getAdminProjects = async (req: AuthRequest, res: Response) => {
 
         res.json(data);
     } catch (error) {
-        console.error('Get admin projects error:', error);
+        // console.error('Get admin projects error:', error);
         res.status(500).json({ message: '프로젝트 목록을 가져오는 중 오류가 발생했습니다.' });
     }
 };
@@ -240,7 +240,7 @@ export const getProjectHistory = async (req: AuthRequest, res: Response) => {
 
         res.json(data);
     } catch (error) {
-        console.error('Get project history error:', error);
+        // console.error('Get project history error:', error);
         res.status(500).json({ message: '히스토리를 가져오는 중 오류가 발생했습니다.' });
     }
 };
@@ -444,7 +444,7 @@ export const rollbackProjectHistory = async (req: AuthRequest, res: Response) =>
 
         res.json({ message: '해당 작업이 원복되었습니다.' });
     } catch (error) {
-        console.error('Rollback project history error:', error);
+        // console.error('Rollback project history error:', error);
         res.status(500).json({ message: '작업 원복 중 오류가 발생했습니다.' });
     }
 };

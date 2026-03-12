@@ -14,10 +14,10 @@ const transporter = nodemailer.createTransport({
 export const sendVerificationEmail = async (to: string, code: string) => {
     // If no credentials are set, log to console for development
     if (!config.email.user || !config.email.pass) {
-        console.log('-----------------------------------------');
-        console.log(`📧 Email Verification Code for ${to}: ${code}`);
-        console.log('Set EMAIL_USER and EMAIL_PASS in .env to send real emails.');
-        console.log('-----------------------------------------');
+        // console.log('-----------------------------------------');
+        // console.log(`📧 Email Verification Code for ${to}: ${code}`);
+        // console.log('Set EMAIL_USER and EMAIL_PASS in .env to send real emails.');
+        // console.log('-----------------------------------------');
         return;
     }
 
@@ -40,20 +40,20 @@ export const sendVerificationEmail = async (to: string, code: string) => {
             `,
         });
     } catch (error) {
-        console.error('Failed to send verification email:', error);
+        // console.error('Failed to send verification email:', error);
         throw new Error('이메일 발송에 실패했습니다.');
     }
 };
 
 export const sendInvitationEmail = async (to: string, projectName: string, inviterName: string, code: string) => {
     if (!config.email.user || !config.email.pass) {
-        console.log('-----------------------------------------');
-        console.log(`📧 Project Invitation for ${to}`);
-        console.log(`Project: ${projectName}`);
-        console.log(`Inviter: ${inviterName}`);
-        console.log(`Invitation Code: ${code}`);
-        console.log('Set EMAIL_USER and EMAIL_PASS in .env to send real emails.');
-        console.log('-----------------------------------------');
+        // console.log('-----------------------------------------');
+        // console.log(`📧 Project Invitation for ${to}`);
+        // console.log(`Project: ${projectName}`);
+        // console.log(`Inviter: ${inviterName}`);
+        // console.log(`Invitation Code: ${code}`);
+        // console.log('Set EMAIL_USER and EMAIL_PASS in .env to send real emails.');
+        // console.log('-----------------------------------------');
         return;
     }
 
@@ -82,7 +82,7 @@ export const sendInvitationEmail = async (to: string, projectName: string, invit
             `,
         });
     } catch (error) {
-        console.error('Failed to send invitation email:', error);
+        // console.error('Failed to send invitation email:', error);
         throw new Error('초대 이메일 발송에 실패했습니다.');
     }
 };

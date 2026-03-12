@@ -25,7 +25,7 @@ class ProjectOperationQueue {
 
     enqueue(task: () => Promise<void>): Promise<void> {
         this.queue = this.queue.then(task).catch(err => {
-            console.error("Queue task error:", err);
+            // console.error("Queue task error:", err);
         });
         return this.queue;
     }
@@ -47,7 +47,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 if (!normalizedOrigin || allowed.includes(normalizedOrigin) || normalizedOrigin.startsWith('http://192.168.')) {
                     callback(null, true);
                 } else {
-                    console.warn(`🛑 Socket CORS Rejected: ${origin}`);
+                    // console.warn(`🛑 Socket CORS Rejected: ${origin}`);
                     callback(new Error('Not allowed by CORS'));
                 }
             },
@@ -62,7 +62,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
     io.on('connection', (socket: Socket) => {
         // 클라이언트에서 보낸 고유 clientId 가져오기
         const clientId = socket.handshake.query.clientId as string;
-        console.log(`🔌 Client connected: ${socket.id} (clientId: ${clientId})`);
+        // console.log(`🔌 Client connected: ${socket.id} (clientId: ${clientId})`);
 
         // Store user data on socket
         const socketData: SocketData = {
@@ -73,12 +73,12 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
         // Authenticate user
         socket.on('authenticate', async (userData: UserInfo) => {
             if (!userData) {
-                console.log('⚠️ Authenticate called with no user data');
+                // console.log('⚠️ Authenticate called with no user data');
                 return;
             }
             const oldUserId = socketData.user.id;
             socketData.user = userData;
-            console.log(`✅ User authenticated: ${userData.name}`);
+            // console.log(`✅ User authenticated: ${userData.name}`);
 
             // If already in a project, update the presence with new identity
             if (socketData.projectId) {
@@ -161,7 +161,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     }
                 } else {
                     // Invalid ObjectId (e.g. temporary ID 'proj_...'), treat as new empty project
-                    console.log(`ℹ️ Project ID ${projectId} is not a valid ObjectId (likely temporary), initializing empty state.`);
+                    // console.log(`ℹ️ Project ID ${projectId} is not a valid ObjectId (likely temporary), initializing empty state.`);
                     state = { entities: [], relationships: [], sections: [], screens: [], flows: [], version: 0 };
                 }
             }
@@ -250,12 +250,12 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 onlineUsers,
             });
 
-            console.log(`👤 ${socketData.user.name} joined project ${projectId} (clientId: ${socketData.clientId})`);
+            // console.log(`👤 ${socketData.user.name} joined project ${projectId} (clientId: ${socketData.clientId})`);
         });
 
         // Handle ERD operations
         socket.on('operation', async (operation: CRDTOperation) => {
-            console.log(`📥 [Server] Received operation: ${operation.type} for ${operation.targetId} from ${socketData.user.name}`);
+            // console.log(`📥 [Server] Received operation: ${operation.type} for ${operation.targetId} from ${socketData.user.name}`);
             if (!socketData.projectId) return;
 
             const projectId = socketData.projectId;
@@ -404,12 +404,12 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                             timestamp: new Date(operation.wallClock),
                         });
                     } catch (err) {
-                        console.error('Failed to save history to MongoDB:', err);
+                        // console.error('Failed to save history to MongoDB:', err);
                     }
                 }
 
                 // Broadcast operation to other clients in the same project
-                console.log(`📡 [Broadcast] Sending operation ${operation.type} to project ${projectId}`);
+                // console.log(`📡 [Broadcast] Sending operation ${operation.type} to project ${projectId}`);
                 socket.to(`project:${projectId}`).emit('operation', operation);
             });
         });
@@ -477,7 +477,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
 
         // Handle disconnect
         socket.on('disconnect', async () => {
-            console.log(`🔌 Client disconnected: ${socket.id}`);
+            // console.log(`🔌 Client disconnected: ${socket.id}`);
 
             if (socketData.projectId) {
                 // If this was the last user (or just to be safe), flush pending saves
@@ -589,7 +589,7 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
             }
         }
     } catch (error) {
-        console.error('MongoDB flush error:', error);
+        // console.error('MongoDB flush error:', error);
     }
 }
 

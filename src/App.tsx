@@ -62,7 +62,7 @@ function App() {
       const isGuest = user?.email === 'guest@test.com' || user?.id.startsWith('guest_');
 
       if (isAuthenticated && isGuest) {
-        console.log('🧹 Clearing stale guest session on browser restart');
+        // console.log('🧹 Clearing stale guest session on browser restart');
         logout();
         return;
       }

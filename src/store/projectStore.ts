@@ -33,19 +33,16 @@ async function sendProjectDataPatch(id: string, data: any) {
         });
         if (!response.ok) {
             let serverMessage = 'Failed to sync project data to server';
-            let detail = '';
             try {
                 const body = await response.json();
                 if (body?.message) serverMessage = body.message;
-                if (body?.detail) detail = body.detail;
-            } catch {
-                // ignore
+            } catch (error) {
+                console.error('Error parsing response JSON:', error);
             }
-            const suffix = response.status === 413 ? ' (데이터가 너무 큽니다)' : (detail ? ` ${detail}` : '');
             
             // 버전 충돌 시 자동으로 다시 시도
             if (response.status === 500 && serverMessage.includes('No matching document found')) {
-                console.warn('🔄 Version conflict detected, retrying...');
+                // console.warn('🔄 Version conflict detected, retrying...');
                 setTimeout(() => {
                     // 최신 데이터를 다시 가져와서 다시 시도
                     window.location.reload();
@@ -53,19 +50,19 @@ async function sendProjectDataPatch(id: string, data: any) {
                 return;
             }
             
-            console.error(serverMessage + suffix);
+            // console.error(serverMessage + suffix);
         }
     } catch (error: any) {
         const isNetworkError =
             error?.name === 'TypeError' &&
             (error?.message?.includes('fetch') || error?.message?.includes('NetworkError') || error?.message?.includes('Failed to fetch'));
         if (isNetworkError) {
-            console.warn(
-                '프로젝트 저장 요청을 보낼 수 없습니다. 백엔드 서버가 실행 중인지, 인터넷 연결을 확인해 주세요.',
-                error
-            );
+            // console.warn(
+            //     '프로젝트 저장 요청을 보낼 수 없습니다. 백엔드 서버가 실행 중인지, 인터넷 연결을 확인해 주세요.',
+            //     error
+            // );
         } else {
-            console.error('Update project data error:', error);
+            // console.error('Update project data error:', error);
         }
     }
 }
@@ -189,7 +186,7 @@ export const useProjectStore = create<ProjectStore>()(
                         set({ projects });
                     }
                 } catch (error) {
-                    console.error('Fetch projects error:', error);
+                    // console.error('Fetch projects error:', error);
                 }
             },
 
@@ -252,7 +249,7 @@ export const useProjectStore = create<ProjectStore>()(
                     }));
                     return newProject;
                 } catch (error) {
-                    console.error('Add project error:', error);
+                    // console.error('Add project error:', error);
                     throw error;
                 }
             },
@@ -310,7 +307,7 @@ export const useProjectStore = create<ProjectStore>()(
                         }));
                     }
                 } catch (error: any) {
-                    console.error('Add remote project error:', error);
+                    // console.error('Add remote project error:', error);
                     alert(error.message || '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.');
                 }
             },
@@ -338,7 +335,7 @@ export const useProjectStore = create<ProjectStore>()(
                             return;
                         }
                     } catch (error) {
-                        console.error('Delete project error:', error);
+                        // console.error('Delete project error:', error);
                         return;
                     }
                 }
@@ -401,10 +398,10 @@ export const useProjectStore = create<ProjectStore>()(
                     });
 
                     if (!response.ok) {
-                        console.error('Failed to sync project metadata to server');
+                        // console.error('Failed to sync project metadata to server');
                     }
                 } catch (error) {
-                    console.error('Update project metadata error:', error);
+                    // console.error('Update project metadata error:', error);
                 }
             },
 
@@ -419,11 +416,11 @@ export const useProjectStore = create<ProjectStore>()(
                         });
 
                         if (!response.ok) {
-                            console.error('Failed to sync project members to server');
+                            // console.error('Failed to sync project members to server');
                             return;
                         }
                     } catch (error) {
-                        console.error('Update project members error:', error);
+                        // console.error('Update project members error:', error);
                         return;
                     }
                 }
