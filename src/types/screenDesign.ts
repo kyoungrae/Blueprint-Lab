@@ -107,6 +107,18 @@ export interface Screen {
     }>;
     /** 화면 메모 */
     memo?: string;
+    /** 화면 메모 리스트 (고도화용) */
+    memos?: ScreenMemo[];
+}
+
+/** 화면 메모 개별 항목 */
+export interface ScreenMemo {
+    id: string;
+    content: string;
+    authorId: string;
+    authorName: string;
+    createdAt: string;
+    updatedAt: string;
 }
 
 /** 테이블 셀 데이터 (엑셀형 고도화) */

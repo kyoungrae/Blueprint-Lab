@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Screen } from '../../types/screenDesign';
 import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM, getCanvasDimensions } from '../../types/screenDesign';
-import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal } from 'lucide-react';
+import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal, MessageSquare } from 'lucide-react';
 import PremiumTooltip from './PremiumTooltip';
 
 interface ScreenHeaderProps {
@@ -17,9 +17,10 @@ interface ScreenHeaderProps {
     showScreenOptionsPanel: boolean;
     setShowScreenOptionsPanel: (v: boolean | ((prev: boolean) => boolean)) => void;
     screenOptionsRef: React.RefObject<HTMLDivElement | null>;
+    onToggleMemoPanel: (e: React.MouseEvent) => void;
 }
 
-export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
+export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
     screen,
     isLocked,
     isLockedByOther,
@@ -32,6 +33,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
     showScreenOptionsPanel,
     setShowScreenOptionsPanel,
     screenOptionsRef,
+    onToggleMemoPanel,
 }) => {
     const [composing, setComposing] = useState<string | null>(null);
     const displayValue = composing !== null ? composing : screen.name;
@@ -161,6 +163,19 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                                     >
                                         {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
                                     </button>
+                                    <button
+                                        onClick={onToggleMemoPanel}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="nodrag relative shrink-0 p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90"
+                                        title="메모"
+                                    >
+                                        <MessageSquare size={16} />
+                                        {(screen.memos?.length ?? 0) > 0 && (
+                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] min-w-[14px] h-[14px] flex items-center justify-center rounded-full px-0.5 border border-[#2c3e7c] font-black">
+                                                {screen.memos?.length}
+                                            </span>
+                                        )}
+                                    </button>
                                     {!isLocked && (
                                         <button
                                             onClick={onDelete}
@@ -197,110 +212,120 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                         spellCheck={false}
                     />
                     <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
-                <div className="relative" ref={screenOptionsRef}>
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setShowScreenOptionsPanel((v) => !v);
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
-                        title="화면 옵션"
-                    >
-                        <SlidersHorizontal size={16} />
-                    </button>
-                    {showScreenOptionsPanel && (
-                        <div
-                            className="nodrag absolute right-0 top-full mt-1.5 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in-95 duration-150"
-                            onMouseDown={(e) => e.stopPropagation()}
-                        >
-                            <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">용지 크기</div>
-                            <div className="grid grid-cols-2 gap-1.5 mb-3">
-                                {PAGE_SIZE_OPTIONS.map((s) => {
-                                    const dim = PAGE_SIZE_DIMENSIONS_MM[s];
-                                    const ori = (screen.pageOrientation || 'portrait') as 'portrait' | 'landscape';
-                                    const labelW = ori === 'portrait' ? dim.w : dim.h;
-                                    const labelH = ori === 'portrait' ? dim.h : dim.w;
-                                    return (
+                        <div className="relative" ref={screenOptionsRef}>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowScreenOptionsPanel((v) => !v);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="nodrag p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
+                                title="화면 옵션"
+                            >
+                                <SlidersHorizontal size={16} />
+                            </button>
+                            {showScreenOptionsPanel && (
+                                <div
+                                    className="nodrag absolute right-0 top-full mt-1.5 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[300] animate-in fade-in zoom-in-95 duration-150"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">용지 크기</div>
+                                    <div className="grid grid-cols-2 gap-1.5 mb-3">
+                                        {PAGE_SIZE_OPTIONS.map((s) => {
+                                            const dim = PAGE_SIZE_DIMENSIONS_MM[s];
+                                            const ori = (screen.pageOrientation || 'portrait') as 'portrait' | 'landscape';
+                                            const labelW = ori === 'portrait' ? dim.w : dim.h;
+                                            const labelH = ori === 'portrait' ? dim.h : dim.w;
+                                            return (
+                                                <button
+                                                    key={s}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const { width, height } = getCanvasDimensions({ pageSize: s, pageOrientation: screen.pageOrientation || 'portrait' } as Screen);
+                                                        const u = { pageSize: s, imageWidth: width, imageHeight: height };
+                                                        update(u); syncUpdate(u);
+                                                    }}
+                                                    className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${(screen.pageSize || 'A4') === s ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                        }`}
+                                                >
+                                                    <span className="block">{s}</span>
+                                                    <span className="block text-[8px] font-normal opacity-90">
+                                                        {labelW}×{labelH}mm
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">방향</div>
+                                    <div className="flex gap-1">
                                         <button
-                                            key={s}
                                             type="button"
                                             onClick={() => {
-                                                const { width, height } = getCanvasDimensions({ pageSize: s, pageOrientation: screen.pageOrientation || 'portrait' } as Screen);
-                                                const u = { pageSize: s, imageWidth: width, imageHeight: height };
+                                                const { width, height } = getCanvasDimensions({ pageSize: screen.pageSize || 'A4', pageOrientation: 'portrait' } as Screen);
+                                                const u = { pageOrientation: 'portrait' as const, imageWidth: width, imageHeight: height };
                                                 update(u); syncUpdate(u);
                                             }}
-                                            className={`nodrag w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                                                (screen.pageSize || 'A4') === s ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                            }`}
+                                            className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${(screen.pageOrientation || 'portrait') === 'portrait' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                }`}
                                         >
-                                            <span className="block">{s}</span>
-                                            <span className="block text-[8px] font-normal opacity-90">
-                                                {labelW}×{labelH}mm
-                                            </span>
+                                            <RectangleVertical size={12} /> 세로
                                         </button>
-                                    );
-                                })}
-                            </div>
-                            <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">방향</div>
-                            <div className="flex gap-1">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const { width, height } = getCanvasDimensions({ pageSize: screen.pageSize || 'A4', pageOrientation: 'portrait' } as Screen);
-                                        const u = { pageOrientation: 'portrait' as const, imageWidth: width, imageHeight: height };
-                                        update(u); syncUpdate(u);
-                                    }}
-                                    className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                                        (screen.pageOrientation || 'portrait') === 'portrait' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                    }`}
-                                >
-                                    <RectangleVertical size={12} /> 세로
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const { width, height } = getCanvasDimensions({ pageSize: screen.pageSize || 'A4', pageOrientation: 'landscape' } as Screen);
-                                        const u = { pageOrientation: 'landscape' as const, imageWidth: width, imageHeight: height };
-                                        update(u); syncUpdate(u);
-                                    }}
-                                    className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                                        screen.pageOrientation === 'landscape' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                    }`}
-                                >
-                                    <RectangleHorizontal size={12} /> 가로
-                                </button>
-                            </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const { width, height } = getCanvasDimensions({ pageSize: screen.pageSize || 'A4', pageOrientation: 'landscape' } as Screen);
+                                                const u = { pageOrientation: 'landscape' as const, imageWidth: width, imageHeight: height };
+                                                update(u); syncUpdate(u);
+                                            }}
+                                            className={`nodrag flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${screen.pageOrientation === 'landscape' ? 'bg-[#2c3e7c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            <RectangleHorizontal size={12} /> 가로
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    )}
+                        <PremiumTooltip label="메모" dotColor="#f6d100">
+                            <button
+                                onClick={onToggleMemoPanel}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="nodrag relative p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
+                                >
+                                <MessageSquare size={16} />
+                                {(screen.memos?.length ?? 0) > 0 && (
+                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] min-w-[14px] h-[14px] flex items-center justify-center rounded-full px-0.5 border border-[#2c3e7c] font-black">
+                                        {screen.memos?.length}
+                                    </span>
+                                )}
+                            </button>
+                        </PremiumTooltip>
+                        <PremiumTooltip label="잠금설정" dotColor="#3b82f6">
+                            <button
+                                onClick={onToggleLock}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                disabled={isLockedByOther}
+                                className={`nodrag p-1.5 rounded-md transition-colors pointer-events-auto ${isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'
+                                    }`}
+                                title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? '잠금 해제' : '잠금'}
+                            >
+                                {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                            </button>
+                        </PremiumTooltip>
+                        {!isLocked && (
+                            <PremiumTooltip label="화면 삭제" dotColor="#ef4444">
+                                <button
+                                    onClick={onDelete}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    className="nodrag opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-500 rounded-md text-white/90"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </PremiumTooltip>
+                        )}
+                    </div>
                 </div>
-
-                <button
-                    onClick={onToggleLock}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    disabled={isLockedByOther}
-                    className={`nodrag p-1.5 rounded-md transition-colors pointer-events-auto ${
-                        isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'
-                    }`}
-                    title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? '잠금 해제' : '잠금'}
-                >
-                    {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
-                </button>
-                
-                {!isLocked && (
-                    <PremiumTooltip label="화면 삭제" dotColor="#ef4444">
-                        <button
-                            onClick={onDelete}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            className="nodrag opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-500 rounded-md text-white/90"
-                        >
-                            <X size={16} />
-                        </button>
-                    </PremiumTooltip>
-                )}
-            </div>
-        </div>
             )}
         </div>
     );
-};
+});

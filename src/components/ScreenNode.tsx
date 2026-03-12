@@ -40,6 +40,7 @@ import { AlignmentGuidesOverlay } from './screenNode/AlignmentGuidesOverlay';
 import { GRID_STEP } from '../constants/canvasGrid';
 import { ScreenHeader } from './screenNode/ScreenHeader';
 import { LockOverlay } from './screenNode/LockOverlay';
+import MemoPanel from './screenNode/MemoPanel';
 
 import ComponentPickerButton from './screenNode/ComponentPickerButton';
 import CanvasRulers from './screenNode/CanvasRulers';
@@ -248,6 +249,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
     const [tableListPanelPos, setTableListPanelPos] = React.useState<{ x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
+    const [showMemoPanel, setShowMemoPanel] = React.useState(false);
 
     const tableListRef = useRef<HTMLDivElement>(null);
     const screenOptionsRef = useRef<HTMLDivElement>(null);
@@ -2924,6 +2926,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                         onDoubleClick={handleToggleLock}
                     />
 
+                    <MemoPanel
+                        show={showMemoPanel}
+                        onClose={() => setShowMemoPanel(false)}
+                        screen={screen}
+                        syncUpdate={syncUpdate}
+                        user={user}
+                    />
+
                     {/* ── 1. Top Header Bar (ERD Style) ── */}
                     {!canvasOnlyMode && (
                         <ScreenHeader
@@ -2939,6 +2949,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             showScreenOptionsPanel={showScreenOptionsPanel}
                             setShowScreenOptionsPanel={setShowScreenOptionsPanel}
                             screenOptionsRef={screenOptionsRef}
+                            onToggleMemoPanel={() => setShowMemoPanel(v => !v)}
                         />
                     )}
 

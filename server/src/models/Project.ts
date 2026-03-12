@@ -102,6 +102,15 @@ export interface IScreen {
     subComponents?: Array<{ id: string; name: string; elementIds: string[] }>;
     /** 화면 메모 */
     memo?: string;
+    /** 화면 메모 리스트 (고도화용) */
+    memos?: Array<{
+        id: string;
+        content: string;
+        authorId: string;
+        authorName: string;
+        createdAt: string;
+        updatedAt: string;
+    }>;
 }
 
 // Screen Flow Interface
@@ -282,6 +291,18 @@ const ScreenSchema = new Schema<IScreen>({
     subComponents: { type: [Schema.Types.Mixed], default: [] },
     /** 화면 메모 */
     memo: { type: String },
+    /** 화면 메모 리스트 (고도화용) */
+    memos: {
+        type: [{
+            id: { type: String, required: true },
+            content: { type: String, required: true },
+            authorId: { type: String },
+            authorName: { type: String },
+            createdAt: { type: String },
+            updatedAt: { type: String },
+        }],
+        default: []
+    },
 }, { _id: false });
 
 const ScreenFlowSchema = new Schema<IScreenFlow>({
