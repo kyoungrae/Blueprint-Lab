@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy } from 'lucide-react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
 import * as XLSX from 'xlsx';
@@ -248,6 +248,11 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
     const [deletePassword, setDeletePassword] = useState('');
     const [deleteLoading, setDeleteLoading] = useState(false);
+    
+    // 사용자 이름 편집 상태
+    const [editingUserId, setEditingUserId] = useState<string | null>(null);
+    const [editingUserName, setEditingUserName] = useState('');
+    const [nameUpdateLoading, setNameUpdateLoading] = useState(false);
 
     const [rollbackProjects, setRollbackProjects] = useState<AdminProject[]>([]);
     const [rollbackProjectSearch, setRollbackProjectSearch] = useState('');
@@ -356,6 +361,49 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         } catch (err: any) {
             setError(err.message || '오류가 발생했습니다.');
         }
+    };
+
+    const handleNameChange = async (userId: string, newName: string) => {
+        if (!newName.trim()) {
+            setError('사용자 이름을 입력해주세요.');
+            return;
+        }
+        
+        setNameUpdateLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/users/${userId}/name`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName.trim() }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '이름 변경에 실패했습니다.');
+            }
+            setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, name: newName.trim() } : u)));
+            if (userId === user?.id) {
+                updateUser({ name: newName.trim() });
+            }
+            setEditingUserId(null);
+            setEditingUserName('');
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+        } finally {
+            setNameUpdateLoading(false);
+        }
+    };
+
+    const startEditingName = (userId: string, currentName: string) => {
+        setEditingUserId(userId);
+        setEditingUserName(currentName);
+        setError(null);
+    };
+
+    const cancelEditingName = () => {
+        setEditingUserId(null);
+        setEditingUserName('');
+        setError(null);
     };
 
     const handleDeleteUser = async () => {
@@ -584,7 +632,52 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                                         {u.name?.[0] || '?'}
                                                     </div>
                                                 )}
-                                                <span className="font-medium text-gray-900">{u.name}</span>
+                                                {editingUserId === u.id ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <input
+                                                            type="text"
+                                                            value={editingUserName}
+                                                            onChange={(e) => setEditingUserName(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    handleNameChange(u.id, editingUserName);
+                                                                } else if (e.key === 'Escape') {
+                                                                    cancelEditingName();
+                                                                }
+                                                            }}
+                                                            className="text-sm font-medium px-2 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+                                                            autoFocus
+                                                            disabled={nameUpdateLoading}
+                                                        />
+                                                        <button
+                                                            onClick={() => handleNameChange(u.id, editingUserName)}
+                                                            disabled={nameUpdateLoading}
+                                                            className="p-1 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
+                                                            title="저장"
+                                                        >
+                                                            <Check size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={cancelEditingName}
+                                                            disabled={nameUpdateLoading}
+                                                            className="p-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                                            title="취소"
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-medium text-gray-900">{u.name}</span>
+                                                        <button
+                                                            onClick={() => startEditingName(u.id, u.name)}
+                                                            className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                                                            title="이름 변경"
+                                                        >
+                                                            <Edit2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 text-gray-600">{u.email}</td>

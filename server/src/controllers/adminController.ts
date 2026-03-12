@@ -59,6 +59,33 @@ export const updateUserTier = async (req: AuthRequest, res: Response) => {
     }
 };
 
+export const updateUserName = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { name } = req.body;
+
+        if (!id) {
+            return res.status(400).json({ message: '회원 ID가 필요합니다.' });
+        }
+        if (!name || !name.trim()) {
+            return res.status(400).json({ message: '사용자 이름을 입력해주세요.' });
+        }
+        if (name.trim().length > 50) {
+            return res.status(400).json({ message: '사용자 이름은 50자 이하로 입력해주세요.' });
+        }
+
+        const user = await User.findByIdAndUpdate(id, { name: name.trim() }, { new: true });
+        if (!user) {
+            return res.status(404).json({ message: '회원을 찾을 수 없습니다.' });
+        }
+
+        res.json({ id: user._id, name: user.name });
+    } catch (error) {
+        console.error('Update user name error:', error);
+        res.status(500).json({ message: '이름 변경 중 오류가 발생했습니다.' });
+    }
+};
+
 export const deleteUser = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
