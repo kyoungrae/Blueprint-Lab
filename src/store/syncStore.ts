@@ -58,6 +58,7 @@ interface SyncStore {
     // Connection state
     socket: Socket | null;
     isConnected: boolean;
+    isConnecting: boolean;
     isAuthenticatedOnSocket: boolean;
     isSynced: boolean; // Track if initial state has been received from server
     currentProjectId: string | null;
@@ -97,6 +98,7 @@ interface SyncStore {
 export const useSyncStore = create<SyncStore>((set, get) => ({
     socket: null,
     isConnected: false,
+    isConnecting: false,
     isAuthenticatedOnSocket: false,
     isSynced: false,
     currentProjectId: null,
@@ -112,14 +114,32 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             return;
         }
 
+        // 중복 실행 방지 플래그
+        if (get().isConnecting) {
+            console.log('🔄 Already connecting, skipping...');
+            return;
+        }
+        
+        set({ isConnecting: true });
+
+        // 연결 간 구분을 위한 고유 clientId 생성 (세션 스토리지에서 재사용)
+        let clientId = sessionStorage.getItem('socketClientId');
+        if (!clientId) {
+            clientId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            sessionStorage.setItem('socketClientId', clientId);
+        }
+        
         console.log('🔌 Creating new socket connection...');
+        console.log(`🏷️ Client ID: ${clientId}`);
         const socket = io(SOCKET_URL, {
             path: import.meta.env.VITE_SOCKET_PATH || '/socket.io',
             autoConnect: true,
             reconnection: true,
             reconnectionAttempts: 10,
-            reconnectionDelay: 2000,
-            reconnectionDelayMax: 5000,
+            reconnectionDelay: 3000,
+            reconnectionDelayMax: 10000,
+            // 연결 간 구분을 위한 query 파라미터
+            query: { clientId },
         });
 
         // Set socket immediately
@@ -127,7 +147,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
         socket.on('connect', () => {
             console.log('🔌 Connected to collaboration server');
-            set({ isConnected: true });
+            set({ isConnected: true, isConnecting: false });
         });
 
         socket.on('authenticated', (data: { success: boolean }) => {
@@ -141,11 +161,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             console.log('🔌 Disconnected from collaboration server');
             set({
                 isConnected: false,
-                isAuthenticatedOnSocket: false,
-                isSynced: false, // Reset sync state on disconnect
-                onlineUsers: [],
-                cursors: new Map(),
-                locks: new Map()
+                isConnecting: false,
             });
         });
 
@@ -246,6 +262,8 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
         if (socket) {
             socket.disconnect();
             set({ socket: null, isConnected: false });
+            // clientId 정리 (다음 연결 시 새로 생성)
+            sessionStorage.removeItem('socketClientId');
         }
     },
 

@@ -16,6 +16,7 @@ interface UserInfo {
 interface SocketData {
     user: UserInfo;
     projectId?: string;
+    clientId?: string;
 }
 
 // Operation Queue for serializing project updates
@@ -53,17 +54,20 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
             methods: ['GET', 'POST'],
             credentials: true,
         },
-        pingTimeout: 60000,
-        pingInterval: 25000,
+        pingTimeout: 120000,    // 2분 (120초)
+        pingInterval: 60000,     // 1분 (60초)
         maxHttpBufferSize: 1e7, // 10MB
     });
 
     io.on('connection', (socket: Socket) => {
-        console.log(`🔌 Client connected: ${socket.id}`);
+        // 클라이언트에서 보낸 고유 clientId 가져오기
+        const clientId = socket.handshake.query.clientId as string;
+        console.log(`🔌 Client connected: ${socket.id} (clientId: ${clientId})`);
 
         // Store user data on socket
         const socketData: SocketData = {
             user: { id: 'anonymous', name: 'Anonymous' },
+            clientId: clientId || socket.id, // clientId가 없으면 socket.id 사용
         };
 
         // Authenticate user
@@ -246,7 +250,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 onlineUsers,
             });
 
-            console.log(`👤 ${socketData.user.name} joined project ${projectId}`);
+            console.log(`👤 ${socketData.user.name} joined project ${projectId} (clientId: ${socketData.clientId})`);
         });
 
         // Handle ERD operations
