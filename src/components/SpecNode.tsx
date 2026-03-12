@@ -1,4 +1,4 @@
-import React, { memo, useContext } from 'react';
+import React, { memo, useContext, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { ExportModeContext } from '../contexts/ExportModeContext';
 import type { Screen, ScreenSpecItem } from '../types/screenDesign';
@@ -60,21 +60,24 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
     item, isLocked, htmlTypes, dbTypes, onUpdate, onBlur, onDelete,
     onDragStart, onDragEnter, onDragEnd, isDragging
 }) => {
-    // IME 조합 중(한글 등) 자음/모음 분리 방지
-    const [composing, setComposing] = React.useState<{ field: string; value: string } | null>(null);
+    // 로컬 편집 상태 (IME 및 실시간 입력 시 커서 튐 방지)
+    const [localValue, setLocalValue] = useState<{ field: string; value: string } | null>(null);
     const displayValue = (field: string, propValue: string) =>
-        composing?.field === field ? composing.value : propValue;
+        localValue?.field === field ? localValue.value : propValue;
+
     const handleChange = (field: string, value: string, e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-            setComposing({ field, value });
-            return;
+        setLocalValue({ field, value });
+        if (!(e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            onUpdate({ [field]: value } as Partial<ScreenSpecItem>);
         }
-        setComposing(null);
-        onUpdate({ [field]: value } as Partial<ScreenSpecItem>);
     };
     const handleCompositionEnd = (field: string, value: string) => {
-        setComposing(null);
+        setLocalValue(null); // Clear local value after composition ends
         onUpdate({ [field]: value } as Partial<ScreenSpecItem>);
+        onBlur?.({ [field]: value } as Partial<ScreenSpecItem>);
+    };
+    const handleBlur = (field: string, value: string) => {
+        setLocalValue(null); // Clear local value on blur
         onBlur?.({ [field]: value } as Partial<ScreenSpecItem>);
     };
 
@@ -113,7 +116,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     value={displayValue('tableNameKr', item.tableNameKr || '')}
                     onChange={(e) => handleChange('tableNameKr', e.target.value, e)}
                     onCompositionEnd={(e) => handleCompositionEnd('tableNameKr', (e.target as HTMLInputElement).value)}
-                    onBlur={(e) => { if (!composing?.field) onBlur?.({ tableNameKr: e.target.value }); }}
+                    onBlur={(e) => handleBlur('tableNameKr', e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass}`}
@@ -127,7 +130,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     value={displayValue('tableNameEn', item.tableNameEn || '')}
                     onChange={(e) => handleChange('tableNameEn', e.target.value, e)}
                     onCompositionEnd={(e) => handleCompositionEnd('tableNameEn', (e.target as HTMLInputElement).value)}
-                    onBlur={(e) => { if (!composing?.field) onBlur?.({ tableNameEn: e.target.value }); }}
+                    onBlur={(e) => handleBlur('tableNameEn', e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} font-mono`}
@@ -142,7 +145,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     value={displayValue('fieldName', item.fieldName)}
                     onChange={(e) => handleChange('fieldName', e.target.value, e)}
                     onCompositionEnd={(e) => handleCompositionEnd('fieldName', (e.target as HTMLInputElement).value)}
-                    onBlur={(e) => { if (!composing?.field) onBlur?.({ fieldName: e.target.value }); }}
+                    onBlur={(e) => handleBlur('fieldName', e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} font-bold`}
@@ -156,7 +159,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     value={displayValue('controlName', item.controlName)}
                     onChange={(e) => handleChange('controlName', e.target.value, e)}
                     onCompositionEnd={(e) => handleCompositionEnd('controlName', (e.target as HTMLInputElement).value)}
-                    onBlur={(e) => { if (!composing?.field) onBlur?.({ controlName: e.target.value }); }}
+                    onBlur={(e) => handleBlur('controlName', e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} font-mono text-blue-800`}
@@ -204,7 +207,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     value={displayValue('length', item.length)}
                     onChange={(e) => handleChange('length', e.target.value, e)}
                     onCompositionEnd={(e) => handleCompositionEnd('length', (e.target as HTMLInputElement).value)}
-                    onBlur={(e) => { if (!composing?.field) onBlur?.({ length: e.target.value }); }}
+                    onBlur={(e) => handleBlur('length', e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} text-center`}
@@ -218,7 +221,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     value={displayValue('defaultValue', item.defaultValue)}
                     onChange={(e) => handleChange('defaultValue', e.target.value, e)}
                     onCompositionEnd={(e) => handleCompositionEnd('defaultValue', (e.target as HTMLInputElement).value)}
-                    onBlur={(e) => { if (!composing?.field) onBlur?.({ defaultValue: e.target.value }); }}
+                    onBlur={(e) => handleBlur('defaultValue', e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass} text-center`}
@@ -232,7 +235,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     value={displayValue('validation', item.validation)}
                     onChange={(e) => handleChange('validation', e.target.value, e)}
                     onCompositionEnd={(e) => handleCompositionEnd('validation', (e.target as HTMLInputElement).value)}
-                    onBlur={(e) => { if (!composing?.field) onBlur?.({ validation: e.target.value }); }}
+                    onBlur={(e) => handleBlur('validation', e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass}`}
@@ -247,7 +250,7 @@ const SpecRow: React.FC<SpecRowProps> = memo(({
                     value={displayValue('memo', item.memo)}
                     onChange={(e) => handleChange('memo', e.target.value, e)}
                     onCompositionEnd={(e) => handleCompositionEnd('memo', (e.target as HTMLInputElement).value)}
-                    onBlur={(e) => { if (!composing?.field) onBlur?.({ memo: e.target.value }); }}
+                    onBlur={(e) => handleBlur('memo', e.target.value)}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
                     className={`${inputClass}`}
@@ -959,7 +962,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                                         {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={0} />}
                                     </th>
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">
-                                        테이블명(영어)
+                                        테이블명(영문)
                                         {!isLocked && <ColResizeHandle onResizeStart={handleSpecColResizeStart} colIdx={1} />}
                                     </th>
                                     <th rowSpan={2} className="border-r border-gray-200 px-2 py-1.5 font-bold text-gray-700 relative">

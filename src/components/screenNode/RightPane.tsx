@@ -149,46 +149,42 @@ const RightPane: React.FC<RightPaneProps> = ({
         return () => window.removeEventListener('wheel', handleWindowWheelCapture, true);
     }, [isTableListOpen]);
 
-    // IME composition (한글 등) 시 자음/모음 분리 방지
-    const [composing, setComposing] = useState<{ field: string; value: string } | null>(null);
+    // 로컬 편집 상태 (IME 및 실시간 입력 시 커서 튐 방지)
+    const [localValue, setLocalValue] = useState<{ field: string; value: string } | null>(null);
     // 테이블명 직접 입력 패널
     const [showDirectInputPanel, setShowDirectInputPanel] = useState(false);
     const [directInputValue, setDirectInputValue] = useState('');
 
     const handleChange = (field: 'initialSettings' | 'functionDetails', value: string, e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-            setComposing({ field, value });
-            return;
+        setLocalValue({ field, value });
+        if (!(e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            update(field === 'initialSettings' ? { initialSettings: value } : { functionDetails: value });
         }
-        setComposing(null);
-        update(field === 'initialSettings' ? { initialSettings: value } : { functionDetails: value });
     };
 
     const handleCompositionEnd = (field: 'initialSettings' | 'functionDetails', value: string) => {
-        setComposing(null);
+        setLocalValue({ field, value });
         update(field === 'initialSettings' ? { initialSettings: value } : { functionDetails: value });
         syncUpdate(field === 'initialSettings' ? { initialSettings: value } : { functionDetails: value });
     };
 
     const handleFuncDescChange = (fn: DrawElement & { description?: string }, value: string, e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-            setComposing({ field: `func-${fn.id}`, value });
-            return;
+        setLocalValue({ field: `func-${fn.id}`, value });
+        if (!(e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            const next = drawElements.map(it => it.id === fn.id ? { ...it, description: value } : it);
+            update({ drawElements: next });
         }
-        setComposing(null);
-        const next = drawElements.map(it => it.id === fn.id ? { ...it, description: value } : it);
-        update({ drawElements: next });
     };
 
     const handleFuncDescCompositionEnd = (fn: DrawElement & { description?: string }, value: string) => {
-        setComposing(null);
+        setLocalValue({ field: `func-${fn.id}`, value });
         const next = drawElements.map(it => it.id === fn.id ? { ...it, description: value } : it);
         update({ drawElements: next });
         syncUpdate({ drawElements: next });
     };
 
-    const displayValue = (field: string, propValue: string) => {
-        if (composing?.field === field) return composing.value;
+    const getDisplayValue = (field: string, propValue: string) => {
+        if (localValue?.field === field) return localValue.value;
         return propValue;
     };
 
@@ -258,19 +254,19 @@ const RightPane: React.FC<RightPaneProps> = ({
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar no-pan-scroll">
                     <textarea
-                        value={displayValue('initialSettings', screen.initialSettings || '')}
+                        value={getDisplayValue('initialSettings', screen.initialSettings || '')}
                         onChange={(e) => handleChange('initialSettings', e.target.value, e)}
                         onCompositionEnd={(e) => handleCompositionEnd('initialSettings', (e.target as HTMLTextAreaElement).value)}
                         onBlur={(e) => { 
     if (isLocked) return; // 잠금 상태에서는 업데이트 방지
     const v = (e.target as HTMLTextAreaElement).value; 
-    setComposing(null); 
+    setLocalValue(null); 
     update({ initialSettings: v }); 
     syncUpdate({ initialSettings: v }); 
 }}
                         onMouseDown={(e) => e.stopPropagation()}
                         disabled={isLocked}
-                        rows={getRows(screen.initialSettings, 2)}
+                        rows={getRows(getDisplayValue('initialSettings', screen.initialSettings || ''), 2)}
                         className={`nodrag w-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none overflow-hidden ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
                         placeholder={isLocked ? "" : "• 화면 진입 시 초기 설정..."}
                         spellCheck={false}
@@ -305,10 +301,10 @@ const RightPane: React.FC<RightPaneProps> = ({
                             </div>
                             <AutoResizeTextarea
                                 id={`func-${fn.id}`}
-                                value={displayValue(`func-${fn.id}`, (fn as any).description || '')}
+                                value={getDisplayValue(`func-${fn.id}`, (fn as any).description || '')}
                                 onChange={(e) => handleFuncDescChange(fn as any, e.target.value, e)}
                                 onCompositionEnd={(e) => handleFuncDescCompositionEnd(fn as any, (e.target as HTMLTextAreaElement).value)}
-                                onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; setComposing(null); const next = drawElements.map(it => it.id === fn.id ? { ...it, description: v } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
+                                onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; setLocalValue(null); const next = drawElements.map(it => it.id === fn.id ? { ...it, description: v } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 disabled={isLocked}
                                 placeholder={isLocked ? "" : `${fn.text}번에 대한 기능 설명...`}
@@ -322,13 +318,13 @@ const RightPane: React.FC<RightPaneProps> = ({
                     )}
                     <AutoResizeTextarea
                         id="functionDetails"
-                        value={displayValue('functionDetails', screen.functionDetails || '')}
+                        value={getDisplayValue('functionDetails', screen.functionDetails || '')}
                         onChange={(e) => handleChange('functionDetails', e.target.value, e)}
                         onCompositionEnd={(e) => handleCompositionEnd('functionDetails', (e.target as HTMLTextAreaElement).value)}
                         onBlur={(e) => { 
     if (isLocked) return; // 잠금 상태에서는 업데이트 방지
     const v = (e.target as HTMLTextAreaElement).value; 
-    setComposing(null); 
+    setLocalValue(null); 
     update({ functionDetails: v }); 
     syncUpdate({ functionDetails: v }); 
 }}

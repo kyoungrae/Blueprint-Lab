@@ -14,29 +14,27 @@ interface EditableCellProps {
 }
 
 const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlur, isLocked, placeholder, className = '', isSelect, options, mono }) => {
-    // IME 조합 중(한글 등) 자음/모음 분리 방지
-    const [composing, setComposing] = useState<string | null>(null);
-    const displayValue = composing !== null ? composing : value;
+    // 로컬 편집 상태 (IME 및 실시간 입력 시 커서 튐 방지)
+    const [localValue, setLocalValue] = useState<string | null>(null);
+    const displayValue = localValue !== null ? localValue : value;
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const v = e.target.value;
-        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-            setComposing(v);
-            return;
+        setLocalValue(v);
+        if (!(e.nativeEvent as { isComposing?: boolean }).isComposing) {
+            onChange(v);
         }
-        setComposing(null);
-        onChange(v);
     };
 
     const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
         const v = (e.target as HTMLInputElement).value;
-        setComposing(null);
+        setLocalValue(v);
         onChange(v);
     };
 
     const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
         const v = e.target.value;
-        setComposing(null);
+        setLocalValue(null); // Clear local value on blur
         onChange(v);
         onBlur?.(v);
     };
