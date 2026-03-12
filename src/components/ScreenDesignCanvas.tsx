@@ -1149,18 +1149,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 if (tableNames.length > 0 && linkedErdProjects.length > 0) {
                     const existingSpecs = specScreen.specs || [];
                     const existingKeys = new Set(existingSpecs.map(s => `${s.tableNameEn}.${s.controlName}`));
-                    const newSpecs: any[] = [];
+                    const newSpecsToProcess: any[] = [];
 
                     tableNames.forEach(rawName => {
                         let entity: { name: string; comment?: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] } | undefined;
-
-                        // Extract physical name if "Comment(Name)" format
                         const match = rawName.match(/\(([^)]+)\)$/);
                         const physicalFromRaw = match ? match[1] : rawName;
 
                         for (const erdProj of linkedErdProjects) {
                             const erdData = erdProj?.data as { entities?: { name: string; comment?: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] }[] } | undefined;
-
                             entity = erdData?.entities?.find((e: { name: string; comment?: string }) =>
                                 e.name === physicalFromRaw || e.name === rawName || e.comment === rawName
                             );
@@ -1171,8 +1168,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                             entity.attributes.forEach((attr: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }) => {
                                 const itemKey = `${entity!.name}.${attr.name}`;
                                 if (!existingKeys.has(itemKey)) {
-                                    newSpecs.push({
-                                        id: `spec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                    newSpecsToProcess.push({
+                                        id: `spec_item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                                         tableNameKr: entity!.comment || entity!.name,
                                         tableNameEn: entity!.name,
                                         fieldName: attr.comment || attr.name,
@@ -1190,16 +1187,119 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         }
                     });
 
-                    if (newSpecs.length > 0) {
-                        const updatedSpecs = [...existingSpecs, ...newSpecs];
-                        updateScreen(specScreen.id, { specs: updatedSpecs });
-                        sendOperation({
-                            type: 'SCREEN_UPDATE',
-                            targetId: specScreen.id,
-                            userId: user?.id || 'anonymous',
-                            userName: user?.name || 'Anonymous',
-                            payload: { specs: updatedSpecs }
-                        });
+                    if (newSpecsToProcess.length > 0) {
+                        const ITEMS_PER_PAGE = 21;
+                        const allSpecs = [...existingSpecs, ...newSpecsToProcess];
+                        const totalNeededPages = Math.ceil(allSpecs.length / ITEMS_PER_PAGE);
+
+                        // Ensure landscape orientation for both existing and new pages as requested
+                        const orientationUpdates = {
+                            pageSize: 'A4' as const,
+                            pageOrientation: 'landscape' as const
+                        };
+
+                        if (totalNeededPages > 1) {
+                            // ── Split Logic: Multiple Pages ──
+                            // 1. Update the first page (original specScreen)
+                            const page1Specs = allSpecs.slice(0, ITEMS_PER_PAGE);
+                            const page1Updates = { 
+                                ...metaUpdates,
+                                ...orientationUpdates,
+                                specs: page1Specs,
+                                page: `1/${totalNeededPages}`,
+                                historyLog: {
+                                    details: `기능명세서 '${specScreen.name}' 항목이 많아 A4 가로 기준으로 ${totalNeededPages}개로 분할 생성되었습니다. (1/${totalNeededPages})`,
+                                    targetName: specScreen.name,
+                                    targetType: 'SCREEN' as const
+                                }
+                            };
+                            updateScreen(specScreen.id, page1Updates);
+                            sendOperation({
+                                type: 'SCREEN_UPDATE',
+                                targetId: specScreen.id,
+                                userId: user?.id || 'anonymous',
+                                userName: user?.name || 'Anonymous',
+                                payload: page1Updates as any
+                            });
+
+                            // 2. Create additional pages
+                            const targetNode = getNodes().find(n => n.id === specScreen.id);
+                            const basePos = targetNode?.position || { x: 0, y: 0 };
+                            let prevId = specScreen.id;
+
+                            // Based on landscape width, 1600 is a safe horizontal gap
+                            const HORIZONTAL_GAP = 1600;
+
+                            for (let p = 2; p <= totalNeededPages; p++) {
+                                const newId = `screen_${Date.now()}_${p}`;
+                                const pageSpecs = allSpecs.slice((p - 1) * ITEMS_PER_PAGE, p * ITEMS_PER_PAGE);
+                                
+                                const newSpecNode: Screen = {
+                                    ...specScreen, // Copy properties from original spec
+                                    ...metaUpdates, // Ensure meta is up to date
+                                    ...orientationUpdates, // Set to landscape
+                                    id: newId,
+                                    name: `${specScreen.name} (${p}페이지)`,
+                                    specs: pageSpecs,
+                                    page: `${p}/${totalNeededPages}`,
+                                    position: { x: basePos.x + (p - 1) * HORIZONTAL_GAP, y: basePos.y },
+                                    isLocked: true, // Default to locked state
+                                    unlockedAt: undefined,
+                                };
+                                
+                                addScreen(newSpecNode);
+                                sendOperation({
+                                    type: 'SCREEN_CREATE',
+                                    targetId: newId,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: {
+                                        ...newSpecNode,
+                                        historyLog: {
+                                            details: `기능명세서 '${specScreen.name}' (${p}페이지)가 자동 생성되었습니다.`,
+                                            targetName: newSpecNode.name,
+                                            targetType: 'SCREEN' as const
+                                        }
+                                    } as any
+                                });
+
+                                // 3. Create "Paging" flow connection
+                                const newFlowId = `flow_${Date.now()}_p${p}`;
+                                const pagingFlow = {
+                                    id: newFlowId,
+                                    source: prevId,
+                                    target: newId,
+                                    sourceHandle: 'right',
+                                    targetHandle: 'left',
+                                    label: '페이징',
+                                };
+                                addFlow(pagingFlow);
+                                sendOperation({
+                                    type: 'SCREEN_FLOW_CREATE',
+                                    targetId: newFlowId,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: pagingFlow as any
+                                });
+                                
+                                prevId = newId;
+                            }
+                        } else {
+                            // ── Single Page Logic ──
+                            const finalUpdates = { 
+                                ...metaUpdates, 
+                                ...orientationUpdates,
+                                specs: allSpecs 
+                            };
+                            updateScreen(specScreen.id, finalUpdates);
+                            sendOperation({
+                                type: 'SCREEN_UPDATE',
+                                targetId: specScreen.id,
+                                userId: user?.id || 'anonymous',
+                                userName: user?.name || 'Anonymous',
+                                payload: finalUpdates as any
+                            });
+                        }
                     }
                 }
             }
