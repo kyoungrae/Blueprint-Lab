@@ -56,6 +56,8 @@ export interface IScreenField {
 // Screen Spec Item Interface
 export interface IScreenSpecItem {
     id: string;
+    tableNameKr: string;
+    tableNameEn: string;
     fieldName: string;
     controlName: string;
     dataType: string;
@@ -247,6 +249,8 @@ const ScreenFieldSchema = new Schema<IScreenField>({
 
 const ScreenSpecItemSchema = new Schema<IScreenSpecItem>({
     id: { type: String, required: true },
+    tableNameKr: { type: String, default: '' },
+    tableNameEn: { type: String, default: '' },
     fieldName: { type: String, default: '' },
     controlName: { type: String, default: '' },
     dataType: { type: String, default: '' },
