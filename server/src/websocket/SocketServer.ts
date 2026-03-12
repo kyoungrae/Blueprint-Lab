@@ -402,6 +402,10 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                         console.error('Failed to save history to MongoDB:', err);
                     }
                 }
+
+                // Broadcast operation to other clients in the same project
+                console.log(`📡 [Broadcast] Sending operation ${operation.type} to project ${projectId}`);
+                socket.to(`project:${projectId}`).emit('operation', operation);
             });
         });
 

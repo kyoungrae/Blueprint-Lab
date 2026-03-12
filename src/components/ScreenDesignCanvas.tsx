@@ -259,7 +259,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
         addScreen, updateScreen, deleteScreen,
         addFlow, updateFlow, deleteFlow,
         addSection, updateSection, deleteSection,
-        exportData, importData, mergeImportData
+        exportData, importData, mergeImportData,
+        updateDrawElements
     } = useScreenDesignStore();
 
     const { user, logout } = useAuthStore();
@@ -1050,6 +1051,16 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE' || op.type === 'SCREEN_DRAW_DELETE') {
                     setLastRemoteUpdateScreenId(op.targetId);
                     updateScreen(op.targetId, op.payload as any);
+                }
+                else if (op.type === 'SCREEN_DRAW_ELEMENTS_UPDATE') {
+                    // drawElements 실시간 동기화 처리
+                    console.log(`📥 [Canvas] Received SCREEN_DRAW_ELEMENTS_UPDATE for screen ${op.targetId}`);
+                    setLastRemoteUpdateScreenId(op.targetId);
+                    const { drawElements } = op.payload as any;
+                    if (drawElements) {
+                        console.log(`📥 [Canvas] Updating ${drawElements.length} drawElements`);
+                        updateDrawElements(op.targetId, drawElements);
+                    }
                 }
                 else if (op.type === 'SCREEN_DELETE') deleteScreen(op.targetId);
             } else if (op.type === 'SCREEN_FLOW_CREATE') {

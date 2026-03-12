@@ -91,6 +91,21 @@ export class SyncEngine {
     applyOperation(state: ERDState, operation: CRDTOperation): ERDState {
         const newState = { ...state, version: state.version + 1 };
 
+        const mergeDrawElementsById = (prev: any[] | undefined, incoming: any[] | undefined): any[] | undefined => {
+            if (!Array.isArray(prev) && !Array.isArray(incoming)) return prev;
+            const prevArr = Array.isArray(prev) ? prev : [];
+            const inArr = Array.isArray(incoming) ? incoming : [];
+            if (inArr.length === 0) return prevArr;
+            const byId = new Map<string, any>();
+            for (const el of prevArr) {
+                if (el && typeof el.id === 'string') byId.set(el.id, el);
+            }
+            for (const el of inArr) {
+                if (el && typeof el.id === 'string') byId.set(el.id, el);
+            }
+            return Array.from(byId.values());
+        };
+
         switch (operation.type) {
             case 'ENTITY_CREATE':
                 newState.entities = [...state.entities, operation.payload as unknown as IEntity];
@@ -177,9 +192,17 @@ export class SyncEngine {
             case 'SCREEN_UPDATE':
             case 'SCREEN_MOVE':
             case 'SCREEN_DRAW_DELETE':
+            case 'SCREEN_DRAW_ELEMENTS_UPDATE':
                 newState.screens = (state.screens || []).map(s => {
                     if (s.id === operation.targetId) {
                         const { historyLog, ...purePayload } = operation.payload as any;
+                        // IMPORTANT: do not overwrite drawElements wholesale.
+                        // Clients may send partial/stale drawElements arrays; merging prevents lost updates (e.g., concurrent shape adds).
+                        if ((operation.type === 'SCREEN_UPDATE' || operation.type === 'SCREEN_DRAW_ELEMENTS_UPDATE') && 'drawElements' in purePayload) {
+                            const merged = mergeDrawElementsById((s as any).drawElements, purePayload.drawElements);
+                            const { drawElements, ...rest } = purePayload;
+                            return { ...s, ...rest, drawElements: merged };
+                        }
                         return { ...s, ...purePayload };
                     }
                     return s;

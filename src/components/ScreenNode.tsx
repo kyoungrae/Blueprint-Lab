@@ -210,9 +210,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         update,
         updateScreen,
         syncUpdate,
+        syncDrawElements,
         handleToggleLock,
         handleDelete,
         releaseLock,
+        sendOperation,
+        user,
         canvasClipboard,
         setCanvasClipboard,
         gridClipboard,
@@ -221,8 +224,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         setLastInteractedScreenId,
         getScreenById,
         getPasteTargetScreenId,
-        sendOperation,
-        user,
     } = useScreenLockAndSync(screen);
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -611,11 +612,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
         const nextElements = [...existing, ...newElements];
         update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
+        syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
         saveHistory(nextElements);
         setSelectedElementIds(newElements.map((e) => e.id));
         setShowComponentPicker(false);
-    }, [screen.drawElements, screen, update, syncUpdate, saveHistory]);
+    }, [screen.drawElements, screen, update, syncDrawElements, saveHistory]);
 
     const [editingTableId, setEditingTableId] = useState<string | null>(null);
     // IME 조합 중(한글 등) 자음/모음 분리 방지
@@ -878,12 +879,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 return { ...el, x: el.x + dx, y: el.y + dy };
             });
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+            syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
             saveHistory(nextElements);
         };
         document.addEventListener('keydown', handleKeyDown, true);
         return () => document.removeEventListener('keydown', handleKeyDown, true);
-    }, [selectedElementIds, drawElements, isLocked, update, syncUpdate, saveHistory]);
+    }, [selectedElementIds, drawElements, isLocked, update, syncDrawElements, saveHistory]);
 
 
 
@@ -1050,6 +1051,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     return nextEl;
                 });
                 update({ drawElements: nextElements });
+                syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
                 saveHistory(nextElements);
                 groupResizeStartRef.current = null;
             }
@@ -1404,6 +1406,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             resizeRafIdRef.current = requestAnimationFrame(() => {
                 resizeRafIdRef.current = undefined;
                 update({ drawElements: updated });
+            syncDrawElements(updated); // drawElements 전용 실시간 동기화
             });
         };
 
@@ -1414,7 +1417,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             }
             if (elementResizeStartRef.current) {
                 const currentElements = getScreenById(screen.id)?.drawElements || [];
-                syncUpdate({ drawElements: currentElements });
+                syncDrawElements(currentElements); // drawElements 전용 실시간 동기화
             }
             resizeSnapStateRef.current = {};
             setAlignmentGuides(null);
@@ -1902,6 +1905,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 dragRafIdRef.current = undefined;
                 setDragPreviews(preview);
                 setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
+                
+                // 드래그 중에도 실시간 동기화 전송 (자신의 작업은 걸러짐)
+                if (draggingElementIds.length > 0) {
+                    console.log(`📤 [Drag] Syncing ${nextElements.length} elements during drag`);
+                    syncDrawElements(nextElements);
+                }
             });
         }
     };
@@ -1940,7 +1949,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             };
             const nextElements = [...drawElements, lineEl];
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+            syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
             saveHistory(nextElements);
             setSelectedElementIds([lineEl.id]);
             setLineDrawStart(null);
@@ -1974,13 +1983,13 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     };
                     const nextElements = [...drawElements, polygonEl];
                     update({ drawElements: nextElements });
-                    syncUpdate({ drawElements: nextElements });
+                    syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
                     saveHistory(nextElements);
                     setSelectedElementIds([polygonEl.id]);
                 } else {
                     const nextElements = [...drawElements, tempElement];
                     update({ drawElements: nextElements });
-                    syncUpdate({ drawElements: nextElements });
+                    syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
                     saveHistory(nextElements);
                     setSelectedElementIds([tempElement.id]);
                 }
@@ -2023,7 +2032,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 })
                 : drawElements;
             update({ drawElements: committedElements });
-            syncUpdate({ drawElements: committedElements });
+            syncDrawElements(committedElements); // drawElements 전용 실시간 동기화
             saveHistory(committedElements);
             setDraggingElementIds([]);
             setIsMoving(false);
@@ -2060,10 +2069,10 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             const toSend = pendingSyncDrawElementsRef.current;
             if (toSend) {
                 pendingSyncDrawElementsRef.current = null;
-                syncUpdate({ drawElements: toSend });
+                syncDrawElements(toSend); // drawElements 전용 실시간 동기화
             }
         }, 300);
-    }, [getScreenById, screen.id, update, saveHistory, syncUpdate]);
+    }, [getScreenById, screen.id, update, saveHistory, syncDrawElements]);
 
     // const elementsRef = useRef(drawElements || []);
     // useEffect(() => { elementsRef.current = drawElements || []; }, [drawElements]);
@@ -2360,7 +2369,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 const currentElements = current?.drawElements ?? drawElements;
                 const nextElements = [...currentElements, ...newElements];
                 update({ drawElements: nextElements });
-                syncUpdate({ drawElements: nextElements });
+                syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
                 saveHistory(nextElements);
                 setSelectedElementIds(newElements.map((el) => el.id));
                 setCanvasClipboard(newElements);
@@ -2440,7 +2449,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     const currentElements = current?.drawElements ?? drawElements;
                     const nextElements = [...currentElements, imgEl];
                     update({ drawElements: nextElements });
-                    syncUpdate({ drawElements: nextElements });
+                    syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
                     saveHistory(nextElements);
                     setSelectedElementIds([newId]);
                 })();
@@ -2450,7 +2459,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
         document.addEventListener('paste', handlePaste, true);
         return () => document.removeEventListener('paste', handlePaste, true);
-    }, [drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, getPasteTargetScreenId, update, syncUpdate, saveHistory, setSelectedElementIds, uploadImage]);
+    }, [drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, getPasteTargetScreenId, update, syncDrawElements, saveHistory, setSelectedElementIds, uploadImage]);
 
 
     // ── Table V2 Utilities (flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells, gcd imported from ./screenNode/types) ──────────────────────────────────
@@ -2699,7 +2708,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
         const nextElements = getDrawElements().map(it => it.id === el.id ? targetEl : it);
         update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
+        syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
         saveHistory(nextElements);
         setSelectedCellIndices([]);
     };
@@ -2768,7 +2777,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         };
         const nextElements = getDrawElements().map(el => el.id === selectedEl.id ? targetEl : el);
         update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
+        syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
         saveHistory(nextElements);
         setSelectedCellIndices([]);
     };
@@ -2827,7 +2836,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             };
             const nextElements = getDrawElements().map(el => el.id === selectedEl.id ? targetEl : el);
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements });
+            syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
             saveHistory(nextElements);
             setSelectedCellIndices([]);
             return;
@@ -2858,7 +2867,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             el.id === selectedEl.id ? { ...el, tableRowHeights: normalized } : el
         );
         update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
+        syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
         saveHistory(nextElements);
     };
 
@@ -2879,7 +2888,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             el.id === selectedEl.id ? { ...el, tableColWidths: normalized } : el
         );
         update({ drawElements: nextElements });
-        syncUpdate({ drawElements: nextElements });
+        syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
         saveHistory(nextElements);
     };
 

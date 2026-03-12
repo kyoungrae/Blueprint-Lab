@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import type { Screen } from '../../types/screenDesign';
+import type { Screen, DrawElement } from '../../types/screenDesign';
 import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
 import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
@@ -38,6 +38,21 @@ export const useScreenLockAndSync = (screen: Screen) => {
         [sendOperation, screen.id, user?.id, user?.name],
     );
 
+    // drawElements 전용 실시간 동기화 함수
+    const syncDrawElements = useCallback(
+        (drawElements: DrawElement[]) => {
+            console.log(`📤 [Sync] Sending SCREEN_DRAW_ELEMENTS_UPDATE for screen ${screen.id}:`, drawElements.length, 'elements');
+            sendOperation({
+                type: 'SCREEN_DRAW_ELEMENTS_UPDATE',
+                targetId: screen.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { drawElements },
+            });
+        },
+        [sendOperation, screen.id, user?.id, user?.name],
+    );
+
     // 1초 후 자동 잠금 타이머
     const autoLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -66,6 +81,8 @@ export const useScreenLockAndSync = (screen: Screen) => {
             // drawElements 변경 시 ScreenNodeFull 전체 리렌더링을 회피함
             if ('drawElements' in updates && Object.keys(updates).length === 1 && updates.drawElements) {
                 updateDrawElements(screen.id, updates.drawElements);
+                // drawElements 변경 시 실시간 동기화 추가
+                syncDrawElements(updates.drawElements);
             } else {
                 updateScreen(screen.id, updates);
             }
@@ -75,7 +92,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
                 startAutoLockTimer();
             }
         },
-        [isLocked, updateScreen, updateDrawElements, screen.id, startAutoLockTimer],
+        [isLocked, updateScreen, updateDrawElements, screen.id, startAutoLockTimer, syncDrawElements],
     );
 
     const handleToggleLock = useCallback(
@@ -131,6 +148,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
         update,
         updateScreen,
         syncUpdate,
+        syncDrawElements,
         handleToggleLock,
         handleDelete,
         releaseLock,
