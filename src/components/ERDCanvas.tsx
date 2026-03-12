@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useState, useDeferredValue, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useDeferredValue, useRef, useMemo } from 'react';
 import ReactFlow, {
     type Node,
     type Edge,
     type Connection,
     useNodesState,
     useEdgesState,
-    Controls,
     Background,
     MiniMap,
     type NodeTypes,
@@ -16,8 +15,83 @@ import ReactFlow, {
     useReactFlow,
     useOnViewportChange,
     reconnectEdge,
+    useStore,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+
+// 브라우저 줌 충돌 방지
+const usePreventBrowserZoom = () => {
+    useEffect(() => {
+        const preventDefault = (e: WheelEvent) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        };
+
+        const preventKeyboardZoom = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '-' || e.key === '0')) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        };
+
+        // 휠 이벤트 방지
+        document.addEventListener('wheel', preventDefault, { passive: false });
+        // 키보드 줌 방지
+        document.addEventListener('keydown', preventKeyboardZoom);
+
+        return () => {
+            document.removeEventListener('wheel', preventDefault);
+            document.removeEventListener('keydown', preventKeyboardZoom);
+        };
+    }, []);
+};
+
+// Figma 수준의 즉각적인 줌 컨트롤
+const FigmaStyleZoomControls: React.FC = () => {
+    const { getViewport, setViewport } = useReactFlow();
+
+    const instantZoom = useCallback((direction: 'in' | 'out') => {
+        const currentZoom = getViewport().zoom;
+        const targetZoom = direction === 'in' 
+            ? Math.min(currentZoom * 1.25, 4)
+            : Math.max(currentZoom * 0.8, 0.05);
+
+        // Figma 수준의 즉시 반응 (0ms)
+        setViewport({
+            x: getViewport().x,
+            y: getViewport().y,
+            zoom: targetZoom
+        }, { duration: 0 });
+    }, [getViewport, setViewport]);
+
+    return (
+        <div className="absolute top-4 left-4 z-50 flex gap-2">
+            <button
+                onClick={() => instantZoom('in')}
+                className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center"
+                style={{ transition: 'none' }}
+            >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="11" y1="8" x2="11" y2="14"></line>
+                    <line x1="8" y1="11" x2="14" y2="11"></line>
+                </svg>
+            </button>
+            <button
+                onClick={() => instantZoom('out')}
+                className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center"
+                style={{ transition: 'none' }}
+            >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="8" y1="11" x2="14" y2="11"></line>
+                </svg>
+            </button>
+        </div>
+    );
+};
 
 import EntityNode, { EntityNodePlaceholder } from './EntityNode';
 import ERDEdge from './ERDEdge';
@@ -262,6 +336,9 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
 
 
 const ERDCanvasContent: React.FC = () => {
+    // 브라우저 줌 충돌 방지
+    usePreventBrowserZoom();
+    
     const {
         entitiesById,
         relationshipsById,
@@ -293,8 +370,28 @@ const ERDCanvasContent: React.FC = () => {
 
     const currentProject = projects.find(p => p.id === currentProjectId);
 
+    const zoomSelector = (state: any) => state.transform[2];
+    
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const zoom = useStore(zoomSelector);
+    
+    // 최적화된 노드 사용
+    const optimizedNodes = useMemo(() => {
+        // 줌 아웃 시 노드 단순화
+        if (zoom < 0.3) {
+            return nodes.map(node => ({
+                ...node,
+                data: {
+                    ...node.data,
+                    // 속성 숨기기, 기본 정보만 표시
+                    simplified: true
+                }
+            }));
+        }
+        return nodes;
+    }, [nodes, zoom]);
+
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [editingRelationship, setEditingRelationship] = useState<Relationship | null>(null);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -1735,7 +1832,7 @@ const ERDCanvasContent: React.FC = () => {
                 {/* 1) React Flow Canvas - z-[10]으로 섹션 배경(z-[1])보다 위에 그려서 엔티티 색상이 섹션 채움에 틴트되지 않음 */}
                 <div className="absolute inset-0 z-[10]" ref={paneContainerRef}>
                     <ReactFlow
-                        nodes={nodes}
+                        nodes={optimizedNodes}
                         edges={edges}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}
@@ -1755,7 +1852,7 @@ const ERDCanvasContent: React.FC = () => {
                         connectionMode={ConnectionMode.Loose}
                         panOnScroll={true}
                         panOnScrollMode={PanOnScrollMode.Free}
-                        zoomOnScroll={false}
+                        zoomOnScroll={true} // Ctrl+휠 줌 활성화
                         zoomOnDoubleClick={false}
                         zoomActivationKeyCode="Control"
                         minZoom={0.05}
@@ -1765,6 +1862,16 @@ const ERDCanvasContent: React.FC = () => {
                         multiSelectionKeyCode="Shift"
                         selectionKeyCode="Shift"
                         deleteKeyCode={null}
+                        style={{ 
+                            transition: 'none', // 애니메이션 비활성화로 즉시 반응
+                            willChange: 'transform' // GPU 가속
+                        }}
+                        nodesDraggable={true}
+                        nodesConnectable={true}
+                        elementsSelectable={true}
+                        selectNodesOnDrag={false}
+                        elevateNodesOnSelect={false}
+                        elevateEdgesOnSelect={false}
                         onPaneMouseMove={onPaneMouseMove}
                         onPaneClick={() => setSelectedSectionId(null)}
                     >
@@ -1788,7 +1895,7 @@ const ERDCanvasContent: React.FC = () => {
                             sectionHeadersContainerRef={sectionHeadersContainerRef}
                         />
                         <UserCursorsLayer />
-                        <Controls />
+                        <FigmaStyleZoomControls />
                         <MiniMap
                             nodeColor={() => '#3b82f6'}
                             className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
