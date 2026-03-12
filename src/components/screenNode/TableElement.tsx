@@ -8,7 +8,6 @@ import { FONT_SIZE_OVERRIDE_EVENT, COLOR_OVERRIDE_EVENT, TEXT_STYLE_OVERRIDE_EVE
 interface TableElementProps {
     el: DrawElement;
     isLocked: boolean;
-    isSelected: boolean;
     editingTableId: string | null;
     editingCellIndex: number | null;
     selectedCellIndices: number[];
@@ -29,7 +28,6 @@ interface TableElementProps {
 const TableElement: React.FC<TableElementProps> = memo(({
     el,
     isLocked,
-    isSelected,
     editingTableId,
     editingCellIndex,
     selectedCellIndices,
@@ -130,17 +128,13 @@ const TableElement: React.FC<TableElementProps> = memo(({
                 borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
             }}
             onMouseDown={(e) => {
-                // 이미 선택된 상태이거나 편집 중인 경우에만 중단하여 셀 선택/편집 로직이 작동하게 함.
-                // 선택되지 않은 상태에서는 상위(CanvasElement)로 전파하여 테이블 자체가 먼저 선택되도록 허용.
-                if (isSelected || editingTableId === el.id) {
+                // 편집 중인 경우에는 셀 선택/편집 로직을 위해 전파를 차단
+                if (editingTableId === el.id) {
                     e.stopPropagation();
-                }
-                
-                // Shift+클릭 시 테이블 선택 해제
-                if (e.shiftKey && isSelected) {
-                    // 상위로 이벤트를 전파하여 handleElementMouseDown에서 선택 해제 처리
-                    return;
-                }
+                } 
+                // 선택된 상태에서 Shift 없이 클릭하면 드래그 이동을 위해 전파를 허용해야 함
+                // 또한 Shift 클릭 시에는 선택 해제를 위해 전파를 허용해야 함
+                // 따라서 편집 모드가 아닐 때는 stopPropagation을 하지 않음으로써 CanvasElement의 handleElementMouseDown이 실행되게 함
                 
                 if (isLocked) return;
             }}
@@ -249,38 +243,34 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                     overflow: 'hidden', minWidth: 0, minHeight: 0,
                                 }}
                                 onMouseDown={(e) => {
-                                    // 이미 선택된 상태이거나 편집 중인 경우에만 중단하여 셀 선택/편집 로직이 작동하게 함.
-                                    // 선택되지 않은 상태에서는 상위로 전파하여 테이블 자체가 먼저 선택되도록 허용.
-                                    if (isSelected || editingTableId === el.id) {
+                                    // 편집 중인 경우에는 셀 선택/편집 로직을 위해 전파를 차단
+                                    if (editingTableId === el.id) {
                                         e.stopPropagation();
-                                    }
 
-                                    // Shift+클릭 시 셀 선택 해제
-                                    if (e.shiftKey && selectedCellIndices.includes(cellIndex)) {
-                                        e.stopPropagation();
-                                        setSelectedCellIndices(selectedCellIndices.filter(idx => idx !== cellIndex));
-                                        return;
-                                    }
+                                        // Shift+클릭 시 셀 선택 해제 (편집 모드 내부 로직)
+                                        if (e.shiftKey && selectedCellIndices.includes(cellIndex)) {
+                                            setSelectedCellIndices(selectedCellIndices.filter(idx => idx !== cellIndex));
+                                            return;
+                                        }
 
-                                    if (isLocked) return;
-                                    if (editingTableId !== el.id) return;
-                                    if (editingCellIndex !== null) setEditingCellIndex(null);
-                                    isDraggingCellSelectionRef.current = true;
-                                    dragStartCellIndexRef.current = cellIndex;
-                                    setSelectedCellIndices([cellIndex]);
-                                    const onMouseUp = () => {
-                                        isDraggingCellSelectionRef.current = false;
-                                        window.removeEventListener('mouseup', onMouseUp);
-                                    };
-                                    window.addEventListener('mouseup', onMouseUp);
+                                        if (isLocked) return;
+                                        if (editingCellIndex !== null) setEditingCellIndex(null);
+                                        isDraggingCellSelectionRef.current = true;
+                                        dragStartCellIndexRef.current = cellIndex;
+                                        setSelectedCellIndices([cellIndex]);
+                                        const onMouseUp = () => {
+                                            isDraggingCellSelectionRef.current = false;
+                                            window.removeEventListener('mouseup', onMouseUp);
+                                        };
+                                        window.addEventListener('mouseup', onMouseUp);
+                                    }
+                                    // 편집 모드가 아닐 때는 전파를 허용하여 (handleElementMouseDown) 테이블 전체 선택/해제/이동 기능이 작동하게 함
                                 }}
                                 onClick={(e) => {
-                                    // Shift+클릭 시 처리 - 간단한 이벤트 전파 방식으로 수정
-                                    if (e.shiftKey && isSelected) {
-                                        // 선택된 경우에만 이벤트 중단, 그렇지 않으면 상위로 전파
+                                    // 편집 모드에서는 클릭 이벤트가 상위로 전파되어 화면 선택이 풀리는 것을 방지
+                                    if (editingTableId === el.id) {
                                         e.stopPropagation();
                                     }
-                                    // 테이블이 선택되지 않은 경우에는 이벤트를 전파하여 다른 객체 선택 가능하도록 함
                                 }}
                                 onMouseEnter={() => {
                                     if (!isDraggingCellSelectionRef.current || editingTableId !== el.id) return;

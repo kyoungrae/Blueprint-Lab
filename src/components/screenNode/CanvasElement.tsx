@@ -258,7 +258,6 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                 <TableElement
                     el={el}
                     isLocked={isLocked}
-                    isSelected={isSelected}
                     editingTableId={editingTableId}
                     editingCellIndex={editingCellIndex}
                     selectedCellIndices={selectedCellIndices}
