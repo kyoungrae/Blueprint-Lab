@@ -282,6 +282,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
         interval: 5000
     });
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [sidebarWidth, setSidebarWidth] = useState(280); // Default width in pixels
+    const sidebarResizingRef = useRef(false);
     const [sidebarListKey, setSidebarListKey] = useState(0); // 가져오기 후 사이드바 목록 갱신용
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -303,6 +305,31 @@ const ScreenDesignCanvasContent: React.FC = () => {
         startSectionPosition: { x: number; y: number };
         startScreenPositions: Record<string, { x: number; y: number }>;
     } | null>(null);
+
+    // ── Sidebar Resize Logic ────────────────────────────────────
+    const startSidebarResize = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        sidebarResizingRef.current = true;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        
+        const onMouseMove = (moveEvent: MouseEvent) => {
+            if (!sidebarResizingRef.current) return;
+            const newWidth = Math.max(200, Math.min(600, moveEvent.clientX));
+            setSidebarWidth(newWidth);
+        };
+        
+        const onMouseUp = () => {
+            sidebarResizingRef.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+        
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    }, []);
     const [sectionResizeState, setSectionResizeState] = useState<{
         sectionId: string;
         handle: string;
@@ -1804,11 +1831,20 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
                             <div className="relative flex h-full min-w-0">
                                 <div
-                                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
+                                    className={`relative h-full border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'flex-shrink-0' : 'w-0 border-none'}`}
+                                    style={{ width: isSidebarOpen ? sidebarWidth : 0, transition: sidebarResizingRef.current ? 'none' : 'width 0.3s ease-in-out' }}
                                 >
-                                    <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
+                                    <div className="h-full min-w-0" style={{ width: sidebarWidth }}>
                                         <ScreenSidebar key={`sidebar-${sidebarListKey}`} screens={screens} sections={sections} />
                                     </div>
+                                    
+                                    {/* Sidebar Resizer Handle */}
+                                    {isSidebarOpen && (
+                                        <div
+                                            onMouseDown={startSidebarResize}
+                                            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-violet-500/30 transition-colors z-[10002]"
+                                        />
+                                    )}
                                 </div>
 
                                 <button
