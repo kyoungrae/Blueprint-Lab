@@ -41,7 +41,8 @@ import { copyToClipboard } from '../utils/clipboard';
 import { OnlineUsers, UserCursors } from './collaboration';
 import { BugReportButton } from './bug/BugReport';
 import { useSyncStore } from '../store/syncStore';
-import { setLastRemoteUpdateScreenId } from '../store/screenUndoRemoteFlag';
+import { useYjsStore } from '../store/yjsStore';
+
 
 const nodeTypes: NodeTypes = {
     screen: ScreenNode,
@@ -112,7 +113,8 @@ const ComponentCanvasContent: React.FC = () => {
     const deleteScreen = deleteComponent;
 
     const { user, logout } = useAuthStore();
-    const { sendOperation, updateCursor, isSynced } = useSyncStore();
+    const { updateCursor, isSynced } = useSyncStore();
+    const { joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen } = useYjsStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
@@ -122,7 +124,7 @@ const ComponentCanvasContent: React.FC = () => {
         if (!editingFlowId) setFlowLabelComposing(null);
     }, [editingFlowId]);
 
-    const { projects, currentProjectId, setCurrentProject, updateProjectData } = useProjectStore();
+    const { projects, currentProjectId, setCurrentProject } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
@@ -202,7 +204,16 @@ const ComponentCanvasContent: React.FC = () => {
         return () => document.removeEventListener('wheel', handleWheel, { capture: true });
     }, [getViewport, setViewport]);
 
-    // Initial load from project data (local or server)
+    // ── Yjs 프로젝트 입장/퇴장 ───────────────────────────────────────────────
+    // 프로젝트 입장 시 Yjs room 연결, 퇴장/언마운트 시 연결 해제
+    useEffect(() => {
+        if (!currentProjectId) return;
+        yjsJoin(currentProjectId);
+        return () => { yjsLeave(); };
+    }, [currentProjectId, yjsJoin, yjsLeave]);
+
+    // ── 초기 로드: projectStore → componentStore (로컬/서버 스냅샷 적용) ────
+    // Yjs가 서버에서 sync되기 전 빠른 초기 렌더링을 위해 유지합니다.
     useEffect(() => {
         if (currentProjectId && currentProject) {
             const data = (currentProject.data as any)?.components !== undefined
@@ -214,40 +225,15 @@ const ComponentCanvasContent: React.FC = () => {
         }
     }, [currentProjectId, currentProject?.id, importData]);
 
-    // Auto-save to ProjectStore (local and server)
-    useEffect(() => {
-        if (currentProjectId) {
-            const timer = setTimeout(() => {
-                updateProjectData(currentProjectId, {
-                    components,
-                    flows,
-                });
-            }, 1000);
-            return () => {
-                clearTimeout(timer);
-            };
-        }
-    }, [components, flows, currentProjectId, updateProjectData]);
+    // ❌ 제거됨: 1000ms auto-save useEffect (REST PATCH로 전체 문서 덮어쓰기 → 데이터 손실 원인)
+    // ❌ 제거됨: unmount 시 flush useEffect (immediate=true REST PATCH)
+    // 위 두 로직은 yjsStore를 통한 CRDT 실시간 동기화로 완전히 대체됩니다.
 
     const flushAndLeaveProject = useCallback(async () => {
-        if (currentProjectId) {
-            const { components: comps, flows: flws } = useComponentStore.getState();
-            await updateProjectData(currentProjectId, { components: comps, flows: flws }, true);
-        }
+        // ❌ 제거됨: updateProjectData immediate flush (REST PATCH)
+        // Yjs가 disconnect 시 서버에 자동으로 최종 상태를 보존합니다.
         setCurrentProject(null);
-    }, [currentProjectId, updateProjectData, setCurrentProject]);
-
-    // Save on unmount: flush pending edits when leaving Component project (prevents loss when switching before debounce)
-    useEffect(() => {
-        const projectId = currentProjectId;
-        return () => {
-            if (projectId) {
-                const { components: comps, flows: flws } = useComponentStore.getState();
-                const { updateProjectData: save } = useProjectStore.getState();
-                save(projectId, { components: comps, flows: flws }, true);
-            }
-        };
-    }, [currentProjectId]);
+    }, [setCurrentProject]);
 
     // Sync screens → ReactFlow nodes (컴포넌트는 용지=캔버스 크기, 화면 설계는 70% 비율)
     const computeNodeStyle = (screen: Screen): React.CSSProperties | undefined => {
@@ -277,13 +263,8 @@ const ComponentCanvasContent: React.FC = () => {
                     position: screen.position,
                     data: {
                         screen,
-                        onFlushProjectData: () => {
-                            const pid = useProjectStore.getState().currentProjectId;
-                            if (pid) {
-                                const { components: comps, flows: flws } = useComponentStore.getState();
-                                useProjectStore.getState().updateProjectData(pid, { components: comps, flows: flws }, true);
-                            }
-                        },
+                        // ❌ 제거됨: onFlushProjectData (REST 즉시 저장 콜백)
+                        // Yjs CRDT가 모든 변경을 실시간으로 자동 동기화합니다.
                     },
                     selected: existingNode?.selected,
                 };
@@ -385,22 +366,14 @@ const ComponentCanvasContent: React.FC = () => {
             }
         });
 
-        // Apply page updates locally and sync to other users
+        // Apply page updates locally — Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
         const updateIds = Object.keys(updates);
         if (updateIds.length > 0) {
             updateIds.forEach(id => {
-                const newPage = updates[id];
-                updateScreen(id, { page: newPage });
-                sendOperation({
-                    type: 'SCREEN_UPDATE',
-                    targetId: id,
-                    userId: user?.id || 'anonymous',
-                    userName: user?.name || 'Anonymous',
-                    payload: { page: newPage }
-                });
+                updateScreen(id, { page: updates[id] });
             });
         }
-    }, [flows, screens.length, updateScreen, sendOperation, user]);
+    }, [flows, screens.length, updateScreen]);
 
     // Listen for initial Sync from Server
     useEffect(() => {
@@ -457,35 +430,14 @@ const ComponentCanvasContent: React.FC = () => {
         };
         window.addEventListener('erd:state_sync', handleSync as EventListener);
 
-        // Listen for Remote Operations
-        const handleRemoteOp = (e: CustomEvent) => {
-            const op = e.detail;
-            if (!op) return;
-            // Skip own operations (본인 작업은 이미 로컬에 반영됨)
-            if (user && op.userId === user.id) return;
-
-            if (op.type.startsWith('SCREEN_')) {
-                if (op.type === 'SCREEN_CREATE') addComponent(op.payload as any);
-                else if (op.type === 'SCREEN_UPDATE' || op.type === 'SCREEN_MOVE' || op.type === 'SCREEN_DRAW_DELETE') {
-                    setLastRemoteUpdateScreenId(op.targetId);
-                    updateComponent(op.targetId, op.payload as any);
-                }
-                else if (op.type === 'SCREEN_DELETE') deleteComponent(op.targetId);
-            } else if (op.type === 'SCREEN_FLOW_CREATE' || op.type === 'FLOW_CREATE') {
-                addFlow(op.payload as any);
-            } else if (op.type === 'SCREEN_FLOW_UPDATE' || op.type === 'FLOW_UPDATE') {
-                updateFlow(op.targetId, op.payload as any);
-            } else if (op.type === 'SCREEN_FLOW_DELETE' || op.type === 'FLOW_DELETE') {
-                deleteFlow(op.targetId);
-            }
-        };
-        window.addEventListener('erd:remote_operation', handleRemoteOp as EventListener);
+        // remote_operation 리스너는 Yjs CRDT가 대체합니다.
+        // Yjs _observeYMaps가 componentStore를 직접 업데이트하므로
+        // window.addEventListener('erd:remote_operation', ...) 는 불필요합니다.
 
         return () => {
             window.removeEventListener('erd:state_sync', handleSync as EventListener);
-            window.removeEventListener('erd:remote_operation', handleRemoteOp as EventListener);
         };
-    }, [importData, addComponent, updateComponent, deleteComponent, addFlow, updateFlow, deleteFlow, user]);
+    }, [importData, user]);
 
     // Keyboard shortcuts: Delete selected screens or flows
     useEffect(() => {
@@ -509,14 +461,7 @@ const ComponentCanvasContent: React.FC = () => {
                         if (window.confirm(confirmMsg)) {
                             selectedNodes.forEach(node => {
                                 deleteScreen(node.id);
-
-                                sendOperation({
-                                    type: 'SCREEN_DELETE',
-                                    targetId: node.id,
-                                    userId: user?.id || 'anonymous',
-                                    userName: user?.name || 'Anonymous',
-                                    payload: {}
-                                });
+                                // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
                             });
                         }
                     }
@@ -525,13 +470,7 @@ const ComponentCanvasContent: React.FC = () => {
                         if (window.confirm(`${selectedEdges.length}개의 연결을 삭제하시겠습니까?`)) {
                             selectedEdges.forEach(edge => {
                                 deleteFlow(edge.id);
-                                sendOperation({
-                                    type: 'SCREEN_FLOW_DELETE',
-                                    targetId: edge.id,
-                                    userId: user?.id || 'anonymous',
-                                    userName: user?.name || 'Anonymous',
-                                    payload: {}
-                                });
+                                // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
                             });
                         }
                     }
@@ -541,7 +480,7 @@ const ComponentCanvasContent: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [deleteScreen, deleteFlow, getNodes, edges, user, sendOperation]);
+    }, [deleteScreen, deleteFlow, getNodes, edges]);
 
     const onConnect = useCallback((params: any) => {
         if (params.source === params.target) return;
@@ -569,13 +508,7 @@ const ComponentCanvasContent: React.FC = () => {
                     screenDescription: uiScreen.screenDescription,
                 };
                 updateScreen(specScreen.id, metaUpdates);
-                sendOperation({
-                    type: 'SCREEN_UPDATE',
-                    targetId: specScreen.id,
-                    userId: user?.id || 'anonymous',
-                    userName: user?.name || 'Anonymous',
-                    payload: metaUpdates
-                });
+                // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
 
                 const relatedTablesText = uiScreen.relatedTables || '';
                 const tableNames = relatedTablesText.split('\n')
@@ -636,13 +569,7 @@ const ComponentCanvasContent: React.FC = () => {
                     if (newSpecs.length > 0) {
                         const updatedSpecs = [...existingSpecs, ...newSpecs];
                         updateScreen(specScreen.id, { specs: updatedSpecs });
-                        sendOperation({
-                            type: 'SCREEN_UPDATE',
-                            targetId: specScreen.id,
-                            userId: user?.id || 'anonymous',
-                            userName: user?.name || 'Anonymous',
-                            payload: { specs: updatedSpecs }
-                        });
+                        // Yjs CRDT가 자동으로 전파합니다.
                     }
                 }
             }
@@ -658,21 +585,9 @@ const ComponentCanvasContent: React.FC = () => {
             updateFlow(existingFlow.id, {
                 sourceHandle: params.sourceHandle || undefined,
                 targetHandle: params.targetHandle || undefined,
-                // Also update label if it was '페이징' and now it's a spec connection
                 ...(isSpecConnection && existingFlow.label === '페이징' ? { label: '명세서 연결' } : {})
             });
-
-            sendOperation({
-                type: 'SCREEN_FLOW_UPDATE',
-                targetId: existingFlow.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: {
-                    sourceHandle: params.sourceHandle || undefined,
-                    targetHandle: params.targetHandle || undefined,
-                    ...(isSpecConnection && existingFlow.label === '페이징' ? { label: '명세서 연결' } : {})
-                }
-            });
+            // Yjs CRDT가 자동으로 전파합니다.
             return;
         }
 
@@ -686,15 +601,8 @@ const ComponentCanvasContent: React.FC = () => {
             label: defaultLabel,
         };
         addFlow(newFlow);
-
-        sendOperation({
-            type: 'SCREEN_FLOW_CREATE',
-            targetId: flowId,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: newFlow as any
-        });
-    }, [addFlow, updateFlow, updateScreen, flows, screens, sendOperation, user, projects, currentProject]);
+        // Yjs CRDT가 자동으로 전파합니다.
+    }, [addFlow, updateFlow, updateScreen, flows, screens, projects, currentProject]);
 
     const onEdgeUpdateStart = useCallback((_: any, edge: RFEdge) => {
         setReconnectingEdgeId(edge.id);
@@ -724,21 +632,8 @@ const ComponentCanvasContent: React.FC = () => {
             sourceHandle: newConnection.sourceHandle || undefined,
             targetHandle: newConnection.targetHandle || undefined,
         });
+        // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
 
-        sendOperation({
-            type: 'SCREEN_FLOW_UPDATE',
-            targetId: oldEdge.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: {
-                source: newConnection.source!,
-                target: newConnection.target!,
-                sourceHandle: newConnection.sourceHandle || undefined,
-                targetHandle: newConnection.targetHandle || undefined,
-            }
-        });
-
-        // 재연결 시에도 명세서 연결이면 부모 화면의 메타 값을 명세에 반영
         const sourceScreen = screens.find(s => s.id === newConnection.source);
         const targetScreen = screens.find(s => s.id === newConnection.target);
         const uiScreen = sourceScreen?.variant !== 'SPEC' ? sourceScreen : targetScreen;
@@ -753,17 +648,11 @@ const ComponentCanvasContent: React.FC = () => {
                 screenDescription: uiScreen.screenDescription,
             };
             updateScreen(specScreen.id, metaUpdates);
-            sendOperation({
-                type: 'SCREEN_UPDATE',
-                targetId: specScreen.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: metaUpdates
-            });
+            // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
         }
 
         setReconnectingEdgeId(null);
-    }, [updateFlow, setEdges, flows, sendOperation, user, screens, updateScreen]);
+    }, [updateFlow, setEdges, flows, screens, updateScreen]);
 
     const onEdgeUpdateEnd = useCallback((_: any, _edge: RFEdge) => {
         setReconnectingEdgeId(null);
@@ -825,27 +714,15 @@ const ComponentCanvasContent: React.FC = () => {
             imageHeight,
         };
         addComponent(newScreen);
-
-        sendOperation({
-            type: 'SCREEN_CREATE',
-            targetId: newScreen.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: newScreen as unknown as Record<string, unknown>
-        });
-    }, [components, addComponent, currentProject, user, sendOperation]);
+        // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
+    }, [components, addComponent, currentProject, user]);
 
     const onNodeDragStop = useCallback((_: React.MouseEvent, node: RFNode) => {
+        // 로컬 스토어 업데이트
         updateScreen(node.id, { position: node.position });
-
-        sendOperation({
-            type: 'SCREEN_MOVE',
-            targetId: node.id,
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: { position: node.position }
-        });
-    }, [updateScreen, sendOperation, user]);
+        // Yjs CRDT 업데이트 → WebSocket으로 모든 피어에 자동 전파 (REST PATCH 없음)
+        yjsMoveScreen(node.id, node.position);
+    }, [updateScreen, yjsMoveScreen]);
 
     const storeValue = useMemo(() => ({
         screens: components,
@@ -1116,13 +993,7 @@ const ComponentCanvasContent: React.FC = () => {
                                                                                 checked={editingFlow.label === opt.id}
                                                                                 onChange={() => {
                                                                                     updateFlow(editingFlow.id, { label: opt.id });
-                                                                                    sendOperation({
-                                                                                        type: 'SCREEN_FLOW_UPDATE',
-                                                                                        targetId: editingFlow.id,
-                                                                                        userId: user?.id || 'anonymous',
-                                                                                        userName: user?.name || 'Anonymous',
-                                                                                        payload: { label: opt.id }
-                                                                                    });
+                                                                                    // Yjs CRDT가 자동으로 전파합니다.
                                                                                 }}
                                                                             />
                                                                         </label>
@@ -1141,25 +1012,13 @@ const ComponentCanvasContent: React.FC = () => {
                                                                                 }
                                                                                 setFlowLabelComposing(null);
                                                                                 updateFlow(editingFlow.id, { label: val });
-                                                                                sendOperation({
-                                                                                    type: 'SCREEN_FLOW_UPDATE',
-                                                                                    targetId: editingFlow.id,
-                                                                                    userId: user?.id || 'anonymous',
-                                                                                    userName: user?.name || 'Anonymous',
-                                                                                    payload: { label: val }
-                                                                                });
+                                                                                // Yjs CRDT가 자동으로 전파합니다.
                                                                             }}
                                                                             onCompositionEnd={(e) => {
                                                                                 const val = (e.target as HTMLInputElement).value;
                                                                                 setFlowLabelComposing(null);
                                                                                 updateFlow(editingFlow.id, { label: val });
-                                                                                sendOperation({
-                                                                                    type: 'SCREEN_FLOW_UPDATE',
-                                                                                    targetId: editingFlow.id,
-                                                                                    userId: user?.id || 'anonymous',
-                                                                                    userName: user?.name || 'Anonymous',
-                                                                                    payload: { label: val }
-                                                                                });
+                                                                                // Yjs CRDT가 자동으로 전파합니다.
                                                                             }}
                                                                             placeholder="직접 입력..."
                                                                             className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-xl outline-none text-sm font-bold text-gray-700 transition-all"
@@ -1174,13 +1033,7 @@ const ComponentCanvasContent: React.FC = () => {
                                                                     onClick={() => {
                                                                         if (window.confirm('정말로 이 관계를 삭제하시겠습니까?')) {
                                                                             deleteFlow(editingFlow.id);
-                                                                            sendOperation({
-                                                                                type: 'SCREEN_FLOW_DELETE',
-                                                                                targetId: editingFlow.id,
-                                                                                userId: user?.id || 'anonymous',
-                                                                                userName: user?.name || 'Anonymous',
-                                                                                payload: {}
-                                                                            });
+                                                                            // Yjs CRDT가 자동으로 전파합니다.
                                                                             setEditingFlowId(null);
                                                                         }
                                                                     }}

@@ -8,6 +8,7 @@ import { config } from './config';
 import { connectMongoDB } from './config/database';
 import { redis } from './config/redis';
 import { initializeSocketServer } from './websocket/SocketServer';
+import { startYjsServer } from './websocket/YjsServer';
 import authRoutes from './routes/authRoutes';
 import projectRoutes from './routes/projectRoutes';
 import imageRoutes from './routes/imageRoutes';
@@ -106,12 +107,15 @@ async function start() {
 🚀 Blue Print Lab Server is running!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📡 HTTP:      http://localhost:${config.port}
-🔌 WebSocket: ws://localhost:${config.port}
+🔌 Socket.IO: ws://localhost:${config.port}
 📊 Health:    http://localhost:${config.port}/health
 🌍 Frontend:  ${config.frontendUrl}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       `);
         });
+
+        // Yjs CRDT 서버 시작 (port 4000) - SCREEN_DESIGN / COMPONENT 실시간 협업
+        startYjsServer();
     } catch (error) {
         logger.error('❌ Server startup error: %o', error);
         process.exit(1);

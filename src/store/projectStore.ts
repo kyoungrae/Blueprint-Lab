@@ -5,67 +5,8 @@ import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
-/** PATCH 요청 디바운스: 프로젝트별로 마지막 데이터만 일정 시간 후 한 번만 전송 (기능 유지, 체감 지연 완화) */
-const SAVE_DEBOUNCE_MS = 500;
-const pendingSave: Record<string, { timer: ReturnType<typeof setTimeout>; data: any }> = {};
 
-// 연결 간 구분을 위한 고유 키 생성
-const getConnectionKey = () => {
-    let connectionKey = sessionStorage.getItem('connectionKey');
-    if (!connectionKey) {
-        connectionKey = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        sessionStorage.setItem('connectionKey', connectionKey);
-    }
-    return connectionKey;
-};
 
-// 연결별로 독립적인 저장 상태 관리
-const getConnectionSpecificKey = (projectId: string) => `${getConnectionKey()}_${projectId}`;
-
-async function sendProjectDataPatch(id: string, data: any) {
-    const token = localStorage.getItem('auth-token');
-    if (!token || id.startsWith('local_')) return;
-    try {
-        const response = await fetchWithAuth(`${API_URL}/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data }),
-        });
-        if (!response.ok) {
-            let serverMessage = 'Failed to sync project data to server';
-            try {
-                const body = await response.json();
-                if (body?.message) serverMessage = body.message;
-            } catch (error) {
-                console.error('Error parsing response JSON:', error);
-            }
-            
-            // 버전 충돌 시 자동으로 다시 시도
-            if (response.status === 500 && serverMessage.includes('No matching document found')) {
-                // console.warn('🔄 Version conflict detected, retrying...');
-                setTimeout(() => {
-                    // 최신 데이터를 다시 가져와서 다시 시도
-                    window.location.reload();
-                }, 1000);
-                return;
-            }
-            
-            // console.error(serverMessage + suffix);
-        }
-    } catch (error: any) {
-        const isNetworkError =
-            error?.name === 'TypeError' &&
-            (error?.message?.includes('fetch') || error?.message?.includes('NetworkError') || error?.message?.includes('Failed to fetch'));
-        if (isNetworkError) {
-            // console.warn(
-            //     '프로젝트 저장 요청을 보낼 수 없습니다. 백엔드 서버가 실행 중인지, 인터넷 연결을 확인해 주세요.',
-            //     error
-            // );
-        } else {
-            // console.error('Update project data error:', error);
-        }
-    }
-}
 
 interface ProjectStore {
     projects: Project[];
@@ -75,7 +16,7 @@ interface ProjectStore {
     addRemoteProject: (id: string) => Promise<void>;
     deleteProject: (id: string) => Promise<void>;
     setCurrentProject: (id: string | null) => void;
-    updateProjectData: (id: string, data: any, immediate?: boolean) => void;
+    updateProjectData: (id: string, data: any) => void;
     updateProjectMetadata: (id: string, metadata: Partial<Project>) => Promise<void>;
     updateProjectMembers: (id: string, members: ProjectMember[]) => void;
     inviteMember: (projectId: string, email: string) => Promise<void>;
@@ -349,35 +290,19 @@ export const useProjectStore = create<ProjectStore>()(
 
             setCurrentProject: (id) => set({ currentProjectId: id }),
 
-            updateProjectData: (id, data, immediate = false) => {
-                // Update local state immediately for responsiveness
+            updateProjectData: (id, data) => {
+                /**
+                 * ✅ 로컬 Zustand 상태만 업데이트 (UI 즉시 반영용)
+                 *
+                 * ❌ 제거됨: setTimeout 디바운스 + sendProjectDataPatch REST 호출
+                 *    캔버스 데이터(screens/flows)는 yjsStore를 통해 Yjs CRDT로 저장됩니다.
+                 *    섹션·메타데이터는 updateProjectMetadata()를 사용하세요.
+                 */
                 set((state) => ({
                     projects: state.projects.map((p) =>
                         p.id === id ? { ...p, data: { ...p.data, ...data }, updatedAt: new Date().toISOString() } : p
                     ),
                 }));
-
-                if (!id || id.startsWith('local_')) return;
-                const token = localStorage.getItem('auth-token');
-                if (!token) return;
-
-                const merged = pendingSave[getConnectionSpecificKey(id)] ? { ...pendingSave[getConnectionSpecificKey(id)].data, ...data } : { ...data };
-
-                if (immediate) {
-                    if (pendingSave[getConnectionSpecificKey(id)]?.timer) clearTimeout(pendingSave[getConnectionSpecificKey(id)].timer);
-                    delete pendingSave[getConnectionSpecificKey(id)];
-                    sendProjectDataPatch(id, merged);
-                    return;
-                }
-
-                if (pendingSave[getConnectionSpecificKey(id)]?.timer) clearTimeout(pendingSave[getConnectionSpecificKey(id)].timer);
-                pendingSave[getConnectionSpecificKey(id)] = {
-                    data: merged,
-                    timer: setTimeout(() => {
-                        sendProjectDataPatch(id, pendingSave[getConnectionSpecificKey(id)].data);
-                        delete pendingSave[getConnectionSpecificKey(id)];
-                    }, SAVE_DEBOUNCE_MS),
-                };
             },
 
             updateProjectMetadata: async (id, metadata) => {
