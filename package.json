@@ -17,6 +17,7 @@
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.0",
     "lucide-react": "^0.563.0",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "reactflow": "^11.11.4",

@@ -201,6 +201,7 @@ import { jsPDF } from 'jspdf';
 import { useSyncStore } from '../store/syncStore';
 import { setLastRemoteUpdateScreenId } from '../store/screenUndoRemoteFlag';
 import type { ExportFormat } from './ScreenExportModal';
+import { exportEditablePPT } from '../utils/exportPPTUtility';
 
 const nodeTypes: NodeTypes = {
     screen: ScreenNode,
@@ -1690,6 +1691,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
         setIsExporting(true);
 
         const runExport = () => {
+            // 💡 [수정됨] PPT는 사진 찍을 필요 없이 100% 네이티브 데이터로 던짐!
+            if (format === 'ppt') {
+                const selectedScreens = screens.filter(screen => selectedIds.includes(screen.id));
+                exportEditablePPT(selectedScreens).finally(() => {
+                    setIsExporting(false);
+                });
+                return;
+            }
+
             if (format === 'pdf') {
                 // PDF: 각 화면을 별도 페이지로
                 const doc = new jsPDF({ unit: 'mm', format: 'a4' });
