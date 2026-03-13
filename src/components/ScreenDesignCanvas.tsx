@@ -503,6 +503,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 h = startSize.height - dh;
             }
             updateSection(sectionResizeState.sectionId, { position: { x, y }, size: { width: w, height: h } });
+            
+            // 실시간으로 다른 사용자에게 섹션 리사이즈 상태 전송
+            sendOperation({
+                type: 'SECTION_RESIZE',
+                targetId: sectionResizeState.sectionId,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { position: { x, y }, size: { width: w, height: h } },
+            });
         };
         const onUp = () => {
             const x = sec.position.x;
@@ -1035,7 +1044,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     return merged;
                 });
 
-                importData({ screens: mergedScreens, flows: syncFlows || [], sections: Array.isArray(syncSections) ? syncSections : [] });
+                // syncSections가 제대로 있을 때만 교체, 없으면 기존 섹션 유지
+                const sectionsToImport = Array.isArray(syncSections) && syncSections.length > 0 
+                    ? syncSections 
+                    : (local.sections ?? fallback?.sections ?? []);
+
+                importData({ screens: mergedScreens, flows: syncFlows || [], sections: sectionsToImport });
             }
         };
         window.addEventListener('erd:state_sync', handleSync as EventListener);
@@ -1070,6 +1084,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 updateFlow(op.targetId, op.payload as any);
             } else if (op.type === 'SCREEN_FLOW_DELETE') {
                 deleteFlow(op.targetId);
+            } else if (op.type === 'SECTION_RESIZE') {
+                // 다른 사용자의 섹션 리사이즈 실시간 반영
+                updateSection(op.targetId, op.payload as any);
             }
         };
         window.addEventListener('erd:remote_operation', handleRemoteOp as EventListener);
@@ -1078,7 +1095,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             window.removeEventListener('erd:state_sync', handleSync as EventListener);
             window.removeEventListener('erd:remote_operation', handleRemoteOp as EventListener);
         };
-    }, [importData, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, deleteFlow, user]);
+    }, [importData, addScreen, updateScreen, deleteScreen, addFlow, updateFlow, deleteFlow, updateSection, user]);
 
     // Keyboard shortcuts: Delete selected screens or flows
     useEffect(() => {
