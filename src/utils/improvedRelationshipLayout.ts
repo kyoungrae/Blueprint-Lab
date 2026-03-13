@@ -120,7 +120,7 @@ function validateRelationships(edges: Edge[], nodes: Node[]): {
             targetEntity: targetNode.id,
             sourceHandle: optimal.sourceHandle,
             targetHandle: optimal.targetHandle,
-            connectionType: optimal.connectionType,
+            connectionType: optimal.connectionType as 'horizontal' | 'vertical',
             distance: optimal.distance
         });
         
