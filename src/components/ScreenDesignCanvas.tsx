@@ -1203,9 +1203,19 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         : [];
 
                 if (tableNames.length > 0 && linkedErdProjects.length > 0) {
-                    const existingSpecs = specScreen.specs || [];
-                    const existingKeys = new Set(existingSpecs.map(s => `${s.tableNameEn}.${s.controlName}`));
-                    const newSpecsToProcess: any[] = [];
+                    // 관련테이블이 있고 ERD 프로젝트가 연결되어 있으면 팝업 표시
+                    const shouldAutoPopulate = window.confirm(
+                        '화면 설계와 명세서를 연결합니다.\n\n' +
+                        '관련테이블의 컬럼 데이터를 자동으로 만들겠습니까?\n\n' +
+                        '• [확인]: 연결하면서 관련테이블 컬럼 데이터 자동 생성\n' +
+                        '• [취소]: 명세서 연결만 수행'
+                    );
+
+                    if (shouldAutoPopulate) {
+                        // 자동으로 관련테이블 컬럼 데이터 생성 (기존 로직 실행)
+                        const existingSpecs = specScreen.specs || [];
+                        const existingKeys = new Set(existingSpecs.map(s => `${s.tableNameEn}.${s.controlName}`));
+                        const newSpecsToProcess: any[] = [];
 
                     tableNames.forEach(rawName => {
                         let entity: { name: string; comment?: string; attributes: { name: string; comment?: string; type?: string; length?: string; defaultVal?: string }[] } | undefined;
@@ -1356,6 +1366,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                 payload: finalUpdates as any
                             });
                         }
+                    }
+                } else {
+                        // 연결만 수행 - 아래의 일반 연결 생성 로직으로 이동
                     }
                 }
             }

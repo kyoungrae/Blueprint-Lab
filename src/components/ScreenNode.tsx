@@ -2135,7 +2135,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         return !fromTable;
     }, []);
 
-    const applyFontSizePx = useCallback((px: number): boolean => {
+    const applyFontSizePx = useCallback((): boolean => {
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
 
@@ -2151,25 +2151,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         }
         if (!editable) return false;
 
-        document.execCommand('fontSize', false, '7');
-        let node: Element | null = sel.anchorNode?.nodeType === Node.TEXT_NODE
-            ? (sel.anchorNode as Text).parentElement
-            : sel.anchorNode as Element;
-        while (node && node !== document.body) {
-            if (node.tagName === 'FONT' && node.getAttribute('size') === '7') {
-                node.removeAttribute('size');
-                (node as HTMLElement).style.fontSize = px + 'px';
-                editable.dispatchEvent(new Event('input', { bubbles: true }));
-                return true;
-            }
-            const span = node as HTMLElement;
-            if (node.tagName === 'SPAN' && span.style?.fontSize) {
-                span.style.fontSize = px + 'px';
-                editable.dispatchEvent(new Event('input', { bubbles: true }));
-                return true;
-            }
-            node = node.parentElement;
-        }
+        // document.execCommand('fontSize', false, '7') and FONT/SPAN search logic removed
+        // to prevent <font> tag generation. Font size is now managed at cell level only.
         return false;
     }, []);
 

@@ -122,11 +122,13 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
 
     importData: (data) => {
         const state = get();
+        // flows 미전달 시 기존 유지 → state_sync 등에서 flows가 사라지는 버그 방지
+        const nextFlows = Array.isArray(data.flows) && data.flows.length > 0 ? data.flows : state.flows;
         // sections 미전달 시 기존 유지 → 정렬/state_sync 등에서 섹션이 사라지는 버그 방지
         const nextSections = Array.isArray(data.sections) ? data.sections : state.sections;
         set({
             screens: data.screens || [],
-            flows: data.flows || [],
+            flows: nextFlows,
             sections: nextSections,
         });
     },
