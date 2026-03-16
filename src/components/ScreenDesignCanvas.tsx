@@ -76,7 +76,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
         if (transformContainerRef.current) transformContainerRef.current.style.transform = transform;
         if (headerContainerRef.current) headerContainerRef.current.style.transform = transform;
-    });
+    }, [getViewport]);
 
     const {
         sections,
@@ -264,10 +264,21 @@ import { ExportModeContext } from '../contexts/ExportModeContext';
 
 // ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
 const UserCursorsLayer: React.FC = () => {
+    const layerRef = useRef<HTMLDivElement>(null);
+    const { getViewport } = useReactFlow();
+
+    // 🚀 추가: 마운트 시 초기 좌표 1회 주입
+    React.useLayoutEffect(() => {
+        const vp = getViewport();
+        if (layerRef.current) {
+            layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+        }
+    }, [getViewport]);
+
     return (
         <div
+            ref={layerRef}
             className="screen-viewport-sync absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-            style={{ transform: 'translate(0px, 0px) scale(1)' }}
         >
             <UserCursors />
         </div>
@@ -1912,6 +1923,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     multiSelectionKeyCode="Shift"
                                     selectionKeyCode="Shift"
                                     deleteKeyCode={null}
+                                    style={{ transition: 'none', willChange: 'transform' }}
                                     onPaneClick={() => {
                                         // Notify all ScreenNodes to clear selection
                                         window.dispatchEvent(new CustomEvent('clear-screen-selection'));
