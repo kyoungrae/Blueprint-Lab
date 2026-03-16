@@ -23,21 +23,29 @@ const getPanelPortalRoot = () => document.getElementById('panel-portal-root') ||
 const useMeasure = () => {
     const ref = useRef<HTMLDivElement>(null);
     const [size, setSize] = useState({ width: 176, height: 96 });
+    
     useEffect(() => {
         const el = ref.current;
         if (!el) return;
+        
         const update = () => {
-            const { width, height } = el.getBoundingClientRect();
+            // 🚀 핵심 수정: getBoundingClientRect() 삭제! 
+            // offsetWidth와 offsetHeight는 부모의 scale(줌) 속성에 영향을 받지 않는 순수 고유 크기입니다.
+            const width = el.offsetWidth;
+            const height = el.offsetHeight;
+            
             setSize({
-                width: Math.max(1, Math.floor(width)),
-                height: Math.max(1, Math.floor(height)),
+                width: Math.max(1, width),
+                height: Math.max(1, height),
             });
         };
+        
         update();
         const ro = new ResizeObserver(update);
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
+    
     return [ref, size] as const;
 };
 
