@@ -62,8 +62,21 @@ const GlobalViewportUpdater: React.FC = () => {
 
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
     const { getViewport } = useReactFlow();
+    
+    // 🚀 1. DOM에 직접 접근하기 위한 Ref 추가
+    const transformContainerRef = useRef<HTMLDivElement>(null);
+    const headerContainerRef = useRef<HTMLDivElement>(null);
+
     const zoomRef = useRef(getViewport().zoom);
     useOnViewportChange({ onChange: (vp) => { zoomRef.current = vp.zoom; } });
+
+    // 🚀 2. 섹션 레이어가 처음 나타날 때(또는 업데이트될 때) 현재 캔버스 좌표를 즉시 덮어씌움!
+    React.useLayoutEffect(() => {
+        const vp = getViewport();
+        const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+        if (transformContainerRef.current) transformContainerRef.current.style.transform = transform;
+        if (headerContainerRef.current) headerContainerRef.current.style.transform = transform;
+    });
 
     const {
         sections,
@@ -83,12 +96,15 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         sectionHeadersContainerRef,
     } = props;
 
+    // 데이터가 없으면 여기서 렌더링 종료 (위의 Hook들은 모두 안전하게 실행됨)
     if (sections.length === 0) return null;
+
     return (
         <>
             <div
+                ref={transformContainerRef} // 🚀 3. Ref 연결
                 className="screen-viewport-sync absolute inset-0 z-[1] overflow-visible pointer-events-none"
-                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
+                style={{ transformOrigin: '0 0' }} // 하드코딩된 transform style 제거
             >
                 {sections.map((s) => (
                     <div
@@ -100,12 +116,13 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
             </div>
             <div
                 ref={(node) => {
+                    headerContainerRef.current = node; // 🚀 3. Ref 연결
                     if (sectionHeadersContainerRef && 'current' in sectionHeadersContainerRef) {
                         (sectionHeadersContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
                     }
                 }}
                 className="screen-viewport-sync absolute inset-0 z-[15] overflow-visible pointer-events-none"
-                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
+                style={{ transformOrigin: '0 0' }} // 하드코딩된 transform style 제거
             >
                 {sections.map((s) => {
                     const isEditing = editingSectionId === s.id;
@@ -163,20 +180,18 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         {s.name || 'Section'}
                                     </span>
                                 )}
-                                <PremiumTooltip placement="bottom" offsetBottom={30} label="섹션 삭제">
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            deleteSection(s.id);
-                                        }}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
-                                    >
-                                        <X size={18} />
-                                    </button>
-                                </PremiumTooltip>
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        deleteSection(s.id);
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors ml-2"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                                </button>
                             </div>
                             {selectedSectionId === s.id && handles.map((handle) => (
                                 <div
