@@ -130,7 +130,9 @@ podman network create blueprint-network
 # 4. 서비스 실행 (한 줄씩 복사해서 실행하세요)
 podman run -d --name blueprint-mongodb --network blueprint-network -p 27017:27017 -v ~/projects/blueprint-lab/db_data:/data/db -e MONGO_INITDB_DATABASE=blueprint-lab --restart unless-stopped docker.io/library/mongo:4.4
 podman run -d --name blueprint-redis --network blueprint-network -p 6379:6379 -v ~/projects/blueprint-lab/redis_data:/data --restart unless-stopped docker.io/library/redis:7-alpine redis-server --appendonly yes
-podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -v ~/projects/blueprint-lab/upload:/app/upload -e UPLOAD_DIR=/app/upload -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped erd-backend
+# podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -v ~/projects/blueprint-lab/upload:/app/upload -e UPLOAD_DIR=/app/upload -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped erd-backend
+# 2. 🚀 수정된 명령어로 다시 실행 (-p 4000:4000 추가)
+podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -p 4000:4000 -v ~/projects/blueprint-lab/upload:/app/upload -e UPLOAD_DIR=/app/upload -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped blueprint-backend
 podman run -d --name blueprint-frontend --network blueprint-network -p 8085:80 --restart unless-stopped blueprint-frontend
 ```
 
@@ -218,7 +220,10 @@ podman load < blueprint-backend.tar
 # 3. 서비스 재시작 (한 줄씩 복사)
 podman run -d --name blueprint-mongodb --network blueprint-network -p 27017:27017 -v ~/projects/blueprint-lab/db_data:/data/db -e MONGO_INITDB_DATABASE=blueprint-lab --restart unless-stopped docker.io/library/mongo:4.4
 
-podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -v ~/projects/blueprint-lab/upload:/app/upload -e UPLOAD_DIR=/app/upload -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped blueprint-backend
+# podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -v ~/projects/blueprint-lab/upload:/app/upload -e UPLOAD_DIR=/app/upload -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped blueprint-backend
+
+# 2. 🚀 수정된 명령어로 다시 실행 (-p 4000:4000 추가)
+podman run -d --name blueprint-backend --network blueprint-network -p 3001:3001 -p 4000:4000 -v ~/projects/blueprint-lab/upload:/app/upload -e UPLOAD_DIR=/app/upload -e NODE_ENV=production -e MONGODB_URI=mongodb://blueprint-mongodb:27017/blueprint-lab -e REDIS_HOST=blueprint-redis -e REDIS_PORT=6379 -e FRONTEND_URL=http://210.92.92.18:2000 -e BASE_PATH=/erd -e JWT_SECRET=production-secret-change-me --restart unless-stopped blueprint-backend
 
 podman run -d --name blueprint-frontend --network blueprint-network -p 8085:80 --restart unless-stopped blueprint-frontend
 

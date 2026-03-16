@@ -165,7 +165,12 @@ const RightPane: React.FC<RightPaneProps> = ({
         return propValue;
     };
 
-    const ratios = screen.rightPaneRatios || DEFAULT_RATIOS;
+    // 🚀 수정: 데이터가 정확히 3개의 숫자를 가진 배열일 때만 사용하고, 아니면 기본값(DEFAULT_RATIOS) 사용
+    const isValidRatios = Array.isArray(screen.rightPaneRatios) && 
+                          screen.rightPaneRatios.length === 3 && 
+                          screen.rightPaneRatios.every((r: any) => typeof r === 'number' && !isNaN(r));
+                          
+    const ratios = isValidRatios ? (screen.rightPaneRatios as [number, number, number]) : DEFAULT_RATIOS;
 
     const clampRatios = (r: [number, number, number]): [number, number, number] => {
         const a = Math.max(MIN_PANEL_PCT, Math.min(80, r[0]));
@@ -222,11 +227,18 @@ const RightPane: React.FC<RightPaneProps> = ({
     }, [ratios, update, syncUpdate, updateScreen]);
 
     return (
-        <div ref={rightPaneRef} className="nodrag w-[30%] flex-shrink-0 flex flex-col bg-white rounded-br-[15px] overflow-hidden" style={{ minWidth: 250 }} onMouseDown={(e) => e.stopPropagation()}>
+        <div 
+            ref={rightPaneRef} 
+            className="nodrag h-full flex flex-col bg-white rounded-br-[15px] overflow-hidden" 
+            style={{ flex: '1 1 0%' }} 
+            onMouseDown={(e) => e.stopPropagation()}
+        >
 
             {/* Panel: 초기화면설정 */}
-            <div className="flex flex-col border-t border-gray-200 min-h-[50px] min-w-0 overflow-hidden" style={{ flex: `${ratios[0]} 1 0` }}>
-                <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
+            {/* 🚀 수정: className에 w-full 추가 */}
+            <div className="w-full flex flex-col border-t border-gray-200 min-h-[50px] min-w-0 overflow-hidden" style={{ flex: `${ratios[0]} 1 0` }}>
+                {/* 🚀 수정: className에 w-full 추가 */}
+                <div className="w-full bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 초기화면설정
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar no-pan-scroll">
@@ -255,7 +267,8 @@ const RightPane: React.FC<RightPaneProps> = ({
             {!isLocked && (
                 <div
                     onMouseDown={(e) => handleResizeStart('func', e)}
-                    className="nodrag cursor-n-resize bg-[#5c6b9e] hover:bg-[#6b7aae] active:bg-[#4a588a] h-1.5 flex items-center justify-center shrink-0 group/resize transition-colors"
+                    // 🚀 수정: className에 w-full 추가
+                    className="w-full nodrag cursor-n-resize bg-[#5c6b9e] hover:bg-[#6b7aae] active:bg-[#4a588a] h-1.5 flex items-center justify-center shrink-0 group/resize transition-colors"
                     title="드래그하여 초기화면설정/기능상세 영역 크기 조절"
                 >
                     <GripHorizontal size={12} className="text-white/60 group-hover/resize:text-white" />
@@ -263,8 +276,10 @@ const RightPane: React.FC<RightPaneProps> = ({
             )}
 
             {/* Panel: 기능상세 */}
-            <div className="flex flex-col border-t border-gray-200 min-h-[60px] min-w-0 overflow-hidden" style={{ flex: `${ratios[1]} 1 0` }}>
-                <div className="bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
+            {/* 🚀 수정: className에 w-full 추가 */}
+            <div className="w-full flex flex-col border-t border-gray-200 min-h-[60px] min-w-0 overflow-hidden" style={{ flex: `${ratios[1]} 1 0` }}>
+                {/* 🚀 수정: className에 w-full 추가 */}
+                <div className="w-full bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 기능상세
                 </div>
                 <div className="p-3 space-y-2">
@@ -318,7 +333,8 @@ const RightPane: React.FC<RightPaneProps> = ({
             {!isLocked && (
                 <div
                     onMouseDown={(e) => handleResizeStart('table', e)}
-                    className="nodrag cursor-n-resize bg-[#5e6b7c] hover:bg-[#6d7a8b] active:bg-[#4a5463] h-1.5 flex items-center justify-center shrink-0 group/resize transition-colors"
+                    // 🚀 수정: className에 w-full 추가
+                    className="w-full nodrag cursor-n-resize bg-[#5e6b7c] hover:bg-[#6d7a8b] active:bg-[#4a5463] h-1.5 flex items-center justify-center shrink-0 group/resize transition-colors"
                     title="드래그하여 기능상세/관련테이블 영역 크기 조절"
                 >
                     <GripHorizontal size={12} className="text-white/60 group-hover/resize:text-white" />
@@ -326,8 +342,10 @@ const RightPane: React.FC<RightPaneProps> = ({
             )}
 
             {/* Panel: 관련테이블 - min-h로 입력창/빈상태 모두 표시 */}
-            <div className="flex flex-col border-t border-gray-200 rounded-br-[15px] min-h-[150px] min-w-0 overflow-hidden" style={{ flex: `${ratios[2]} 1 0` }}>
-                <div className="bg-[#5e6b7c] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a5463] select-none shadow-sm flex items-center justify-between">
+            {/* 🚀 수정: className에 w-full 추가 */}
+            <div className="w-full flex flex-col border-t border-gray-200 rounded-br-[15px] min-h-[150px] min-w-0 overflow-hidden" style={{ flex: `${ratios[2]} 1 0` }}>
+                {/* 🚀 수정: className에 w-full 추가 */}
+                <div className="w-full bg-[#5e6b7c] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a5463] select-none shadow-sm flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 관련테이블
                     </div>

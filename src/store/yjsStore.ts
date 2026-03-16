@@ -13,7 +13,7 @@ import type { Screen, ScreenFlow, ScreenSection } from '../types/screenDesign';
 import { useScreenDesignStore } from './screenDesignStore';
 import { useComponentStore } from './componentStore';
 
-const YJS_WS_URL = import.meta.env.VITE_YJS_WS_URL || 'ws://localhost:4000';
+const YJS_WS_URL = import.meta.env.VITE_YJS_WS_URL || 'ws://210.92.92.18:2000/yjs';
 
 interface YjsStore {
     ydoc: Y.Doc | null;
