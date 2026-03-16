@@ -193,6 +193,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
     const zoom = 'var(--rf-zoom, 1)';
+    const { getViewport } = useReactFlow();
 
     useOnViewportChange({
         onChange: (viewport) => {
@@ -296,11 +297,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     // ── 4. Drawing Mode Logic ──
     const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line'>('select');
     const [shapeSubPanelOpen, setShapeSubPanelOpen] = useState(false);
-    const [shapePanelPos, setShapePanelPos] = useState({ x: 0, y: 0 });
     const shapePanelAnchorRef = useRef<HTMLDivElement>(null);
     const [polygonPresetToCreate, setPolygonPresetToCreate] = useState<PolygonPreset | null>(null);
     const [linePanelOpen, setLinePanelOpen] = useState(false);
-    const [linePanelPos, setLinePanelPos] = useState({ x: 0, y: 0 });
     const linePanelAnchorRef = useRef<HTMLDivElement>(null);
     const [linePresetToCreate, setLinePresetToCreate] = useState<{ strokeStyle: 'solid' | 'dashed' | 'dotted'; lineEnd: LineEnd } | null>(null);
     const [lineDrawStart, setLineDrawStart] = useState<{ x: number; y: number } | null>(null);
@@ -3234,33 +3233,29 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         e.stopPropagation();
                                                                         setLastInteractedScreenId(screen.id);
                                                                     }}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        e.preventDefault();
-                                                                        if (!shapeSubPanelOpen) {
-                                                                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                                                            const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
-                                                                            setShapePanelPos({ x: flowPos.x, y: flowPos.y });
-                                                                        }
-                                                                        setShapeSubPanelOpen(prev => !prev);
-                                                                    }}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            e.preventDefault();
+                                                                            setShapeSubPanelOpen(prev => !prev);
+                                                                        }}
                                                                     className={`p-2 rounded-lg transition-colors ${activeTool === 'polygon' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
                                                                 >
                                                                     <Triangle size={18} />
                                                                 </button>
                                                             </PremiumTooltip>
-                                                            {shapeSubPanelOpen && createPortal(
+                                                            {shapeSubPanelOpen && shapePanelAnchorRef.current && createPortal(
                                                                 (() => {
-                                                                    const screenPos = flowToScreenPosition({ x: shapePanelPos.x, y: shapePanelPos.y });
+                                                                    const rect = shapePanelAnchorRef.current.getBoundingClientRect();
+                                                                    const currentZoom = getViewport().zoom;
                                                                     return (
                                                                         <div
                                                                             data-shape-panel
                                                                             data-screen-id={screen.id}
                                                                             className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] py-2 min-w-[140px] animate-in fade-in zoom-in-95 origin-top-left"
                                                                             style={{
-                                                                                left: screenPos.x,
-                                                                                top: screenPos.y,
-                                                                                transform: `scale(calc(0.85 * ${zoom}))`,
+                                                                                left: rect.left,
+                                                                                top: rect.bottom + 4,
+                                                                                transform: `scale(${Math.max(0.75, Math.min(currentZoom * 0.85, 1.5))})`,
                                                                             }}
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                         >
@@ -3299,33 +3294,29 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         e.stopPropagation();
                                                                         setLastInteractedScreenId(screen.id);
                                                                     }}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        e.preventDefault();
-                                                                        if (!linePanelOpen) {
-                                                                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                                                            const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
-                                                                            setLinePanelPos({ x: flowPos.x, y: flowPos.y });
-                                                                        }
-                                                                        setLinePanelOpen(prev => !prev);
-                                                                    }}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            e.preventDefault();
+                                                                            setLinePanelOpen(prev => !prev);
+                                                                        }}
                                                                     className={`p-2 rounded-lg transition-colors ${activeTool === 'line' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
                                                                 >
                                                                     <Minus size={18} style={{ transform: 'rotate(-45deg)' }} />
                                                                 </button>
                                                             </PremiumTooltip>
-                                                            {linePanelOpen && createPortal(
+                                                            {linePanelOpen && linePanelAnchorRef.current && createPortal(
                                                                 (() => {
-                                                                    const screenPos = flowToScreenPosition({ x: linePanelPos.x, y: linePanelPos.y });
+                                                                    const rect = linePanelAnchorRef.current.getBoundingClientRect();
+                                                                    const currentZoom = getViewport().zoom;
                                                                     return (
                                                                         <div
                                                                             data-line-panel
                                                                             data-screen-id={screen.id}
                                                                             className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] py-2 min-w-[160px] animate-in fade-in zoom-in-95 origin-top-left"
                                                                             style={{
-                                                                                left: screenPos.x,
-                                                                                top: screenPos.y,
-                                                                                transform: `scale(calc(0.85 * ${zoom}))`,
+                                                                                left: rect.left,
+                                                                                top: rect.bottom + 4,
+                                                                                transform: `scale(${Math.max(0.75, Math.min(currentZoom * 0.85, 1.5))})`,
                                                                             }}
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                         >
