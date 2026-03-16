@@ -189,7 +189,7 @@ import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
-    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square
+    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { RecentTextColorsProvider } from '../contexts/RecentTextColorsContext';
@@ -205,6 +205,7 @@ import { useYjsStore } from '../store/yjsStore';
 
 import type { ExportFormat } from './ScreenExportModal';
 import { exportEditablePPT } from '../utils/exportPPTUtility';
+import PPTBetaExporter from './PPTBetaExporter';
 
 const nodeTypes: NodeTypes = {
     screen: ScreenNode,
@@ -308,6 +309,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
     const [isAddSpecModalOpen, setIsAddSpecModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [pptBetaExportOpen, setPptBetaExportOpen] = useState(false);
+    const [selectedExportIds, setSelectedExportIds] = useState<string[]>([]);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
     const lastSyncedComponentAtRef = useRef<string | null>(null);
@@ -1459,6 +1462,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 return;
             }
 
+            // 🚀 PPT_BETA 처리
+            if (format === 'ppt_beta') {
+                // PPT_BETA 컴포넌트를 사용하여 내보내기
+                setSelectedExportIds(selectedIds);
+                setPptBetaExportOpen(true);
+                setIsExporting(false);
+                return;
+            }
+
             if (format === 'pdf') {
                 // PDF: 각 화면을 별도 페이지로
                 const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -1893,6 +1905,42 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                         onExport={handleExportImage}
                                         onClose={() => setIsExportModalOpen(false)}
                                     />
+                                )}
+
+                                {pptBetaExportOpen && (
+                                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                                            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2 bg-purple-100 rounded-xl text-purple-600">
+                                                        <Edit3 size={20} />
+                                                    </div>
+                                                    <div>
+                                                        <h2 className="text-lg font-black text-gray-900">PPT_BETA 내보내기</h2>
+                                                        <p className="text-xs text-gray-500">레이아웃 구조를 PPT로 내보내는 중...</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => setPptBetaExportOpen(false)}
+                                                    className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-400"
+                                                >
+                                                    <X size={20} />
+                                                </button>
+                                            </div>
+                                            <PPTBetaExporter
+                                                screenIds={selectedExportIds}
+                                                onComplete={() => {
+                                                    setPptBetaExportOpen(false);
+                                                    setSelectedExportIds([]);
+                                                }}
+                                                onError={(error) => {
+                                                    alert(error);
+                                                    setPptBetaExportOpen(false);
+                                                    setSelectedExportIds([]);
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
                                 )}
 
                                 {isAddScreenModalOpen && (
