@@ -1,4 +1,4 @@
-import React, { memo, useState, useRef, useEffect, useLayoutEffect, useContext, useCallback } from 'react';
+import React, { memo, useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { type NodeProps, useReactFlow, useOnViewportChange, useStore as useRFStore } from 'reactflow';
 import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
@@ -248,7 +248,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     };
 
     const [isTableListOpen, setIsTableListOpen] = React.useState(false);
-    const [tableListPanelPos, setTableListPanelPos] = React.useState<{ x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null>(null);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
     const [showMemoPanel, setShowMemoPanel] = React.useState(false);
 
@@ -440,23 +439,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         }
     }, [showImageStylePanel, imageCropMode]);
 
-    useLayoutEffect(() => {
-        if (!isTableListOpen || !tableListRef.current || !rightPaneRef.current) {
-            setTableListPanelPos(null);
-            return;
-        }
-        const rect = tableListRef.current.getBoundingClientRect();
-        const paneRect = rightPaneRef.current.getBoundingClientRect();
-        const DROPDOWN_W = 192;
-        const PAD = 8;
-        const spaceBelow = window.innerHeight - rect.bottom - PAD;
-        const spaceAbove = rect.top - PAD;
-        const openUpward = false;
-        const anchorScreenX = Math.max(paneRect.left + PAD, Math.min(rect.left, paneRect.right - DROPDOWN_W - PAD));
-        const anchorScreenY = rect.bottom + 4;
-        const flowPos = screenToFlowPosition({ x: anchorScreenX, y: anchorScreenY });
-        setTableListPanelPos({ x: flowPos.x, y: flowPos.y, openUpward, spaceBelow, spaceAbove });
-    }, [isTableListOpen]);
+
 
     const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
     const [selectedCellIndices, setSelectedCellIndices] = useState<number[]>([]);
@@ -4184,9 +4167,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             linkedErdProject={linkedErdProjects[0]}
                                             erdTables={erdTables}
                                             drawElements={drawElements}
-                                            zoom={zoom}
-                                            tableListPanelPos={tableListPanelPos}
-                                            flowToScreenPosition={flowToScreenPosition}
                                             screenId={screen.id}
                                         />
                                     </div>

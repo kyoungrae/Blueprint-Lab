@@ -23,9 +23,7 @@ interface RightPaneProps {
     linkedErdProject: any;
     erdTables: string[];
     drawElements: DrawElement[];
-    zoom: number | string;
-    tableListPanelPos: { x: number; y: number; openUpward: boolean; spaceBelow: number; spaceAbove: number } | null;
-    flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
+
     screenId: string;
 }
 
@@ -108,9 +106,7 @@ const RightPane: React.FC<RightPaneProps> = ({
     linkedErdProject,
     erdTables,
     drawElements,
-    zoom,
-    tableListPanelPos,
-    flowToScreenPosition,
+
     screenId,
 }) => {
     // updateScreen을 직접 가져와서 rightPaneRatios 업데이트에 사용
