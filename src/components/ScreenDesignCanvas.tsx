@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import ReactFlow, {
     type Node as RFNode,
     type Edge as RFEdge,
@@ -38,59 +39,38 @@ interface SectionOverlayLayerProps {
 
 
 
+// ── 2. Section Layer ─────────────────────────
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
+    const [portalTarget, setPortalTarget] = useState<Element | null>(null);
     const { getViewport } = useReactFlow();
-    
-    // 🚀 1. DOM에 직접 접근하기 위한 Ref 추가
-    const transformContainerRef = useRef<HTMLDivElement>(null);
-    const headerContainerRef = useRef<HTMLDivElement>(null);
+    const [zoom, setZoom] = useState(getViewport().zoom);
 
-    const zoomRef = useRef(getViewport().zoom);
+    useEffect(() => {
+        // 🚀 ReactFlow의 진짜 도화지(줌/팬 엔진) DOM을 찾아냅니다.
+        const target = document.querySelector('.react-flow__viewport');
+        setPortalTarget(target);
+    }, []);
 
-    // 마우스 패닝/줌 시 즉각 반영 (60FPS)
-    useOnViewportChange({ 
-        onChange: (vp) => { 
-            zoomRef.current = vp.zoom;
-            const t = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-            if (transformContainerRef.current) transformContainerRef.current.style.transform = t;
-            if (headerContainerRef.current) headerContainerRef.current.style.transform = t;
-        } 
-    });
-
-    // 리렌더링 시에도 좌표가 날아가지 않도록 항상 유지 (의존성 배열 없음!)
-    React.useLayoutEffect(() => {
-        const vp = getViewport();
-        const t = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-        if (transformContainerRef.current) transformContainerRef.current.style.transform = t;
-        if (headerContainerRef.current) headerContainerRef.current.style.transform = t;
+    // 🚀 섹션 크기 조절 네모(핸들)가 화면을 축소/확대할 때 일정한 크기를 유지하도록 줌 배율만 챙깁니다.
+    useOnViewportChange({
+        onChange: (vp) => setZoom(vp.zoom),
     });
 
     const {
-        sections,
-        hoveredSectionId,
-        setHoveredSectionId,
-        selectedSectionId,
-        setSelectedSectionId,
-        editingSectionId,
-        editingSectionName,
-        setEditingSectionName,
-        setEditingSectionId,
-        startEditingSectionName,
-        saveSectionName,
-        deleteSection,
-        onSectionBodyMouseDown,
-        onSectionResizeMouseDown,
-        sectionHeadersContainerRef,
+        sections, hoveredSectionId, setHoveredSectionId, selectedSectionId, setSelectedSectionId,
+        editingSectionId, editingSectionName, setEditingSectionName, setEditingSectionId,
+        startEditingSectionName, saveSectionName, deleteSection, onSectionBodyMouseDown,
+        onSectionResizeMouseDown, sectionHeadersContainerRef,
     } = props;
 
-    // 🚀 수정: 데이터가 없어도 투명한 빈 껍데기 컨테이너를 한상 유지하여, 섹션이 처음 생길 때 줌 배율(scale) 추적 타이밍을 놓치지 않도록 합니다.
+    // 도화지가 아직 안 찾아졌거나 섹션이 없으면 렌더링하지 않음
+    if (!portalTarget || sections.length === 0) return null;
 
-    return (
+    // 🚀 도화지 안쪽으로 섹션을 텔레포트 시킵니다!
+    return createPortal(
         <>
-            <div
-                ref={transformContainerRef}
-                className="absolute inset-0 z-[1] overflow-visible pointer-events-none origin-top-left"
-            >
+            {/* 섹션 배경: z-index를 낮게 설정해서 화면 엔티티 뒤에 깔리게 합니다 */}
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-[-1]">
                 {sections.map((s) => (
                     <div
                         key={s.id}
@@ -99,28 +79,21 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                     />
                 ))}
             </div>
-            <div
-                ref={(node) => {
-                    headerContainerRef.current = node;
-                    if (sectionHeadersContainerRef && 'current' in sectionHeadersContainerRef) {
-                        (sectionHeadersContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-                    }
-                }}
-                className="absolute inset-0 z-[15] overflow-visible pointer-events-none origin-top-left"
+
+            {/* 섹션 헤더 및 리사이즈 핸들: 마우스로 클릭하고 끌 수 있도록 설정합니다 */}
+            <div 
+                ref={sectionHeadersContainerRef}
+                className="absolute top-0 left-0 w-full h-full pointer-events-none z-[15]"
             >
                 {sections.map((s) => {
                     const isEditing = editingSectionId === s.id;
                     const w = s.size.width;
                     const h = s.size.height;
-                    const handles: { key: string; cursor: string; left: number; top: number }[] = [
-                        { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
-                        { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
-                        { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
-                        { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
-                        { key: 'se', cursor: 'nwse-resize', left: w, top: h },
-                        { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
-                        { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
-                        { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
+                    const handles = [
+                        { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 }, { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
+                        { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 }, { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
+                        { key: 'se', cursor: 'nwse-resize', left: w, top: h }, { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
+                        { key: 'sw', cursor: 'nesw-resize', left: 0, top: h }, { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
                     ];
                     return (
                         <div
@@ -143,10 +116,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         onBlur={() => saveSectionName(s.id)}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') saveSectionName(s.id);
-                                            if (e.key === 'Escape') {
-                                                setEditingSectionId(null);
-                                                setEditingSectionName('');
-                                            }
+                                            if (e.key === 'Escape') { setEditingSectionId(null); setEditingSectionName(''); }
                                         }}
                                         onClick={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => e.stopPropagation()}
@@ -156,50 +126,48 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                 ) : (
                                     <span
                                         className="text-xl font-semibold text-gray-700 truncate flex-1 min-w-0"
-                                        onDoubleClick={(e) => {
-                                            e.stopPropagation();
-                                            startEditingSectionName(s);
-                                        }}
+                                        onDoubleClick={(e) => { e.stopPropagation(); startEditingSectionName(s); }}
                                     >
                                         {s.name || 'Section'}
                                     </span>
                                 )}
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        e.preventDefault();
-                                        deleteSection(s.id);
-                                    }}
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors ml-2"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                                </button>
+                                <PremiumTooltip placement="bottom" offsetBottom={30} label="섹션 삭제">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            deleteSection(s.id);
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </PremiumTooltip>
                             </div>
+                            
+                            {/* 크기 조절 핸들 */}
                             {selectedSectionId === s.id && handles.map((handle) => (
                                 <div
                                     key={handle.key}
                                     className="absolute bg-violet-500 border border-white rounded-sm shadow cursor-pointer hover:bg-violet-600 z-10 pointer-events-auto"
                                     style={{
-                                        left: handle.left,
-                                        top: handle.top,
-                                        width: SECTION_HANDLE_SIZE,
-                                        height: SECTION_HANDLE_SIZE,
-                                        transform: `translate(-50%, -50%) scale(${1 / zoomRef.current})`,
+                                        left: handle.left, top: handle.top,
+                                        width: SECTION_HANDLE_SIZE, height: SECTION_HANDLE_SIZE,
+                                        // 🚀 확대/축소 시 핸들 크기가 일정하게 유지되도록 줌 배율(zoom) 역산
+                                        transform: `translate(-50%, -50%) scale(${1 / zoom})`,
                                         cursor: handle.cursor,
                                     }}
-                                    onMouseDown={(ev) => {
-                                        setSelectedSectionId(s.id);
-                                        onSectionResizeMouseDown(ev, s.id, handle.key);
-                                    }}
+                                    onMouseDown={(ev) => { setSelectedSectionId(s.id); onSectionResizeMouseDown(ev, s.id, handle.key); }}
                                 />
                             ))}
                         </div>
                     );
                 })}
             </div>
-        </>
+        </>,
+        portalTarget
     );
 };
 import 'reactflow/dist/style.css';
@@ -246,35 +214,24 @@ const edgeTypes = {
 
 import { ExportModeContext } from '../contexts/ExportModeContext';
 
-// ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
+// ── 1. Cursors Layer ─────────────────────────
 const UserCursorsLayer: React.FC = () => {
-    const layerRef = useRef<HTMLDivElement>(null);
-    const { getViewport } = useReactFlow();
+    const [portalTarget, setPortalTarget] = useState<Element | null>(null);
 
-    // 마우스 패닝/줌 시 즉각 반영 (60FPS)
-    useOnViewportChange({
-        onChange: (vp) => {
-            if (layerRef.current) {
-                layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-            }
-        }
-    });
+    useEffect(() => {
+        // 🚀 ReactFlow의 진짜 도화지(줌/팬 엔진) DOM을 찾아냅니다.
+        const target = document.querySelector('.react-flow__viewport');
+        setPortalTarget(target);
+    }, []);
 
-    // 리렌더링 시에도 좌표가 날아가지 않도록 항상 유지 (의존성 배열 없음!)
-    React.useLayoutEffect(() => {
-        const vp = getViewport();
-        if (layerRef.current) {
-            layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-        }
-    });
+    if (!portalTarget) return null;
 
-    return (
-        <div
-            ref={layerRef}
-            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-        >
+    // 🚀 도화지 안쪽으로 커서를 텔레포트 시킵니다! (이제 좌표 계산이 필요 없습니다)
+    return createPortal(
+        <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-50">
             <UserCursors />
-        </div>
+        </div>,
+        portalTarget
     );
 };
 

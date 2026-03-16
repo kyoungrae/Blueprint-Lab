@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import ReactFlow, {
     type Node as RFNode,
     type Edge as RFEdge,
@@ -13,7 +14,6 @@ import ReactFlow, {
     ReactFlowProvider,
     PanOnScrollMode,
     useReactFlow,
-    useOnViewportChange,
     reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -58,35 +58,24 @@ import PremiumTooltip from './screenNode/PremiumTooltip';
 
 
 
-// ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
+// ── 1. Cursors Layer ─────────────────────────
 const UserCursorsLayer: React.FC = () => {
-    const layerRef = useRef<HTMLDivElement>(null);
-    const { getViewport } = useReactFlow();
+    const [portalTarget, setPortalTarget] = useState<Element | null>(null);
 
-    // 마우스 패닝/줌 시 즉각 반영 (60FPS)
-    useOnViewportChange({
-        onChange: (vp) => {
-            if (layerRef.current) {
-                layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-            }
-        }
-    });
+    useEffect(() => {
+        // 🚀 ReactFlow의 진짜 도화지(줌/팬 엔진) DOM을 찾아냅니다.
+        const target = document.querySelector('.react-flow__viewport');
+        setPortalTarget(target);
+    }, []);
 
-    // 리렌더링 시에도 좌표가 날아가지 않도록 항상 유지 (의존성 배열 없음!)
-    React.useLayoutEffect(() => {
-        const vp = getViewport();
-        if (layerRef.current) {
-            layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-        }
-    });
+    if (!portalTarget) return null;
 
-    return (
-        <div
-            ref={layerRef}
-            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-        >
+    // 🚀 도화지 안쪽으로 커서를 텔레포트 시킵니다! (이제 좌표 계산이 필요 없습니다)
+    return createPortal(
+        <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-50">
             <UserCursors />
-        </div>
+        </div>,
+        portalTarget
     );
 };
 
