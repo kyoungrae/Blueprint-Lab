@@ -144,7 +144,6 @@ export interface ComponentPickerButtonProps {
     onShowChange: (show: boolean) => void;
     position: { x: number; y: number };
     onPositionChange: (pos: { x: number; y: number }) => void;
-    zoom: number | string;
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     componentList: Screen[];
@@ -159,7 +158,7 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
     onShowChange,
     position,
     onPositionChange,
-    zoom,
+    // zoom, // 🗑️ 삭제: 더 이상 줌 배율을 사용하지 않음
     flowToScreenPosition,
     screenToFlowPosition,
     componentList,
@@ -238,9 +237,14 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                             data-component-picker-portal
                             className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in origin-top-left min-w-[200px] max-h-[320px] overflow-y-auto"
                             style={{
+                                // 1. 도화지를 움직이거나 줌을 해도 위치(X, Y)는 정확히 버튼을 따라갑니다.
                                 left: screenPos.x,
                                 top: screenPos.y,
-                                transform: `scale(calc(0.85 * ${zoom}))`,
+                                
+                                // 2. 🚀 핵심: 줌(zoom) 변수를 아예 삭제합니다! 
+                                // 화면에서 항상 읽기 좋은 고정 크기(예: 0.9배 또는 1배)로 유지시킵니다.
+                                transform: 'scale(0.9)', 
+                                transformOrigin: 'top left',
                             }}
                         >
                             <PremiumTooltip label="드래그하여 이동">
