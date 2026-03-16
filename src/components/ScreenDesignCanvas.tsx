@@ -35,23 +35,36 @@ interface SectionOverlayLayerProps {
     onSectionResizeMouseDown: (e: React.MouseEvent, sectionId: string, handle: string) => void;
     sectionHeadersContainerRef: React.RefObject<HTMLDivElement | null>;
 }
-const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
-    const transformContainerRef = useRef<HTMLDivElement>(null);
-    const headerContainerRef = useRef<HTMLDivElement>(null);
+
+// 🚀 추가: ReactFlow 렌더링 사이클에서 완전히 분리하여 렉과 좌표 어긋남을 원천 차단
+const GlobalViewportUpdater: React.FC = () => {
     const { getViewport } = useReactFlow();
 
-    const vp = getViewport();
-    const transformStrRef = useRef(`translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`);
+    useEffect(() => {
+        const vp = getViewport();
+        const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+        document.querySelectorAll('.screen-viewport-sync').forEach(el => {
+            (el as HTMLElement).style.transform = transform;
+        });
+    }, [getViewport]);
 
-    // 휴대폰/휠 스크롤 시 React 레더링 없이 DOM을 직접 조작 (60FPS 보장)
     useOnViewportChange({
-        onChange: (viewport) => {
-            const t = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
-            transformStrRef.current = t; // React 렌더링 시 덮어쓰기 방지용 최신 상태 캐싱
-            if (transformContainerRef.current) transformContainerRef.current.style.transform = t;
-            if (headerContainerRef.current)    headerContainerRef.current.style.transform    = t;
-        },
+        onChange: (vp) => {
+            const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+            document.querySelectorAll('.screen-viewport-sync').forEach(el => {
+                (el as HTMLElement).style.transform = transform;
+            });
+        }
     });
+
+    return null;
+};
+
+const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
+    const { getViewport } = useReactFlow();
+    const zoomRef = useRef(getViewport().zoom);
+    useOnViewportChange({ onChange: (vp) => { zoomRef.current = vp.zoom; } });
+
     const {
         sections,
         hoveredSectionId,
@@ -69,17 +82,13 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         onSectionResizeMouseDown,
         sectionHeadersContainerRef,
     } = props;
-    if (sections.length === 0) return null;
 
-    // resize handle의 반대 스케일은 주기적으로 검색하지 않고 getViewport()로 실시간 검색
-    const zoomRef = useRef(getViewport().zoom);
-    useOnViewportChange({ onChange: (vp) => { zoomRef.current = vp.zoom; } });
+    if (sections.length === 0) return null;
     return (
         <>
             <div
-                ref={transformContainerRef}
-                className="absolute inset-0 z-[1] overflow-visible pointer-events-none"
-                style={{ transform: transformStrRef.current, transformOrigin: '0 0' }}
+                className="screen-viewport-sync absolute inset-0 z-[1] overflow-visible pointer-events-none"
+                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
             >
                 {sections.map((s) => (
                     <div
@@ -91,14 +100,12 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
             </div>
             <div
                 ref={(node) => {
-                    (headerContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-                    // sectionHeadersContainerRef는 RefObject라 직접 할당
                     if (sectionHeadersContainerRef && 'current' in sectionHeadersContainerRef) {
                         (sectionHeadersContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
                     }
                 }}
-                className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
-                style={{ transform: transformStrRef.current, transformOrigin: '0 0' }}
+                className="screen-viewport-sync absolute inset-0 z-[15] overflow-visible pointer-events-none"
+                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
             >
                 {sections.map((s) => {
                     const isEditing = editingSectionId === s.id;
@@ -242,27 +249,10 @@ import { ExportModeContext } from '../contexts/ExportModeContext';
 
 // ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
 const UserCursorsLayer: React.FC = () => {
-    const layerRef = useRef<HTMLDivElement>(null);
-    const { getViewport } = useReactFlow();
-
-    const vp = getViewport();
-    const transformStrRef = useRef(`translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`);
-
-    // React 상태 업데이트 없이 DOM만 직접 조작 (60FPS 보장)
-    useOnViewportChange({
-        onChange: (viewport) => {
-            const t = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
-            transformStrRef.current = t;
-            if (layerRef.current) {
-                layerRef.current.style.transform = t;
-            }
-        },
-    });
     return (
         <div
-            ref={layerRef}
-            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-            style={{ transform: transformStrRef.current }}
+            className="screen-viewport-sync absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
+            style={{ transform: 'translate(0px, 0px) scale(1)' }}
         >
             <UserCursors />
         </div>
@@ -1914,6 +1904,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     }}
                                     onPaneMouseMove={onPaneMouseMove}
                                 >
+                                    <GlobalViewportUpdater />
                                     <SectionOverlayLayer
                                         sections={sections}
                                         hoveredSectionId={hoveredSectionId}

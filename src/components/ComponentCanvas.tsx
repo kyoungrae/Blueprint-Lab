@@ -56,30 +56,36 @@ const edgeTypes = {
 import { ExportModeContext } from '../contexts/ExportModeContext';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 
-// ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
-const UserCursorsLayer: React.FC = () => {
-    const layerRef = useRef<HTMLDivElement>(null);
+// 🚀 추가: ReactFlow 렌더링 사이클에서 완전히 분리하여 렉과 좌표 어긋남을 원천 차단
+const GlobalViewportUpdater: React.FC = () => {
     const { getViewport } = useReactFlow();
 
-    const vp = getViewport();
-    const transformStrRef = useRef(`translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`);
+    useEffect(() => {
+        const vp = getViewport();
+        const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+        document.querySelectorAll('.screen-viewport-sync').forEach(el => {
+            (el as HTMLElement).style.transform = transform;
+        });
+    }, [getViewport]);
 
-    // React 상태 업데이트 없이 DOM만 직접 조작 (60FPS 보장)
     useOnViewportChange({
-        onChange: (viewport) => {
-            const t = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
-            transformStrRef.current = t;
-            if (layerRef.current) {
-                layerRef.current.style.transform = t;
-            }
-        },
+        onChange: (vp) => {
+            const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+            document.querySelectorAll('.screen-viewport-sync').forEach(el => {
+                (el as HTMLElement).style.transform = transform;
+            });
+        }
     });
 
+    return null;
+};
+
+// ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
+const UserCursorsLayer: React.FC = () => {
     return (
         <div
-            ref={layerRef}
-            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-            style={{ transform: transformStrRef.current }}
+            className="screen-viewport-sync absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
+            style={{ transform: 'translate(0px, 0px) scale(1)' }}
         >
             <UserCursors />
         </div>
@@ -916,6 +922,7 @@ const ComponentCanvasContent: React.FC = () => {
                                             }}
                                             onPaneMouseMove={onPaneMouseMove}
                                         >
+                                            <GlobalViewportUpdater />
                                             <UserCursorsLayer />
                                             <Controls />
                                             <MiniMap

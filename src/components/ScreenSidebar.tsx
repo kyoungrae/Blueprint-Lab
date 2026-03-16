@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useScreenDesignStore } from '../store/screenDesignStore';
-import { Monitor, Search, ChevronRight, Focus, FolderOpen } from 'lucide-react';
+import { useYjsStore } from '../store/yjsStore';
+import { Monitor, Search, ChevronRight, Focus, FolderOpen, X } from 'lucide-react';
 import { getImageDisplayUrl } from '../utils/imageUrl';
 import { useReactFlow } from 'reactflow';
 import type { Screen, ScreenSection } from '../types/screenDesign';
@@ -15,9 +16,17 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
     // 목록은 스토어를 선택자로 직접 구독해, 히드레이션/가져오기/추가 시 항상 갱신되도록 함
     const storeScreens = useScreenDesignStore((s) => s.screens);
     const storeSections = useScreenDesignStore((s) => s.sections);
-    const updateSection = useScreenDesignStore((s) => s.updateSection);
-    const screens = props.screens ?? storeScreens;
-    const sections = props.sections ?? storeSections;
+    
+    // 🚀 Yjs 스토어에서 실시간 동기화 데이터 가져오기
+    const yjsScreens = useYjsStore((s) => s.screens);
+    const yjsSections = useYjsStore((s) => s.sections);
+    const yjsUpdateSection = useYjsStore((s) => s.updateSection);
+    const yjsDeleteSection = useYjsStore((s) => s.deleteSection);
+    const yjsUpdateScreen = useYjsStore((s) => s.updateScreen);
+    
+    // Yjs 스토어 우선 사용 (실시간 동기화)
+    const screens = props.screens ?? yjsScreens.length > 0 ? yjsScreens : storeScreens;
+    const sections = props.sections ?? yjsSections.length > 0 ? yjsSections : storeSections;
     const { fitView, setNodes } = useReactFlow();
     const [search, setSearch] = useState('');
     const [composing, setComposing] = useState<string | null>(null);
@@ -60,9 +69,24 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
     const saveSectionName = (sectionId: string) => {
         if (editingSectionId !== sectionId) return;
         const name = editingSectionName.trim() || 'Section';
-        updateSection(sectionId, { name });
+        // 🚀 Yjs 스토어 사용 (실시간 동기화)
+        yjsUpdateSection(sectionId, { name });
         setEditingSectionId(null);
         setEditingSectionName('');
+    };
+
+    const handleDeleteSection = (sectionId: string, sectionName: string) => {
+        if (window.confirm(`섹션 "${sectionName}"을(를) 삭제하시겠습니까?\n\n섹션에 속한 화면들은 "섹션 없음"으로 이동됩니다.`)) {
+            // 🚀 Yjs 스토어 사용 (실시간 동기화)
+            yjsDeleteSection(sectionId);
+            
+            // 🚀 섹션에 속했던 화면들의 sectionId를 undefined로 설정
+            screens.forEach((screen) => {
+                if (screen.sectionId === sectionId) {
+                    yjsUpdateScreen(screen.id, { sectionId: undefined });
+                }
+            });
+        }
     };
 
     const toggleSectionCollapse = (sectionId: string) => {
@@ -226,7 +250,22 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
                                                 {section.name ?? 'Section'}
                                             </span>
                                         )}
-                                        {!isEditing && <span className="ml-auto text-[10px] text-gray-400 shrink-0">{secScreens.length}</span>}
+                                        {!isEditing && (
+                                            <div className="flex items-center gap-2 ml-auto">
+                                                <span className="text-[10px] text-gray-400 shrink-0">{secScreens.length}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteSection(section.id, section.name ?? 'Section');
+                                                    }}
+                                                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors shrink-0"
+                                                    title="섹션 삭제"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                     {!isCollapsed && secScreens.length > 0 && (
                                         <div className="pl-3 border-l border-gray-200 ml-2 space-y-0.5">
