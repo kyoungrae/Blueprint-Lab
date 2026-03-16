@@ -679,21 +679,22 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     const isConnectedOnSocket = useSyncStore(s => s.isConnected);
     useEffect(() => {
-        if (!isConnectedOnSocket && currentProjectId && currentProject?.data) {
-            const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
-            if (data && Array.isArray(data.screens)) {
-                const local = useScreenDesignStore.getState();
-                const localCount = local.screens.length;
-                const serverCount = data.screens.length;
-                if (localCount !== serverCount || (localCount === 0 && serverCount > 0)) {
-                    importData({
-                        screens: data.screens || [],
-                        flows: data.flows || [],
-                        sections: Array.isArray((data as any).sections) ? (data as any).sections : [],
-                    });
-                }
-            }
-        }
+        // 🗑️ 이 블록은 Yjs CRDT와 충돌을 야기하므로 제거됨
+        // if (!isConnectedOnSocket && currentProjectId && currentProject?.data) {
+        //     const data = (currentProject.data as any)?.screens ? currentProject.data : (currentProject as any).screenData;
+        //     if (data && Array.isArray(data.screens)) {
+        //         const local = useScreenDesignStore.getState();
+        //         const localCount = local.screens.length;
+        //         const serverCount = data.screens.length;
+        //         if (localCount !== serverCount || (localCount === 0 && serverCount > 0)) {
+        //             importData({
+        //                 screens: data.screens || [],
+        //                 flows: data.flows || [],
+        //                 sections: Array.isArray((data as any).sections) ? (data as any).sections : [],
+        //             });
+        //         }
+        //     }
+        // }
     }, [isConnectedOnSocket, currentProjectId, currentProject?.data, importData]);
 
     // 원격 프로젝트: 진입 시 서버에서 최신 데이터 fetch (새로고침 후 복원 시 currentProject.data 보강)
@@ -926,74 +927,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
         }
     }, [flows, screens.length, updateScreen]);
 
+    // 🗑️ 이 블록은 Yjs CRDT 적용으로 인해 더 이상 사용하지 않음
     // Listen for initial Sync from Server
-    useEffect(() => {
-        const handleSync = (e: CustomEvent) => {
-            const { screens: syncScreens, flows: syncFlows } = e.detail;
-            const syncSections = (e.detail as any).sections;
-            const hasSyncScreens = Array.isArray(syncScreens) && syncScreens.length > 0;
-            const local = useScreenDesignStore.getState();
-            const proj = useProjectStore.getState().projects.find((p) => p.id === useProjectStore.getState().currentProjectId);
-            const fallback = proj?.data as { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] } | undefined;
-            const localHasScreens = (local.screens?.length ?? fallback?.screens?.length) > 0;
-
-            // 서버 sync가 빈 화면인데 로컬/프로젝트에 화면이 있으면 빈 sync로 덮어쓰지 않음 (가져오기 후 섹션 추가·state_sync 시 데이터 유지)
-            if (!hasSyncScreens && localHasScreens) {
-                importData({
-                    screens: local.screens?.length ? local.screens : (fallback?.screens ?? []),
-                    flows: local.flows?.length ? local.flows : (fallback?.flows ?? []),
-                    sections: Array.isArray(syncSections) && syncSections.length > 0 ? syncSections : (local.sections ?? fallback?.sections ?? []),
-                });
-                return;
-            }
-            if (syncScreens || syncFlows) {
-                const localScreens = local.screens || [];
-
-                const mergedScreens = (syncScreens || []).map((syncScr: any) => {
-                    const localScr = localScreens.find((ls: any) => ls.id === syncScr.id);
-                    if (!localScr) return syncScr;
-                    const merged: any = { ...syncScr };
-                    const syncGuideCount = (syncScr.guideLines?.vertical?.length ?? 0) + (syncScr.guideLines?.horizontal?.length ?? 0);
-                    const localGuideCount = (localScr.guideLines?.vertical?.length ?? 0) + (localScr.guideLines?.horizontal?.length ?? 0);
-                    if (localGuideCount > syncGuideCount) {
-                        merged.guideLines = localScr.guideLines;
-                        merged.guideLinesVisible = localScr.guideLinesVisible;
-                        merged.guideLinesLocked = localScr.guideLinesLocked;
-                    }
-                    if ((localScr.drawElements?.length ?? 0) > (syncScr.drawElements?.length ?? 0)) {
-                        merged.drawElements = localScr.drawElements;
-                    }
-                    // rightPaneRatios 강력 보존 - 로컬에 있으면 서버 데이터 절대 덮어쓰지 않음
-                    if (localScr.rightPaneRatios && localScr.rightPaneRatios.length === 3) {
-                        merged.rightPaneRatios = localScr.rightPaneRatios;
-                    } else if (syncScr.rightPaneRatios && syncScr.rightPaneRatios.length === 3) {
-                        merged.rightPaneRatios = syncScr.rightPaneRatios;
-                    }
-                    // unlockedAt 보존 - 로컬에 있으면 서버 데이터 대신 로컬 데이터 사용
-                    if (localScr.unlockedAt) {
-                        merged.unlockedAt = localScr.unlockedAt;
-                    }
-                    return merged;
-                });
-
-                // syncSections가 제대로 있을 때만 교체, 없으면 기존 섹션 유지
-                const sectionsToImport = Array.isArray(syncSections) && syncSections.length > 0 
-                    ? syncSections 
-                    : (local.sections ?? fallback?.sections ?? []);
-
-                importData({ screens: mergedScreens, flows: syncFlows || [], sections: sectionsToImport });
-            }
-        };
-        window.addEventListener('erd:state_sync', handleSync as EventListener);
-
-        // remote_operation 리스너는 Yjs CRDT가 대체합니다.
-        // Yjs _observeYMaps가 screenDesignStore를 직접 업데이트하므로
-        // window.addEventListener('erd:remote_operation', ...) 는 불필요합니다.
-
-        return () => {
-            window.removeEventListener('erd:state_sync', handleSync as EventListener);
-        };
-    }, [importData, user]);
+    // useEffect(() => {
+    //     ... (Yjs가 전담하므로 삭제) ...
+    // }, [importData, user]);
 
     // Keyboard shortcuts: Delete selected screens or flows
     useEffect(() => {
