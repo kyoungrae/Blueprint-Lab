@@ -563,9 +563,24 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         }
 
         const idMap = new Map<string, string>();
+        // 🚀 그룹 ID 매핑을 위한 별도 Map 생성 (이게 핵심입니다!)
+        const groupIdMap = new Map<string, string>();
+        
         const newElements: DrawElement[] = elements.map((el, i) => {
             const newId = `draw_${Date.now()}_${i}`;
             idMap.set(el.id, newId);
+            
+            // 🚀 그룹 ID가 있다면 새로 발급해서 매핑
+            let newGroupId = el.groupId;
+            if (el.groupId) {
+                if (!groupIdMap.has(el.groupId)) {
+                    // 이 그룹 ID를 처음 본다면 새 그룹 ID 생성
+                    groupIdMap.set(el.groupId, `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+                }
+                // 매핑된 새 그룹 ID 부여
+                newGroupId = groupIdMap.get(el.groupId);
+            }
+            
             let tableCellLockedIndices: number[] | undefined;
             if (el.type === 'table' && (el.tableCellData || el.tableCellDataV2)) {
                 const rows = el.tableRows || 3;
@@ -578,13 +593,25 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 }
                 if (tableCellLockedIndices.length === 0) tableCellLockedIndices = undefined;
             }
-            return { ...el, id: newId, x: el.x + offsetX, y: el.y + offsetY, fromComponentId: component.id, fromElementId: el.id, hasComponentText: undefined, tableCellLockedIndices };
+            return { 
+                ...el, 
+                id: newId, 
+                groupId: newGroupId, // 🚀 갱신된 그룹 ID 적용
+                x: el.x + offsetX, 
+                y: el.y + offsetY, 
+                fromComponentId: component.id, 
+                fromElementId: el.id, 
+                hasComponentText: undefined, 
+                tableCellLockedIndices 
+            };
         });
-        newElements.forEach((el) => {
-            if (el.groupId && idMap.has(el.groupId)) {
-                el.groupId = idMap.get(el.groupId)!;
-            }
-        });
+        
+        // 🚀 groupId 매핑 로직 제거 (위에서 이미 처리 완료)
+        // newElements.forEach((el) => {
+        //     if (el.groupId && idMap.has(el.groupId)) {
+        //         el.groupId = idMap.get(el.groupId)!;
+        //     }
+        // });
 
         if (newElements.length === 0) return;
 

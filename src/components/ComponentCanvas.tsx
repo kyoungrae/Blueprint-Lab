@@ -109,19 +109,20 @@ const ToolbarUndoRedo: React.FC = () => {
 const ComponentCanvasContent: React.FC = () => {
     const {
         components, flows,
-        importData,
+        // importData, // 🗑️ 삭제: Yjs가 모든 데이터 관리
         canvasClipboard,
         setCanvasClipboard,
         lastInteractedScreenId,
         setLastInteractedScreenId,
     } = useComponentStore();
     const { user, logout } = useAuthStore();
-    const { updateCursor, isSynced } = useSyncStore();
+    const { updateCursor } = useSyncStore(); // 🚀 isSynced 삭제!
     
     const { 
         addScreen: addComponent, updateScreen: updateComponent, deleteScreen: deleteComponent,
         addFlow, updateFlow, deleteFlow,
-        joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen 
+        joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen,
+        isSynced: yjsIsSynced // 🚀 Yjs 전용 동기화 상태 추가!
     } = useYjsStore();
     const { gridClipboard, setGridClipboard } = useScreenDesignStore();
     const screens = components;
@@ -220,16 +221,17 @@ const ComponentCanvasContent: React.FC = () => {
 
     // ── 초기 로드: projectStore → componentStore (로컬/서버 스냅샷 적용) ────
     // Yjs가 서버에서 sync되기 전 빠른 초기 렌더링을 위해 유지합니다.
-    useEffect(() => {
-        if (currentProjectId && currentProject) {
-            const data = (currentProject.data as any)?.components !== undefined
-                ? currentProject.data
-                : (currentProject as any).componentData;
-            if (data?.components || data?.flows) {
-                importData({ components: data.components || [], flows: data.flows || [] });
-            }
-        }
-    }, [currentProjectId, currentProject?.id, importData]);
+    // 🗑️ 삭제: 옛날 덮어쓰기 로직 (Yjs가 모든 데이터 관리)
+    // useEffect(() => {
+    //     if (currentProjectId && currentProject) {
+    //         const data = (currentProject.data as any)?.components !== undefined
+    //             ? currentProject.data
+    //             : (currentProject as any).componentData;
+    //         if (data?.components || data?.flows) {
+    //             importData({ components: data.components || [], flows: data.flows || [] });
+    //         }
+    //     }
+    // }, [currentProjectId, currentProject?.id, importData]);
 
     // ❌ 제거됨: 1000ms auto-save useEffect (REST PATCH로 전체 문서 덮어쓰기 → 데이터 손실 원인)
     // ❌ 제거됨: unmount 시 flush useEffect (immediate=true REST PATCH)
@@ -382,68 +384,69 @@ const ComponentCanvasContent: React.FC = () => {
     }, [flows, screens.length, updateScreen]);
 
     // Listen for initial Sync from Server
-    useEffect(() => {
-        const countNonEmptyTableCells = (items: any[]) => {
-            return (items || []).reduce((acc: number, comp: any) => {
-                const tables = (comp?.drawElements || []).filter((de: any) => de.type === 'table');
-                const tableCount = tables.reduce((tAcc: number, t: any) => {
-                    const v2 = t.tableCellDataV2 || [];
-                    if (v2.length > 0) {
-                        return tAcc + v2.reduce((n: number, c: any) => n + (((c?.content || '').trim().length > 0) ? 1 : 0), 0);
-                    }
-                    const legacy = t.tableCellData || [];
-                    return tAcc + legacy.reduce((n: number, c: any) => n + (((c || '').trim().length > 0) ? 1 : 0), 0);
-                }, 0);
-                return acc + tableCount;
-            }, 0);
-        };
+    // 🗑️ 삭제: 옛날 Socket.IO 덮어쓰기 로직 (Yjs가 모든 데이터 관리)
+    // useEffect(() => {
+    //     const countNonEmptyTableCells = (items: any[]) => {
+    //         return (items || []).reduce((acc: number, comp: any) => {
+    //             const tables = (comp?.drawElements || []).filter((de: any) => de.type === 'table');
+    //             const tableCount = tables.reduce((tAcc: number, t: any) => {
+    //                 const v2 = t.tableCellDataV2 || [];
+    //                 if (v2.length > 0) {
+    //                     return tAcc + v2.reduce((n: number, c: any) => n + (((c?.content || '').trim().length > 0) ? 1 : 0), 0);
+    //                 }
+    //                 const legacy = t.tableCellData || [];
+    //                 return tAcc + legacy.reduce((n: number, c: any) => n + (((c || '').trim().length > 0) ? 1 : 0), 0);
+    //             }, 0);
+    //             return acc + tableCount;
+    //         }, 0);
+    //     };
 
-        const handleSync = (e: CustomEvent) => {
-            const { components: comps, screens, flows: flws } = e.detail;
-            const items = comps || screens;
-            if (items || flws) {
-                const localItems = useComponentStore.getState().components || [];
-                const localNonEmpty = countNonEmptyTableCells(localItems);
-                const syncNonEmpty = countNonEmptyTableCells(items || []);
-                // Skip when sync would regress: (1) sync has fewer filled cells, or (2) same count but we have content (prefer local edits)
-                const shouldSkipStaleSync = localItems.length > 0 && (localNonEmpty > syncNonEmpty || (localNonEmpty === syncNonEmpty && localNonEmpty > 0));
-                if (shouldSkipStaleSync) return;
+    //     const handleSync = (e: CustomEvent) => {
+    //         const { components: comps, screens, flows: flws } = e.detail;
+    //         const items = comps || screens;
+    //         if (items || flws) {
+    //             const localItems = useComponentStore.getState().components || [];
+    //             const localNonEmpty = countNonEmptyTableCells(localItems);
+    //             const syncNonEmpty = countNonEmptyTableCells(items || []);
+    //             // Skip when sync would regress: (1) sync has fewer filled cells, or (2) same count but we have content (prefer local edits)
+    //             const shouldSkipStaleSync = localItems.length > 0 && (localNonEmpty > syncNonEmpty || (localNonEmpty === syncNonEmpty && localNonEmpty > 0));
+    //             if (shouldSkipStaleSync) return;
 
-                // sync 데이터와 로컬 데이터를 병합:
-                // 서버 sync에 없더라도 로컬에 guideLines 등이 있으면 보존 (서버 PATCH가 아직 반영 전일 때 발생하는 race condition 방지)
-                const mergedItems = (items || []).map((syncComp: any) => {
-                    const localComp = localItems.find((lc: any) => lc.id === syncComp.id);
-                    if (!localComp) return syncComp;
+    //             // sync 데이터와 로컬 데이터를 병합:
+    //             // 서버 sync에 없더라도 로컬에 guideLines 등이 있으면 보존 (서버 PATCH가 아직 반영 전일 때 발생하는 race condition 방지)
+    //             const mergedItems = (items || []).map((syncComp: any) => {
+    //                 const localComp = localItems.find((lc: any) => lc.id === syncComp.id);
+    //                 if (!localComp) return syncComp;
 
-                    const merged: any = { ...syncComp };
-                    // guideLines: 로컬에만 있거나, 로컬이 더 많은 경우 보존
-                    const syncGuideCount = (syncComp.guideLines?.vertical?.length ?? 0) + (syncComp.guideLines?.horizontal?.length ?? 0);
-                    const localGuideCount = (localComp.guideLines?.vertical?.length ?? 0) + (localComp.guideLines?.horizontal?.length ?? 0);
-                    if (localGuideCount > syncGuideCount) {
-                        merged.guideLines = localComp.guideLines;
-                        merged.guideLinesVisible = localComp.guideLinesVisible;
-                        merged.guideLinesLocked = localComp.guideLinesLocked;
-                    }
-                    // drawElements: 로컬이 더 많은 경우 보존 (서버 sync가 구버전일 때)
-                    if ((localComp.drawElements?.length ?? 0) > (syncComp.drawElements?.length ?? 0)) {
-                        merged.drawElements = localComp.drawElements;
-                    }
-                    return merged;
-                });
+    //                 const merged: any = { ...syncComp };
+    //                 // guideLines: 로컬에만 있거나, 로컬이 더 많은 경우 보존
+    //                 const syncGuideCount = (syncComp.guideLines?.vertical?.length ?? 0) + (syncComp.guideLines?.horizontal?.length ?? 0);
+    //                 const localGuideCount = (localComp.guideLines?.vertical?.length ?? 0) + (localComp.guideLines?.horizontal?.length ?? 0);
+    //                 if (localGuideCount > syncGuideCount) {
+    //                     merged.guideLines = localComp.guideLines;
+    //                     merged.guideLinesVisible = localComp.guideLinesVisible;
+    //                     merged.guideLinesLocked = localComp.guideLinesLocked;
+    //                 }
+    //                 // drawElements: 로컬이 더 많은 경우 보존 (서버 sync가 구버전일 때)
+    //                 if ((localComp.drawElements?.length ?? 0) > (syncComp.drawElements?.length ?? 0)) {
+    //                     merged.drawElements = localComp.drawElements;
+    //                 }
+    //                 return merged;
+    //             });
 
-                importData({ components: mergedItems, flows: flws || [] });
-            }
-        };
-        window.addEventListener('erd:state_sync', handleSync as EventListener);
+    //             importData({ components: mergedItems, flows: flws || [] });
+    //         }
+    //     };
+    //     window.addEventListener('erd:state_sync', handleSync as EventListener);
 
-        // remote_operation 리스너는 Yjs CRDT가 대체합니다.
-        // Yjs _observeYMaps가 componentStore를 직접 업데이트하므로
-        // window.addEventListener('erd:remote_operation', ...) 는 불필요합니다.
+    //     // remote_operation 리스너는 Yjs CRDT가 대체합니다.
+    //     // Yjs _observeYMaps가 componentStore를 직접 업데이트하므로
+    //     // window.addEventListener('erd:remote_operation', ...) 는 불필요합니다.
 
-        return () => {
-            window.removeEventListener('erd:state_sync', handleSync as EventListener);
-        };
-    }, [importData, user]);
+    //     return () => {
+    //         window.removeEventListener('erd:state_sync', handleSync as EventListener);
+    //     };
+    // }, [importData, user]);
 
     // Keyboard shortcuts: Delete selected screens or flows
     useEffect(() => {
@@ -751,7 +754,22 @@ const ComponentCanvasContent: React.FC = () => {
     }), [components, updateComponent, deleteComponent, canvasClipboard, setCanvasClipboard, gridClipboard, setGridClipboard, lastInteractedScreenId, setLastInteractedScreenId]);
 
     // 서버 프로젝트: state_sync 도착 전 편집 시 이미지 등이 덮어쓰여 사라지는 것 방지
-    if (currentProjectId && !currentProjectId.startsWith('local_') && !isSynced) {
+    // 🚀 수정: 로컬 프로젝트는 즉시 렌더링, 서버 프로젝트만 Yjs 동기화 대기
+    // 🚨 임시방편: 5초 타임아웃 추가 (Yjs 서버 연결 문제 대비)
+    const [showTimeoutLoading, setShowTimeoutLoading] = useState(false);
+    
+    useEffect(() => {
+        if (currentProjectId && !currentProjectId.startsWith('local_') && !yjsIsSynced) {
+            const timer = setTimeout(() => {
+                setShowTimeoutLoading(true);
+            }, 5000);
+            return () => clearTimeout(timer);
+        } else {
+            setShowTimeoutLoading(false);
+        }
+    }, [currentProjectId, yjsIsSynced]);
+
+    if (currentProjectId && !currentProjectId.startsWith('local_') && !yjsIsSynced && !showTimeoutLoading) {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50">
                 <div className="w-12 h-12 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin mb-4" />
