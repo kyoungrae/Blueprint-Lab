@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useReactFlow } from 'reactflow';
 import { Trash2, Database, GripHorizontal, Edit3, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
 import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
@@ -114,6 +115,8 @@ const RightPane: React.FC<RightPaneProps> = ({
 }) => {
     // updateScreen을 직접 가져와서 rightPaneRatios 업데이트에 사용
     const { updateScreen } = useScreenNodeStore();
+    const { getViewport } = useReactFlow(); // 🚀 추가: 항상 최신 캔버스 상태를 가져옴
+
     const funcNos = (drawElements || [])
         .filter(el => el.type === 'func-no')
         .sort((a, b) => {
@@ -373,21 +376,33 @@ const RightPane: React.FC<RightPaneProps> = ({
                                         <Database size={10} />
                                         <span>추가</span>
                                     </button>
-                                    {isTableListOpen && tableListPanelPos && createPortal(
+                                    {/* 🚀 수정: tableListPanelPos 대신 tableListRef.current 를 직접 확인합니다 */}
+                                    {isTableListOpen && tableListRef.current && createPortal(
                                         (() => {
-                                            const stored = tableListPanelPos;
-                                            const screenPos = flowToScreenPosition({ x: stored.x, y: stored.y });
+                                            // 1. 버튼의 '진짜' 현재 화면 좌표를 즉시 가져옵니다.
+                                            const rect = tableListRef.current.getBoundingClientRect();
+                                            // 2. 캔버스의 가장 최신 줌(Zoom) 배율을 가져옵니다.
+                                            const currentZoom = getViewport().zoom;
+                                            
+                                            // 위아래 공간 계산
+                                            const spaceBelow = window.innerHeight - rect.bottom;
+                                            const spaceAbove = rect.top;
+                                            const openUpward = spaceBelow < 280 && spaceAbove > spaceBelow;
+
                                             return (
                                                 <div
                                                     data-table-list-portal
                                                     data-screen-id={screenId}
                                                     className="nodrag nopan nowheel floating-panel fixed w-48 max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
                                                     style={{
-                                                        left: screenPos.x,
-                                                        ...(stored.openUpward ? { bottom: window.innerHeight - screenPos.y } : { top: screenPos.y }),
-                                                        maxHeight: Math.max(100, Math.min(280, stored.openUpward ? stored.spaceAbove : stored.spaceBelow, window.innerHeight * 0.7)),
-                                                        transform: `scale(calc(0.85 * ${zoom}))`,
-                                                        transformOrigin: stored.openUpward ? 'bottom left' : 'top left',
+                                                        // 3. 버튼 위치에 딱 맞춰서 배치!
+                                                        left: rect.left,
+                                                        ...(openUpward ? { bottom: window.innerHeight - rect.top } : { top: rect.bottom }),
+                                                        maxHeight: Math.max(100, Math.min(280, openUpward ? spaceAbove : spaceBelow, window.innerHeight * 0.7)),
+                                                        
+                                                        // 4. 줌 배율 적용 (너무 작아지거나 너무 거대해지지 않도록 최소/최대 크기 안전장치 적용)
+                                                        transform: `scale(${Math.max(0.75, Math.min(currentZoom * 0.85, 1.5))})`,
+                                                        transformOrigin: openUpward ? 'bottom left' : 'top left',
                                                     }}
                                                     onWheel={(e) => {
                                                         e.stopPropagation();
