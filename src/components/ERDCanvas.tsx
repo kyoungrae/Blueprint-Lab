@@ -19,9 +19,12 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-// 브라우저 줌 충돌 방지
-const usePreventBrowserZoom = () => {
+// 브라우저 줌 충돌 방지 (전역 document 대신 지정된 컨테이너에 적용)
+const usePreventBrowserZoom = (containerRef: React.RefObject<HTMLElement | null>) => {
     useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
         const preventDefault = (e: WheelEvent) => {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault();
@@ -36,16 +39,16 @@ const usePreventBrowserZoom = () => {
             }
         };
 
-        // 휠 이벤트 방지
-        document.addEventListener('wheel', preventDefault, { passive: false });
-        // 키보드 줌 방지
+        // 휠 이벤트 방지 (컨테이너 내에서만 passive: false 적용하여 주변 하드웨어 가속 유지)
+        container.addEventListener('wheel', preventDefault, { passive: false });
+        // 키보드 줌 방지는 여전히 문서에 적용
         document.addEventListener('keydown', preventKeyboardZoom);
 
         return () => {
-            document.removeEventListener('wheel', preventDefault);
+            container.removeEventListener('wheel', preventDefault);
             document.removeEventListener('keydown', preventKeyboardZoom);
         };
-    }, []);
+    }, [containerRef]);
 };
 
 // Figma 수준의 즉각적인 줌 컨트롤
@@ -336,8 +339,10 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
 
 
 const ERDCanvasContent: React.FC = () => {
-    // 브라우저 줌 충돌 방지
-    usePreventBrowserZoom();
+    const paneContainerRef = React.useRef<HTMLDivElement>(null);
+
+    // 브라우저 줌 충돌 방지 (컨테이너 한정)
+    usePreventBrowserZoom(paneContainerRef);
     
     const {
         entitiesById,
@@ -419,7 +424,6 @@ const ERDCanvasContent: React.FC = () => {
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
     const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
-    const paneContainerRef = React.useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
     const isDraggingRef = React.useRef(false);
     const skipNextEntitySyncRef = React.useRef(false);

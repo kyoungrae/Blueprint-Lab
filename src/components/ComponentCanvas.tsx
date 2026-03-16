@@ -13,7 +13,7 @@ import ReactFlow, {
     ReactFlowProvider,
     PanOnScrollMode,
     useReactFlow,
-    useViewport,
+    useOnViewportChange,
     reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -58,11 +58,28 @@ import PremiumTooltip from './screenNode/PremiumTooltip';
 
 // ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
 const UserCursorsLayer: React.FC = () => {
-    const { x, y, zoom } = useViewport();
+    const layerRef = useRef<HTMLDivElement>(null);
+    const { getViewport } = useReactFlow();
+
+    const vp = getViewport();
+    const transformStrRef = useRef(`translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`);
+
+    // React 상태 업데이트 없이 DOM만 직접 조작 (60FPS 보장)
+    useOnViewportChange({
+        onChange: (viewport) => {
+            const t = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
+            transformStrRef.current = t;
+            if (layerRef.current) {
+                layerRef.current.style.transform = t;
+            }
+        },
+    });
+
     return (
         <div
+            ref={layerRef}
             className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-            style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})` }}
+            style={{ transform: transformStrRef.current }}
         >
             <UserCursors />
         </div>
@@ -99,22 +116,25 @@ const ToolbarUndoRedo: React.FC = () => {
 const ComponentCanvasContent: React.FC = () => {
     const {
         components, flows,
-        addComponent, updateComponent, deleteComponent,
-        addFlow, updateFlow, deleteFlow,
         importData,
         canvasClipboard,
         setCanvasClipboard,
         lastInteractedScreenId,
         setLastInteractedScreenId,
     } = useComponentStore();
+    const { user, logout } = useAuthStore();
+    const { updateCursor, isSynced } = useSyncStore();
+    
+    const { 
+        addScreen: addComponent, updateScreen: updateComponent, deleteScreen: deleteComponent,
+        addFlow, updateFlow, deleteFlow,
+        joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen 
+    } = useYjsStore();
     const { gridClipboard, setGridClipboard } = useScreenDesignStore();
     const screens = components;
     const updateScreen = updateComponent;
     const deleteScreen = deleteComponent;
 
-    const { user, logout } = useAuthStore();
-    const { updateCursor, isSynced } = useSyncStore();
-    const { joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen } = useYjsStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
@@ -138,70 +158,63 @@ const ComponentCanvasContent: React.FC = () => {
     }, [screenToFlowPosition, updateCursor]);
 
     // 그리기 도구 팝업 위 휠 입력을 캔버스 줌/팬으로 전달
+    // 전역 document가 아닌 캔버스 컨테이너에만 걸어 일반 스크롤 하드웨어 가속 유지
     useEffect(() => {
+        const el = flowWrapper.current;
+        if (!el) return;
+
         const handleWheel = (e: WheelEvent) => {
-            // 폰트 드롭다운: 캔버스 팬 방지하고 드롭다운만 스크롤 (팝업 여부와 무관)
-            const fontDropdown = (e.target as Element)?.closest?.('[data-font-dropdown]') as HTMLElement | null;
+            const target = e.target as Element;
+
+            // 폰트 드롭다운: 드롭다운만 스크롤
+            const fontDropdown = target?.closest?.('[data-font-dropdown]') as HTMLElement | null;
             if (fontDropdown) {
                 e.preventDefault();
-                e.stopPropagation();
                 fontDropdown.scrollTop += e.deltaY;
                 fontDropdown.scrollLeft += e.deltaX;
                 return;
             }
 
-            // 컴포넌트 추가 패널: 패널 자체 스크롤
-            const componentPicker = (e.target as Element)?.closest?.('[data-component-picker-portal]') as HTMLElement | null;
-            if (componentPicker) {
+            // 컴포넌트 추가 패널 / 관련 테이블 리스트 등 모달 내부 스크롤
+            const scrollablePopup = target?.closest?.('[data-component-picker-portal], [data-table-list-portal]') as HTMLElement | null;
+            if (scrollablePopup) {
                 e.preventDefault();
-                e.stopPropagation();
-                componentPicker.scrollTop += e.deltaY;
-                componentPicker.scrollLeft += e.deltaX;
+                scrollablePopup.scrollTop += e.deltaY;
+                scrollablePopup.scrollLeft += e.deltaX;
                 return;
             }
 
-            const isOverPopup = (e.target as Element)?.closest?.(
+            const isOverPopup = target?.closest?.(
                 '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-grid-panel], [data-text-style-toolbar], [data-font-style-panel], .floating-panel'
             );
-            if (!isOverPopup) return;
+            if (!isOverPopup) return; // 팝업 밖은 브라우저 HW 스크롤 가속 이용
 
             e.preventDefault();
-            e.stopPropagation();
 
             // Ctrl/Cmd + wheel: zoom (포인터 앵커 기준으로 x/y 동시 보정)
             if (e.ctrlKey || e.metaKey) {
-                const factor = (e.ctrlKey || e.metaKey) ? 10 : 1;
+                const factor = 10;
                 const wheelDelta = -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002) * factor;
                 const { x, y, zoom } = getViewport();
                 const nextZoom = Math.max(0.05, Math.min(4, zoom * Math.pow(2, wheelDelta)));
 
-                const wrapperRect = flowWrapper.current?.getBoundingClientRect();
-                if (!wrapperRect) {
-                    setViewport({ x, y, zoom: nextZoom });
-                    return;
-                }
-
-                // 화면 좌표(포인터)를 flow 좌표로 고정하여, 줌 후에도 같은 포인터 위치를 유지
+                const wrapperRect = el.getBoundingClientRect();
                 const px = e.clientX - wrapperRect.left;
                 const py = e.clientY - wrapperRect.top;
                 const flowX = (px - x) / zoom;
                 const flowY = (py - y) / zoom;
-                const nextX = px - flowX * nextZoom;
-                const nextY = py - flowY * nextZoom;
-
-                setViewport({ x: nextX, y: nextY, zoom: nextZoom });
+                
+                setViewport({ x: px - flowX * nextZoom, y: py - flowY * nextZoom, zoom: nextZoom });
                 return;
             }
 
             // 일반 wheel: pan
             const { x, y, zoom } = getViewport();
-            const deltaNormalize = e.deltaMode === 1 ? 20 : 1;
-            const nextX = x - e.deltaX * deltaNormalize * 0.5;
-            const nextY = y - e.deltaY * deltaNormalize * 0.5;
-            setViewport({ x: nextX, y: nextY, zoom });
+            const dn = e.deltaMode === 1 ? 20 : 1;
+            setViewport({ x: x - e.deltaX * dn * 0.5, y: y - e.deltaY * dn * 0.5, zoom });
         };
-        document.addEventListener('wheel', handleWheel, { passive: false, capture: true });
-        return () => document.removeEventListener('wheel', handleWheel, { capture: true });
+        el.addEventListener('wheel', handleWheel, { passive: false, capture: false });
+        return () => el.removeEventListener('wheel', handleWheel, { capture: false });
     }, [getViewport, setViewport]);
 
     // ── Yjs 프로젝트 입장/퇴장 ───────────────────────────────────────────────
@@ -728,7 +741,7 @@ const ComponentCanvasContent: React.FC = () => {
         screens: components,
         updateScreen: updateComponent,
         updateDrawElements: (id: string, elements: import('../types/screenDesign').DrawElement[]) => {
-            useComponentStore.getState().updateDrawElements(id, elements);
+            useYjsStore.getState().updateScreen(id, { drawElements: elements });
         },
         deleteScreen: deleteComponent,
         canvasClipboard,

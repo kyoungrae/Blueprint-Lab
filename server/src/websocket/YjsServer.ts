@@ -150,9 +150,28 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
                 sections = p.screenSnapshot?.sections || [];
             }
 
-            screens.forEach((s: any) => { if (s?.id) screensMap.set(s.id, s); });
-            flows.forEach((f: any) => { if (f?.id) flowsMap.set(f.id, f); });
-            sections.forEach((sec: any) => { if (sec?.id) sectionsMap.set(sec.id, sec); });
+            // 🚀 수정: 일반 객체를 Y.Map으로 변환하여 삽입
+            screens.forEach((s: any) => {
+                if (s?.id) {
+                    const yMap = new Y.Map();
+                    Object.entries(s).forEach(([k, v]) => yMap.set(k, v));
+                    screensMap.set(s.id, yMap);
+                }
+            });
+            flows.forEach((f: any) => {
+                if (f?.id) {
+                    const yMap = new Y.Map();
+                    Object.entries(f).forEach(([k, v]) => yMap.set(k, v));
+                    flowsMap.set(f.id, yMap);
+                }
+            });
+            sections.forEach((sec: any) => {
+                if (sec?.id) {
+                    const yMap = new Y.Map();
+                    Object.entries(sec).forEach(([k, v]) => yMap.set(k, v));
+                    sectionsMap.set(sec.id, yMap);
+                }
+            });
         });
 
         logger.info(`✅ Yjs doc seeded from MongoDB: project ${projectId}`);
@@ -173,9 +192,13 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
 
         const projectType: string = (project as any).projectType || 'ERD';
 
-        const screensArr  = Array.from(doc.getMap<any>('screens').values());
-        const flowsArr    = Array.from(doc.getMap<any>('flows').values());
-        const sectionsArr = Array.from(doc.getMap<any>('sections').values());
+        // 🚀 수정: Y.Map 객체인 경우 .toJSON()을 호출하여 순수 JSON으로 변환 후 추출
+        const extractJson = (mapData: IterableIterator<any>) =>
+            Array.from(mapData).map(item => (item instanceof Y.Map ? item.toJSON() : item));
+
+        const screensArr  = extractJson(doc.getMap<any>('screens').values());
+        const flowsArr    = extractJson(doc.getMap<any>('flows').values());
+        const sectionsArr = extractJson(doc.getMap<any>('sections').values());
 
         if (projectType === 'COMPONENT') {
             await Project.findByIdAndUpdate(projectId, {

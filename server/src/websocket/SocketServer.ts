@@ -535,21 +535,14 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
         // Deep clone screens to ensure drawElements (incl. imageUrl) are stored as-is
         const screensToSave = JSON.parse(JSON.stringify(stateToSave.screens || []));
         if (projectType === 'COMPONENT') {
+            // 💡 컴포넌트 데이터는 YjsServer가 저장하므로 SocketServer에서는 접근시간만 갱신
             await Project.findByIdAndUpdate(projectId, {
-                componentSnapshot: {
-                    version: stateToSave.version,
-                    components: screensToSave,
-                    flows: stateToSave.flows || [],
-                    savedAt: new Date(),
-                },
                 updatedAt: new Date(),
             });
         } else {
-            // ERD 섹션은 state.sections를 사용하지만,
-            // 화면 설계(Screen Design)의 섹션은 REST PATCH를 통해 screenSnapshot.sections에만 저장하므로
-            // 여기서 state.sections로 덮어쓰지 않는다.
             if (projectType === 'SCREEN_DESIGN') {
-                const updateResult = await Project.findByIdAndUpdate(projectId, {
+                // 💡 화면설계 데이터(screenSnapshot) 덮어쓰기 금지! 오직 ERD(currentSnapshot)만 덮어씀
+                await Project.findByIdAndUpdate(projectId, {
                     currentSnapshot: {
                         version: stateToSave.version,
                         entities: stateToSave.entities,
@@ -557,18 +550,10 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
                         sections: stateToSave.sections || [],
                         savedAt: new Date(),
                     },
-                    screenSnapshot: {
-                        version: stateToSave.version,
-                        screens: screensToSave,
-                        flows: stateToSave.flows || [],
-                        // 섹션은 기존 Mongo 값을 유지
-                        sections: (project as any)?.screenSnapshot?.sections || [],
-                        savedAt: new Date(),
-                    },
                     updatedAt: new Date(),
                 });
             } else {
-                // ERD 프로젝트: 섹션은 state.sections 기준으로 저장
+                // ERD 프로젝트
                 await Project.findByIdAndUpdate(projectId, {
                     currentSnapshot: {
                         version: stateToSave.version,

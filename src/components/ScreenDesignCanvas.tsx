@@ -13,7 +13,7 @@ import ReactFlow, {
     ReactFlowProvider,
     PanOnScrollMode,
     useReactFlow,
-    useViewport,
+    useOnViewportChange,
     reconnectEdge,
 } from 'reactflow';
 
@@ -36,7 +36,22 @@ interface SectionOverlayLayerProps {
     sectionHeadersContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
-    const { x, y, zoom } = useViewport();
+    const transformContainerRef = useRef<HTMLDivElement>(null);
+    const headerContainerRef = useRef<HTMLDivElement>(null);
+    const { getViewport } = useReactFlow();
+
+    const vp = getViewport();
+    const transformStrRef = useRef(`translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`);
+
+    // 휴대폰/휠 스크롤 시 React 레더링 없이 DOM을 직접 조작 (60FPS 보장)
+    useOnViewportChange({
+        onChange: (viewport) => {
+            const t = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
+            transformStrRef.current = t; // React 렌더링 시 덮어쓰기 방지용 최신 상태 캐싱
+            if (transformContainerRef.current) transformContainerRef.current.style.transform = t;
+            if (headerContainerRef.current)    headerContainerRef.current.style.transform    = t;
+        },
+    });
     const {
         sections,
         hoveredSectionId,
@@ -55,12 +70,16 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         sectionHeadersContainerRef,
     } = props;
     if (sections.length === 0) return null;
-    const transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+
+    // resize handle의 반대 스케일은 주기적으로 검색하지 않고 getViewport()로 실시간 검색
+    const zoomRef = useRef(getViewport().zoom);
+    useOnViewportChange({ onChange: (vp) => { zoomRef.current = vp.zoom; } });
     return (
         <>
             <div
+                ref={transformContainerRef}
                 className="absolute inset-0 z-[1] overflow-visible pointer-events-none"
-                style={{ transform, transformOrigin: '0 0' }}
+                style={{ transform: transformStrRef.current, transformOrigin: '0 0' }}
             >
                 {sections.map((s) => (
                     <div
@@ -71,9 +90,15 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                 ))}
             </div>
             <div
-                ref={sectionHeadersContainerRef}
+                ref={(node) => {
+                    (headerContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+                    // sectionHeadersContainerRef는 RefObject라 직접 할당
+                    if (sectionHeadersContainerRef && 'current' in sectionHeadersContainerRef) {
+                        (sectionHeadersContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+                    }
+                }}
                 className="absolute inset-0 z-[15] overflow-visible pointer-events-none"
-                style={{ transform, transformOrigin: '0 0' }}
+                style={{ transform: transformStrRef.current, transformOrigin: '0 0' }}
             >
                 {sections.map((s) => {
                     const isEditing = editingSectionId === s.id;
@@ -155,7 +180,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         top: handle.top,
                                         width: SECTION_HANDLE_SIZE,
                                         height: SECTION_HANDLE_SIZE,
-                                        transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+                                        transform: `translate(-50%, -50%) scale(${1 / zoomRef.current})`,
                                         cursor: handle.cursor,
                                     }}
                                     onMouseDown={(ev) => {
@@ -217,11 +242,27 @@ import { ExportModeContext } from '../contexts/ExportModeContext';
 
 // ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
 const UserCursorsLayer: React.FC = () => {
-    const { x, y, zoom } = useViewport();
+    const layerRef = useRef<HTMLDivElement>(null);
+    const { getViewport } = useReactFlow();
+
+    const vp = getViewport();
+    const transformStrRef = useRef(`translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`);
+
+    // React 상태 업데이트 없이 DOM만 직접 조작 (60FPS 보장)
+    useOnViewportChange({
+        onChange: (viewport) => {
+            const t = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
+            transformStrRef.current = t;
+            if (layerRef.current) {
+                layerRef.current.style.transform = t;
+            }
+        },
+    });
     return (
         <div
+            ref={layerRef}
             className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
-            style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})` }}
+            style={{ transform: transformStrRef.current }}
         >
             <UserCursors />
         </div>
@@ -258,9 +299,6 @@ const ToolbarUndoRedo: React.FC = () => {
 const ScreenDesignCanvasContent: React.FC = () => {
     const {
         screens, flows, sections,
-        addScreen, updateScreen, deleteScreen,
-        addFlow, updateFlow, deleteFlow,
-        addSection, updateSection, deleteSection,
         exportData, importData, mergeImportData,
     } = useScreenDesignStore();
 
@@ -276,7 +314,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
     }, [editingFlowId]);
 
     const { projects, currentProjectId, setCurrentProject, fetchProjects } = useProjectStore();
-    const { joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen } = useYjsStore();
+    const { 
+        addScreen, updateScreen, deleteScreen,
+        addFlow, updateFlow, deleteFlow,
+        addSection, updateSection, deleteSection,
+        joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen 
+    } = useYjsStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
 
     // 데이터베이스 폴링으로 실시간 동기화 대체 (5초 간격)
@@ -542,74 +585,70 @@ const ScreenDesignCanvasContent: React.FC = () => {
         [editingSectionName, updateSection]
     );
 
-    // 그리기 도구 팝업 위 휠 입력을 캔버스 줌/팬으로 전달
+    // ⚠️ 구 방식: document 전역에 passive:false 등록 → 브라우저 HW 가속 스크롤 비활성화
+    // ✅ 신 방식: flowWrapper 컨테이너에만 등록 + 팝업 위에 있을 때만 preventDefault
     useEffect(() => {
+        const el = flowWrapper.current;
+        if (!el) return;
+
         const handleWheel = (e: WheelEvent) => {
-            // 폰트 드롭다운: 캔버스 팬 방지하고 드롭다운만 스크롤 (팝업 여부와 무관)
-            const fontDropdown = (e.target as Element)?.closest?.('[data-font-dropdown]') as HTMLElement | null;
+            const target = e.target as Element;
+
+            // 폰트 드롭다운: 드롭다운만 스크롤, 캔버스 팝 차단
+            const fontDropdown = target?.closest?.('[data-font-dropdown]') as HTMLElement | null;
             if (fontDropdown) {
                 e.preventDefault();
-                e.stopPropagation();
                 fontDropdown.scrollTop += e.deltaY;
                 fontDropdown.scrollLeft += e.deltaX;
                 return;
             }
 
-            // 컴포넌트 추가 패널: 패널 자체 스크롤
-            const componentPicker = (e.target as Element)?.closest?.('[data-component-picker-portal]') as HTMLElement | null;
-            if (componentPicker) {
+            // 컴포넌트 추가 패널 / 관련 테이블 리스트 등 모달 내부 스크롤
+            const scrollablePopup = target?.closest?.('[data-component-picker-portal], [data-table-list-portal]') as HTMLElement | null;
+            if (scrollablePopup) {
                 e.preventDefault();
-                e.stopPropagation();
-                componentPicker.scrollTop += e.deltaY;
-                componentPicker.scrollLeft += e.deltaX;
+                scrollablePopup.scrollTop += e.deltaY;
+                scrollablePopup.scrollLeft += e.deltaX;
                 return;
             }
 
-            const isOverPopup = (e.target as Element)?.closest?.(
+            // 팝업(style/layer/table 등) 위에 있을 때만 캔버스 줄/팬으로 로직 적용
+            const isOverPopup = target?.closest?.(
                 '[data-style-panel], [data-layer-panel], [data-table-panel], [data-image-style-panel], [data-table-picker-portal], [data-table-list-portal], [data-grid-panel], [data-component-picker-portal], [data-text-style-toolbar], [data-font-style-panel], .floating-panel'
             );
-            if (!isOverPopup) return;
+            if (!isOverPopup) return; // 팝업 밖 → 터치 안 함, 브라우저 HW 가속 유지
 
             e.preventDefault();
-            e.stopPropagation();
 
-            // Ctrl/Cmd + wheel: zoom (포인터 앵커 기준으로 x/y 동시 보정)
+            // Ctrl/Cmd + wheel: zoom (포인터 앙커 기준으로 x/y 동시 보정)
             if (e.ctrlKey || e.metaKey) {
-                const factor = (e.ctrlKey || e.metaKey) ? 10 : 1;
+                const factor = 10;
                 const wheelDelta = -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002) * factor;
                 const { x, y, zoom } = getViewport();
                 const nextZoom = Math.max(0.05, Math.min(4, zoom * Math.pow(2, wheelDelta)));
 
-                const wrapperRect = flowWrapper.current?.getBoundingClientRect();
-                if (!wrapperRect) {
-                    setViewport({ x, y, zoom: nextZoom });
-                    return;
-                }
-
-                // 화면 좌표(포인터)를 flow 좌표로 고정하여, 줌 후에도 같은 포인터 위치를 유지
+                const wrapperRect = el.getBoundingClientRect();
                 const px = e.clientX - wrapperRect.left;
                 const py = e.clientY - wrapperRect.top;
                 const flowX = (px - x) / zoom;
                 const flowY = (py - y) / zoom;
-                const nextX = px - flowX * nextZoom;
-                const nextY = py - flowY * nextZoom;
-
-                setViewport({ x: nextX, y: nextY, zoom: nextZoom });
+                setViewport({ x: px - flowX * nextZoom, y: py - flowY * nextZoom, zoom: nextZoom });
                 return;
             }
 
             // 일반 wheel: pan
             const { x, y, zoom } = getViewport();
-            const deltaNormalize = e.deltaMode === 1 ? 20 : 1;
-            const nextX = x - e.deltaX * deltaNormalize * 0.5;
-            const nextY = y - e.deltaY * deltaNormalize * 0.5;
-            setViewport({ x: nextX, y: nextY, zoom });
+            const dn = e.deltaMode === 1 ? 20 : 1;
+            setViewport({ x: x - e.deltaX * dn * 0.5, y: y - e.deltaY * dn * 0.5, zoom });
         };
-        document.addEventListener('wheel', handleWheel, { passive: false, capture: true });
-        return () => document.removeEventListener('wheel', handleWheel, { capture: true });
+
+        // 컨테이너에만 passive:false 등록 → 해당 영역 외 스크롤은 브라우저 HW 가속 유지
+        el.addEventListener('wheel', handleWheel, { passive: false, capture: false });
+        return () => el.removeEventListener('wheel', handleWheel, { capture: false });
     }, [getViewport, setViewport]);
 
     // 섹션 제목/삭제 버튼 위에서 휠: 브라우저 줌 차단 + 캔버스와 동일하게 휠=패닝, Ctrl/Cmd+휠=줌
+
     React.useLayoutEffect(() => {
         const container = sectionHeadersContainerRef.current;
         const paneEl = flowWrapper.current;

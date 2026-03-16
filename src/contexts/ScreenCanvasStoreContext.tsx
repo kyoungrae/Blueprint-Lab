@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import type { Screen, DrawElement } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useYjsStore } from '../store/yjsStore';
 
 export interface ScreenCanvasStoreValue {
     screens: Screen[];
@@ -38,9 +39,9 @@ export const useScreenNodeStore = (): ScreenCanvasStoreValue => {
     const ctx = useScreenCanvasStore();
 
     // 개별 값/액션별로 선택적으로 구독하거나 getState()를 사용하여 전체 리렌더 방지
-    const updateScreen = useScreenDesignStore(state => state.updateScreen);
-    const updateDrawElements = useScreenDesignStore(state => state.updateDrawElements);
-    const deleteScreen = useScreenDesignStore(state => state.deleteScreen);
+    const updateScreen = (id: string, updates: Partial<Screen>) => useYjsStore.getState().updateScreen(id, updates);
+    const updateDrawElements = (id: string, elements: DrawElement[]) => useYjsStore.getState().updateScreen(id, { drawElements: elements });
+    const deleteScreen = (id: string) => useYjsStore.getState().deleteScreen(id);
     const canvasClipboard = useScreenDesignStore(state => state.canvasClipboard);
     const setCanvasClipboard = useScreenDesignStore(state => state.setCanvasClipboard);
     const gridClipboard = useScreenDesignStore(state => state.gridClipboard);

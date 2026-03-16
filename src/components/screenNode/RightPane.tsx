@@ -124,30 +124,7 @@ const RightPane: React.FC<RightPaneProps> = ({
 
     const tableLines = (screen.relatedTables || '').split('\n').filter(line => line.trim() !== '');
 
-    useEffect(() => {
-        if (!isTableListOpen) return;
 
-        // Capture wheel at window-level first so React Flow cannot pan the canvas
-        // when the pointer is inside the table-list dropdown.
-        const handleWindowWheelCapture = (e: WheelEvent) => {
-            const target = e.target;
-            if (!(target instanceof Element)) return;
-            const panel = target.closest('[data-table-list-portal]') as HTMLDivElement | null;
-            if (!panel) return;
-
-            // Keep canvas zoom gesture available (pinch / ctrl+wheel).
-            if (e.ctrlKey || e.metaKey) return;
-
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            panel.scrollTop += e.deltaY;
-            panel.scrollLeft += e.deltaX;
-        };
-
-        window.addEventListener('wheel', handleWindowWheelCapture, { capture: true, passive: false });
-        return () => window.removeEventListener('wheel', handleWindowWheelCapture, true);
-    }, [isTableListOpen]);
 
     // 로컬 편집 상태 (IME 및 실시간 입력 시 커서 튐 방지)
     const [localValue, setLocalValue] = useState<{ field: string; value: string } | null>(null);
