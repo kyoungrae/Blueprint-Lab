@@ -134,7 +134,10 @@ export interface TableCellData {
 }
 
 /** 다각형 도형 프리셋 (삼각형, 다이아몬드, N각형 등) */
-export type PolygonPreset = 'triangle' | 'diamond' | 'pentagon' | 'hexagon';
+export type PolygonPreset = 'triangle' | 'diamond' | 'pentagon' | 'hexagon' | 'x-shape';
+
+/** 화살표 도형 프리셋 (독립적인 화살표) */
+export type ArrowPreset = 'arrow';
 
 /** 선 요소 화살표 끝 (없음 / 시작점 / 끝점 / 양쪽) */
 export type LineEnd = 'none' | 'start' | 'end' | 'both';
@@ -142,7 +145,7 @@ export type LineEnd = 'none' | 'start' | 'end' | 'both';
 /** 직접 그리기 요소 타입 */
 export interface DrawElement {
     id: string;
-    type: 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line';
+    type: 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line' | 'arrow';
     x: number;
     y: number;
     width: number;
@@ -151,6 +154,8 @@ export interface DrawElement {
     polygonPoints?: { x: number; y: number }[];
     /** polygon 전용: 프리셋 이름 (편집 시 참고용) */
     polygonPreset?: PolygonPreset;
+    /** arrow 전용: 화살표 프리셋 이름 */
+    arrowPreset?: ArrowPreset;
     /** line 전용: 양 끝점 (캔버스 절대 좌표). x,y,width,height는 이 두 점의 bbox */
     lineX1?: number;
     lineY1?: number;

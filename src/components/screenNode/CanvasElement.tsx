@@ -172,6 +172,21 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                 />
             )}
             {el.type === 'polygon' && (() => {
+                // X 도형 특별 처리
+                if (el.polygonPreset === 'x-shape') {
+                    const strokeW = el.strokeWidth ?? 2;
+                    const strokeColor = hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1);
+                    return (
+                        <div className="w-full h-full relative overflow-visible" style={{ pointerEvents: 'none' }}>
+                            <svg width="100%" height="100%" viewBox={`0 0 ${el.width || 1} ${el.height || 1}`} preserveAspectRatio="none" className="absolute inset-0" style={{ overflow: 'visible' }}>
+                                <line x1="0" y1="0" x2={el.width || 1} y2={el.height || 1} stroke={strokeColor} strokeWidth={strokeW} />
+                                <line x1={el.width || 1} y1="0" x2="0" y2={el.height || 1} stroke={strokeColor} strokeWidth={strokeW} />
+                            </svg>
+                        </div>
+                    );
+                }
+                
+                // 일반 다각형 처리
                 const pts = (el.polygonPoints ?? []).map(p => ({ x: p.x - el.x, y: p.y - el.y }));
                 const pointsStr = pts.map(p => `${p.x},${p.y}`).join(' ');
                 const strokeW = el.strokeWidth ?? 2;
@@ -184,6 +199,28 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                                 stroke={hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1)}
                                 strokeWidth={strokeW}
                                 strokeDasharray={el.strokeStyle === 'dashed' ? '4 2' : el.strokeStyle === 'dotted' ? '1 2' : undefined}
+                            />
+                        </svg>
+                    </div>
+                );
+            })()}
+            {el.type === 'arrow' && (() => {
+                const strokeW = el.strokeWidth ?? 2;
+                const strokeColor = hexToRgba(el.stroke || '#2c3e7c', el.strokeOpacity ?? 1);
+                
+                // 단일 화살표: 오른쪽을 가리키는 화살표
+                const path = `M 10 ${(el.height || 60) / 2} L ${el.width - 10 || 50} ${(el.height || 60) / 2} L ${el.width - 25 || 35} ${(el.height || 60) / 2 - 15} M ${el.width - 10 || 50} ${(el.height || 60) / 2} L ${el.width - 25 || 35} ${(el.height || 60) / 2 + 15}`;
+                
+                return (
+                    <div className="w-full h-full relative overflow-visible" style={{ pointerEvents: 'none' }}>
+                        <svg width="100%" height="100%" viewBox={`0 0 ${el.width || 60} ${el.height || 60}`} preserveAspectRatio="none" className="absolute inset-0" style={{ overflow: 'visible' }}>
+                            <path
+                                d={path}
+                                fill="none"
+                                stroke={strokeColor}
+                                strokeWidth={strokeW}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
                             />
                         </svg>
                     </div>

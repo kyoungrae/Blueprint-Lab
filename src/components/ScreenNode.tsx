@@ -1,7 +1,7 @@
 import React, { memo, useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { type NodeProps, useReactFlow, useOnViewportChange, useStore as useRFStore } from 'reactflow';
-import type { Screen, DrawElement, TableCellData, PolygonPreset, LineEnd } from '../types/screenDesign';
+import type { Screen, DrawElement, TableCellData, PolygonPreset, ArrowPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useComponentStore } from '../store/componentStore';
@@ -107,9 +107,15 @@ const POLYGON_PRESET_NORM: Record<PolygonPreset, [number, number][]> = {
         }
         return pts;
     })(),
+    // 🚀 x-shape는 꼭짓점 기반이 아니므로 더미 값 추가
+    'x-shape': [[0, 0], [1, 1]], // 실제로는 사용되지 않음, getPolygonPointsForPreset에서 빈 배열 반환
 };
 
 function getPolygonPointsForPreset(preset: PolygonPreset, left: number, top: number, w: number, h: number): { x: number; y: number }[] {
+    // 🚀 X 도형은 특별 처리 (꼭짓점이 아닌 선으로 그려짐)
+    if (preset === 'x-shape') {
+        return []; // X 도형은 getPolygonPointsForPreset 사용 안 함
+    }
     return POLYGON_PRESET_NORM[preset].map(([nx, ny]) => ({ x: left + w * nx, y: top + h * ny }));
 }
 
@@ -297,10 +303,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
 
     // ── 4. Drawing Mode Logic ──
-    const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line'>('select');
+    const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line' | 'arrow'>('select');
     const [shapeSubPanelOpen, setShapeSubPanelOpen] = useState(false);
     const shapePanelAnchorRef = useRef<HTMLDivElement>(null);
     const [polygonPresetToCreate, setPolygonPresetToCreate] = useState<PolygonPreset | null>(null);
+    const [arrowPresetToCreate, setArrowPresetToCreate] = useState<ArrowPreset | null>(null);
     const [linePanelOpen, setLinePanelOpen] = useState(false);
     const linePanelAnchorRef = useRef<HTMLDivElement>(null);
     const [linePresetToCreate, setLinePresetToCreate] = useState<{ strokeStyle: 'solid' | 'dashed' | 'dotted'; lineEnd: LineEnd } | null>(null);
@@ -1451,6 +1458,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
         if (activeTool === 'polygon' && !polygonPresetToCreate) return;
         if (activeTool === 'line' && !linePresetToCreate) return;
+        if (activeTool === 'arrow' && !arrowPresetToCreate) return;
 
         if (activeTool === 'line' && linePresetToCreate) {
             const start = { x, y };
@@ -1496,7 +1504,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             setDrawingPolygonPreset(polygonPresetToCreate);
             newElement = {
                 id: newId,
-                type: 'rect',
+                type: 'polygon',
                 x,
                 y,
                 width: 0,
@@ -1504,6 +1512,21 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 fill: '#ffffff',
                 stroke: '#2c3e7c',
                 strokeWidth: 2,
+                polygonPreset: polygonPresetToCreate,
+                zIndex: drawElements.length + 1,
+            };
+        } else if (activeTool === 'arrow' && arrowPresetToCreate) {
+            newElement = {
+                id: newId,
+                type: 'arrow',
+                x,
+                y,
+                width: 0, // 🚀 드래그로 크기 지정을 위해 0으로 시작
+                height: 0, // 🚀 드래그로 크기 지정을 위해 0으로 시작
+                fill: '#2c3e7c',
+                stroke: '#2c3e7c',
+                strokeWidth: 2,
+                arrowPreset: arrowPresetToCreate,
                 zIndex: drawElements.length + 1,
             };
         } else if (activeTool === 'func-no') {
@@ -1565,9 +1588,10 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         if (!canEdit) return;
 
         // 그리기 도구일 때는 객체 위에서도 드래그로 새 객체 생성 가능하도록 이벤트를 캔버스까지 전파
-        const isDrawingTool = ['rect', 'circle', 'polygon', 'line', 'func-no', 'table', 'text', 'image'].includes(activeTool) ||
+        const isDrawingTool = ['rect', 'circle', 'polygon', 'line', 'func-no', 'table', 'text', 'image', 'arrow'].includes(activeTool) ||
             (activeTool === 'polygon' && polygonPresetToCreate) ||
-            (activeTool === 'line' && linePresetToCreate);
+            (activeTool === 'line' && linePresetToCreate) ||
+            (activeTool === 'arrow' && arrowPresetToCreate);
         if (isDrawingTool) {
             return; // stopPropagation 하지 않음 → 캔버스에서 handleCanvasMouseDown이 받아서 그리기 시작
         }
@@ -1730,6 +1754,27 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     ...tempElement,
                     x: drawStartPos.x,
                     y: drawStartPos.y,
+                });
+            } else if (tempElement.type === 'arrow') {
+                // 🚀 화살표도 크기 지정 가능하도록 수정
+                let width = x - drawStartPos.x;
+                let height = y - drawStartPos.y;
+
+                // Shift + 드래그: 정사각형 비율로 초기 크기 설정
+                if (e.shiftKey) {
+                    const side = Math.max(Math.abs(width), Math.abs(height));
+                    const signW = width < 0 ? -1 : 1;
+                    const signH = height < 0 ? -1 : 1;
+                    width = signW * side;
+                    height = signH * side;
+                }
+
+                setTempElement({
+                    ...tempElement,
+                    x: width < 0 ? drawStartPos.x + width : drawStartPos.x,
+                    y: height < 0 ? drawStartPos.y + height : drawStartPos.y,
+                    width: Math.max(20, Math.abs(width)), // 최소 크기 20px
+                    height: Math.max(20, Math.abs(height)) // 최소 크기 20px
                 });
             } else {
                 let width = x - drawStartPos.x;
@@ -1997,7 +2042,17 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
                     saveHistory(nextElements);
                     setSelectedElementIds([polygonEl.id]);
+                } else if (tempElement.type === 'arrow') {
+                    // 🚀 화살표는 최소 크기 체크 후 추가
+                    if (tempElement.width >= 20 && tempElement.height >= 20) {
+                        const nextElements = [...drawElements, tempElement];
+                        update({ drawElements: nextElements });
+                        syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
+                        saveHistory(nextElements);
+                        setSelectedElementIds([tempElement.id]);
+                    }
                 } else {
+                    // 🚀 일반 도형들만 드래그 선 적용
                     const nextElements = [...drawElements, tempElement];
                     update({ drawElements: nextElements });
                     syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
@@ -3291,7 +3346,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             <div className="px-3 pb-2 mb-1 border-b border-gray-100">
                                                                                 <span className="text-[11px] font-bold text-gray-600">도형</span>
                                                                             </div>
-                                                                            {(['triangle', 'diamond', 'pentagon', 'hexagon'] as PolygonPreset[]).map((preset) => (
+                                                                            {(['triangle', 'diamond', 'pentagon', 'hexagon', 'x-shape'] as PolygonPreset[]).map((preset) => (
                                                                                 <button
                                                                                     key={preset}
                                                                                     type="button"
@@ -3307,8 +3362,21 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                     {preset === 'diamond' && '다이아몬드'}
                                                                                     {preset === 'pentagon' && '오각형'}
                                                                                     {preset === 'hexagon' && '육각형'}
+                                                                                    {preset === 'x-shape' && 'X 도형'}
                                                                                 </button>
                                                                             ))}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setArrowPresetToCreate('arrow');
+                                                                                    setActiveTool('arrow');
+                                                                                    setShapeSubPanelOpen(false);
+                                                                                }}
+                                                                                className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
+                                                                            >
+                                                                                화살표
+                                                                            </button>
                                                                         </div>
                                                                     );
                                                                 })(),
@@ -4099,6 +4167,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         <div style={{ position: 'absolute', left: tempElement.x, top: tempElement.y, width: tempElement.width, height: tempElement.height, zIndex: 9999, pointerEvents: 'none' }}>
                                                                             {tempElement.type === 'rect' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm" />}
                                                                             {tempElement.type === 'circle' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-full" />}
+                                                                            {tempElement.type === 'polygon' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm" />}
+                                                                            {tempElement.type === 'arrow' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm" />}
                                                                             {tempElement.type === 'table' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm flex items-center justify-center"><Table2 size={24} className="text-blue-400 opacity-60" /></div>}
                                                                             {tempElement.type === 'func-no' && <div className="w-full h-full border-2 border-red-500 border-dashed bg-red-50/20 rounded-full flex items-center justify-center text-[10px] text-red-600 font-bold">{tempElement.text}</div>}
                                                                         </div>
