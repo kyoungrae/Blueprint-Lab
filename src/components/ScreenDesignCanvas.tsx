@@ -36,29 +36,7 @@ interface SectionOverlayLayerProps {
     sectionHeadersContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
-// 🚀 추가: ReactFlow 렌더링 사이클에서 완전히 분리하여 렉과 좌표 어긋남을 원천 차단
-const GlobalViewportUpdater: React.FC = () => {
-    const { getViewport } = useReactFlow();
 
-    useEffect(() => {
-        const vp = getViewport();
-        const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-        document.querySelectorAll('.screen-viewport-sync').forEach(el => {
-            (el as HTMLElement).style.transform = transform;
-        });
-    }, [getViewport]);
-
-    useOnViewportChange({
-        onChange: (vp) => {
-            const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-            document.querySelectorAll('.screen-viewport-sync').forEach(el => {
-                (el as HTMLElement).style.transform = transform;
-            });
-        }
-    });
-
-    return null;
-};
 
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
     const { getViewport } = useReactFlow();
@@ -68,15 +46,24 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
     const headerContainerRef = useRef<HTMLDivElement>(null);
 
     const zoomRef = useRef(getViewport().zoom);
-    useOnViewportChange({ onChange: (vp) => { zoomRef.current = vp.zoom; } });
 
-    // 🚀 2. 섹션 레이어가 처음 나타날 때(또는 업데이트될 때) 현재 캔버스 좌표를 즉시 덮어씌움!
+    // 마우스 패닝/줌 시 즉각 반영 (60FPS)
+    useOnViewportChange({ 
+        onChange: (vp) => { 
+            zoomRef.current = vp.zoom;
+            const t = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+            if (transformContainerRef.current) transformContainerRef.current.style.transform = t;
+            if (headerContainerRef.current) headerContainerRef.current.style.transform = t;
+        } 
+    });
+
+    // 리렌더링 시에도 좌표가 날아가지 않도록 항상 유지 (의존성 배열 없음!)
     React.useLayoutEffect(() => {
         const vp = getViewport();
-        const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-        if (transformContainerRef.current) transformContainerRef.current.style.transform = transform;
-        if (headerContainerRef.current) headerContainerRef.current.style.transform = transform;
-    }, [getViewport]);
+        const t = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+        if (transformContainerRef.current) transformContainerRef.current.style.transform = t;
+        if (headerContainerRef.current) headerContainerRef.current.style.transform = t;
+    });
 
     const {
         sections,
@@ -96,15 +83,13 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         sectionHeadersContainerRef,
     } = props;
 
-    // 데이터가 없으면 여기서 렌더링 종료 (위의 Hook들은 모두 안전하게 실행됨)
-    if (sections.length === 0) return null;
+    // 🚀 수정: 데이터가 없어도 투명한 빈 껍데기 컨테이너를 한상 유지하여, 섹션이 처음 생길 때 줌 배율(scale) 추적 타이밍을 놓치지 않도록 합니다.
 
     return (
         <>
             <div
-                ref={transformContainerRef} // 🚀 3. Ref 연결
-                className="screen-viewport-sync absolute inset-0 z-[1] overflow-visible pointer-events-none"
-                style={{ transformOrigin: '0 0' }} // 하드코딩된 transform style 제거
+                ref={transformContainerRef}
+                className="absolute inset-0 z-[1] overflow-visible pointer-events-none origin-top-left"
             >
                 {sections.map((s) => (
                     <div
@@ -116,13 +101,12 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
             </div>
             <div
                 ref={(node) => {
-                    headerContainerRef.current = node; // 🚀 3. Ref 연결
+                    headerContainerRef.current = node;
                     if (sectionHeadersContainerRef && 'current' in sectionHeadersContainerRef) {
                         (sectionHeadersContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
                     }
                 }}
-                className="screen-viewport-sync absolute inset-0 z-[15] overflow-visible pointer-events-none"
-                style={{ transformOrigin: '0 0' }} // 하드코딩된 transform style 제거
+                className="absolute inset-0 z-[15] overflow-visible pointer-events-none origin-top-left"
             >
                 {sections.map((s) => {
                     const isEditing = editingSectionId === s.id;
@@ -267,18 +251,27 @@ const UserCursorsLayer: React.FC = () => {
     const layerRef = useRef<HTMLDivElement>(null);
     const { getViewport } = useReactFlow();
 
-    // 🚀 추가: 마운트 시 초기 좌표 1회 주입
+    // 마우스 패닝/줌 시 즉각 반영 (60FPS)
+    useOnViewportChange({
+        onChange: (vp) => {
+            if (layerRef.current) {
+                layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+            }
+        }
+    });
+
+    // 리렌더링 시에도 좌표가 날아가지 않도록 항상 유지 (의존성 배열 없음!)
     React.useLayoutEffect(() => {
         const vp = getViewport();
         if (layerRef.current) {
             layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
         }
-    }, [getViewport]);
+    });
 
     return (
         <div
             ref={layerRef}
-            className="screen-viewport-sync absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
+            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
         >
             <UserCursors />
         </div>
@@ -1931,7 +1924,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     }}
                                     onPaneMouseMove={onPaneMouseMove}
                                 >
-                                    <GlobalViewportUpdater />
                                     <SectionOverlayLayer
                                         sections={sections}
                                         hoveredSectionId={hoveredSectionId}

@@ -56,47 +56,34 @@ const edgeTypes = {
 import { ExportModeContext } from '../contexts/ExportModeContext';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 
-// 🚀 추가: ReactFlow 렌더링 사이클에서 완전히 분리하여 렉과 좌표 어긋남을 원천 차단
-const GlobalViewportUpdater: React.FC = () => {
-    const { getViewport } = useReactFlow();
 
-    useEffect(() => {
-        const vp = getViewport();
-        const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-        document.querySelectorAll('.screen-viewport-sync').forEach(el => {
-            (el as HTMLElement).style.transform = transform;
-        });
-    }, [getViewport]);
-
-    useOnViewportChange({
-        onChange: (vp) => {
-            const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
-            document.querySelectorAll('.screen-viewport-sync').forEach(el => {
-                (el as HTMLElement).style.transform = transform;
-            });
-        }
-    });
-
-    return null;
-};
 
 // ── User Cursors Layer (ERD와 동일한 실시간 포인터) ─────────
 const UserCursorsLayer: React.FC = () => {
     const layerRef = useRef<HTMLDivElement>(null);
     const { getViewport } = useReactFlow();
 
-    // 🚀 추가: 마운트 시 초기 좌표 1회 주입
+    // 마우스 패닝/줌 시 즉각 반영 (60FPS)
+    useOnViewportChange({
+        onChange: (vp) => {
+            if (layerRef.current) {
+                layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+            }
+        }
+    });
+
+    // 리렌더링 시에도 좌표가 날아가지 않도록 항상 유지 (의존성 배열 없음!)
     React.useLayoutEffect(() => {
         const vp = getViewport();
         if (layerRef.current) {
             layerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
         }
-    }, [getViewport]);
+    });
 
     return (
         <div
             ref={layerRef}
-            className="screen-viewport-sync absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
+            className="absolute top-0 left-0 w-full h-full pointer-events-none z-50 origin-top-left"
         >
             <UserCursors />
         </div>
@@ -934,7 +921,6 @@ const ComponentCanvasContent: React.FC = () => {
                                             }}
                                             onPaneMouseMove={onPaneMouseMove}
                                         >
-                                            <GlobalViewportUpdater />
                                             <UserCursorsLayer />
                                             <Controls />
                                             <MiniMap
