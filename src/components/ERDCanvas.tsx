@@ -889,7 +889,7 @@ const ERDCanvasContent: React.FC = () => {
             const pid = useProjectStore.getState().currentProjectId;
             if (!pid) return;
             const data = useERDStore.getState().exportData();
-            useProjectStore.getState().updateProjectData(pid, data, true);
+            useProjectStore.getState().updateProjectData(pid, data);
         };
         window.addEventListener('beforeunload', flush);
         window.addEventListener('pagehide', flush);
