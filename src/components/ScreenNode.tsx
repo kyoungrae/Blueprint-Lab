@@ -4171,23 +4171,25 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
                             {/* [RIGHT PANE 30%] - 초기화면설정/기능상세/관련테이블 (화면 설계에만 표시, 컴포넌트 캔버스에서는 숨김) */}
                             {!canvasOnlyMode && !screen.screenId?.startsWith('CMP-') && (
-                                <RightPane
-                                    screen={screen}
-                                    isLocked={isLocked}
-                                    update={update}
-                                    syncUpdate={syncUpdate}
-                                    rightPaneRef={rightPaneRef}
-                                    tableListRef={tableListRef}
-                                    isTableListOpen={isTableListOpen}
-                                    setIsTableListOpen={setIsTableListOpen}
-                                    linkedErdProject={linkedErdProjects[0]}
-                                    erdTables={erdTables}
-                                    drawElements={drawElements}
-                                    zoom={zoom}
-                                    tableListPanelPos={tableListPanelPos}
-                                    flowToScreenPosition={flowToScreenPosition}
-                                    screenId={screen.id}
-                                />
+                                <div className="heavy-node-content h-full"> {/* 🚀 LOD 최적화: 줌아웃 시 속성창 숨김 */}
+                                    <RightPane
+                                        screen={screen}
+                                        isLocked={isLocked}
+                                        update={update}
+                                        syncUpdate={syncUpdate}
+                                        rightPaneRef={rightPaneRef}
+                                        tableListRef={tableListRef}
+                                        isTableListOpen={isTableListOpen}
+                                        setIsTableListOpen={setIsTableListOpen}
+                                        linkedErdProject={linkedErdProjects[0]}
+                                        erdTables={erdTables}
+                                        drawElements={drawElements}
+                                        zoom={zoom}
+                                        tableListPanelPos={tableListPanelPos}
+                                        flowToScreenPosition={flowToScreenPosition}
+                                        screenId={screen.id}
+                                    />
+                                </div>
                             )}
                         </div>
                     </div > {/* End Body Split Layout */}
@@ -4300,4 +4302,10 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     );
 });
 
-export default memo(ScreenNode);
+// 🚀 줌/드래그 시에도 무관한 속성이면 무시. 성능 향상의 핵심
+export default memo(ScreenNode, (prevProps, nextProps) => {
+    return (
+        prevProps.selected === nextProps.selected &&
+        prevProps.data.screen === nextProps.data.screen
+    );
+});

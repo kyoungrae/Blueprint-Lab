@@ -41,9 +41,8 @@ interface SectionOverlayLayerProps {
 
 // ── 2. Section Layer ─────────────────────────
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
+    const layerRef = useRef<HTMLDivElement>(null);
     const [portalTarget, setPortalTarget] = useState<Element | null>(null);
-    const { getViewport } = useReactFlow();
-    const [zoom, setZoom] = useState(getViewport().zoom);
 
     useEffect(() => {
         // 🚀 ReactFlow의 진짜 도화지(줌/팬 엔진) DOM을 찾아냅니다.
@@ -51,9 +50,13 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         setPortalTarget(target);
     }, []);
 
-    // 🚀 섹션 크기 조절 네모(핸들)가 화면을 축소/확대할 때 일정한 크기를 유지하도록 줌 배율만 챙깁니다.
+    // 🚀 React 상태 업데이트 대신, DOM의 CSS 변수(--zoom)만 조용히 바꿉니다. (리렌더링 0번!)
     useOnViewportChange({
-        onChange: (vp) => setZoom(vp.zoom),
+        onChange: (vp) => {
+            if (layerRef.current) {
+                layerRef.current.style.setProperty('--zoom', vp.zoom.toString());
+            }
+        },
     });
 
     const {
@@ -68,7 +71,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
 
     // 🚀 도화지 안쪽으로 섹션을 텔레포트 시킵니다!
     return createPortal(
-        <>
+        <div ref={layerRef} style={{ '--zoom': '1' } as React.CSSProperties}>
             {/* 섹션 배경: z-index를 낮게 설정해서 화면 엔티티 뒤에 깔리게 합니다 */}
             <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-[-1]">
                 {sections.map((s) => (
@@ -155,8 +158,8 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                     style={{
                                         left: handle.left, top: handle.top,
                                         width: SECTION_HANDLE_SIZE, height: SECTION_HANDLE_SIZE,
-                                        // 🚀 확대/축소 시 핸들 크기가 일정하게 유지되도록 줌 배율(zoom) 역산
-                                        transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+                                        // 🚀 JavaScript(React) 대신 CSS의 calc() 함수가 직접 계산하게 맡깁니다!
+                                        transform: `translate(-50%, -50%) scale(calc(1 / var(--zoom)))`,
                                         cursor: handle.cursor,
                                     }}
                                     onMouseDown={(ev) => { setSelectedSectionId(s.id); onSectionResizeMouseDown(ev, s.id, handle.key); }}
@@ -166,7 +169,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                     );
                 })}
             </div>
-        </>,
+        </div>,
         portalTarget
     );
 };
