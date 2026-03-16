@@ -287,7 +287,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
         addScreen, updateScreen, deleteScreen,
         addFlow, updateFlow, deleteFlow,
         addSection, updateSection, deleteSection,
-        joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen 
+        joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen,
+        isSynced: yjsIsSynced // 🚀 추가: Yjs 로딩이 완전히 끝났는지 확인하는 변수
     } = useYjsStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
 
@@ -721,7 +722,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
     useEffect(() => {
         const linkedId = currentProject?.linkedComponentProjectId;
         const linkedAt = linkedProject?.updatedAt;
-        if (!linkedId || !linkedAt) return;
+        
+        // 🚀 핵심 수정: Yjs 데이터 로딩(yjsIsSynced)이 완료되기 전에는 절대 실행하지 않음!
+        if (!linkedId || !linkedAt || !yjsIsSynced) return;
 
         // 이미 동기화한 시점이면 중단 (무한 루프 방지)
         if (lastSyncedComponentAtRef.current === linkedAt) return;
@@ -733,7 +736,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
             const currentScreens = useScreenDesignStore.getState().screens;
             if (!currentScreens.length) return;
 
-            const components = (linkedProject?.data as { components?: Screen[] })?.components ?? [];
+            // 🚀 수정: 컴포넌트 데이터를 더 안전한 경로로 추출
+            const components = (linkedProject?.data as any)?.components || (linkedProject as any)?.componentSnapshot?.components || [];
             if (!components.length) return;
 
             const hasRefs = currentScreens.some((s) =>
@@ -756,7 +760,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         }, 1000);
 
         return () => clearTimeout(timer);
-    }, [linkedProject?.updatedAt, currentProject?.linkedComponentProjectId, updateScreen]); // Removed currentProject to prevent loop on local saves
+    }, [linkedProject?.updatedAt, currentProject?.linkedComponentProjectId, updateScreen, yjsIsSynced]); // 🚀 의존성 배열에 yjsIsSynced 추가
 
     // ── Yjs 프로젝트 입장/퇴장 ───────────────────────────────────────────────
     useEffect(() => {

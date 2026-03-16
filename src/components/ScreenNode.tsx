@@ -282,10 +282,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const componentList = React.useMemo(() => {
         // 연결된 프로젝트가 COMPONENT 타입일 때만 컴포넌트 목록 사용 (화면 설계 프로젝트의 screens와 혼동 방지)
         if (linkedComponentProject?.projectType !== 'COMPONENT') return [];
-        const data = linkedComponentProject.data as { components?: Screen[] } | undefined;
-        return (data?.components ?? [])
-            .filter((c) => c.screenId?.startsWith('CMP-'))
-            .filter((c) => (c.drawElements?.length ?? 0) > 0); // drawElements가 있는 컴포넌트만 표시 (캔버스에 그린 내용이 없으면 제외)
+        // 🚀 수정: 새로운 Yjs 저장소(componentSnapshot)를 먼저 찾도록 추가!
+        const components = (linkedComponentProject as any)?.componentSnapshot?.components || 
+                          (linkedComponentProject.data as { components?: Screen[] })?.components || [];
+        return components
+            .filter((c: Screen) => c.screenId?.startsWith('CMP-'))
+            .filter((c: Screen) => (c.drawElements?.length ?? 0) > 0); // drawElements가 있는 컴포넌트만 표시 (캔버스에 그린 내용이 없으면 제외)
     }, [linkedComponentProject]);
 
 
