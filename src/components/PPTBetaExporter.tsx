@@ -35,13 +35,90 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const layoutName = `LAYOUT_${screen.id}`;
                 pptx.defineLayout({ name: layoutName, width: slideWidth, height: slideHeight });
                 
-                // @ts-ignore - pptxgenjs doesn't support multiple layouts per file, but we follow the user's per-slide logic
-                pptx.layout = layoutName;
-                const slide = pptx.addSlide();
+                // @ts-ignore - pptxgenjs typing may not expose masterName, but runtime supports it
+                const slide = pptx.addSlide({ masterName: layoutName });
 
                 const hH = ADJUSTED_HEADER_H * scale; 
                 const rH = hH / 3;                    
                 const cW = slideWidth / 6;            
+
+                const rgbToHex = (rgb: string): string => {
+                    const match = rgb.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
+                    if (!match) return rgb.replace('#', '');
+                    return [match[1], match[2], match[3]]
+                        .map((x) => parseInt(x, 10).toString(16).padStart(2, '0'))
+                        .join('')
+                        .toUpperCase();
+                };
+
+                // 🚀 스타일 추출, 태그 제거 및 줄바꿈(\n) 처리를 위한 확장된 헬퍼 함수
+                const parseStyles = (
+                    html: string
+                ): {
+                    text: string;
+                    options: {
+                        bold?: boolean;
+                        italic?: boolean;
+                        underline?: boolean;
+                        fontFace?: string;
+                        color?: string;
+                        fontSizePx?: number;
+                    };
+                } => {
+                    if (!html) return { text: "", options: {} };
+                    
+
+                    // 1. 색상 추출 (style="color:..." 또는 <font color="...">)
+                    const colorMatch = html.match(/color:\s*([^;"]+)/i) || html.match(/color="([^"]+)"/i);
+                    let color = "000000";
+                    if (colorMatch) {
+                        const rawColor = colorMatch[1].trim();
+                        color = rawColor.startsWith('rgb') ? rgbToHex(rawColor) : rawColor.replace('#', '');
+                    }
+
+                    // 2. 폰트 크기 추출 (font-size: 16px)
+                    const sizeMatch = html.match(/font-size:\s*(\d+)px/i);
+                    const fontSizePx = sizeMatch ? parseInt(sizeMatch[1], 10) : 16;
+
+                    // 3. 기본 스타일 속성 감지 (+ inline style)
+                    const isBold = /<b[^>]*>|<strong>|font-weight:\s*bold/i.test(html);
+                    const isItalic = /<i[^>]*>|<em>|font-style:\s*italic/i.test(html);
+                    const isUnderline = /<u[^>]*>|text-decoration:\s*underline/i.test(html);
+
+                    const fontFaceMatch = html.match(/face="([^"]+)"/i) || html.match(/font-family:\s*([^;"]+)/i);
+                    const fontFace = fontFaceMatch ? fontFaceMatch[1].split(',')[0].trim() : "맑은 고딕";
+
+                    // 2. 🚀 줄바꿈 태그를 PPT용 개행 문자(\n)로 변환
+                    let processedText = html.replace(/<br\s*\/?>/gi, "\n");
+                    processedText = processedText.replace(/<\/p>|<\/div>/gi, "\n");
+
+                    // 3. 나머지 모든 HTML 태그 제거
+                    let cleanText = processedText.replace(/<\/?[^>]+(>|$)/g, "");
+
+                    // 4. 🚀 HTML 특수 문자 디코딩
+                    cleanText = cleanText
+                        .replace(/&nbsp;/g, " ")
+                        .replace(/&amp;/g, "&")
+                        .replace(/&lt;/g, "<")
+                        .replace(/&gt;/g, ">")
+                        .replace(/&quot;/g, "\"")
+                        .replace(/&#39;/g, "'");
+
+                    // 5. 끝에 불필요하게 남은 빈 줄바꿈 제거
+                    cleanText = cleanText.replace(/\n+$/, "");
+
+                    return {
+                        text: cleanText,
+                        options: {
+                            bold: isBold,
+                            italic: isItalic,
+                            underline: isUnderline,
+                            fontFace: fontFace,
+                            color,
+                            fontSizePx,
+                        },
+                    };
+                };
 
                 // --- 데이터 매핑용 맵 생성 ---
                 const textMap: Record<string, string> = {
@@ -86,11 +163,16 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     line: { color: "E2E8F0", width: 1 }
                                 });
                                 // 화면설명 내용 추가 (왼쪽 정렬)
-                                slide.addText(textMap["2,1"], {
+                                const { text, options: styleOpts } = parseStyles(textMap["2,1"]);
+                                slide.addText(text, {
                                     x: c * cW, y: r * rH, w: cW * 5, h: rH,
                                     align: 'left', valign: 'middle',
-                                    fontSize: 9, color: '94A3B8', // 설명은 조금 흐릿하게
-                                    inset: 0.1
+                                    fontSize: Math.max(7, 9), color: '94A3B8', 
+                                    bold: styleOpts?.bold,
+                                    italic: styleOpts?.italic,
+                                    underline: styleOpts?.underline as any,
+                                    fontFace: styleOpts?.fontFace,
+                                    breakLine: true,
                                 });
                             }
                             continue;
@@ -103,14 +185,19 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             line: { color: "E2E8F0", width: 1 }
                         });
 
-                        // 🚀 텍스트 추가
+                        // 텍스트 추가
                         if (content) {
-                            slide.addText(content, {
+                            const { text, options: styleOpts } = parseStyles(content);
+                            slide.addText(text, {
                                 x: c * cW, y: r * rH, w: cW, h: rH,
                                 align: 'center', valign: 'middle',
-                                fontSize: isLabel ? 9 : 9.5,
+                                fontSize: Math.max(7, isLabel ? 9 : 9.5),
                                 color: isLabel ? 'FFFFFF' : '1E293B',
-                                bold: true
+                                bold: styleOpts?.bold,
+                                italic: styleOpts?.italic,
+                                underline: styleOpts?.underline as any,
+                                fontFace: styleOpts?.fontFace,
+                                breakLine: true,
                             });
                         }
                     }
@@ -189,7 +276,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             h: sectionH - titleH - 0.1,
                             align: 'left', 
                             valign: 'top', 
-                            fontSize: 7.5, 
+                            fontSize: Math.max(7, 7.5), 
                             color: '334155', 
                             breakLine: true, 
                             inset: 0.05
@@ -217,7 +304,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     const lineOptions = el.stroke ? { 
                         color: cleanColor(el.stroke), 
                         width: (el.strokeWidth || 1) * scale * 72,
-                        dashType: (el.strokeStyle === 'dashed' ? 'dash' : el.strokeStyle === 'dotted' ? 'sysDot' : 'solid') as 'dash' | 'sysDot' | 'solid'
+                        dashType: (el.strokeStyle === 'dashed' ? 'dash' : el.strokeStyle === 'dotted' ? 'sysDot' : 'solid') as "solid" | "dash" | "sysDot" | "dashDot" | "lgDash" | "lgDashDot" | "lgDashDotDot" | "sysDash" | undefined
                     } : undefined;
 
                     switch (el.type) {
@@ -227,7 +314,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 fill: fillOptions,
                                 line: lineOptions,
                                 rectRadius: el.borderRadius ? (el.borderRadius * scale) : undefined,
-                                rotate: el.rotation || 0
+                                rotate: el.rotation || 0,
                             });
                             break;
                         case 'circle':
@@ -235,75 +322,120 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 x: elX, y: elY, w: elW, h: elH,
                                 fill: fillOptions,
                                 line: lineOptions,
-                                rotate: el.rotation || 0
+                                rotate: el.rotation || 0,
                             });
                             break;
                         case 'text':
                             if (el.text) {
-                                slide.addText(el.text, {
+                                const { text, options: styleOpts } = parseStyles(el.text);
+                                slide.addText(text, {
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'left') as 'left' | 'center' | 'right',
                                     valign: (el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
-                                    fontSize: Math.max(5, (el.fontSize || 12) * scale * 72),
+                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
                                     color: cleanColor(el.color),
-                                    bold: el.fontWeight === 'bold',
-                                    italic: el.fontStyle === 'italic',
-                                    fontFace: el.fontFamily || 'Arial',
-                                    rotate: el.rotation || 0
+                                    bold: styleOpts?.bold,
+                                    italic: styleOpts?.italic,
+                                    underline: (styleOpts?.underline ?? false) as any,
+                                    fontFace: styleOpts?.fontFace,
+                                    rotate: el.rotation || 0,
+                                    breakLine: true,
                                 });
                             }
                             break;
                         case 'func-no':
                             slide.addShape(pptx.ShapeType.ellipse, {
                                 x: elX, y: elY, w: elW, h: elH,
-                                fill: { color: cleanColor(el.fill || 'EF4444') }
+                                fill: { color: cleanColor(el.fill || 'EF4444') },
                             });
                             slide.addText(el.text || '', {
                                 x: elX, y: elY, w: elW, h: elH,
                                 align: 'center', valign: 'middle',
-                                fontSize: Math.max(5, (el.fontSize || 10) * scale * 72),
+                                fontSize: Math.max(7, (el.fontSize || 10) * scale * 72),
                                 color: 'FFFFFF',
-                                bold: true
+                                bold: true,
                             });
                             break;
-                        case 'table':
-                            const rows: pptxgen.TableRow[] = [];
+                        case 'table': {
                             const tRows = el.tableRows || 1;
                             const tCols = el.tableCols || 1;
-                            const cellDataV2 = el.tableCellDataV2 || [];
-                            const cellDataLegacy = el.tableCellData || [];
+                            const cellDataV2 = (el.tableCellDataV2 || []) as any;
+                            const cellStyles = ((el as any).tableCellStyles || []) as any;
+                            const fallbackData = ((el as any).tableCellData || []) as any;
 
+                            let finalColWidths: number[] = [];
+                            const rawColWidths = Array.isArray((el as any).tableColWidths) ? ((el as any).tableColWidths as number[]) : [];
+                            if (rawColWidths.length === tCols) {
+                                const sumRawW = rawColWidths.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+                                const adjustFactor = ((el.width || 1) as number) / (sumRawW || 1);
+                                finalColWidths = rawColWidths.map((w) => (Number.isFinite(w) ? w : 0) * adjustFactor * scale);
+                            } else {
+                                finalColWidths = Array.from({ length: tCols }, () => elW / tCols);
+                            }
+
+                            let finalRowHeights: number[] = [];
+                            const rawRowHeights = Array.isArray((el as any).tableRowHeights) ? ((el as any).tableRowHeights as number[]) : [];
+                            if (rawRowHeights.length === tRows) {
+                                const sumRawH = rawRowHeights.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+                                const adjustFactorH = ((el.height || 1) as number) / (sumRawH || 1);
+                                finalRowHeights = rawRowHeights.map((h) => (Number.isFinite(h) ? h : 0) * adjustFactorH * scale);
+                            } else {
+                                finalRowHeights = Array.from({ length: tRows }, () => elH / tRows);
+                            }
+
+                            const tableRows: any[][] = [];
                             for (let r = 0; r < tRows; r++) {
-                                const row: pptxgen.TableRow = [];
+                                const row: any[] = [];
                                 for (let c = 0; c < tCols; c++) {
-                                    const idx = r * tCols + c;
-                                    const cell = cellDataV2[idx] || { content: cellDataLegacy[idx] || '' };
-                                    if (cell.isMerged) continue;
+                                    const index = r * tCols + c;
+
+                                    const cellV2 = Array.isArray(cellDataV2) ? cellDataV2[index] : undefined;
+                                    const cellStyle = Array.isArray(cellStyles) ? cellStyles[index] : undefined;
+                                    const fallback = Array.isArray(fallbackData) ? fallbackData[index] : undefined;
+
+                                    const rawContent = (cellV2 as any)?.content ?? (cellV2 as any)?.text ?? fallback ?? '';
+                                    const { text, options: s } = parseStyles(String(rawContent));
+
+                                    const finalColor = (cellStyle as any)?.color
+                                        ? String((cellStyle as any).color).replace('#', '')
+                                        : s.color;
+                                    const finalFontSizePx = (cellStyle as any)?.fontSize ?? s.fontSizePx ?? 12;
 
                                     row.push({
-                                        text: cell.content || '',
+                                        text: text || '',
                                         options: {
-                                            rowspan: cell.rowSpan > 1 ? cell.rowSpan : undefined,
-                                            colspan: cell.colSpan > 1 ? cell.colSpan : undefined,
-                                            fill: { color: 'FFFFFF' },
-                                            fontSize: Math.max(5, (el.fontSize || 9) * scale * 72),
-                                            align: 'center',
-                                            valign: 'middle'
-                                        }
+                                            fill: { color: (cellV2 as any)?.style?.backgroundColor?.replace('#', '') || 'FFFFFF' },
+                                            color: finalColor || '000000',
+                                            align: (cellV2 as any)?.style?.textAlign || 'center',
+                                            valign: 'middle',
+                                            fontSize: Math.max(8, finalFontSizePx * scale * 72),
+                                            border: { pt: 0.5, color: 'D1D5DB' },
+                                            bold: s.bold,
+                                            italic: s.italic,
+                                            underline: (s.underline ?? false) as any,
+                                            fontFace: s.fontFace,
+                                            rowspan: (cellV2 as any)?.rowSpan && (cellV2 as any).rowSpan > 1 ? (cellV2 as any).rowSpan : undefined,
+                                            colspan: (cellV2 as any)?.colSpan && (cellV2 as any).colSpan > 1 ? (cellV2 as any).colSpan : undefined,
+                                        },
                                     });
                                 }
-                                if (row.length > 0) rows.push(row);
+                                if (row.length > 0) tableRows.push(row);
                             }
-                            slide.addTable(rows, {
+
+                            // @ts-ignore pptxgenjs table typing is loose
+                            slide.addTable(tableRows, {
                                 x: elX, y: elY, w: elW, h: elH,
-                                border: { type: 'solid', color: 'E2E8F0', pt: 0.5 }
+                                colW: finalColWidths,
+                                rowH: finalRowHeights,
+                                border: { pt: 0.5, color: 'D1D5DB' },
                             });
                             break;
-                        case 'line':
-                            const arrowProps: any = { 
-                                color: cleanColor(el.stroke || '000000'), 
+                        }
+                        case 'line': {
+                            const arrowProps: any = {
+                                color: cleanColor(el.stroke || '000000'),
                                 width: (el.strokeWidth || 1) * scale * 72,
-                                dashType: (el.strokeStyle === 'dashed' ? 'dash' : el.strokeStyle === 'dotted' ? 'sysDot' : 'solid') as 'dash' | 'sysDot' | 'solid'
+                                dashType: (el.strokeStyle === 'dashed' ? 'dash' : el.strokeStyle === 'dotted' ? 'sysDot' : 'solid') as any,
                             };
                             if (el.lineEnd === 'start' || el.lineEnd === 'both') arrowProps.beginArrowType = 'arrow';
                             if (el.lineEnd === 'end' || el.lineEnd === 'both') arrowProps.endArrowType = 'arrow';
@@ -311,18 +443,19 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addShape(pptx.ShapeType.line, {
                                 x: elX, y: elY, w: elW, h: elH,
                                 line: arrowProps,
-                                rotate: el.rotation || 0
+                                rotate: el.rotation || 0,
                             });
                             break;
+                        }
                         case 'arrow':
                             slide.addShape(pptx.ShapeType.rightArrow, {
                                 x: elX, y: elY, w: elW, h: elH,
                                 fill: fillOptions || { color: '3B82F6' },
                                 line: lineOptions,
-                                rotate: el.rotation || 0
+                                rotate: el.rotation || 0,
                             });
                             break;
-                        case 'polygon':
+                        case 'polygon': {
                             let shapeType = pptx.ShapeType.rect;
                             if (el.polygonPreset === 'triangle') shapeType = pptx.ShapeType.triangle;
                             else if (el.polygonPreset === 'diamond') shapeType = pptx.ShapeType.diamond;
@@ -333,18 +466,20 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 x: elX, y: elY, w: elW, h: elH,
                                 fill: fillOptions,
                                 line: lineOptions,
-                                rotate: el.rotation || 0
+                                rotate: el.rotation || 0,
                             });
                             break;
+                        }
                         case 'image':
-                            if (el.imageUrl) {
+                            if (el.imageUrl && el.imageUrl.length > 10) {
                                 const imgOptions: any = { x: elX, y: elY, w: elW, h: elH, rotate: el.imageRotation || 0 };
-                                if (el.imageUrl.startsWith('data:')) {
-                                    imgOptions.data = el.imageUrl;
-                                } else {
-                                    imgOptions.path = el.imageUrl;
+                                if (el.imageUrl.startsWith('data:')) imgOptions.data = el.imageUrl;
+                                else imgOptions.path = el.imageUrl;
+                                try {
+                                    slide.addImage(imgOptions);
+                                } catch {
+                                    // ignore bad images to avoid corrupting PPTX
                                 }
-                                slide.addImage(imgOptions);
                             }
                             break;
                     }
