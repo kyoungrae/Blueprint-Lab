@@ -13,7 +13,24 @@ import type { Screen, ScreenFlow, ScreenSection } from '../types/screenDesign';
 import { useScreenDesignStore } from './screenDesignStore';
 import { useComponentStore } from './componentStore';
 
-const YJS_WS_URL = import.meta.env.VITE_YJS_WS_URL || 'ws://210.92.92.18:2000/yjs';
+// ✅ 수정: 현재 브라우저 주소창에 찍힌 정보를 그대로 따라가도록 변경
+const host = window.location.hostname; // '210.92.92.18' 또는 '192.168.0.141'
+const port = window.location.port;     // '2000' 또는 '8080'
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+/**
+ * � 웹소켓 URL 결정 로직
+ * 현재 에러 메시지가 ':2000/yjs/...' 인 것으로 보아, 
+ * 포트 번호 뒤에 '/yjs' 경로를 붙여서 프록시 처리를 하고 계신 것 같습니다.
+ */
+const YJS_WS_URL = `${protocol}//${host}:${port}/yjs`; 
+
+// 만약 내부망(8080)에서는 프록시 없이 Yjs 서버(4000)에 직접 붙어야 한다면:
+// const YJS_WS_URL = port === '8080' 
+//    ? `${protocol}//${host}:4000` 
+//    : `${protocol}//${host}:${port}/yjs`;
+
+console.log("🔗 Connecting to Yjs at:", YJS_WS_URL);
 
 interface YjsStore {
     ydoc: Y.Doc | null;
