@@ -14,23 +14,24 @@ import { useScreenDesignStore } from './screenDesignStore';
 import { useComponentStore } from './componentStore';
 
 // ✅ 수정: 현재 브라우저 주소창에 찍힌 정보를 그대로 따라가도록 변경
-const host = window.location.hostname; // '210.92.92.18' 또는 '192.168.0.141'
-const port = window.location.port;     // '2000' 또는 '8080'
+const host = window.location.hostname; // 'localhost', '192.168...', '210.92...' 자동 감지
+const port = window.location.port;     // '5173', '8080', '2000' 자동 감지
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-/**
- * � 웹소켓 URL 결정 로직
- * 현재 에러 메시지가 ':2000/yjs/...' 인 것으로 보아, 
- * 포트 번호 뒤에 '/yjs' 경로를 붙여서 프록시 처리를 하고 계신 것 같습니다.
- */
-const YJS_WS_URL = `${protocol}//${host}:${port}/yjs`; 
+let YJS_WS_URL = "";
 
-// 만약 내부망(8080)에서는 프록시 없이 Yjs 서버(4000)에 직접 붙어야 한다면:
-// const YJS_WS_URL = port === '8080' 
-//    ? `${protocol}//${host}:4000` 
-//    : `${protocol}//${host}:${port}/yjs`;
+if (host === 'localhost' || host === '127.0.0.1') {
+    // 1. 💻 로컬 개발 환경 (localhost:5173)
+    // Yjs 서버가 4000번 포트에서 실행 중이므로 직접 연결합니다.
+    YJS_WS_URL = `${protocol}//${host}:4000`; 
+} else {
+    // 2. 🌐 배포/서버 환경 (210.92... 또는 192.168...)
+    // 이전에 에러가 났던 경로인 '/yjs' 프록시 경로를 사용합니다.
+    // 포트는 현재 접속한 포트(2000 또는 8080)를 그대로 따라갑니다.
+    YJS_WS_URL = `${protocol}//${host}:${port}/yjs`;
+}
 
-console.log("🔗 Connecting to Yjs at:", YJS_WS_URL);
+console.log("� Current Yjs URL:", YJS_WS_URL);
 
 interface YjsStore {
     ydoc: Y.Doc | null;
