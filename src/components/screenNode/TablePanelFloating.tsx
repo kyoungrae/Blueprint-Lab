@@ -9,7 +9,7 @@ import {
     Bold, Italic, Underline, Strikethrough, Type, Palette
 } from 'lucide-react';
 import type { DrawElement, TableCellData } from '../../types/screenDesign';
-import { flatIdxToRowCol, rowColToFlatIdx, getV2Cells } from './types';
+import { flatIdxToRowCol, rowColToFlatIdx, getV2Cells, getVisibleCounts } from './types';
 import PremiumTooltip from './PremiumTooltip';
 import { useStore } from 'reactflow';
 
@@ -91,6 +91,8 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
     const rows = selectedEl.tableRows || 3;
     const cols = selectedEl.tableCols || 3;
     const totalCells = rows * cols;
+
+    const { visibleRows, visibleCols } = getVisibleCounts(selectedEl);
 
     const cellColorPresets = [
         'transparent', '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0',
@@ -195,7 +197,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                             }}
                             className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
                         >−</button>
-                        <span className="w-8 text-center text-[13px] font-bold text-[#2c3e7c]">{rows}</span>
+                        <span className="w-14 text-center text-[13px] font-bold text-[#2c3e7c]">{visibleRows}</span>
                         <button
                             onMouseDown={e => e.stopPropagation()}
                             onClick={() => {
@@ -209,8 +211,41 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                 const total = r * c;
                                 const paddedV2 = [...v2Cells];
                                 while (paddedV2.length < total) paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
-                                const newV2 = [...paddedV2];
-                                while (newV2.length < newRows * c) newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+
+                                const lastRowIdx = Math.max(0, r - 1);
+                                const lastRowCells = paddedV2.slice(lastRowIdx * c, lastRowIdx * c + c);
+
+                                const findHorizontalMasterInLastRow = (targetCol: number): { start: number; colSpan: number } | null => {
+                                    for (let start = 0; start <= targetCol; start++) {
+                                        const cell = lastRowCells[start];
+                                        if (!cell || cell.isMerged) continue;
+                                        const colSpan = cell.colSpan || 1;
+                                        const end = start + colSpan - 1;
+                                        if (targetCol >= start && targetCol <= end) return { start, colSpan };
+                                    }
+                                    return null;
+                                };
+
+                                const newRowCells: TableCellData[] = [];
+                                for (let colIdx = 0; colIdx < c; colIdx++) {
+                                    const master = findHorizontalMasterInLastRow(colIdx);
+                                    if (master && master.start === colIdx) {
+                                        // Master cell in last row: inherit horizontal merge (colSpan). Vertical merges are reset.
+                                        newRowCells.push({ content: '', rowSpan: 1, colSpan: master.colSpan, isMerged: false });
+                                        continue;
+                                    }
+
+                                    if (master && master.start < colIdx) {
+                                        // Horizontal slave (part of a colSpan master in the same row)
+                                        newRowCells.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: true });
+                                        continue;
+                                    }
+
+                                    // Not horizontally merged in the last row. If it was a vertical slave, do NOT inherit that.
+                                    newRowCells.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                }
+
+                                const newV2 = [...paddedV2, ...newRowCells];
                                 saveV2Cells(el.id, newV2, {
                                     tableRows: newRows,
                                     tableRowHeights: Array(newRows).fill(100 / newRows),
@@ -265,7 +300,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                             }}
                             className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 font-bold transition-colors"
                         >−</button>
-                        <span className="w-8 text-center text-[13px] font-bold text-[#2c3e7c]">{cols}</span>
+                        <span className="w-14 text-center text-[13px] font-bold text-[#2c3e7c]">{visibleCols}</span>
                         <button
                             onMouseDown={e => e.stopPropagation()}
                             onClick={() => {
@@ -278,15 +313,38 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                 const v2Cells = getV2Cells(el);
                                 const paddedV2 = [...v2Cells];
                                 while (paddedV2.length < numRows * numCols) paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+
+                                // Inherit vertical merge pattern from the last column to the new column.
+                                const lastColIdx = Math.max(0, numCols - 1);
+                                const findVerticalMasterInLastCol = (targetRow: number): { start: number; rowSpan: number } | null => {
+                                    for (let start = targetRow; start >= 0; start--) {
+                                        const cell = paddedV2[start * numCols + lastColIdx];
+                                        if (!cell || cell.isMerged) continue;
+                                        // If this cell is horizontally merged (colSpan > 1), it is not safe to use as a vertical pattern source.
+                                        if ((cell.colSpan || 1) > 1) return null;
+                                        const rowSpan = cell.rowSpan || 1;
+                                        const end = start + rowSpan - 1;
+                                        if (targetRow >= start && targetRow <= end) return { start, rowSpan };
+                                    }
+                                    return null;
+                                };
+
                                 const newV2: TableCellData[] = [];
                                 for (let ri = 0; ri < numRows; ri++) {
-                                    for (let ci = 0; ci < newCols; ci++) {
-                                        if (ci < numCols) {
-                                            const v2 = paddedV2[ri * numCols + ci];
-                                            newV2.push(v2 || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
-                                        } else {
-                                            newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
-                                        }
+                                    // copy existing columns
+                                    for (let ci = 0; ci < numCols; ci++) {
+                                        const v2 = paddedV2[ri * numCols + ci];
+                                        newV2.push(v2 || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                    }
+
+                                    // append new column cell based on last column's vertical merge pattern
+                                    const master = findVerticalMasterInLastCol(ri);
+                                    if (master && master.start === ri) {
+                                        newV2.push({ content: '', rowSpan: master.rowSpan, colSpan: 1, isMerged: false });
+                                    } else if (master && master.start < ri) {
+                                        newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: true });
+                                    } else {
+                                        newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
                                     }
                                 }
                                 const locked = el.tableCellLockedIndices ?? [];

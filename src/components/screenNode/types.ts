@@ -121,6 +121,37 @@ export const deepCopyCells = (cells: TableCellData[]): TableCellData[] => {
     return cells.map(c => ({ ...c }));
 };
 
+export const getVisibleCounts = (el: DrawElement): { visibleRows: number; visibleCols: number } => {
+    const rows = el.tableRows || 1;
+    const cols = el.tableCols || 1;
+    const v2Cells = getV2Cells(el);
+
+    let maxVisibleCols = 0;
+    for (let r = 0; r < rows; r++) {
+        let rowCellCount = 0;
+        for (let c = 0; c < cols; c++) {
+            const cell = v2Cells[rowColToFlatIdx(r, c, cols)];
+            if (!cell?.isMerged) rowCellCount++;
+        }
+        maxVisibleCols = Math.max(maxVisibleCols, rowCellCount);
+    }
+
+    let maxVisibleRows = 0;
+    for (let c = 0; c < cols; c++) {
+        let colCellCount = 0;
+        for (let r = 0; r < rows; r++) {
+            const cell = v2Cells[rowColToFlatIdx(r, c, cols)];
+            if (!cell?.isMerged) colCellCount++;
+        }
+        maxVisibleRows = Math.max(maxVisibleRows, colCellCount);
+    }
+
+    return {
+        visibleRows: Math.max(1, maxVisibleRows),
+        visibleCols: Math.max(1, maxVisibleCols),
+    };
+};
+
 export const gcd = (a: number, b: number): number => {
     return b === 0 ? a : gcd(b, a % b);
 };

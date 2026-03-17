@@ -49,6 +49,65 @@ const TableElement: React.FC<TableElementProps> = memo(({
     const v2Cells = getV2Cells(el);
     const totalCells = rows * cols;
 
+    const colBoundariesHidden = React.useMemo(() => {
+        const mask = Array.from({ length: Math.max(0, cols - 1) }, () => Array(rows).fill(false));
+        v2Cells.forEach((cell, idx) => {
+            if (!cell || cell.isMerged) return;
+            const { r, c } = flatIdxToRowCol(idx, cols);
+            const rowSpan = cell.rowSpan || 1;
+            const colSpan = cell.colSpan || 1;
+            for (let i = 0; i < colSpan - 1; i++) {
+                for (let j = 0; j < rowSpan; j++) {
+                    if (c + i < cols - 1 && r + j < rows) mask[c + i][r + j] = true;
+                }
+            }
+        });
+        return mask;
+    }, [v2Cells, rows, cols]);
+
+    const rowBoundariesHidden = React.useMemo(() => {
+        const mask = Array.from({ length: Math.max(0, rows - 1) }, () => Array(cols).fill(false));
+        v2Cells.forEach((cell, idx) => {
+            if (!cell || cell.isMerged) return;
+            const { r, c } = flatIdxToRowCol(idx, cols);
+            const rowSpan = cell.rowSpan || 1;
+            const colSpan = cell.colSpan || 1;
+            for (let i = 0; i < rowSpan - 1; i++) {
+                for (let j = 0; j < colSpan; j++) {
+                    if (r + i < rows - 1 && c + j < cols) mask[r + i][c + j] = true;
+                }
+            }
+        });
+        return mask;
+    }, [v2Cells, rows, cols]);
+
+    const getMergedRowSegments = React.useCallback((rIdx: number): { left: number; width: number }[] => {
+        const colWidths = el.tableColWidths || Array(cols).fill(100 / cols);
+        const segments: { left: number; width: number }[] = [];
+        let currentLeft = 0;
+        let active: { left: number; width: number } | null = null;
+
+        for (let cIdx = 0; cIdx < cols; cIdx++) {
+            const isHidden = rowBoundariesHidden[rIdx]?.[cIdx] ?? false;
+            const w = colWidths[cIdx] ?? 0;
+
+            if (!isHidden) {
+                if (!active) active = { left: currentLeft, width: w };
+                else active.width += w;
+            } else {
+                if (active) {
+                    segments.push(active);
+                    active = null;
+                }
+            }
+
+            currentLeft += w;
+        }
+
+        if (active) segments.push(active);
+        return segments;
+    }, [el.tableColWidths, cols, rowBoundariesHidden]);
+
     // ── Local Overrides for instant feedback ──────────────────────────────
     const [localCellStyles, setLocalCellStyles] = React.useState<Record<number, any>>({});
 
@@ -389,70 +448,120 @@ const TableElement: React.FC<TableElementProps> = memo(({
             {/* Column Resize Handles */}
             {editingTableId === el.id && !isLocked && (() => {
                 const widthsLocal = el.tableColWidths || Array(cols).fill(100 / cols);
+                const heightsLocal = el.tableRowHeights || Array(rows).fill(100 / rows);
+
                 let accLeft = 0;
                 return Array.from({ length: cols - 1 }).map((_, colIdx) => {
-                    accLeft += widthsLocal[colIdx];
-                    return (
-                        <div
-                            key={`col-resize-${colIdx}`}
-                            className="nodrag absolute top-0 bottom-0 cursor-col-resize z-[115] group/colresize"
-                            style={{ left: `calc(${accLeft}% - 4px)`, width: 8 }}
-                            onMouseDown={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                const startX = e.clientX;
-                                const startWidths = [...widthsLocal];
-                                const tableRect = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
-                                const tableWidthPx = tableRect?.width ?? el.width;
-                                const minWidthPercent = Math.max(5, (20 / tableWidthPx) * 100);
-                                const handleMove = (moveE: MouseEvent) => {
-                                    moveE.preventDefault(); moveE.stopPropagation();
-                                    const deltaX = moveE.clientX - startX;
-                                    const deltaPercent = (deltaX / tableWidthPx) * 100;
-                                    const newWidths = [...startWidths];
-                                    let w1 = startWidths[colIdx] + deltaPercent;
-                                    let w2 = startWidths[colIdx + 1] - deltaPercent;
-                                    if (w1 < minWidthPercent) { w2 -= (minWidthPercent - w1); w1 = minWidthPercent; }
-                                    if (w2 < minWidthPercent) { w1 -= (minWidthPercent - w2); w2 = minWidthPercent; }
-                                    newWidths[colIdx] = w1; newWidths[colIdx + 1] = w2;
-                                    updateElement(el.id, { tableColWidths: newWidths });
-                                };
-                                const handleUp = () => {
-                                    window.removeEventListener('mousemove', handleMove, true);
-                                    window.removeEventListener('mouseup', handleUp, true);
-                                    syncUpdate({ drawElements: getDrawElements() });
-                                };
-                                window.addEventListener('mousemove', handleMove, true);
-                                window.addEventListener('mouseup', handleUp, true);
-                            }}
-                        >
-                            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
-                        </div>
-                    );
+                    const currentLeft = accLeft + widthsLocal[colIdx];
+                    accLeft = currentLeft;
+
+                    let accTop = 0;
+                    return Array.from({ length: rows }).map((__, rowIdx) => {
+                        const h = heightsLocal[rowIdx];
+                        const top = accTop;
+                        accTop += h;
+
+                        if (colBoundariesHidden[colIdx]?.[rowIdx]) return null;
+
+                        return (
+                            <div
+                                key={`col-resize-${colIdx}-${rowIdx}`}
+                                className="nodrag absolute cursor-col-resize z-[115] group/colresize"
+                                style={{ left: `calc(${currentLeft}% - 4px)`, top: `${top}%`, height: `${h}%`, width: 8 }}
+                                onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    const startX = e.clientX;
+                                    const startWidths = [...widthsLocal];
+                                    const tableRect = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
+                                    const tableWidthPx = tableRect?.width ?? el.width;
+                                    const minWidthPercent = Math.max(5, (20 / tableWidthPx) * 100);
+
+                                    const findMasterSpanInRow = (r: number, targetC: number): { start: number; end: number } => {
+                                        // Find a non-merged master cell in this row whose (colSpan,rowSpan) covers targetC.
+                                        for (let start = 0; start <= targetC; start++) {
+                                            const idx = rowColToFlatIdx(r, start, cols);
+                                            const cell = v2Cells[idx];
+                                            if (!cell || cell.isMerged) continue;
+                                            const colSpan = cell.colSpan || 1;
+                                            const end = start + colSpan - 1;
+                                            if (targetC >= start && targetC <= end) {
+                                                return { start, end };
+                                            }
+                                        }
+                                        return { start: targetC, end: targetC };
+                                    };
+
+                                    const leftSpan = findMasterSpanInRow(rowIdx, colIdx);
+                                    const rightSpan = findMasterSpanInRow(rowIdx, colIdx + 1);
+
+                                    const applyDeltaFlow = (
+                                        widths: number[],
+                                        indices: number[],
+                                        delta: number,
+                                        direction: 'towardStart' | 'towardEnd'
+                                    ): number => {
+                                        let remaining = delta;
+                                        const order = direction === 'towardStart' ? [...indices].reverse() : [...indices];
+                                        for (const i of order) {
+                                            if (Math.abs(remaining) < 0.01) break;
+                                            const currentW = widths[i];
+                                            let nextW = currentW + remaining;
+                                            if (remaining < 0) nextW = Math.max(minWidthPercent, nextW);
+                                            widths[i] = nextW;
+                                            remaining -= (nextW - currentW);
+                                        }
+                                        return remaining;
+                                    };
+
+                                    const leftIndices = Array.from({ length: leftSpan.end - leftSpan.start + 1 }, (_, k) => leftSpan.start + k);
+                                    const rightIndices = Array.from({ length: rightSpan.end - rightSpan.start + 1 }, (_, k) => rightSpan.start + k);
+
+                                    const handleMove = (moveE: MouseEvent) => {
+                                        moveE.preventDefault(); moveE.stopPropagation();
+                                        const deltaX = moveE.clientX - startX;
+                                        const deltaPercent = (deltaX / tableWidthPx) * 100;
+                                        const newWidths = [...startWidths];
+
+                                        // deltaPercent > 0 : left group grows, right group shrinks
+                                        // deltaPercent < 0 : left group shrinks, right group grows
+                                        const leftRemaining = applyDeltaFlow(newWidths, leftIndices, deltaPercent, 'towardStart');
+                                        const leftApplied = deltaPercent - leftRemaining;
+
+                                        const rightRemaining = applyDeltaFlow(newWidths, rightIndices, -leftApplied, 'towardEnd');
+                                        if (Math.abs(rightRemaining) >= 0.01) {
+                                            // Right side couldn't absorb full delta (min width hit). Undo the unbalanced remainder on the left.
+                                            applyDeltaFlow(newWidths, leftIndices, rightRemaining, 'towardStart');
+                                        }
+
+                                        updateElement(el.id, { tableColWidths: newWidths });
+                                    };
+                                    const handleUp = () => {
+                                        window.removeEventListener('mousemove', handleMove, true);
+                                        window.removeEventListener('mouseup', handleUp, true);
+                                        syncUpdate({ drawElements: getDrawElements() });
+                                    };
+                                    window.addEventListener('mousemove', handleMove, true);
+                                    window.addEventListener('mouseup', handleUp, true);
+                                }}
+                            >
+                                <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-blue-400 opacity-0 group-hover/colresize:opacity-100 transition-opacity" />
+                            </div>
+                        );
+                    });
                 });
             })()}
 
             {/* Row Resize Handles */}
             {editingTableId === el.id && !isLocked && (() => {
                 const heights = el.tableRowHeights || Array(rows).fill(100 / rows);
-                const colWidths = el.tableColWidths || Array(cols).fill(100 / cols);
-                const v2CellsLocal = v2Cells;
-
                 let accPercent = 0;
                 return Array.from({ length: rows - 1 }).map((_, idx) => {
                     const currentRowHeight = heights[idx];
                     accPercent += currentRowHeight;
-                    const segments: { left: number, width: number }[] = [];
-                    let currentLeft = 0;
-                    colWidths.forEach((w, cIdx) => {
-                        const cellIdx = rowColToFlatIdx(idx, cIdx, cols);
-                        const v2Cell = v2CellsLocal[cellIdx];
-                        const cellRowSpan = v2Cell ? (v2Cell.isMerged ? 0 : v2Cell.rowSpan) : 1;
-                        if (cellRowSpan === 0 || cellRowSpan === 1) segments.push({ left: currentLeft, width: w });
-                        currentLeft += w;
-                    });
 
-                    return segments.map((seg, segIdx) => (
+                    const mergedSegments = getMergedRowSegments(idx);
+                    return mergedSegments.map((seg, segIdx) => (
                         <div
                             key={`row-resize-${idx}-${segIdx}`}
                             className="nodrag absolute cursor-row-resize z-[120] group/rowresize"
