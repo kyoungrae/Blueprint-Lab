@@ -28,6 +28,10 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
     const flipY = element.imageFlipY ?? false;
     const crop = element.imageCrop ?? { x: 0, y: 0, width: 1, height: 1 };
 
+    const stopAll = (e: React.MouseEvent | React.PointerEvent | React.TouchEvent) => {
+        e.stopPropagation();
+    };
+
     const handleRotate = (deg: number) => {
         onUpdate({ imageRotation: deg });
     };
@@ -99,21 +103,26 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
             isDraggingRef.current = false;
             onDragEnd?.();
             window.removeEventListener('mousemove', onMove, true);
-            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('mouseup', onUp, true);
         };
         window.addEventListener('mousemove', onMove, true);
-        window.addEventListener('mouseup', onUp);
+        window.addEventListener('mouseup', onUp, true);
     };
 
     return (
         <div
-            data-image-style-panel
             className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-[9000] min-w-[240px] animate-in fade-in origin-top-left"
             style={{
                 left: flowToScreenPosition({ x: position.x, y: position.y }).x,
                 top: flowToScreenPosition({ x: position.x, y: position.y }).y,
                 transform: `scale(calc(0.85 * ${zoom}))`,
             }}
+            onPointerDown={stopAll}
+            onPointerUp={stopAll}
+            onMouseDown={stopAll}
+            onMouseUp={stopAll}
+            onClick={stopAll}
+            onDoubleClick={stopAll}
         >
             <div
                 className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 cursor-grab active:cursor-grabbing"
@@ -124,8 +133,12 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                     <span className="text-sm font-semibold text-gray-700">이미지 스타일</span>
                 </div>
                 <button
+                    type="button"
                     onClick={onClose}
-                    onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={stopAll}
+                    onPointerUp={stopAll}
+                    onMouseDown={stopAll}
+                    onMouseUp={stopAll}
                     className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
                 >
                     ✕
@@ -142,7 +155,12 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                     {ROTATION_PRESETS.map((deg) => (
                         <button
                             key={deg}
+                            type="button"
                             onClick={() => handleRotate(deg)}
+                            onPointerDown={stopAll}
+                            onPointerUp={stopAll}
+                            onMouseDown={stopAll}
+                            onMouseUp={stopAll}
                             className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${rotation === deg ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'
                                 }`}
                         >
@@ -153,7 +171,10 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                 <div className="mt-3 flex items-center gap-3">
                     <div
                         className="relative w-20 h-20 cursor-grab active:cursor-grabbing select-none"
-                        onMouseDown={handleRotationDialMouseDown}
+                        onMouseDown={(e) => { stopAll(e); handleRotationDialMouseDown(e); }}
+                        onPointerDown={stopAll}
+                        onPointerUp={stopAll}
+                        onMouseUp={stopAll}
                     >
                         {(() => {
                             const center = 40;
@@ -188,7 +209,12 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                 </div>
                 <div className="flex gap-2">
                     <button
+                        type="button"
                         onClick={handleFlipX}
+                        onPointerDown={stopAll}
+                        onPointerUp={stopAll}
+                        onMouseDown={stopAll}
+                        onMouseUp={stopAll}
                         className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors ${flipX ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
                             }`}
                     >
@@ -196,7 +222,12 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                         <span className="text-xs">좌우</span>
                     </button>
                     <button
+                        type="button"
                         onClick={handleFlipY}
+                        onPointerDown={stopAll}
+                        onPointerUp={stopAll}
+                        onMouseDown={stopAll}
+                        onMouseUp={stopAll}
                         className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors ${flipY ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
                             }`}
                     >
@@ -213,7 +244,12 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                     <span className="text-xs font-medium text-gray-600">크롭</span>
                     {(crop.x !== 0 || crop.y !== 0 || crop.width !== 1 || crop.height !== 1) && (
                         <button
+                            type="button"
                             onClick={resetCrop}
+                            onPointerDown={stopAll}
+                            onPointerUp={stopAll}
+                            onMouseDown={stopAll}
+                            onMouseUp={stopAll}
                             className="ml-auto text-xs text-blue-500 hover:text-blue-600"
                         >
                             초기화
@@ -221,8 +257,12 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                     )}
                 </div>
                 <button
+                    type="button"
                     onClick={() => onCropModeToggle?.(!isCropMode)}
-                    onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={stopAll}
+                    onPointerUp={stopAll}
+                    onMouseDown={stopAll}
+                    onMouseUp={stopAll}
                     className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border transition-colors mb-2 ${isCropMode ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 hover:bg-gray-50 text-gray-600'
                         }`}
                 >
@@ -239,6 +279,10 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                             step={0.01}
                             value={crop.x}
                             onChange={(e) => handleCropChange('x', parseFloat(e.target.value))}
+                            onPointerDown={stopAll}
+                            onPointerUp={stopAll}
+                            onMouseDown={stopAll}
+                            onMouseUp={stopAll}
                             className="flex-1 h-2 rounded-lg appearance-none bg-gray-200 accent-blue-500"
                         />
                         <span className="w-10 text-xs text-gray-500">{(crop.x * 100).toFixed(0)}%</span>
@@ -252,6 +296,10 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                             step={0.01}
                             value={crop.y}
                             onChange={(e) => handleCropChange('y', parseFloat(e.target.value))}
+                            onPointerDown={stopAll}
+                            onPointerUp={stopAll}
+                            onMouseDown={stopAll}
+                            onMouseUp={stopAll}
                             className="flex-1 h-2 rounded-lg appearance-none bg-gray-200 accent-blue-500"
                         />
                         <span className="w-10 text-xs text-gray-500">{(crop.y * 100).toFixed(0)}%</span>
@@ -265,6 +313,10 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                             step={0.01}
                             value={crop.width}
                             onChange={(e) => handleCropChange('width', parseFloat(e.target.value))}
+                            onPointerDown={stopAll}
+                            onPointerUp={stopAll}
+                            onMouseDown={stopAll}
+                            onMouseUp={stopAll}
                             className="flex-1 h-2 rounded-lg appearance-none bg-gray-200 accent-blue-500"
                         />
                         <span className="w-10 text-xs text-gray-500">{(crop.width * 100).toFixed(0)}%</span>
@@ -278,6 +330,10 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
                             step={0.01}
                             value={crop.height}
                             onChange={(e) => handleCropChange('height', parseFloat(e.target.value))}
+                            onPointerDown={stopAll}
+                            onPointerUp={stopAll}
+                            onMouseDown={stopAll}
+                            onMouseUp={stopAll}
                             className="flex-1 h-2 rounded-lg appearance-none bg-gray-200 accent-blue-500"
                         />
                         <span className="w-10 text-xs text-gray-500">{(crop.height * 100).toFixed(0)}%</span>
