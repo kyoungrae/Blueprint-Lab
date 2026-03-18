@@ -332,7 +332,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const polygonVertexSnapStateRef = useRef<SnapState>({});
     const lineVertexDragRef = useRef<{ elementId: string; pointIndex: 0 | 1 } | null>(null);
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
-    const tableLastClickTimeRef = useRef<number | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const tooltipContainerRef = useRef<HTMLDivElement>(null);
@@ -1655,23 +1654,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             return;
         }
 
-        // 테이블 단독 선택 시에는 움직일 수 있도록 허용 (단, 선택 직후에는 약간의 지연)
-        if (clickedEl?.type === 'table' && nextSelected.length === 1 && nextSelected[0] === id) {
-            // 테이블이 방금 선택된 경우에는 약간의 지연을 줌
-            const now = Date.now();
-            if (!tableLastClickTimeRef.current) {
-                tableLastClickTimeRef.current = now;
-                return; // 선택 직후에는 잠시 막음
-            }
-
-            // 200ms 후에 움직일 수 있도록 허용
-            if (now - tableLastClickTimeRef.current < 200) {
-                return;
-            }
-        } else {
-            // 다른 요소가 선택되면 타이머 초기화
-            tableLastClickTimeRef.current = null;
-        }
+        // 표는 일반 요소와 동일하게 즉시 드래그 준비 (편집 모드는 위에서 이미 return됨)
 
         // Prepare for dragging all selected elements
         setIsMoving(true);

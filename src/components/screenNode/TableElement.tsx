@@ -187,13 +187,13 @@ const TableElement: React.FC<TableElementProps> = memo(({
                 borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
             }}
             onMouseDown={(e) => {
-                // 편집 중인 경우에는 셀 선택/편집 로직을 위해 전파를 차단
-                e.stopPropagation();
-                // 선택된 상태에서 Shift 없이 클릭하면 드래그 이동을 위해 전파를 허용해야 함
-                // 또한 Shift 클릭 시에는 선택 해제를 위해 전파를 허용해야 함
-                // 따라서 편집 모드가 아닐 때는 stopPropagation을 하지 않음으로써 CanvasElement의 handleElementMouseDown이 실행되게 함
-                
                 if (isLocked) return;
+                // 편집 모드일 때만 전파를 차단하여 셀 선택/드래그 범위 선택 로직이 동작하게 함
+                // 편집 모드가 아닐 때는 전파를 허용하여 CanvasElement의 handleElementMouseDown이 실행되게 함
+                // → 표 이동, Shift+클릭 다중선택/해제가 동작
+                if (editingTableId === el.id) {
+                    e.stopPropagation();
+                }
             }}
             onDoubleClick={(e) => {
                 // 더블 클릭은 항상 중단하여 상위 엔티티 등이 잡히지 않도록 함.
