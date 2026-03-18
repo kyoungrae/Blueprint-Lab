@@ -619,7 +619,7 @@ const ProjectListPage: React.FC = () => {
                                         </p>
                                     </div>
 
-                                        <div className="mt-auto pt-6 border-t border-gray-50 flex items-center justify-between">
+                                        <div className="mt-auto pt-6 border-t border-gray-50 flex items-center justify-between" style={{display:'flex',flexDirection:'column',alignItems:'baseline'}}>
                                         <div className="flex items-center gap-2">
                                             {project.projectType === 'SCREEN_DESIGN' && (
                                                 <>
