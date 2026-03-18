@@ -22,7 +22,7 @@ const AddScreenModal: React.FC<AddScreenModalProps> = ({ onConfirm, onClose, var
 
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden" onClick={(e) => e.stopPropagation()} style={{maxWidth:'34rem'}}>
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                     <div className="flex items-center gap-3">

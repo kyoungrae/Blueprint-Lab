@@ -1403,6 +1403,39 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
         const selectedSet = new Set(selectedIds);
 
+        // 🚀 1. 데이터(JSON) 내보내기 처리
+        if (format === 'json') {
+            const allData = exportData(); // 스토어의 전체 데이터 가져오기
+            
+            // 선택된 화면만 필터링
+            const filteredScreens = allData.screens.filter(s => selectedSet.has(s.id));
+            
+            // 선택된 화면들 사이의 연결(Flow)만 필터링
+            const filteredFlows = allData.flows.filter(f => 
+                selectedSet.has(f.source) && selectedSet.has(f.target)
+            );
+
+            // 선택된 화면들이 속한 섹션(Section) 필터링
+            const selectedSectionIds = new Set(filteredScreens.map(s => s.sectionId).filter(Boolean));
+            const filteredSections = allData.sections?.filter(sec => selectedSectionIds.has(sec.id)) ?? [];
+
+            const finalData = {
+                screens: filteredScreens,
+                flows: filteredFlows,
+                sections: filteredSections
+            };
+
+            const json = JSON.stringify(finalData, null, 2);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+            a.download = `screen-data-selected-${Date.now()}.json`;
+            a.click();
+            
+            alert(`선택된 ${filteredScreens.length}개 화면의 데이터 내보내기가 완료되었습니다.`);
+            setIsExporting(false);
+            return;
+        }
+
         const baseOptions = {
             backgroundColor: 'transparent',
             quality: 1,
@@ -1715,33 +1748,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                         </button>
                                     </PremiumTooltip>
 
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="데이터 내보내기 (다른 프로젝트에 붙여넣기용)">
-                                        <button
-                                            onClick={() => {
-                                                const data = exportData();
-                                                const json = JSON.stringify(data, null, 2);
-                                                const a = document.createElement('a');
-                                                a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-                                                a.download = `screen-design-${Date.now()}.json`;
-                                                a.click();
-                                                URL.revokeObjectURL(a.href);
-                                                const countMsg = `(화면 ${data.screens?.length ?? 0}개)`;
-                                                if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-                                                    navigator.clipboard.writeText(json).then(
-                                                        () => alert(`데이터가 클립보드에 복사되었고, JSON 파일이 다운로드되었습니다. ${countMsg}`),
-                                                        () => alert(`JSON 파일이 다운로드되었습니다. ${countMsg}\n(클립보드는 HTTPS 환경에서만 사용 가능합니다.)`)
-                                                    );
-                                                } else {
-                                                    alert(`JSON 파일이 다운로드되었습니다. ${countMsg}\n다른 프로젝트에서는 가져오기 시 이 파일을 선택하면 됩니다.`);
-                                                }
-                                            }}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
-                                        >
-                                            <FileText size={16} className="text-blue-500 shrink-0" />
-                                            <span className="whitespace-nowrap hidden sm:inline">데이터 내보내기</span>
-                                        </button>
-                                    </PremiumTooltip>
-
+                                    
                                     <PremiumTooltip placement="bottom" offsetBottom={30} label="가져오기 (다른 프로젝트에서 내보낸 데이터 붙여넣기)">
                                         <button
                                             onClick={() => { setIsImportModalOpen(true); setImportError(null); setImportJsonText(''); }}
@@ -1899,7 +1906,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                                 {pptBetaExportOpen && (
                                     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                                        <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden" style={{maxWidth:'34rem'}}>
                                             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                                                 <div className="flex items-center gap-3">
                                                     <div className="p-2 bg-purple-100 rounded-xl text-purple-600">

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Download, Monitor, CheckSquare, Square, FileText, Image, Edit3 } from 'lucide-react';
 import type { Screen } from '../types/screenDesign';
 
-export type ExportFormat = 'png' | 'pdf' | 'ppt_beta';
+export type ExportFormat = 'png' | 'pdf' | 'ppt_beta' | 'json';
 
 interface ScreenExportModalProps {
     screens: Screen[];
@@ -42,7 +42,7 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
 
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden" onClick={(e) => e.stopPropagation()} style={{maxWidth:'34rem'}}>
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -134,6 +134,13 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
                         <Edit3 size={18} />
                         PPT_BETA
                     </button>
+                    <button
+                        onClick={() => setFormat('json')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${format === 'json' ? 'bg-blue-100 text-blue-700 border-2 border-blue-300' : 'bg-gray-50 text-gray-600 border-2 border-transparent hover:bg-gray-100'}`}
+                    >
+                        <FileText size={18} />
+                        데이터(JSON)
+                    </button>
                 </div>
 
                 {/* Footer */}
@@ -151,7 +158,7 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
                     >
                         <div className="flex items-center gap-2">
                             <Download size={16} />
-                            {format === 'png' ? 'PNG 내보내기' : format === 'pdf' ? 'PDF 내보내기' : 'PPT_BETA 내보내기'} ({selectedIds.size})
+                            {format === 'png' ? 'PNG 내보내기' : format === 'pdf' ? 'PDF 내보내기' : format === 'ppt_beta' ? 'PPT_BETA 내보내기' : '데이터(JSON) 내보내기'} ({selectedIds.size})
                         </div>
                     </button>
                 </div>
