@@ -94,6 +94,158 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
 
     const { visibleRows, visibleCols } = getVisibleCounts(selectedEl);
 
+    const getVisualMapsAndFlattened = (el: DrawElement): { visRows: number; visCols: number; flattened: TableCellData[]; visHeights: number[]; visWidths: number[] } | null => {
+        if (!el || el.type !== 'table') return null;
+        const r = el.tableRows ?? 1;
+        const c = el.tableCols ?? 1;
+        const v2Cells = getV2Cells(el);
+        const paddedV2 = [...v2Cells];
+        while (paddedV2.length < r * c) paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+
+        const normalizePercents = (arr: number[]): number[] => {
+            const safe = arr.map(v => (Number.isFinite(v) ? v : 0));
+            const sum = safe.reduce((a, b) => a + b, 0);
+            if (sum <= 0) return Array(arr.length).fill(100 / Math.max(1, arr.length));
+            return safe.map(v => (v * 100) / sum);
+        };
+
+        const findCoveringMaster = (targetRow: number, targetCol: number): { r0: number; c0: number; rowSpan: number; colSpan: number; cell: TableCellData } | null => {
+            for (let rr = targetRow; rr >= 0; rr--) {
+                for (let cc = targetCol; cc >= 0; cc--) {
+                    const cell = paddedV2[rowColToFlatIdx(rr, cc, c)];
+                    if (!cell || cell.isMerged) continue;
+                    const rowSpan = cell.rowSpan || 1;
+                    const colSpan = cell.colSpan || 1;
+                    const rowEnd = rr + rowSpan - 1;
+                    const colEnd = cc + colSpan - 1;
+                    if (targetRow >= rr && targetRow <= rowEnd && targetCol >= cc && targetCol <= colEnd) {
+                        return { r0: rr, c0: cc, rowSpan, colSpan, cell };
+                    }
+                }
+            }
+            return null;
+        };
+
+        const hiddenColBoundary: boolean[] = Array(Math.max(0, c - 1)).fill(false);
+        for (let boundaryCol = 0; boundaryCol < c - 1; boundaryCol++) {
+            let hiddenEverywhere = true;
+            for (let rr = 0; rr < r; rr++) {
+                const master = findCoveringMaster(rr, boundaryCol);
+                if (!master) {
+                    hiddenEverywhere = false;
+                    break;
+                }
+                const masterColEnd = master.c0 + (master.colSpan || 1) - 1;
+                if (masterColEnd < boundaryCol + 1) {
+                    hiddenEverywhere = false;
+                    break;
+                }
+            }
+            hiddenColBoundary[boundaryCol] = hiddenEverywhere;
+        }
+
+        const hiddenRowBoundary: boolean[] = Array(Math.max(0, r - 1)).fill(false);
+        for (let boundaryRow = 0; boundaryRow < r - 1; boundaryRow++) {
+            let hiddenEverywhere = true;
+            for (let cc = 0; cc < c; cc++) {
+                const master = findCoveringMaster(boundaryRow, cc);
+                if (!master) {
+                    hiddenEverywhere = false;
+                    break;
+                }
+                const masterRowEnd = master.r0 + (master.rowSpan || 1) - 1;
+                if (masterRowEnd < boundaryRow + 1) {
+                    hiddenEverywhere = false;
+                    break;
+                }
+            }
+            hiddenRowBoundary[boundaryRow] = hiddenEverywhere;
+        }
+
+        const rowMap: number[] = Array(r).fill(0);
+        let vr = 0;
+        for (let rr = 0; rr < r; rr++) {
+            rowMap[rr] = vr;
+            if (rr < r - 1 && !hiddenRowBoundary[rr]) vr++;
+        }
+
+        const colMap: number[] = Array(c).fill(0);
+        let vc = 0;
+        for (let cc = 0; cc < c; cc++) {
+            colMap[cc] = vc;
+            if (cc < c - 1 && !hiddenColBoundary[cc]) vc++;
+        }
+
+        const visRows = vr + 1;
+        const visCols = vc + 1;
+        const repRow: number[] = Array(visRows).fill(-1);
+        const repCol: number[] = Array(visCols).fill(-1);
+        for (let rr = 0; rr < r; rr++) if (repRow[rowMap[rr]] === -1) repRow[rowMap[rr]] = rr;
+        for (let cc = 0; cc < c; cc++) if (repCol[colMap[cc]] === -1) repCol[colMap[cc]] = cc;
+
+        const flattened: (TableCellData | null)[] = Array(visRows * visCols).fill(null);
+
+        const logicalWidths = normalizePercents((el.tableColWidths && el.tableColWidths.length === c)
+            ? el.tableColWidths
+            : Array(c).fill(100 / Math.max(1, c)));
+        const logicalHeights = normalizePercents((el.tableRowHeights && el.tableRowHeights.length === r)
+            ? el.tableRowHeights
+            : Array(r).fill(100 / Math.max(1, r)));
+
+        const visWidthsRaw = Array(visCols).fill(0);
+        for (let j = 0; j < c; j++) visWidthsRaw[colMap[j]] += logicalWidths[j] ?? 0;
+        const visHeightsRaw = Array(visRows).fill(0);
+        for (let i = 0; i < r; i++) visHeightsRaw[rowMap[i]] += logicalHeights[i] ?? 0;
+
+        const visWidths = normalizePercents(visWidthsRaw);
+        const visHeights = normalizePercents(visHeightsRaw);
+
+        // Re-index existing master cells into the visual grid, preserving merge structure.
+        for (let rr = 0; rr < r; rr++) {
+            for (let cc = 0; cc < c; cc++) {
+                const cell = paddedV2[rowColToFlatIdx(rr, cc, c)];
+                if (!cell || cell.isMerged) continue;
+
+                const rowSpan = Math.max(1, cell.rowSpan || 1);
+                const colSpan = Math.max(1, cell.colSpan || 1);
+                const lastLoR = Math.min(r - 1, rr + rowSpan - 1);
+                const lastLoC = Math.min(c - 1, cc + colSpan - 1);
+
+                const vR = rowMap[rr];
+                const vC = colMap[cc];
+                const vREnd = rowMap[lastLoR];
+                const vCEnd = colMap[lastLoC];
+                const newRowSpan = Math.max(1, vREnd - vR + 1);
+                const newColSpan = Math.max(1, vCEnd - vC + 1);
+
+                const vIdx = rowColToFlatIdx(vR, vC, visCols);
+                if (flattened[vIdx]) continue;
+
+                flattened[vIdx] = {
+                    content: cell.content ?? '',
+                    rowSpan: newRowSpan,
+                    colSpan: newColSpan,
+                    isMerged: false,
+                };
+
+                for (let dr = 0; dr < newRowSpan; dr++) {
+                    for (let dc = 0; dc < newColSpan; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        const sIdx = rowColToFlatIdx(vR + dr, vC + dc, visCols);
+                        flattened[sIdx] = { content: '', rowSpan: 1, colSpan: 1, isMerged: true };
+                    }
+                }
+            }
+        }
+
+        // Fill any remaining cells as independent masters.
+        for (let i = 0; i < flattened.length; i++) {
+            if (!flattened[i]) flattened[i] = { content: '', rowSpan: 1, colSpan: 1, isMerged: false };
+        }
+
+        return { visRows, visCols, flattened: flattened as TableCellData[], visHeights, visWidths };
+    };
+
     const cellColorPresets = [
         'transparent', '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0',
         '#fee2e2', '#fef3c7', '#dcfce7', '#dbeafe', '#ede9fe',
@@ -177,20 +329,32 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                 const currentElements = getScreenById(screenId)?.drawElements ?? drawElements;
                                 const el = currentElements.find(e => e.id === selectedEl.id);
                                 if (!el || el.type !== 'table') return;
-                                const r = el.tableRows ?? 3;
-                                const c = el.tableCols ?? 3;
-                                if (r <= 1) return;
-                                const newRows = r - 1;
-                                const v2Cells = getV2Cells(el);
-                                const total = r * c;
-                                const paddedV2 = [...v2Cells];
-                                while (paddedV2.length < total) paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
-                                const newV2 = paddedV2.slice(0, newRows * c);
+                                const flattenedInfo = getVisualMapsAndFlattened(el);
+                                if (!flattenedInfo) return;
+                                const { visRows, visCols, flattened, visHeights, visWidths } = flattenedInfo;
+                                if (visRows <= 1) return;
+                                const newRows = visRows - 1;
+                                const newV2 = flattened.slice(0, newRows * visCols).map((cell, idx) => {
+                                    if (!cell) return { content: '', rowSpan: 1, colSpan: 1, isMerged: false };
+                                    if (cell.isMerged) return cell;
+                                    const { r: rr } = flatIdxToRowCol(idx, visCols);
+                                    const maxRowSpan = Math.max(1, newRows - rr);
+                                    const rowSpan = Math.min(Math.max(1, cell.rowSpan || 1), maxRowSpan);
+                                    return { ...cell, rowSpan };
+                                });
+                                const nextHeights = (() => {
+                                    const sliced = visHeights.slice(0, newRows);
+                                    const sum = sliced.reduce((a, b) => a + b, 0);
+                                    if (sum <= 0) return Array(newRows).fill(100 / Math.max(1, newRows));
+                                    return sliced.map(v => (v * 100) / sum);
+                                })();
                                 saveV2Cells(el.id, newV2, {
                                     tableRows: newRows,
-                                    tableRowHeights: Array(newRows).fill(100 / newRows),
+                                    tableCols: visCols,
+                                    tableRowHeights: nextHeights,
+                                    tableColWidths: visWidths,
                                     tableRowColWidths: undefined,
-                                    tableCellLockedIndices: (el.tableCellLockedIndices ?? []).filter(idx => idx < newRows * c) || undefined,
+                                    tableCellLockedIndices: undefined,
                                 } as Partial<DrawElement>);
                                 setSelectedCellIndices([]);
                                 setEditingCellIndex(null);
@@ -204,52 +368,27 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                 const currentElements = getScreenById(screenId)?.drawElements ?? drawElements;
                                 const el = currentElements.find(e => e.id === selectedEl.id);
                                 if (!el || el.type !== 'table') return;
-                                const r = el.tableRows ?? 3;
-                                const c = el.tableCols ?? 3;
-                                const newRows = r + 1;
-                                const v2Cells = getV2Cells(el);
-                                const total = r * c;
-                                const paddedV2 = [...v2Cells];
-                                while (paddedV2.length < total) paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                const flattenedInfo = getVisualMapsAndFlattened(el);
+                                if (!flattenedInfo) return;
+                                const { visRows, visCols, flattened, visHeights, visWidths } = flattenedInfo;
+                                const newRows = visRows + 1;
 
-                                const lastRowIdx = Math.max(0, r - 1);
-                                const lastRowCells = paddedV2.slice(lastRowIdx * c, lastRowIdx * c + c);
-
-                                const findHorizontalMasterInLastRow = (targetCol: number): { start: number; colSpan: number } | null => {
-                                    for (let start = 0; start <= targetCol; start++) {
-                                        const cell = lastRowCells[start];
-                                        if (!cell || cell.isMerged) continue;
-                                        const colSpan = cell.colSpan || 1;
-                                        const end = start + colSpan - 1;
-                                        if (targetCol >= start && targetCol <= end) return { start, colSpan };
-                                    }
-                                    return null;
-                                };
-
-                                const newRowCells: TableCellData[] = [];
-                                for (let colIdx = 0; colIdx < c; colIdx++) {
-                                    const master = findHorizontalMasterInLastRow(colIdx);
-                                    if (master && master.start === colIdx) {
-                                        // Master cell in last row: inherit horizontal merge (colSpan). Vertical merges are reset.
-                                        newRowCells.push({ content: '', rowSpan: 1, colSpan: master.colSpan, isMerged: false });
-                                        continue;
-                                    }
-
-                                    if (master && master.start < colIdx) {
-                                        // Horizontal slave (part of a colSpan master in the same row)
-                                        newRowCells.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: true });
-                                        continue;
-                                    }
-
-                                    // Not horizontally merged in the last row. If it was a vertical slave, do NOT inherit that.
-                                    newRowCells.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
-                                }
-
-                                const newV2 = [...paddedV2, ...newRowCells];
+                                const newRowCells: TableCellData[] = Array(visCols).fill(null).map(() => ({ content: '', rowSpan: 1, colSpan: 1, isMerged: false }));
+                                const newV2 = [...flattened, ...newRowCells];
+                                const nextHeights = (() => {
+                                    const base = visHeights;
+                                    const newRowHeight = 100 / Math.max(1, newRows);
+                                    const scale = (100 - newRowHeight) / 100;
+                                    const scaled = base.map(h => h * scale);
+                                    return [...scaled, newRowHeight];
+                                })();
                                 saveV2Cells(el.id, newV2, {
                                     tableRows: newRows,
-                                    tableRowHeights: Array(newRows).fill(100 / newRows),
+                                    tableCols: visCols,
+                                    tableRowHeights: nextHeights,
+                                    tableColWidths: visWidths,
                                     tableRowColWidths: undefined,
+                                    tableCellLockedIndices: undefined,
                                 } as Partial<DrawElement>);
                                 setSelectedCellIndices([]);
                                 setEditingCellIndex(null);
@@ -269,31 +408,38 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                 const currentElements = getScreenById(screenId)?.drawElements ?? drawElements;
                                 const el = currentElements.find(e => e.id === selectedEl.id);
                                 if (!el || el.type !== 'table') return;
-                                const numRows = el.tableRows ?? 3;
-                                const numCols = el.tableCols ?? 3;
-                                if (numCols <= 1) return;
-                                const newCols = numCols - 1;
-                                const v2Cells = getV2Cells(el);
-                                const paddedV2 = [...v2Cells];
-                                while (paddedV2.length < numRows * numCols) paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                const flattenedInfo = getVisualMapsAndFlattened(el);
+                                if (!flattenedInfo) return;
+                                const { visRows, visCols, flattened, visHeights, visWidths } = flattenedInfo;
+                                if (visCols <= 1) return;
+                                const newCols = visCols - 1;
                                 const newV2: TableCellData[] = [];
-                                for (let ri = 0; ri < numRows; ri++) {
+                                for (let ri = 0; ri < visRows; ri++) {
                                     for (let ci = 0; ci < newCols; ci++) {
-                                        const v2 = paddedV2[ri * numCols + ci];
-                                        newV2.push(v2 || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                        newV2.push(flattened[ri * visCols + ci] || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
                                     }
                                 }
-                                const locked = el.tableCellLockedIndices ?? [];
-                                const newLocked = locked.map(idx => {
-                                    const { r, c } = flatIdxToRowCol(idx, numCols);
-                                    if (c >= newCols) return -1;
-                                    return r * newCols + c;
-                                }).filter(idx => idx >= 0);
+                                // Clamp colSpan so masters don't overflow the new right edge.
+                                for (let idx = 0; idx < newV2.length; idx++) {
+                                    const cell = newV2[idx];
+                                    if (!cell || cell.isMerged) continue;
+                                    const { c: cc } = flatIdxToRowCol(idx, newCols);
+                                    const maxColSpan = Math.max(1, newCols - cc);
+                                    cell.colSpan = Math.min(Math.max(1, cell.colSpan || 1), maxColSpan);
+                                }
+                                const nextWidths = (() => {
+                                    const sliced = visWidths.slice(0, newCols);
+                                    const sum = sliced.reduce((a, b) => a + b, 0);
+                                    if (sum <= 0) return Array(newCols).fill(100 / Math.max(1, newCols));
+                                    return sliced.map(v => (v * 100) / sum);
+                                })();
                                 saveV2Cells(el.id, newV2, {
+                                    tableRows: visRows,
                                     tableCols: newCols,
-                                    tableColWidths: Array(newCols).fill(100 / newCols),
+                                    tableRowHeights: visHeights,
+                                    tableColWidths: nextWidths,
                                     tableRowColWidths: undefined,
-                                    tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                    tableCellLockedIndices: undefined,
                                 } as Partial<DrawElement>);
                                 setSelectedCellIndices([]);
                                 setEditingCellIndex(null);
@@ -307,56 +453,31 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                 const currentElements = getScreenById(screenId)?.drawElements ?? drawElements;
                                 const el = currentElements.find(e => e.id === selectedEl.id);
                                 if (!el || el.type !== 'table') return;
-                                const numRows = el.tableRows ?? 3;
-                                const numCols = el.tableCols ?? 3;
-                                const newCols = numCols + 1;
-                                const v2Cells = getV2Cells(el);
-                                const paddedV2 = [...v2Cells];
-                                while (paddedV2.length < numRows * numCols) paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
-
-                                // Inherit vertical merge pattern from the last column to the new column.
-                                const lastColIdx = Math.max(0, numCols - 1);
-                                const findVerticalMasterInLastCol = (targetRow: number): { start: number; rowSpan: number } | null => {
-                                    for (let start = targetRow; start >= 0; start--) {
-                                        const cell = paddedV2[start * numCols + lastColIdx];
-                                        if (!cell || cell.isMerged) continue;
-                                        // If this cell is horizontally merged (colSpan > 1), it is not safe to use as a vertical pattern source.
-                                        if ((cell.colSpan || 1) > 1) return null;
-                                        const rowSpan = cell.rowSpan || 1;
-                                        const end = start + rowSpan - 1;
-                                        if (targetRow >= start && targetRow <= end) return { start, rowSpan };
-                                    }
-                                    return null;
-                                };
-
+                                const flattenedInfo = getVisualMapsAndFlattened(el);
+                                if (!flattenedInfo) return;
+                                const { visRows, visCols, flattened, visHeights, visWidths } = flattenedInfo;
+                                const newCols = visCols + 1;
                                 const newV2: TableCellData[] = [];
-                                for (let ri = 0; ri < numRows; ri++) {
-                                    // copy existing columns
-                                    for (let ci = 0; ci < numCols; ci++) {
-                                        const v2 = paddedV2[ri * numCols + ci];
-                                        newV2.push(v2 || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+                                for (let ri = 0; ri < visRows; ri++) {
+                                    for (let ci = 0; ci < visCols; ci++) {
+                                        newV2.push(flattened[ri * visCols + ci] || { content: '', rowSpan: 1, colSpan: 1, isMerged: false });
                                     }
-
-                                    // append new column cell based on last column's vertical merge pattern
-                                    const master = findVerticalMasterInLastCol(ri);
-                                    if (master && master.start === ri) {
-                                        newV2.push({ content: '', rowSpan: master.rowSpan, colSpan: 1, isMerged: false });
-                                    } else if (master && master.start < ri) {
-                                        newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: true });
-                                    } else {
-                                        newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
-                                    }
+                                    newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
                                 }
-                                const locked = el.tableCellLockedIndices ?? [];
-                                const newLocked = locked.map(idx => {
-                                    const { r, c } = flatIdxToRowCol(idx, numCols);
-                                    return r * newCols + c;
-                                });
+                                const nextWidths = (() => {
+                                    const base = visWidths;
+                                    const newColWidth = 100 / Math.max(1, newCols);
+                                    const scale = (100 - newColWidth) / 100;
+                                    const scaled = base.map(w => w * scale);
+                                    return [...scaled, newColWidth];
+                                })();
                                 saveV2Cells(el.id, newV2, {
+                                    tableRows: visRows,
                                     tableCols: newCols,
-                                    tableColWidths: Array(newCols).fill(100 / newCols),
+                                    tableRowHeights: visHeights,
+                                    tableColWidths: nextWidths,
                                     tableRowColWidths: undefined,
-                                    tableCellLockedIndices: newLocked.length > 0 ? newLocked : undefined,
+                                    tableCellLockedIndices: undefined,
                                 } as Partial<DrawElement>);
                                 setSelectedCellIndices([]);
                                 setEditingCellIndex(null);

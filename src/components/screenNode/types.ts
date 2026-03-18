@@ -103,7 +103,7 @@ export const getV2Cells = (el: DrawElement): TableCellData[] => {
     const v2Cells: TableCellData[] = [];
     for (let i = 0; i < totalCells; i++) {
         const span = legacySpans?.[i];
-        const isHidden = span ? (span.rowSpan === 0 && span.colSpan === 0) : false;
+        const isHidden = span ? (span.rowSpan === 0 || span.colSpan === 0) : false;
         // 레거시 값이 숫자 등 비문자열일 수 있으므로 명시적으로 String 변환
         const rawContent = legacyCells[i];
         const content = (rawContent != null && rawContent !== '') ? String(rawContent) : '';
@@ -126,29 +126,65 @@ export const getVisibleCounts = (el: DrawElement): { visibleRows: number; visibl
     const cols = el.tableCols || 1;
     const v2Cells = getV2Cells(el);
 
-    let maxVisibleCols = 0;
-    for (let r = 0; r < rows; r++) {
-        let rowCellCount = 0;
-        for (let c = 0; c < cols; c++) {
-            const cell = v2Cells[rowColToFlatIdx(r, c, cols)];
-            if (!cell?.isMerged) rowCellCount++;
+    const paddedV2 = [...v2Cells];
+    while (paddedV2.length < rows * cols) paddedV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+
+    const findCoveringMaster = (targetRow: number, targetCol: number): { r: number; c: number; rowSpan: number; colSpan: number } | null => {
+        for (let rr = targetRow; rr >= 0; rr--) {
+            for (let cc = targetCol; cc >= 0; cc--) {
+                const cell = paddedV2[rowColToFlatIdx(rr, cc, cols)];
+                if (!cell || cell.isMerged) continue;
+                const rowSpan = cell.rowSpan || 1;
+                const colSpan = cell.colSpan || 1;
+                const rowEnd = rr + rowSpan - 1;
+                const colEnd = cc + colSpan - 1;
+                if (targetRow >= rr && targetRow <= rowEnd && targetCol >= cc && targetCol <= colEnd) {
+                    return { r: rr, c: cc, rowSpan, colSpan };
+                }
+            }
         }
-        maxVisibleCols = Math.max(maxVisibleCols, rowCellCount);
+        return null;
+    };
+
+    let hiddenColBoundaries = 0;
+    for (let boundaryCol = 0; boundaryCol < cols - 1; boundaryCol++) {
+        let hiddenEverywhere = true;
+        for (let r = 0; r < rows; r++) {
+            const master = findCoveringMaster(r, boundaryCol);
+            if (!master) {
+                hiddenEverywhere = false;
+                break;
+            }
+            const masterColEnd = master.c + master.colSpan - 1;
+            if (masterColEnd < boundaryCol + 1) {
+                hiddenEverywhere = false;
+                break;
+            }
+        }
+        if (hiddenEverywhere) hiddenColBoundaries++;
     }
 
-    let maxVisibleRows = 0;
-    for (let c = 0; c < cols; c++) {
-        let colCellCount = 0;
-        for (let r = 0; r < rows; r++) {
-            const cell = v2Cells[rowColToFlatIdx(r, c, cols)];
-            if (!cell?.isMerged) colCellCount++;
+    let hiddenRowBoundaries = 0;
+    for (let boundaryRow = 0; boundaryRow < rows - 1; boundaryRow++) {
+        let hiddenEverywhere = true;
+        for (let c = 0; c < cols; c++) {
+            const master = findCoveringMaster(boundaryRow, c);
+            if (!master) {
+                hiddenEverywhere = false;
+                break;
+            }
+            const masterRowEnd = master.r + master.rowSpan - 1;
+            if (masterRowEnd < boundaryRow + 1) {
+                hiddenEverywhere = false;
+                break;
+            }
         }
-        maxVisibleRows = Math.max(maxVisibleRows, colCellCount);
+        if (hiddenEverywhere) hiddenRowBoundaries++;
     }
 
     return {
-        visibleRows: Math.max(1, maxVisibleRows),
-        visibleCols: Math.max(1, maxVisibleCols),
+        visibleRows: Math.max(1, rows - hiddenRowBoundaries),
+        visibleCols: Math.max(1, cols - hiddenColBoundaries),
     };
 };
 
