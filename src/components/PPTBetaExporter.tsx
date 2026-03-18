@@ -53,7 +53,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const cW = slideWidth / 6;            
 
                 const rgbToHex = (rgb: string): string => {
-                    const match = rgb.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
+                    const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
                     if (!match) return rgb.replace('#', '');
                     return [match[1], match[2], match[3]]
                         .map((x) => parseInt(x, 10).toString(16).padStart(2, '0'))
@@ -348,7 +348,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 // 🚀 색상 정제 함수 보완 (투명도 체크 강화)
                 const cleanColor = (c?: string) => {
                     if (!c || c === 'transparent' || c === 'rgba(0,0,0,0)' || c === '#00000000') return undefined;
-                    return c.replace('#', '');
+                    return rgbToHex(c);
                 };
 
                 // ─── 좌측 캔버스 UI 요소 매핑 ───
@@ -383,6 +383,22 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 rectRadius: el.borderRadius ? (el.borderRadius * scale) : undefined,
                                 rotate: el.rotation || 0,
                             });
+                            if (el.text) {
+                                const { text: cleanText, options: styleOpts } = parseStyles(el.text);
+                                slide.addText(cleanText, {
+                                    x: elX, y: elY, w: elW, h: elH,
+                                    align: (el.textAlign || 'center') as any,
+                                    valign: (el.verticalAlign || 'middle') as any,
+                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
+                                    color: cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    bold: styleOpts?.bold,
+                                    italic: styleOpts?.italic,
+                                    underline: styleOpts?.underline as any,
+                                    fontFace: styleOpts?.fontFace,
+                                    rotate: el.rotation || 0,
+                                    breakLine: true,
+                                });
+                            }
                             break;
                         case 'circle':
                             slide.addShape(pptx.ShapeType.ellipse, {
@@ -391,6 +407,22 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 line: lineOptions,
                                 rotate: el.rotation || 0,
                             });
+                            if (el.text) {
+                                const { text: cleanText, options: styleOpts } = parseStyles(el.text);
+                                slide.addText(cleanText, {
+                                    x: elX, y: elY, w: elW, h: elH,
+                                    align: (el.textAlign || 'center') as any,
+                                    valign: (el.verticalAlign || 'middle') as any,
+                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
+                                    color: cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    bold: styleOpts?.bold,
+                                    italic: styleOpts?.italic,
+                                    underline: styleOpts?.underline as any,
+                                    fontFace: styleOpts?.fontFace,
+                                    rotate: el.rotation || 0,
+                                    breakLine: true,
+                                });
+                            }
                             break;
                         case 'text':
                             if (el.text) {
@@ -527,6 +559,22 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 line: lineOptions,
                                 rotate: el.rotation || 0,
                             });
+                            if (el.text) {
+                                const { text: cleanText, options: styleOpts } = parseStyles(el.text);
+                                slide.addText(cleanText, {
+                                    x: elX, y: elY, w: elW, h: elH,
+                                    align: (el.textAlign || 'center') as any,
+                                    valign: (el.verticalAlign || 'middle') as any,
+                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
+                                    color: cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    bold: styleOpts?.bold,
+                                    italic: styleOpts?.italic,
+                                    underline: styleOpts?.underline as any,
+                                    fontFace: styleOpts?.fontFace,
+                                    rotate: el.rotation || 0,
+                                    breakLine: true,
+                                });
+                            }
                             break;
                         case 'polygon': {
                             let shapeType = pptx.ShapeType.rect;
@@ -541,6 +589,22 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 line: lineOptions,
                                 rotate: el.rotation || 0,
                             });
+                            if (el.text) {
+                                const { text: cleanText, options: styleOpts } = parseStyles(el.text);
+                                slide.addText(cleanText, {
+                                    x: elX, y: elY, w: elW, h: elH,
+                                    align: (el.textAlign || 'center') as any,
+                                    valign: (el.verticalAlign || 'middle') as any,
+                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
+                                    color: cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    bold: styleOpts?.bold,
+                                    italic: styleOpts?.italic,
+                                    underline: styleOpts?.underline as any,
+                                    fontFace: styleOpts?.fontFace,
+                                    rotate: el.rotation || 0,
+                                    breakLine: true,
+                                });
+                            }
                             break;
                         }
                         case 'image':
