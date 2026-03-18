@@ -363,6 +363,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             const cellStyles = ((el as any).tableCellStyles || []) as any;
                             const fallbackData = ((el as any).tableCellData || []) as any;
 
+                            const TABLE_FONT_DAMPEN = 0.4;
+                            const TABLE_CELL_INSET = 0;
+
                             let finalColWidths: number[] = [];
                             const rawColWidths = Array.isArray((el as any).tableColWidths) ? ((el as any).tableColWidths as number[]) : [];
                             if (rawColWidths.length === tCols) {
@@ -408,7 +411,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                             color: finalColor || '000000',
                                             align: (cellV2 as any)?.style?.textAlign || 'center',
                                             valign: 'middle',
-                                            fontSize: Math.max(8, finalFontSizePx * scale * 72),
+                                            fontSize: Math.max(4, finalFontSizePx * scale * 72 * TABLE_FONT_DAMPEN),
+                                            inset: TABLE_CELL_INSET,
+                                            breakLine: true,
                                             border: { pt: 0.5, color: 'D1D5DB' },
                                             bold: s.bold,
                                             italic: s.italic,
@@ -428,6 +433,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 colW: finalColWidths,
                                 rowH: finalRowHeights,
                                 border: { pt: 0.5, color: 'D1D5DB' },
+                                autoPage: false,
                             });
                             break;
                         }
