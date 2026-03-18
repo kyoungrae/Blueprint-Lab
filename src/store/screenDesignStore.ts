@@ -33,6 +33,15 @@ interface ScreenDesignStore {
     gridClipboard: { vertical: number[]; horizontal: number[] } | null;
     setGridClipboard: (grid: { vertical: number[]; horizontal: number[] } | null) => void;
 
+    // 표 셀 복사/붙여넣기 (셀 콘텐츠 + 스타일)
+    cellClipboard: {
+        type: 'table-cells';
+        sourceCols: number;
+        sourceRows: number;
+        cells: Array<{ r: number; c: number; content: string; style: any }>;
+    } | null;
+    setCellClipboard: (clip: ScreenDesignStore['cellClipboard']) => void;
+
     // 마지막 상호작용한 화면 ID (붙여넣기 대상 판단)
     lastInteractedScreenId: string | null;
     setLastInteractedScreenId: (id: string | null) => void;
@@ -178,6 +187,9 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
 
     gridClipboard: null,
     setGridClipboard: (grid) => set({ gridClipboard: grid }),
+
+    cellClipboard: null,
+    setCellClipboard: (clip) => set({ cellClipboard: clip }),
 
     lastInteractedScreenId: null,
     setLastInteractedScreenId: (id) => set({ lastInteractedScreenId: id }),

@@ -54,6 +54,13 @@ import GuideClipboardControls from './screenNode/GuideClipboardControls';
 import ObjectAlignToolbar from './screenNode/ObjectAlignToolbar';
 import { StickyToolbarWrapper } from './screenNode/StickyToolbarWrapper';
 
+type TableCellClipboard = {
+    type: 'table-cells';
+    sourceCols: number;
+    sourceRows: number;
+    cells: Array<{ r: number; c: number; content: string; style: any }>;
+};
+
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 /** 포털로 렌더링되는 패널들이 뷰포트 이동/줌에 기민하게 반응하도록 감싸는 컴포넌트 */
@@ -232,6 +239,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         getScreenById,
         getPasteTargetScreenId,
     } = useScreenLockAndSync(screen);
+
+    const cellClipboard = useScreenDesignStore(s => s.cellClipboard) as TableCellClipboard | null;
+    const setCellClipboard = useScreenDesignStore(s => s.setCellClipboard) as (clip: TableCellClipboard | null) => void;
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
     const uploadImage = async (file: File): Promise<string> => {
@@ -2334,6 +2344,75 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             const active = document.activeElement as HTMLElement | null;
             const isInput = active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || active?.isContentEditable || editingTextId != null || (editingTableId != null && editingCellIndex != null);
 
+            // Ctrl+C (Copy) - Table cell copy (content + per-cell styles)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                if (editingTableId && selectedCellIndices.length > 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const tableEl = drawElements.find(it => it.id === editingTableId);
+                    if (!tableEl || tableEl.type !== 'table') return;
+                    const cols = tableEl.tableCols ?? 1;
+                    const rows = tableEl.tableRows ?? 1;
+                    const v2Cells = getV2Cells(tableEl);
+                    const styles = tableEl.tableCellStyles || [];
+
+                    const sorted = [...selectedCellIndices].sort((a, b) => a - b);
+                    const cells = sorted.map(idx => {
+                        const pos = flatIdxToRowCol(idx, cols);
+                        return {
+                            r: pos.r,
+                            c: pos.c,
+                            content: v2Cells[idx]?.content ?? '',
+                            style: styles[idx] ?? {},
+                        };
+                    });
+                    setCellClipboard({ type: 'table-cells', sourceCols: cols, sourceRows: rows, cells });
+                    return;
+                }
+            }
+
+            // Ctrl+V (Paste) - Table cell paste (relative positioning)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+                if (editingTableId && selectedCellIndices.length > 0 && cellClipboard?.type === 'table-cells' && cellClipboard.cells.length > 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const tableEl = drawElements.find(it => it.id === editingTableId);
+                    if (!tableEl || tableEl.type !== 'table') return;
+
+                    const cols = tableEl.tableCols ?? 1;
+                    const rows = tableEl.tableRows ?? 1;
+                    const total = rows * cols;
+
+                    const newV2 = deepCopyCells(getV2Cells(tableEl));
+                    while (newV2.length < total) newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+
+                    const newStyles = [...(tableEl.tableCellStyles || Array(total).fill(undefined))];
+                    while (newStyles.length < total) newStyles.push(undefined);
+
+                    const targetBaseIdx = [...selectedCellIndices].sort((a, b) => a - b)[0];
+                    const targetBasePos = flatIdxToRowCol(targetBaseIdx, cols);
+                    const sourceBase = cellClipboard.cells[0];
+
+                    cellClipboard.cells.forEach(item => {
+                        const dr = item.r - sourceBase.r;
+                        const dc = item.c - sourceBase.c;
+                        const tr = targetBasePos.r + dr;
+                        const tc = targetBasePos.c + dc;
+                        if (tr < 0 || tc < 0 || tr >= rows || tc >= cols) return;
+                        const tIdx = rowColToFlatIdx(tr, tc, cols);
+                        if (!newV2[tIdx]) return;
+                        newV2[tIdx] = { ...newV2[tIdx], content: item.content ?? '' };
+                        newStyles[tIdx] = item.style ? { ...item.style } : undefined;
+                    });
+
+                    updateElement(tableEl.id, {
+                        tableCellDataV2: newV2,
+                        tableCellStyles: newStyles,
+                    });
+                    return;
+                }
+            }
+
             // Ctrl+C (Copy) - 메모리 + 시스템 클립보드에 저장 (탭/세션 넘어서 붙여넣기 가능)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
                 if (isInput || selectedElementIds.length === 0) return;
@@ -2389,7 +2468,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         };
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
-    }, [selectedElementIds, drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, update, syncUpdate, saveHistory, setSelectedElementIds, uploadImage, getPasteTargetScreenId]);
+    }, [selectedElementIds, selectedCellIndices, drawElements, editingTextId, editingTableId, editingCellIndex, cellClipboard, setCellClipboard, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, updateElement, update, syncUpdate, saveHistory, setSelectedElementIds, uploadImage, getPasteTargetScreenId]);
 
     // Paste 이벤트: clipboardData 직접 접근 (navigator.clipboard.read 권한 불필요)
     useEffect(() => {
