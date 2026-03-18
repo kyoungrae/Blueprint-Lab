@@ -225,7 +225,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const titleH = 26 * scale; 
                 const titles = ["초기화면설정", "기능상세", "관련테이블"];
                 
-                // 🚀 섹션별 실제 데이터 매핑 (기능 상세는 번호별 설명과 병합)
+                // 🚀 섹션별 실제 데이터 매핑 수정
                 const funcNoDetails = (screen.drawElements || [])
                     .filter(el => el.type === 'func-no')
                     .sort((a, b) => {
@@ -233,7 +233,11 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         const bNum = parseFloat((b.text || '0').replace('-', '.'));
                         return aNum - bNum;
                     })
-                    .map(el => `[${el.text}] ${el.description || ''}`)
+                    .map(el => {
+                        // 🚀 기능 설명에 포함된 HTML 태그를 제거하고 텍스트만 추출
+                        const { text: cleanDesc } = parseStyles(el.description || (el as any).desc || '');
+                        return `[${el.text}] ${cleanDesc}`;
+                    })
                     .join('\n');
 
                 const combinedFunctionDetails = [funcNoDetails, screen.functionDetails]
@@ -247,7 +251,6 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 ];
                 
                 let currentY = bodyY;
-
                 ratios.forEach((ratioVal, idx) => {
                     const sectionH = (bodyH * ratioVal) / 100;
                     const sectionColor = idx === 2 ? "5E6B7C" : "5C6B9E";
@@ -266,29 +269,81 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         inset: 0.05
                     });
 
-                    // 3. 🚀 섹션 본문 텍스트 데이터
-                    const content = sectionContents[idx];
-                    if (content) {
-                        slide.addText(content, {
-                            x: leftW + 0.1, 
-                            y: currentY + titleH + 0.05, 
-                            w: rightW - 0.2, 
-                            h: sectionH - titleH - 0.1,
-                            align: 'left', 
-                            valign: 'top', 
-                            fontSize: Math.max(7, 7.5), 
-                            color: '334155', 
-                            breakLine: true, 
-                            inset: 0.05
+                    // 3. 🚀 섹션 본문 렌더링 (기능상세는 아이콘으로 그림)
+                    if (idx === 1) { // 기능상세 영역
+                        const funcNoElements = (screen.drawElements || [])
+                            .filter(el => el.type === 'func-no')
+                            .sort((a, b) => {
+                                const aNum = parseFloat((a.text || '0').replace('-', '.'));
+                                const bNum = parseFloat((b.text || '0').replace('-', '.'));
+                                return aNum - bNum;
+                            });
+
+                        let itemOffset = 0.1; // 첫 항목 여백
+                        funcNoElements.forEach(el => {
+                            const itemY = currentY + titleH + itemOffset;
+                            const { text: cleanDesc } = parseStyles(el.description || (el as any).desc || '');
+                            
+                            // 🔴 기능 번호 빨간 원 그리기
+                            slide.addShape(pptx.ShapeType.ellipse, {
+                                x: leftW + 0.1, y: itemY, w: 0.16, h: 0.16,
+                                fill: { color: 'EF4444' }
+                            });
+                            // ⚪ 원 안의 숫자 텍스트
+                            slide.addText(el.text || '', {
+                                x: leftW + 0.1, y: itemY, w: 0.16, h: 0.16,
+                                align: 'center', valign: 'middle',
+                                fontSize: 6, color: 'FFFFFF', bold: true
+                            });
+                            // 📝 상세 설명 텍스트 (아이콘 옆 배치)
+                            slide.addText(cleanDesc, {
+                                x: leftW + 0.32, y: itemY, w: rightW - 0.45, h: 0.16,
+                                align: 'left', valign: 'middle',
+                                fontSize: 7.5, color: '334155'
+                            });
+
+                            itemOffset += 0.22; // 다음 줄 간격
                         });
+
+                        // 원본 기능상세(functionDetails) 텍스트가 있으면 추가 렌더링
+                        if (screen.functionDetails) {
+                            const { text: cleanFuncText } = parseStyles(screen.functionDetails);
+                            slide.addText(cleanFuncText, {
+                                x: leftW + 0.1, y: currentY + titleH + itemOffset, 
+                                w: rightW - 0.2, h: 0.2,
+                                align: 'left', valign: 'top',
+                                fontSize: 7.5, color: '334155'
+                            });
+                        }
+                    } else {
+                        // 초기화면설정(0), 관련테이블(2) 영역은 기존 텍스트 방식 유지
+                        const content = sectionContents[idx];
+                        if (content) {
+                            const { text: cleanText } = parseStyles(content);
+                            slide.addText(cleanText, {
+                                x: leftW + 0.1, 
+                                y: currentY + titleH + 0.05, 
+                                w: rightW - 0.2, 
+                                h: sectionH - titleH - 0.1,
+                                align: 'left', valign: 'top', 
+                                fontSize: 7.5, color: '334155', 
+                                breakLine: true, inset: 0.05
+                            });
+                        }
                     }
 
                     currentY += sectionH;
                 });
 
+                // 🚀 색상 정제 함수 보완
+                const cleanColor = (c?: string) => {
+                    // 투명하거나 값이 없으면 색상 코드를 내보내지 않음
+                    if (!c || c === 'transparent' || c === 'rgba(0,0,0,0)') return undefined;
+                    return c.replace('#', '');
+                };
+
                 // ─── 좌측 캔버스 UI 요소 매핑 ───
                 const sortedElements = [...(screen.drawElements || [])].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-                const cleanColor = (c?: string) => c ? c.replace('#', '') : '1E293B';
 
                 sortedElements.forEach((el: DrawElement) => {
                     const elX = el.x * scale;
@@ -296,15 +351,18 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     const elW = (el.width || 10) * scale;
                     const elH = (el.height || 10) * scale;
 
-                    const fillOptions = el.fill ? { 
-                        color: cleanColor(el.fill), 
+                    // 🚀 2. fillOptions 생성 로직 수정
+                    const cleanedFill = cleanColor(el.fill);
+                    const fillOptions = cleanedFill ? { 
+                        color: cleanedFill, 
                         transparency: el.fillOpacity !== undefined ? (1 - el.fillOpacity) * 100 : 0 
-                    } : undefined;
+                    } : undefined; // cleanedFill이 없으면 fill 옵션 자체를 제거
 
-                    const lineOptions = el.stroke ? { 
-                        color: cleanColor(el.stroke), 
+                    const cleanedStroke = cleanColor(el.stroke);
+                    const lineOptions = cleanedStroke ? { 
+                        color: cleanedStroke, 
                         width: (el.strokeWidth || 1) * scale * 72,
-                        dashType: (el.strokeStyle === 'dashed' ? 'dash' : el.strokeStyle === 'dotted' ? 'sysDot' : 'solid') as "solid" | "dash" | "sysDot" | "dashDot" | "lgDash" | "lgDashDot" | "lgDashDotDot" | "sysDash" | undefined
+                        dashType: (el.strokeStyle === 'dashed' ? 'dash' : el.strokeStyle === 'dotted' ? 'sysDot' : 'solid') as any
                     } : undefined;
 
                     switch (el.type) {
