@@ -2405,10 +2405,10 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 if (isInput || selectedElementIds.length === 0) return;
                 e.preventDefault();
                 const toCopy = drawElements.filter(el => selectedElementIds.includes(el.id));
-                const copied = JSON.parse(JSON.stringify(toCopy));
+                const copied = JSON.parse(JSON.stringify(toCopy)).map((el: any) => ({ ...el, _sourceScreenId: screen.id }));
                 setCanvasClipboard(copied);
                 if (navigator.clipboard?.writeText && window.isSecureContext) {
-                    navigator.clipboard.writeText(JSON.stringify(toCopy)).catch(() => { });
+                    navigator.clipboard.writeText(JSON.stringify(copied)).catch(() => { });
                 }
                 return;
             }
@@ -2473,13 +2473,18 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
 
             const doPaste = (toPaste: DrawElement[], scaleToFit = false) => {
+                const isSameScreen = (toPaste[0] as any)?._sourceScreenId === screen.id;
                 const processed = scaleToFit ? scaleElementsToFitCanvas(toPaste, canvasW, canvasH) : toPaste;
-                const newElements = processed.map((el, idx) => ({
-                    ...el,
-                    id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
-                    x: el.x + (scaleToFit ? 0 : 20),
-                    y: el.y + (scaleToFit ? 0 : 20),
-                }));
+                const newElements = processed.map((el, idx) => {
+                    const offset = scaleToFit ? 0 : (isSameScreen ? 20 : 0);
+                    return {
+                        ...el,
+                        id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+                        x: el.x + offset,
+                        y: el.y + offset,
+                        _sourceScreenId: screen.id // 여러 번 붙여넣기 시 다음 번에는 20px씩 이동하도록 화면 ID 갱신
+                    };
+                });
                 const current = getScreenById(screen.id);
                 const currentElements = current?.drawElements ?? drawElements;
                 const nextElements = [...currentElements, ...newElements];
