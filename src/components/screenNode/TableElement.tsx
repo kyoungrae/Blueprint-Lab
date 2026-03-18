@@ -183,14 +183,12 @@ const TableElement: React.FC<TableElementProps> = memo(({
                 cursor: editingTableId === el.id ? 'default' : 'move',
                 outline: editingTableId === el.id ? '2px solid #3b82f6' : 'none',
                 outlineOffset: '1px',
-                userSelect: editingTableId === el.id ? 'none' : 'auto',
+                userSelect: editingTableId === el.id ? 'text' : 'none',
                 borderRadius: `${el.tableBorderRadiusTopLeft ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusTopRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0}px ${el.tableBorderRadiusBottomLeft ?? el.tableBorderRadius ?? 0}px`,
             }}
             onMouseDown={(e) => {
                 // 편집 중인 경우에는 셀 선택/편집 로직을 위해 전파를 차단
-                if (editingTableId === el.id) {
-                    e.stopPropagation();
-                } 
+                e.stopPropagation();
                 // 선택된 상태에서 Shift 없이 클릭하면 드래그 이동을 위해 전파를 허용해야 함
                 // 또한 Shift 클릭 시에는 선택 해제를 위해 전파를 허용해야 함
                 // 따라서 편집 모드가 아닐 때는 stopPropagation을 하지 않음으로써 CanvasElement의 handleElementMouseDown이 실행되게 함
@@ -201,6 +199,19 @@ const TableElement: React.FC<TableElementProps> = memo(({
                 // 더블 클릭은 항상 중단하여 상위 엔티티 등이 잡히지 않도록 함.
                 e.stopPropagation();
                 if (isLocked) return;
+
+                const target = e.target as HTMLElement | null;
+                const cellElement = target?.closest?.('[data-cell-index]') as HTMLElement | null;
+                if (cellElement) {
+                    const idx = parseInt(cellElement.getAttribute('data-cell-index') || '-1', 10);
+                    if (idx !== -1) {
+                        setEditingTableId(el.id);
+                        setEditingCellIndex(idx);
+                        setSelectedCellIndices([idx]);
+                        return;
+                    }
+                }
+
                 setEditingTableId(el.id);
                 setSelectedCellIndices([]);
                 setEditingCellIndex(null);
@@ -288,6 +299,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                         cellElements.push(
                             <div
                                 key={cellIndex}
+                                data-cell-index={cellIndex}
                                 className={`relative px-1 py-0.5 text-[10px] leading-tight flex items-center justify-center nodrag nopan ${isHeaderRow && !cellColor ? 'font-bold text-[#2c3e7c]' : 'text-gray-700'}`}
                                 style={{
                                     gridColumn: cellColSpan > 1 ? `span ${cellColSpan}` : undefined,
@@ -347,12 +359,6 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         }
                                     }
                                     setSelectedCellIndices(newSelection);
-                                }}
-                                onDoubleClick={(e) => {
-                                    e.stopPropagation();
-                                    if (isLocked) return;
-                                    setEditingTableId(el.id);
-                                    setEditingCellIndex(cellIndex);
                                 }}
                             >
                                 {isCellEditing ? (
@@ -434,6 +440,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                             textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
                                             fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
                                             color: cellStyle.color ?? el.color ?? '#333333',
+                                            pointerEvents: 'none',
                                         }}
                                         dangerouslySetInnerHTML={{ __html: cellData || '' }}
                                     />
