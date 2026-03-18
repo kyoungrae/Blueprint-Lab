@@ -146,8 +146,8 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     },
 
     updateScreen: (id, patch) => {
-        const { ydoc } = get();
-        if (!ydoc) return;
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('screens').get(id);
         if (yMap) {
             ydoc.transact(() => {
@@ -161,16 +161,16 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     },
 
     addScreen: (screen) => {
-        const { ydoc } = get();
-        if (!ydoc) return;
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
         const yMap = new Y.Map();
         Object.entries(screen).forEach(([k, v]) => yMap.set(k, v));
         ydoc.getMap<Y.Map<any>>('screens').set(screen.id, yMap);
     },
 
     deleteScreen: (id) => {
-        const { ydoc } = get();
-        if (!ydoc) return;
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
         const yFlows = ydoc.getMap<Y.Map<any>>('flows');
         ydoc.transact(() => {
             ydoc.getMap<Y.Map<any>>('screens').delete(id);
@@ -181,8 +181,8 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     },
 
     updateFlow: (id, patch) => {
-        const { ydoc } = get();
-        if (!ydoc) return;
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('flows').get(id);
         if (yMap) {
             ydoc.transact(() => Object.entries(patch).forEach(([k, v]) => yMap.set(k, v)));
@@ -190,20 +190,22 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     },
 
     addFlow: (flow) => {
-        const { ydoc } = get();
-        if (!ydoc) return;
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
         const yMap = new Y.Map();
         Object.entries(flow).forEach(([k, v]) => yMap.set(k, v));
         ydoc.getMap<Y.Map<any>>('flows').set(flow.id, yMap);
     },
 
     deleteFlow: (id) => {
-        get().ydoc?.getMap<Y.Map<any>>('flows').delete(id);
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        ydoc.getMap<Y.Map<any>>('flows').delete(id);
     },
 
     updateSection: (id, patch) => {
-        const { ydoc } = get();
-        if (!ydoc) return;
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('sections').get(id);
         if (yMap) {
             ydoc.transact(() => Object.entries(patch).forEach(([k, v]) => yMap.set(k, v)));
@@ -211,15 +213,17 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     },
 
     addSection: (section) => {
-        const { ydoc } = get();
-        if (!ydoc) return;
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
         const yMap = new Y.Map();
         Object.entries(section).forEach(([k, v]) => yMap.set(k, v));
         ydoc.getMap<Y.Map<any>>('sections').set(section.id, yMap);
     },
 
     deleteSection: (id) => {
-        get().ydoc?.getMap<Y.Map<any>>('sections').delete(id);
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        ydoc.getMap<Y.Map<any>>('sections').delete(id);
     },
 
     exportData: () => {
@@ -228,8 +232,8 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     },
 
     importData: (data) => {
-        const { ydoc } = get();
-        if (!ydoc) return;
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
         ydoc.transact(() => {
             const yScreens = ydoc.getMap<Y.Map<any>>('screens');
             const yFlows = ydoc.getMap<Y.Map<any>>('flows');

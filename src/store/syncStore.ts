@@ -215,12 +215,20 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
         // Operation from other users
         socket.on('operation', (operation: CRDTOperation) => {
-            // console.log(`📥 [Collaboration] Received remote operation: ${operation.type} for ${operation.targetId}`);
             // Update local clock
             const { lamportClock } = get();
             set({ lamportClock: Math.max(lamportClock, operation.lamportClock) + 1 });
 
-            // Dispatch custom event for ERD/ScreenDesign stores to handle
+            // Yjs가 담당하는 화면 데이터 operations는 여기서 무시
+            // (실시간 브로드캐스트는 Yjs WebSocket이 처리 → 중복 처리 방지)
+            const YJS_HANDLED_TYPES = new Set([
+                'SCREEN_DRAW_ELEMENTS_UPDATE',
+                // SCREEN_UPDATE는 잠금 상태 전파 용도로 여전히 처리
+                // SCREEN_DELETE는 히스토리 기록 후 이미 Yjs가 실제 삭제 처리
+            ]);
+            if (YJS_HANDLED_TYPES.has(operation.type)) return;
+
+            // ERD, 잠금 상태, 히스토리 등 Socket.IO 전용 operations
             window.dispatchEvent(new CustomEvent('erd:remote_operation', { detail: operation }));
         });
 

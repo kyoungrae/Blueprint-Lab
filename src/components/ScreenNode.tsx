@@ -71,7 +71,7 @@ const FloatingPanelWrapper: React.FC<{
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     className?: string;
     [key: string]: any;
-}> = ({ children, flowPos, zoom, flowToScreenPosition, className, ...props }) => {
+}> = ({ children, flowPos, zoom: _zoom, flowToScreenPosition, className, ...props }) => {
     useRFStore(s => s.transform); // Force re-render on pan/zoom
     const screenPos = flowToScreenPosition(flowPos);
     return (
@@ -80,7 +80,10 @@ const FloatingPanelWrapper: React.FC<{
             style={{
                 left: screenPos.x,
                 top: screenPos.y,
-                transform: `scale(calc(0.9 * ${zoom}))`,
+                // flowToScreenPosition이 이미 화면(뷰포트) 좌표를 반환하므로
+                // scale을 추가로 적용하면 줌에 따라 패널이 작아지는 버그 발생
+                // → scale(1)로 고정하여 항상 일정한 크기로 표시
+                transform: 'scale(1)',
                 transformOrigin: 'top left',
                 position: 'fixed',
                 ...props.style
@@ -91,6 +94,7 @@ const FloatingPanelWrapper: React.FC<{
         </div>
     );
 };
+
 
 /** 다각형 프리셋에 따른 정규화된 꼭짓점 (0~1). [x,y] 배열 */
 const POLYGON_PRESET_NORM: Record<PolygonPreset, [number, number][]> = {
@@ -206,7 +210,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
     const zoom = 'var(--rf-zoom, 1)';
-    const { getViewport } = useReactFlow();
+
 
     useOnViewportChange({
         onChange: (viewport) => {
@@ -3157,7 +3161,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         style={{
                                                                             left: screenPos.x,
                                                                             top: screenPos.y,
-                                                                            transform: `scale(calc(0.85 * ${zoom}))`,
+                                                                            transform: 'scale(1)',
                                                                         }}
                                                                         onMouseLeave={() => setTablePickerHover(null)}
                                                                     >
@@ -3392,7 +3396,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                             {shapeSubPanelOpen && shapePanelAnchorRef.current && createPortal(
                                                                 (() => {
                                                                     const rect = shapePanelAnchorRef.current.getBoundingClientRect();
-                                                                    const currentZoom = getViewport().zoom;
                                                                     return (
                                                                         <div
                                                                             data-shape-panel
@@ -3401,7 +3404,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             style={{
                                                                                 left: rect.left,
                                                                                 top: rect.bottom + 4,
-                                                                                transform: `scale(${Math.max(0.75, Math.min(currentZoom * 0.85, 1.5))})`,
+                                                                                transform: 'scale(1)',
                                                                             }}
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                         >
@@ -3466,7 +3469,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                             {linePanelOpen && linePanelAnchorRef.current && createPortal(
                                                                 (() => {
                                                                     const rect = linePanelAnchorRef.current.getBoundingClientRect();
-                                                                    const currentZoom = getViewport().zoom;
                                                                     return (
                                                                         <div
                                                                             data-line-panel
@@ -3475,7 +3477,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             style={{
                                                                                 left: rect.left,
                                                                                 top: rect.bottom + 4,
-                                                                                transform: `scale(${Math.max(0.75, Math.min(currentZoom * 0.85, 1.5))})`,
+                                                                                transform: 'scale(1)',
                                                                             }}
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                         >
@@ -3676,7 +3678,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             style={{
                                                                                 left: screenPos.x,
                                                                                 top: screenPos.y,
-                                                                                transform: `scale(calc(0.85 * ${zoom}))`,
+                                                                                transform: 'scale(1)',
                                                                             }}
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                         >

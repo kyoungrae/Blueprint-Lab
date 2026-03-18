@@ -252,7 +252,7 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                     className="w-full flex items-center justify-start -mx-3 px-3 border-b border-gray-100 pb-2 mb-2 cursor-grab active:cursor-grabbing group/header"
                                     onMouseDown={handleHeaderMouseDown}
                                 >
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2" style={{minWidth:'175px'}}>
                                         <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
                                         <Box size={12} className="text-teal-600" />
                                         <span className="text-[11px] font-bold text-gray-600">컴포넌트 추가</span>

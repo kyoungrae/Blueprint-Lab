@@ -4,6 +4,7 @@ import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
 import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
 import { useEntityLock } from '../collaboration';
+import { useYjsStore } from '../../store/yjsStore';
 
 export const useScreenLockAndSync = (screen: Screen) => {
     const {
@@ -21,6 +22,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
     } = useScreenNodeStore();
     const { sendOperation } = useSyncStore();
     const { user } = useAuthStore();
+    const { updateScreen: yjsUpdate, deleteScreen: yjsDelete } = useYjsStore();
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(screen.id);
     const isLocalLocked = screen.isLocked ?? true;
     const isLocked = isLocalLocked || isLockedByOther;
@@ -28,32 +30,32 @@ export const useScreenLockAndSync = (screen: Screen) => {
     // 수정 가능 여부: 잠금 해제 상태이고, 자신이 잠금 해제한 사용자여야 함
     const canEdit = !isLocked && (!screen.unlockedUserId || screen.unlockedUserId === user?.id);
 
+    // 🔴 Yjs 단일 소스(SSOT): 모든 화면 데이터는 Yjs를 통해 저장·브로드캐스트
+    // 잠금 상태(isLocked/unlockedAt)는 즉시 협업 조율을 위해 Socket.IO도 병행
     const syncUpdate = useCallback(
         (updates: Partial<Screen>) => {
-            sendOperation({
-                type: 'SCREEN_UPDATE',
-                targetId: screen.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: updates,
-            });
+            // Yjs: 데이터 영속성 + 실시간 브로드캐스트 (단일 채널)
+            yjsUpdate(screen.id, updates);
+            // Socket.IO: 잠금 상태 변경만 즉시 전파 (락 UI 실시간 반영)
+            if ('isLocked' in updates || 'unlockedAt' in updates) {
+                sendOperation({
+                    type: 'SCREEN_UPDATE',
+                    targetId: screen.id,
+                    userId: user?.id || 'anonymous',
+                    userName: user?.name || 'Anonymous',
+                    payload: updates,
+                });
+            }
         },
-        [sendOperation, screen.id, user?.id, user?.name],
+        [yjsUpdate, sendOperation, screen.id, user?.id, user?.name],
     );
 
-    // drawElements 전용 실시간 동기화 함수
+    // drawElements 전용 동기화 → Yjs 직접 호출 (Socket.IO 이중 전송 제거)
     const syncDrawElements = useCallback(
         (drawElements: DrawElement[]) => {
-            // console.log(`📤 [Sync] Sending SCREEN_DRAW_ELEMENTS_UPDATE for screen ${screen.id}:`, drawElements.length, 'elements');
-            sendOperation({
-                type: 'SCREEN_DRAW_ELEMENTS_UPDATE',
-                targetId: screen.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: { drawElements },
-            });
+            yjsUpdate(screen.id, { drawElements });
         },
-        [sendOperation, screen.id, user?.id, user?.name],
+        [yjsUpdate, screen.id],
     );
 
     // 1시간 후 자동 잠금 타이머
@@ -107,18 +109,20 @@ export const useScreenLockAndSync = (screen: Screen) => {
             // drawElements 변경 시 ScreenNodeFull 전체 리렌더링을 회피함
             if ('drawElements' in updates && Object.keys(updates).length === 1 && updates.drawElements) {
                 updateDrawElements(screen.id, updates.drawElements);
-                // drawElements 변경 시 실시간 동기화 추가
-                syncDrawElements(updates.drawElements);
+                // Yjs 단일 채널로 동기화 (Socket.IO SCREEN_DRAW_ELEMENTS_UPDATE 제거)
+                yjsUpdate(screen.id, { drawElements: updates.drawElements });
             } else {
                 updateScreen(screen.id, updates);
+                // Yjs로 비-drawElements 업데이트도 동기화
+                yjsUpdate(screen.id, updates);
             }
-            
+
             // 업데이트 시 자동 잠금 타이머 리셋
             if (updates.isLocked === false && updates.unlockedAt !== undefined) {
                 startAutoLockTimer();
             }
         },
-        [isLocked, updateScreen, updateDrawElements, screen.id, startAutoLockTimer, syncDrawElements],
+        [isLocked, updateScreen, updateDrawElements, screen.id, startAutoLockTimer, yjsUpdate],
     );
 
     const handleToggleLock = useCallback(
@@ -155,18 +159,22 @@ export const useScreenLockAndSync = (screen: Screen) => {
         (e: React.MouseEvent) => {
             e.stopPropagation();
             if (window.confirm(`화면 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
+                // 1. 로컬 상태에서 즉시 삭제
+                deleteScreen(screen.id);
+                // 2. Yjs 삭제: 다른 클라이언트 실시간 반영 + MongoDB 저장 (BUG-08 수정)
+                yjsDelete(screen.id);
+                // 3. Socket.IO: 히스토리 기록 전용
                 sendOperation({
                     type: 'SCREEN_DELETE',
                     targetId: screen.id,
                     userId: user?.id || 'anonymous',
                     userName: user?.name || 'Anonymous',
-                    payload: {},
+                    payload: { name: screen.name },
                     previousState: screen as unknown as Record<string, unknown>,
                 });
-                deleteScreen(screen.id);
             }
         },
-        [deleteScreen, sendOperation, screen, user?.id, user?.name],
+        [deleteScreen, yjsDelete, sendOperation, screen, user?.id, user?.name],
     );
 
     return {
