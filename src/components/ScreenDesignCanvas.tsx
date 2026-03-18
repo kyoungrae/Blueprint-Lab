@@ -204,7 +204,6 @@ import { useSyncStore } from '../store/syncStore';
 import { useYjsStore } from '../store/yjsStore';
 
 import type { ExportFormat } from './ScreenExportModal';
-import { exportEditablePPT } from '../utils/exportPPTUtility';
 import PPTBetaExporter from './PPTBetaExporter';
 
 const nodeTypes: NodeTypes = {
@@ -1453,15 +1452,6 @@ const ScreenDesignCanvasContent: React.FC = () => {
         setIsExporting(true);
 
         const runExport = () => {
-            // 💡 [수정됨] PPT는 사진 찍을 필요 없이 100% 네이티브 데이터로 던짐!
-            if (format === 'ppt') {
-                const selectedScreens = screens.filter(screen => selectedIds.includes(screen.id));
-                exportEditablePPT(selectedScreens).finally(() => {
-                    setIsExporting(false);
-                });
-                return;
-            }
-
             // 🚀 PPT_BETA 처리
             if (format === 'ppt_beta') {
                 // PPT_BETA 컴포넌트를 사용하여 내보내기

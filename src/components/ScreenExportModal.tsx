@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Download, Monitor, CheckSquare, Square, FileText, Image, Edit3 } from 'lucide-react';
 import type { Screen } from '../types/screenDesign';
 
-export type ExportFormat = 'png' | 'pdf' | 'ppt' | 'ppt_beta';
+export type ExportFormat = 'png' | 'pdf' | 'ppt_beta';
 
 interface ScreenExportModalProps {
     screens: Screen[];
@@ -128,13 +128,6 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
                         PDF
                     </button>
                     <button
-                        onClick={() => setFormat('ppt')}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${format === 'ppt' ? 'bg-green-100 text-green-700 border-2 border-green-300' : 'bg-gray-50 text-gray-600 border-2 border-transparent hover:bg-gray-100'}`}
-                    >
-                        <Edit3 size={18} />
-                        PPT
-                    </button>
-                    <button
                         onClick={() => setFormat('ppt_beta')}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${format === 'ppt_beta' ? 'bg-purple-100 text-purple-700 border-2 border-purple-300' : 'bg-gray-50 text-gray-600 border-2 border-transparent hover:bg-gray-100'}`}
                     >
@@ -158,7 +151,7 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, onExport
                     >
                         <div className="flex items-center gap-2">
                             <Download size={16} />
-                            {format === 'png' ? 'PNG 내보내기' : format === 'pdf' ? 'PDF 내보내기' : format === 'ppt' ? 'PPT 내보내기' : 'PPT_BETA 내보내기'} ({selectedIds.size})
+                            {format === 'png' ? 'PNG 내보내기' : format === 'pdf' ? 'PDF 내보내기' : 'PPT_BETA 내보내기'} ({selectedIds.size})
                         </div>
                     </button>
                 </div>
