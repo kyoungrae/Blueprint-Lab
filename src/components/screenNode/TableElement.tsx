@@ -8,6 +8,7 @@ import { FONT_SIZE_OVERRIDE_EVENT, COLOR_OVERRIDE_EVENT, TEXT_STYLE_OVERRIDE_EVE
 interface TableElementProps {
     el: DrawElement;
     isLocked: boolean;
+    isSelected: boolean;
     editingTableId: string | null;
     editingCellIndex: number | null;
     selectedCellIndices: number[];
@@ -28,6 +29,7 @@ interface TableElementProps {
 const TableElement: React.FC<TableElementProps> = memo(({
     el,
     isLocked,
+    isSelected,
     editingTableId,
     editingCellIndex,
     selectedCellIndices,
@@ -180,7 +182,8 @@ const TableElement: React.FC<TableElementProps> = memo(({
         <div
             className="w-full h-full relative nodrag nopan"
             style={{
-                cursor: editingTableId === el.id ? 'default' : 'move',
+                // State 0: move 커서, State 1(선택됨): cell 커서, State 2(편집모드): crosshair
+                cursor: editingTableId === el.id ? 'crosshair' : isSelected ? 'cell' : 'move',
                 outline: editingTableId === el.id ? '2px solid #3b82f6' : 'none',
                 outlineOffset: '1px',
                 userSelect: editingTableId === el.id ? 'text' : 'none',
@@ -188,18 +191,19 @@ const TableElement: React.FC<TableElementProps> = memo(({
             }}
             onMouseDown={(e) => {
                 if (isLocked) return;
-                // 편집 모드일 때만 전파를 차단하여 셀 선택/드래그 범위 선택 로직이 동작하게 함
-                // 편집 모드가 아닐 때는 전파를 허용하여 CanvasElement의 handleElementMouseDown이 실행되게 함
-                // → 표 이동, Shift+클릭 다중선택/해제가 동작
+                // 셀이 stopPropagation을 처리하므로 여기까지 온 경우 = 표 테두리/여백 영역 클릭
+                // 편집모드(State 2)일 때만 차단, 그 외(State 0/1)는 전파하여 handleElementMouseDown이 처리
                 if (editingTableId === el.id) {
                     e.stopPropagation();
                 }
             }}
             onDoubleClick={(e) => {
-                // 더블 클릭은 항상 중단하여 상위 엔티티 등이 잡히지 않도록 함.
                 e.stopPropagation();
                 if (isLocked) return;
-
+                // State 1 이상(선택된 상태)에서만 텍스트 편집 모드 진입
+                // State 0에서 더블클릭하면 State 1을 거쳐 (handleElementDoubleClick이 처리)
+                // State 1/2에서 더블클릭하면 셀 텍스트 편집
+                if (!isSelected && editingTableId !== el.id) return;
                 const target = e.target as HTMLElement | null;
                 const cellElement = target?.closest?.('[data-cell-index]') as HTMLElement | null;
                 if (cellElement) {
@@ -211,7 +215,6 @@ const TableElement: React.FC<TableElementProps> = memo(({
                         return;
                     }
                 }
-
                 setEditingTableId(el.id);
                 setSelectedCellIndices([]);
                 setEditingCellIndex(null);
@@ -308,57 +311,82 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                     borderTop, borderBottom, borderLeft, borderRight,
                                     outline: isCellSelected ? '2px solid #3b82f6' : 'none',
                                     outlineOffset: '-1px',
-                                    cursor: editingTableId === el.id ? 'crosshair' : 'default',
+                                    cursor: editingTableId === el.id ? 'crosshair' : isSelected ? 'cell' : 'default',
                                     textAlign: cellStyle.textAlign || el.textAlign || 'center',
                                     verticalAlign: cellStyle.verticalAlign || el.verticalAlign || 'middle',
                                     overflow: 'hidden', minWidth: 0, minHeight: 0,
                                 }}
                                 onMouseDown={(e) => {
-                                    // 편집 중인 경우에는 셀 선택/편집 로직을 위해 전파를 차단
-                                    if (editingTableId === el.id) {
-                                        e.stopPropagation();
+                                    if (isLocked) return;
 
-                                        // Shift+클릭 시 셀 선택 해제 (편집 모드 내부 로직)
-                                        if (e.shiftKey && selectedCellIndices.includes(cellIndex)) {
-                                            setSelectedCellIndices(selectedCellIndices.filter(idx => idx !== cellIndex));
-                                            return;
-                                        }
+                                    const inCellMode = editingTableId === el.id; // State 2
+                                    const tableSelected = isSelected;            // State 1
 
-                                        if (isLocked) return;
-                                        if (editingCellIndex !== null) setEditingCellIndex(null);
-                                        isDraggingCellSelectionRef.current = true;
-                                        dragStartCellIndexRef.current = cellIndex;
-                                        setSelectedCellIndices([cellIndex]);
-                                        const onMouseUp = () => {
-                                            isDraggingCellSelectionRef.current = false;
-                                            window.removeEventListener('mouseup', onMouseUp);
-                                        };
-                                        window.addEventListener('mouseup', onMouseUp);
+                                    if (!inCellMode && !tableSelected) {
+                                        // State 0: 미선택 상태
+                                        // 전파를 허용해 handleElementMouseDown이 표를 선택(State 1 전환)
+                                        return;
                                     }
-                                    // 편집 모드가 아닐 때는 전파를 허용하여 (handleElementMouseDown) 테이블 전체 선택/해제/이동 기능이 작동하게 함
+
+                                    // State 1 또는 2: 이벤트 차단 후 셀 조작
+                                    e.preventDefault();
+                                    e.stopPropagation();
+
+                                    if (!inCellMode) {
+                                        // State 1 → 2: 셀 선택 모드 진입
+                                        setEditingTableId(el.id);
+                                    }
+
+                                    // Shift+클릭으로 셀 개별 토글 (State 2에서만 의미 있음)
+                                    if (inCellMode && e.shiftKey && selectedCellIndices.includes(cellIndex)) {
+                                        setSelectedCellIndices(selectedCellIndices.filter(idx => idx !== cellIndex));
+                                        return;
+                                    }
+
+                                    // 셀 텍스트 편집 중이면 해제
+                                    if (editingCellIndex !== null) setEditingCellIndex(null);
+
+                                    // 드래그 선택 시작 (window-level mousemove + elementFromPoint)
+                                    isDraggingCellSelectionRef.current = true;
+                                    dragStartCellIndexRef.current = cellIndex;
+                                    setSelectedCellIndices([cellIndex]);
+
+                                    const onDragMove = (me: MouseEvent) => {
+                                        if (!isDraggingCellSelectionRef.current) return;
+                                        const target = document.elementFromPoint(me.clientX, me.clientY);
+                                        const cellEl = target?.closest('[data-cell-index]') as HTMLElement | null;
+                                        if (!cellEl) return;
+                                        const toIdx = parseInt(cellEl.getAttribute('data-cell-index') || '-1', 10);
+                                        if (toIdx < 0) return;
+                                        const startIdx = dragStartCellIndexRef.current;
+                                        if (startIdx < 0) return;
+                                        const from = flatIdxToRowCol(startIdx, cols);
+                                        const to = flatIdxToRowCol(toIdx, cols);
+                                        const rMin = Math.min(from.r, to.r);
+                                        const rMax = Math.max(from.r, to.r);
+                                        const cMin = Math.min(from.c, to.c);
+                                        const cMax = Math.max(from.c, to.c);
+                                        const newSelection: number[] = [];
+                                        for (let ri = rMin; ri <= rMax; ri++) {
+                                            for (let ci = cMin; ci <= cMax; ci++) {
+                                                newSelection.push(rowColToFlatIdx(ri, ci, cols));
+                                            }
+                                        }
+                                        setSelectedCellIndices(newSelection);
+                                    };
+                                    const onDragEnd = () => {
+                                        isDraggingCellSelectionRef.current = false;
+                                        window.removeEventListener('mousemove', onDragMove);
+                                        window.removeEventListener('mouseup', onDragEnd);
+                                    };
+                                    window.addEventListener('mousemove', onDragMove);
+                                    window.addEventListener('mouseup', onDragEnd);
                                 }}
                                 onClick={(e) => {
-                                    // 편집 모드에서는 클릭 이벤트가 상위로 전파되어 화면 선택이 풀리는 것을 방지
-                                    if (editingTableId === el.id) {
+                                    // 클릭이 캔버스까지 전파되어 화면 선택이 풀리는 것 방지
+                                    if (editingTableId === el.id || isSelected) {
                                         e.stopPropagation();
                                     }
-                                }}
-                                onMouseEnter={() => {
-                                    if (!isDraggingCellSelectionRef.current || editingTableId !== el.id) return;
-                                    const startIdx = dragStartCellIndexRef.current;
-                                    if (startIdx < 0) return;
-                                    const start = flatIdxToRowCol(startIdx, cols);
-                                    const rMin = Math.min(start.r, r);
-                                    const rMax = Math.max(start.r, r);
-                                    const cMin = Math.min(start.c, c);
-                                    const cMax = Math.max(start.c, c);
-                                    const newSelection: number[] = [];
-                                    for (let ri = rMin; ri <= rMax; ri++) {
-                                        for (let ci = cMin; ci <= cMax; ci++) {
-                                            newSelection.push(rowColToFlatIdx(ri, ci, cols));
-                                        }
-                                    }
-                                    setSelectedCellIndices(newSelection);
                                 }}
                             >
                                 {isCellEditing ? (
