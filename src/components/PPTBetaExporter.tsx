@@ -1,6 +1,6 @@
 import React from 'react';
 import pptxgen from "pptxgenjs";
-import type { Screen, DrawElement } from '../types/screenDesign';
+import type { Screen } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 
 interface PPTBetaExporterProps {
@@ -15,12 +15,22 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     onError
 }) => {
     const { screens } = useScreenDesignStore();
+
+    // 🚀 이미지 실제 크기를 가져오는 헬퍼 함수
+    const getImageSize = (url: string): Promise<{ w: number; h: number }> => {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+            img.onerror = () => resolve({ w: 100, h: 100 }); // 실패 시 기본값
+            img.src = url;
+        });
+    };
     
     React.useEffect(() => {
         const exportLayoutToPPT = async (selectedScreens: Screen[]) => {
             const pptx = new pptxgen();
 
-            selectedScreens.forEach((screen) => {
+            for (const screen of selectedScreens) {
                 const canvasW = screen.imageWidth || 800;
                 const canvasH = 770;
                 const ADJUSTED_HEADER_H = 130; 
@@ -335,17 +345,16 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     currentY += sectionH;
                 });
 
-                // 🚀 색상 정제 함수 보완
+                // 🚀 색상 정제 함수 보완 (투명도 체크 강화)
                 const cleanColor = (c?: string) => {
-                    // 투명하거나 값이 없으면 색상 코드를 내보내지 않음
-                    if (!c || c === 'transparent' || c === 'rgba(0,0,0,0)') return undefined;
+                    if (!c || c === 'transparent' || c === 'rgba(0,0,0,0)' || c === '#00000000') return undefined;
                     return c.replace('#', '');
                 };
 
                 // ─── 좌측 캔버스 UI 요소 매핑 ───
                 const sortedElements = [...(screen.drawElements || [])].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
-                sortedElements.forEach((el: DrawElement) => {
+                for (const el of sortedElements) {
                     const elX = el.x * scale;
                     const elY = bodyY + (el.y * scale);
                     const elW = (el.width || 10) * scale;
@@ -356,7 +365,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     const fillOptions = cleanedFill ? { 
                         color: cleanedFill, 
                         transparency: el.fillOpacity !== undefined ? (1 - el.fillOpacity) * 100 : 0 
-                    } : undefined; // cleanedFill이 없으면 fill 옵션 자체를 제거
+                    } : { color: 'FFFFFF', transparency: 100 }; // 🚀 투명 컨테이너 검은색 박스 방지
 
                     const cleanedStroke = cleanColor(el.stroke);
                     const lineOptions = cleanedStroke ? { 
@@ -536,19 +545,36 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         }
                         case 'image':
                             if (el.imageUrl && el.imageUrl.length > 10) {
-                                const imgOptions: any = { x: elX, y: elY, w: elW, h: elH, rotate: el.imageRotation || 0 };
+                                // 🚀 이미지 비율 수동 계산 로직
+                                const dim = await getImageSize(el.imageUrl);
+                                const imgRatio = dim.w / dim.h;
+
+                                let finalW = elW;
+                                let finalH = elW / imgRatio;
+
+                                if (finalH > elH) {
+                                    finalH = elH;
+                                    finalW = elH * imgRatio;
+                                }
+
+                                // 중앙 정렬 좌표 계산
+                                const offsetX = (elW - finalW) / 2;
+                                const offsetY = (elH - finalH) / 2;
+
+                                const imgOptions: any = { 
+                                    x: elX + offsetX, y: elY + offsetY, w: finalW, h: finalH, 
+                                    rotate: el.imageRotation || 0 
+                                };
+                                
                                 if (el.imageUrl.startsWith('data:')) imgOptions.data = el.imageUrl;
                                 else imgOptions.path = el.imageUrl;
-                                try {
-                                    slide.addImage(imgOptions);
-                                } catch {
-                                    // ignore bad images to avoid corrupting PPTX
-                                }
+                                
+                                try { slide.addImage(imgOptions); } catch { }
                             }
                             break;
                     }
-                });
-            });
+                }
+            }
 
             await pptx.writeFile({ fileName: `Blueprint_BETA_FullData_${Date.now()}.pptx` });
         };
