@@ -306,7 +306,7 @@ const ImageElement: React.FC<ImageElementProps> = ({ element, isSelected, isLock
                             width: '100%',
                             height: '100%',
                             // hasCrop일 때는 항상 fill로 통일 → 크롭 모드 전환 시 objectFit 점프 방지
-                            objectFit: hasCrop ? 'fill' : 'contain',
+                            objectFit: 'fill',
                             display: 'block',
                             pointerEvents: 'none',
                             ...(!isCropMode && hasCrop
