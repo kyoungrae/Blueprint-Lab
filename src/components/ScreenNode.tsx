@@ -2619,6 +2619,20 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 if (!file || !file.type.startsWith('image/')) continue;
                 e.preventDefault();
                 (async () => {
+                    // ── ✨ 수정: 붙여넣은 "로컬 파일"에서 직접 크기를 잽니다 ──
+                    const tempUrl = URL.createObjectURL(file);
+                    const img = new Image();
+                    img.src = tempUrl;
+                    await new Promise(resolve => {
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                    });
+                    const natW = img.naturalWidth || 200;
+                    const natH = img.naturalHeight || 150;
+                    const ratio = natW / natH;
+                    URL.revokeObjectURL(tempUrl); // 메모리 누수 방지 해제
+
+                    // 그 다음 서버에 업로드
                     let imageUrl: string;
                     try {
                         imageUrl = await uploadImage(file);
@@ -2630,18 +2644,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             reader.readAsDataURL(file);
                         });
                     }
-
-                    // ── ✨ NEW: 원본 이미지 비율 계산 ──
-                    const img = new Image();
-                    img.src = imageUrl;
-                    await new Promise(resolve => {
-                        img.onload = resolve;
-                        img.onerror = resolve;
-                    });
-
-                    const natW = img.naturalWidth || 200;
-                    const natH = img.naturalHeight || 150;
-                    const ratio = natW / natH;
 
                     // 초기 캔버스 삽입 시 너무 크지 않도록 최대 크기 지정 (비율 유지)
                     let w = natW;
@@ -3637,6 +3639,20 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 const ch = canvasRef.current?.clientHeight ?? 300;
                                                                 const newId = `draw_${Date.now()}`;
 
+                                                                // ── ✨ 수정: 서버에 올리기 전에 "로컬 파일"에서 직접 크기를 잽니다 (CORS 에러 완벽 차단) ──
+                                                                const tempUrl = URL.createObjectURL(file);
+                                                                const img = new Image();
+                                                                img.src = tempUrl;
+                                                                await new Promise(resolve => {
+                                                                    img.onload = resolve;
+                                                                    img.onerror = resolve;
+                                                                });
+                                                                const natW = img.naturalWidth || 200;
+                                                                const natH = img.naturalHeight || 150;
+                                                                const ratio = natW / natH;
+                                                                URL.revokeObjectURL(tempUrl); // 메모리 누수 방지 해제
+
+                                                                // 그 다음 서버에 실제 업로드를 진행합니다.
                                                                 let imageUrl: string;
                                                                 try {
                                                                     imageUrl = await uploadImage(file);
@@ -3649,24 +3665,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     });
                                                                 }
 
-                                                                // ── ✨ NEW: 원본 이미지 비율 계산 ──
-                                                                const img = new Image();
-                                                                img.src = imageUrl;
-                                                                await new Promise(resolve => {
-                                                                    img.onload = resolve;
-                                                                    img.onerror = resolve;
-                                                                });
-
-                                                                const natW = img.naturalWidth || 200;
-                                                                const natH = img.naturalHeight || 150;
-                                                                const ratio = natW / natH;
-
                                                                 // 초기 캔버스 삽입 시 너무 크지 않도록 최대 크기 지정 (비율 유지)
                                                                 let w = natW;
                                                                 let h = natH;
                                                                 const MAX_W = 400;
                                                                 const MAX_H = 300;
-
+                                                                
                                                                 if (w > MAX_W) { w = MAX_W; h = w / ratio; }
                                                                 if (h > MAX_H) { h = MAX_H; w = h * ratio; }
 
