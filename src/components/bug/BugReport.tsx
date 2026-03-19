@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bug, X, Plus, Trash2, Edit3, CheckCircle2, Clock, Check } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
-import type { BugReport, Project } from '../../types/erd';
+import type { BugReport, BugReportReply, Project } from '../../types/erd';
 import PremiumTooltip from '../screenNode/PremiumTooltip';
 
 interface BugReportModalProps {
@@ -20,6 +20,17 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
     const [newReportContent, setNewReportContent] = useState('');
     const [editingReportId, setEditingReportId] = useState<string | null>(null);
     const [editingContent, setEditingContent] = useState('');
+    const [replyDraftByBugId, setReplyDraftByBugId] = useState<Record<string, string>>({});
+    const [editingReply, setEditingReply] = useState<{ bugReportId: string; replyId: string } | null>(null);
+    const [editingReplyContent, setEditingReplyContent] = useState('');
+
+    const bugRepliesCountById = useMemo(() => {
+        const out: Record<string, number> = {};
+        bugReports.forEach((b) => {
+            out[b.id] = b.replies?.length ?? 0;
+        });
+        return out;
+    }, [bugReports]);
 
     const isAdmin = project.members.some(m => m.id === user?.id && (m.role === 'OWNER' || m.role === 'EDITOR'));
 
@@ -48,6 +59,71 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
         if (!confirm('정말 이 버그 리포트를 삭제하시겠습니까?')) return;
         const updatedBugs = bugReports.filter(b => b.id !== id);
         await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+    };
+
+    const handleSubmitReply = async (bugReportId: string) => {
+        if (!user) return;
+        const draft = replyDraftByBugId[bugReportId] ?? '';
+        const content = draft.trim();
+        if (!content) return;
+
+        const reply: BugReportReply = {
+            id: `bug_reply_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            bugReportId,
+            userId: user.id,
+            userName: user.name,
+            userPicture: user.picture,
+            content,
+            createdAt: new Date().toISOString(),
+        };
+
+        const updatedBugs = bugReports.map((b) => {
+            if (b.id !== bugReportId) return b;
+            const replies = [...(b.replies || []), reply];
+            return { ...b, replies, updatedAt: new Date().toISOString() };
+        });
+
+        await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        setReplyDraftByBugId((prev) => ({ ...prev, [bugReportId]: '' }));
+    };
+
+    const handleDeleteReply = async (bugReportId: string, replyId: string) => {
+        if (!confirm('이 답글을 삭제하시겠습니까?')) return;
+
+        const updatedBugs = bugReports.map((b) => {
+            if (b.id !== bugReportId) return b;
+            const nextReplies = (b.replies || []).filter((r) => r.id !== replyId);
+            return { ...b, replies: nextReplies, updatedAt: new Date().toISOString() };
+        });
+
+        await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+    };
+
+    const handleStartEditReply = (bugReportId: string, reply: BugReportReply) => {
+        setEditingReply({ bugReportId, replyId: reply.id });
+        setEditingReplyContent(reply.content);
+    };
+
+    const handleCancelEditReply = () => {
+        setEditingReply(null);
+        setEditingReplyContent('');
+    };
+
+    const handleSaveEditReply = async () => {
+        if (!editingReply) return;
+        const content = editingReplyContent.trim();
+        if (!content) return;
+
+        const { bugReportId, replyId } = editingReply;
+
+        const updatedBugs = bugReports.map((b) => {
+            if (b.id !== bugReportId) return b;
+            const nextReplies = (b.replies || []).map((r) => (r.id === replyId ? { ...r, content } : r));
+            return { ...b, replies: nextReplies, updatedAt: new Date().toISOString() };
+        });
+
+        await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        handleCancelEditReply();
     };
 
     const handleSaveEdit = async () => {
@@ -224,6 +300,100 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
                                                 {report.content}
                                             </span>
                                         )}
+                                    </div>
+
+                                    <div className="px-4 pb-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-xs font-bold text-gray-600">답글 ({bugRepliesCountById[report.id] || 0})</span>
+                                        </div>
+
+                                        <div className="flex flex-col gap-2">
+                                            {(report.replies || []).length === 0 ? (
+                                                <div className="text-xs text-gray-400 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                                                    아직 답글이 없습니다.
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col gap-2">
+                                                    {(report.replies || []).map((r) => {
+                                                        const canManageReply = (r.userId === user?.id) || isAdmin;
+                                                        const isEditingThisReply = editingReply?.bugReportId === report.id && editingReply?.replyId === r.id;
+                                                        return (
+                                                        <div key={r.id} className="flex gap-2 items-start bg-gray-50 border border-gray-100 rounded-xl p-3">
+                                                            {r.userPicture ? (
+                                                                <img src={r.userPicture} alt={r.userName} className="w-7 h-7 rounded-full object-cover border border-white shadow-sm shrink-0" />
+                                                            ) : (
+                                                                <div className="w-7 h-7 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center font-bold text-[11px] shrink-0">
+                                                                    {r.userName.charAt(0).toUpperCase()}
+                                                                </div>
+                                                            )}
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className="text-xs font-bold text-gray-700 truncate">{r.userName}</span>
+                                                                    <div className="flex items-center gap-2 shrink-0">
+                                                                        <span className="text-[10px] text-gray-400">{new Date(r.createdAt).toLocaleString()}</span>
+                                                                        {canManageReply && (
+                                                                            <div className="flex items-center gap-1">
+                                                                                <PremiumTooltip forceBodyPortal label="수정" placement="top">
+                                                                                    <button
+                                                                                        onClick={() => handleStartEditReply(report.id, r)}
+                                                                                        className="p-1 text-blue-500 rounded hover:bg-blue-50 transition-colors"
+                                                                                    >
+                                                                                        <Edit3 size={12} />
+                                                                                    </button>
+                                                                                </PremiumTooltip>
+                                                                                <PremiumTooltip forceBodyPortal label="삭제" placement="top">
+                                                                                    <button
+                                                                                        onClick={() => handleDeleteReply(report.id, r.id)}
+                                                                                        className="p-1 text-red-500 rounded hover:bg-red-50 transition-colors"
+                                                                                    >
+                                                                                        <Trash2 size={12} />
+                                                                                    </button>
+                                                                                </PremiumTooltip>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                {isEditingThisReply ? (
+                                                                    <div className="flex flex-col gap-2 mt-2">
+                                                                        <textarea
+                                                                            value={editingReplyContent}
+                                                                            onChange={(e) => setEditingReplyContent(e.target.value)}
+                                                                            className="w-full text-xs text-gray-700 bg-white border border-blue-200 rounded-lg p-2 outline-none resize-none min-h-[44px] focus:ring-2 focus:ring-blue-500/20"
+                                                                        />
+                                                                        <div className="flex justify-end gap-2">
+                                                                            <button onClick={handleCancelEditReply} className="px-3 py-1.5 text-[11px] text-gray-500 hover:bg-gray-100 rounded">취소</button>
+                                                                            <button onClick={handleSaveEditReply} className="px-3 py-1.5 text-[11px] bg-blue-500 text-white hover:bg-blue-600 rounded font-bold shadow-sm">수정 저장</button>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed mt-1">{r.content}</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            <div className="flex flex-col gap-2 mt-2">
+                                                <textarea
+                                                    value={replyDraftByBugId[report.id] ?? ''}
+                                                    onChange={(e) => setReplyDraftByBugId((prev) => ({ ...prev, [report.id]: e.target.value }))}
+                                                    placeholder={user ? '답글을 입력하세요...' : '로그인 후 답글을 작성할 수 있습니다.'}
+                                                    disabled={!user}
+                                                    className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-xl p-3 outline-none resize-none min-h-[54px] focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/40 disabled:bg-gray-50 disabled:text-gray-400"
+                                                />
+                                                <div className="flex justify-end">
+                                                    <button
+                                                        onClick={() => handleSubmitReply(report.id)}
+                                                        disabled={!user || !(replyDraftByBugId[report.id] ?? '').trim()}
+                                                        className="px-4 py-2 text-xs bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 rounded-lg font-bold shadow-sm active:scale-95 disabled:active:scale-100 transition-all"
+                                                    >
+                                                        답글 등록
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             ))

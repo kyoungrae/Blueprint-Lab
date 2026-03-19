@@ -70,6 +70,17 @@ export interface BugReport {
     resolvedAt?: string;
     resolvedBy?: string;
     resolvedByName?: string;
+    replies?: BugReportReply[];
+}
+
+export interface BugReportReply {
+    id: string;
+    bugReportId: string;
+    userId: string;
+    userName: string;
+    userPicture?: string;
+    content: string;
+    createdAt: string;
 }
 
 export interface Project {

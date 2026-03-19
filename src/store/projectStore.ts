@@ -42,6 +42,21 @@ export const useProjectStore = create<ProjectStore>()(
                         const data = await response.json();
                         // Map Mongo _id to id
                         const currentProjects = get().projects;
+
+                        const mergeBugReports = (server: any[], local: any[]) => {
+                            const localById = new Map((local || []).map((b: any) => [b.id, b]));
+                            return (server || []).map((b: any) => {
+                                const lb = localById.get(b.id);
+                                if (!lb) return b;
+                                const serverReplies = b.replies;
+                                const localReplies = lb.replies;
+                                const replies = (Array.isArray(serverReplies) && serverReplies.length > 0)
+                                    ? serverReplies
+                                    : (Array.isArray(localReplies) ? localReplies : undefined);
+                                return { ...lb, ...b, replies };
+                            });
+                        };
+
                         const projects = data.map((p: any) => {
                             const pt = p.projectType || 'ERD';
                             // 로컬에 저장된 기존 프로젝트 (persist로 유지됨)
@@ -121,7 +136,7 @@ export const useProjectStore = create<ProjectStore>()(
                                     role: m.role || 'MEMBER'
                                 })),
                                 data: projData,
-                                bugReports: p.bugReports || []
+                                bugReports: mergeBugReports(p.bugReports || [], localProject?.bugReports || [])
                             };
                         });
                         set({ projects });
