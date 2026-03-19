@@ -2372,7 +2372,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
             // Ctrl+C (Copy) - Table cell copy (content + per-cell styles)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
-                if (editingTableId && selectedCellIndices.length > 0) {
+                if (editingTableId && selectedCellIndices.length > 0 && editingCellIndex === null) {
                     e.preventDefault();
                     e.stopPropagation();
                     const tableEl = drawElements.find(it => it.id === editingTableId);
@@ -2399,7 +2399,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
             // Ctrl+V (Paste) - Table cell paste (relative positioning)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-                if (editingTableId && selectedCellIndices.length > 0 && cellClipboard?.type === 'table-cells' && cellClipboard.cells.length > 0) {
+                if (editingTableId && selectedCellIndices.length > 0 && editingCellIndex === null && cellClipboard?.type === 'table-cells' && cellClipboard.cells.length > 0) {
                     e.preventDefault();
                     e.stopPropagation();
                     const tableEl = drawElements.find(it => it.id === editingTableId);
