@@ -21,7 +21,6 @@ export interface TablePanelFloatingProps {
     drawElements: DrawElement[];
     tablePanelPos: { x: number; y: number };
     setTablePanelPos: (pos: { x: number; y: number }) => void;
-    zoom: number | string;
     isLocked: boolean;
     editingTableId: string | null;
     selectedCellIndices: number[];
@@ -55,7 +54,6 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
     drawElements,
     tablePanelPos,
     setTablePanelPos,
-    zoom,
     isLocked,
     editingTableId,
     selectedCellIndices,
@@ -291,7 +289,9 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
             style={{
                 left: tablePanelScreenPos.x,
                 top: tablePanelScreenPos.y,
-                transform: `scale(calc(0.85 * ${zoom}))`,
+                // 수정: zoom에 따른 스케일 변화를 완전히 제거하고 고정된 값을 사용합니다.
+            transform: `scale(0.85)`, // 피그마처럼 일정한 크기 유지
+            transformOrigin: 'top left',
             }}
         >
             {/* Header */}

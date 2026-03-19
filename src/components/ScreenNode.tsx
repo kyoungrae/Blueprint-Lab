@@ -67,24 +67,38 @@ const getPanelPortalRoot = () => document.getElementById('panel-portal-root') ||
 /** 포털로 렌더링되는 패널들이 뷰포트 이동/줌에 기민하게 반응하도록 감싸는 컴포넌트 */
 const FloatingPanelWrapper: React.FC<{
     children: React.ReactNode;
-    flowPos: { x: number; y: number };
-    zoom: number | string;
-    flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
+    flowPos?: { x: number; y: number };
+    anchorRef?: React.RefObject<HTMLDivElement | null>;
+    flowToScreenPosition?: (pos: { x: number; y: number }) => { x: number; y: number };
     className?: string;
     [key: string]: any;
-}> = ({ children, flowPos, zoom: _zoom, flowToScreenPosition, className, ...props }) => {
+}> = ({ children, flowPos, anchorRef, flowToScreenPosition, className, ...props }) => {
     useRFStore(s => s.transform); // Force re-render on pan/zoom
-    const screenPos = flowToScreenPosition(flowPos);
+
+    let screenX = 0;
+    let screenY = 0;
+
+    // 1. 기준이 되는 버튼(anchorRef)이 있는 경우 (도형, 선 패널 등)
+    if (anchorRef && anchorRef.current) {
+        const rect = anchorRef.current.getBoundingClientRect();
+        screenX = rect.left;
+        screenY = rect.bottom + 4;
+    } 
+    // 2. 캔버스 상의 특정 좌표(flowPos)를 따라가는 경우 (표 삽입, 격자 보기 등)
+    else if (flowPos && flowToScreenPosition) {
+        const screenPos = flowToScreenPosition(flowPos);
+        screenX = screenPos.x;
+        screenY = screenPos.y;
+    }
+
     return (
         <div
             className={className}
             style={{
-                left: screenPos.x,
-                top: screenPos.y,
-                // flowToScreenPosition이 이미 화면(뷰포트) 좌표를 반환하므로
-                // scale을 추가로 적용하면 줌에 따라 패널이 작아지는 버그 발생
-                // → scale(1)로 고정하여 항상 일정한 크기로 표시
-                transform: 'scale(1)',
+                left: screenX,
+                top: screenY,
+                // 🚀 크기는 무조건 원래 크기로 고정!
+                transform: 'scale(1)', 
                 transformOrigin: 'top left',
                 position: 'fixed',
                 ...props.style
@@ -209,7 +223,6 @@ const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => 
 const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = memo(({ data, selected }) => {
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
-    const zoom = 'var(--rf-zoom, 1)';
     const yjsIsSynced = useYjsStore(s => s.isSynced);
 
     useOnViewportChange({
@@ -3183,18 +3196,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     <Table2 size={18} />
                                                                 </button>
                                                             </PremiumTooltip>
-                                                            {showTablePicker && (() => {
-                                                                const screenPos = flowToScreenPosition({ x: tablePickerPos.x, y: tablePickerPos.y });
-                                                                return createPortal(
+                                                            {showTablePicker && createPortal(
+                                                                <FloatingPanelWrapper
+                                                                    data-table-picker-portal
+                                                                    data-screen-id={screen.id}
+                                                                    className="nodrag nopan fixed z-[9000]"
+                                                                    flowPos={tablePickerPos}
+                                                                    flowToScreenPosition={flowToScreenPosition}
+                                                                >
                                                                     <div
-                                                                        data-table-picker-portal
-                                                                        data-screen-id={screen.id}
-                                                                        className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in duration-150 origin-top-left"
-                                                                        style={{
-                                                                            left: screenPos.x,
-                                                                            top: screenPos.y,
-                                                                            transform: 'scale(1)',
-                                                                        }}
+                                                                        className="bg-white border border-gray-200 rounded-xl shadow-2xl p-3 animate-in fade-in zoom-in duration-150 origin-top-left"
                                                                         onMouseLeave={() => setTablePickerHover(null)}
                                                                     >
                                                                         <div
@@ -3269,17 +3280,17 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                                 : '행 × 열 선택'
                                                                             }
                                                                         </div>
-                                                                    </div>,
-                                                                    getPanelPortalRoot()
-                                                                );
-                                                            })()}
+                                                                    </div>
+                                                                </FloatingPanelWrapper>,
+                                                                getPanelPortalRoot()
+                                                            )}
                                                             {!screen.screenId?.startsWith('CMP-') && (
                                                                 <ComponentPickerButton
                                                                     show={showComponentPicker}
                                                                     onShowChange={setShowComponentPicker}
                                                                     position={componentPickerPos}
                                                                     onPositionChange={setComponentPickerPos}
-                                                                    // zoom={zoom} // 🗑️ 삭제: 더 이상 줌 배율을 사용하지 않음
+                                                                    // zoom={1} // 🗑️ 삭제: 더 이상 줌 배율을 사용하지 않음
                                                                     flowToScreenPosition={flowToScreenPosition}
                                                                     screenToFlowPosition={screenToFlowPosition}
                                                                     componentList={componentList}
@@ -3293,14 +3304,18 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 const imgEl = drawElements.find(el => selectedElementIds.includes(el.id) && el.type === 'image');
                                                                 if (!imgEl || imgEl.type !== 'image') return null;
                                                                 return createPortal(
-                                                                    <div data-image-style-panel data-screen-id={screen.id}>
+                                                                    <FloatingPanelWrapper
+                                                                        data-image-style-panel
+                                                                        data-screen-id={screen.id}
+                                                                        flowPos={imageStylePanelPos}
+                                                                        flowToScreenPosition={flowToScreenPosition}
+                                                                    >
                                                                         <ImageStylePanel
                                                                             element={imgEl}
                                                                             onUpdate={(u) => updateElement(imgEl.id, u)}
                                                                             onClose={() => { setShowImageStylePanel(false); setImageCropMode(false); }}
                                                                             position={imageStylePanelPos}
                                                                             onPositionChange={setImageStylePanelPos}
-                                                                            zoom={zoom}
                                                                             screenToFlowPosition={screenToFlowPosition}
                                                                             flowToScreenPosition={flowToScreenPosition}
                                                                             onDragStart={() => { isDraggingImageStylePanelRef.current = true; }}
@@ -3308,7 +3323,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             isCropMode={imageCropMode}
                                                                             onCropModeToggle={setImageCropMode}
                                                                         />
-                                                                    </div>,
+                                                                    </FloatingPanelWrapper>,
                                                                     getPanelPortalRoot()
                                                                 );
                                                             })()}
@@ -3426,57 +3441,48 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 </button>
                                                             </PremiumTooltip>
                                                             {shapeSubPanelOpen && shapePanelAnchorRef.current && createPortal(
-                                                                (() => {
-                                                                    const rect = shapePanelAnchorRef.current.getBoundingClientRect();
-                                                                    return (
-                                                                        <div
-                                                                            data-shape-panel
-                                                                            data-screen-id={screen.id}
-                                                                            className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] py-2 min-w-[140px] animate-in fade-in zoom-in-95 origin-top-left"
-                                                                            style={{
-                                                                                left: rect.left,
-                                                                                top: rect.bottom + 4,
-                                                                                transform: 'scale(1)',
+                                                                <FloatingPanelWrapper
+                                                                    anchorRef={shapePanelAnchorRef}
+                                                                    data-shape-panel
+                                                                    data-screen-id={screen.id}
+                                                                    className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] py-2 min-w-[140px] animate-in fade-in zoom-in-95 origin-top-left"
+                                                                    onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
+                                                                >
+                                                                    <div className="px-3 pb-2 mb-1 border-b border-gray-100">
+                                                                        <span className="text-[11px] font-bold text-gray-600">도형</span>
+                                                                    </div>
+                                                                    {(['triangle', 'diamond', 'pentagon', 'hexagon', 'x-shape'] as PolygonPreset[]).map((preset) => (
+                                                                        <button
+                                                                            key={preset}
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setPolygonPresetToCreate(preset);
+                                                                                setActiveTool('polygon');
+                                                                                setShapeSubPanelOpen(false);
                                                                             }}
-                                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                                            className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
                                                                         >
-                                                                            <div className="px-3 pb-2 mb-1 border-b border-gray-100">
-                                                                                <span className="text-[11px] font-bold text-gray-600">도형</span>
-                                                                            </div>
-                                                                            {(['triangle', 'diamond', 'pentagon', 'hexagon', 'x-shape'] as PolygonPreset[]).map((preset) => (
-                                                                                <button
-                                                                                    key={preset}
-                                                                                    type="button"
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        setPolygonPresetToCreate(preset);
-                                                                                        setActiveTool('polygon');
-                                                                                        setShapeSubPanelOpen(false);
-                                                                                    }}
-                                                                                    className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
-                                                                                >
-                                                                                    {preset === 'triangle' && '삼각형'}
-                                                                                    {preset === 'diamond' && '다이아몬드'}
-                                                                                    {preset === 'pentagon' && '오각형'}
-                                                                                    {preset === 'hexagon' && '육각형'}
-                                                                                    {preset === 'x-shape' && 'X 도형'}
-                                                                                </button>
-                                                                            ))}
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    setArrowPresetToCreate('arrow');
-                                                                                    setActiveTool('arrow');
-                                                                                    setShapeSubPanelOpen(false);
-                                                                                }}
-                                                                                className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
-                                                                            >
-                                                                                화살표
-                                                                            </button>
-                                                                        </div>
-                                                                    );
-                                                                })(),
+                                                                            {preset === 'triangle' && '삼각형'}
+                                                                            {preset === 'diamond' && '다이아몬드'}
+                                                                            {preset === 'pentagon' && '오각형'}
+                                                                            {preset === 'hexagon' && '육각형'}
+                                                                            {preset === 'x-shape' && 'X 도형'}
+                                                                        </button>
+                                                                    ))}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setArrowPresetToCreate('arrow');
+                                                                            setActiveTool('arrow');
+                                                                            setShapeSubPanelOpen(false);
+                                                                        }}
+                                                                        className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
+                                                                    >
+                                                                        화살표
+                                                                    </button>
+                                                                </FloatingPanelWrapper>,
                                                                 document.body
                                                             )}
                                                         </div>
@@ -3499,47 +3505,38 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 </button>
                                                             </PremiumTooltip>
                                                             {linePanelOpen && linePanelAnchorRef.current && createPortal(
-                                                                (() => {
-                                                                    const rect = linePanelAnchorRef.current.getBoundingClientRect();
-                                                                    return (
-                                                                        <div
-                                                                            data-line-panel
-                                                                            data-screen-id={screen.id}
-                                                                            className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] py-2 min-w-[160px] animate-in fade-in zoom-in-95 origin-top-left"
-                                                                            style={{
-                                                                                left: rect.left,
-                                                                                top: rect.bottom + 4,
-                                                                                transform: 'scale(1)',
+                                                                <FloatingPanelWrapper
+                                                                    anchorRef={linePanelAnchorRef}
+                                                                    data-line-panel
+                                                                    data-screen-id={screen.id}
+                                                                    className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] py-2 min-w-[160px] animate-in fade-in zoom-in-95 origin-top-left"
+                                                                    onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
+                                                                >
+                                                                    <div className="px-3 pb-2 mb-1 border-b border-gray-100">
+                                                                        <span className="text-[11px] font-bold text-gray-600">선</span>
+                                                                    </div>
+                                                                    {[
+                                                                        { strokeStyle: 'solid' as const, lineEnd: 'none' as LineEnd, label: '실선' },
+                                                                        { strokeStyle: 'dashed' as const, lineEnd: 'none' as LineEnd, label: '점선' },
+                                                                        { strokeStyle: 'solid' as const, lineEnd: 'start' as LineEnd, label: '화살표(왼쪽)' },
+                                                                        { strokeStyle: 'solid' as const, lineEnd: 'end' as LineEnd, label: '화살표(오른쪽)' },
+                                                                        { strokeStyle: 'solid' as const, lineEnd: 'both' as LineEnd, label: '화살표(양쪽)' },
+                                                                    ].map((preset) => (
+                                                                        <button
+                                                                            key={`${preset.strokeStyle}-${preset.lineEnd}`}
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setLinePresetToCreate({ strokeStyle: preset.strokeStyle, lineEnd: preset.lineEnd });
+                                                                                setActiveTool('line');
+                                                                                setLinePanelOpen(false);
                                                                             }}
-                                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                                            className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
                                                                         >
-                                                                            <div className="px-3 pb-2 mb-1 border-b border-gray-100">
-                                                                                <span className="text-[11px] font-bold text-gray-600">선</span>
-                                                                            </div>
-                                                                            {[
-                                                                                { strokeStyle: 'solid' as const, lineEnd: 'none' as LineEnd, label: '실선' },
-                                                                                { strokeStyle: 'dashed' as const, lineEnd: 'none' as LineEnd, label: '점선' },
-                                                                                { strokeStyle: 'solid' as const, lineEnd: 'start' as LineEnd, label: '화살표(왼쪽)' },
-                                                                                { strokeStyle: 'solid' as const, lineEnd: 'end' as LineEnd, label: '화살표(오른쪽)' },
-                                                                                { strokeStyle: 'solid' as const, lineEnd: 'both' as LineEnd, label: '화살표(양쪽)' },
-                                                                            ].map((preset) => (
-                                                                                <button
-                                                                                    key={`${preset.strokeStyle}-${preset.lineEnd}`}
-                                                                                    type="button"
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        setLinePresetToCreate({ strokeStyle: preset.strokeStyle, lineEnd: preset.lineEnd });
-                                                                                        setActiveTool('line');
-                                                                                        setLinePanelOpen(false);
-                                                                                    }}
-                                                                                    className="w-full px-3 py-2 text-left text-[11px] hover:bg-gray-100 flex items-center gap-2 rounded-none"
-                                                                                >
-                                                                                    {preset.label}
-                                                                                </button>
-                                                                            ))}
-                                                                        </div>
-                                                                    );
-                                                                })(),
+                                                                            {preset.label}
+                                                                        </button>
+                                                                    ))}
+                                                                </FloatingPanelWrapper>,
                                                                 document.body
                                                             )}
                                                         </div>
@@ -3986,7 +3983,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             data-screen-id={screen.id}
                                             className="nodrag nopan bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in-95"
                                             flowPos={fontStylePanelPos}
-                                            zoom={zoom}
+                                            zoom={1}
                                             flowToScreenPosition={flowToScreenPosition}
                                             onMouseDown={(e: React.MouseEvent) => {
                                                 e.stopPropagation();
@@ -4380,7 +4377,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             drawElements={drawElements}
                                             stylePanelPos={stylePanelPos}
                                             onPositionChange={setStylePanelPos}
-                                            zoom={zoom}
+                                            zoom={1}
                                             screenToFlowPosition={screenToFlowPosition}
                                             flowToScreenPosition={flowToScreenPosition}
                                             editingTableId={editingTableId}
@@ -4408,7 +4405,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                 drawElements={drawElements}
                                                 tablePanelPos={tablePanelPos}
                                                 setTablePanelPos={setTablePanelPos}
-                                                zoom={zoom}
                                                 isLocked={isLocked}
                                                 editingTableId={editingTableId}
                                                 selectedCellIndices={selectedCellIndices}
@@ -4445,7 +4441,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             selectedElementIds={selectedElementIds}
                                             layerPanelPos={layerPanelPos}
                                             onPositionChange={setLayerPanelPos}
-                                            zoom={zoom}
                                             screenToFlowPosition={screenToFlowPosition}
                                             flowToScreenPosition={flowToScreenPosition}
                                             onClose={() => setShowLayerPanel(false)}

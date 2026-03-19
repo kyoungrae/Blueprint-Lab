@@ -7,13 +7,12 @@ interface LayerPanelProps {
     selectedElementIds: string[];
     layerPanelPos: { x: number; y: number };
     onPositionChange: (pos: { x: number; y: number }) => void;
-    zoom: number | string;
     screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     onClose: () => void;
     onDragStart?: () => void;
     onDragEnd?: () => void;
-    onLayerAction: (action: 'front' | 'back' | 'forward' | 'backward') => void;
+    onLayerAction: (action: "front" | "back" | "forward" | "backward") => void;
     screenId: string;
 }
 
@@ -22,7 +21,6 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
     selectedElementIds,
     layerPanelPos,
     onPositionChange,
-    zoom,
     screenToFlowPosition,
     flowToScreenPosition,
     onClose,
@@ -69,7 +67,7 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
             style={{
                 left: flowToScreenPosition({ x: layerPanelPos.x, y: layerPanelPos.y }).x,
                 top: flowToScreenPosition({ x: layerPanelPos.x, y: layerPanelPos.y }).y,
-                transform: `scale(calc(0.85 * ${zoom}))`,
+                transform: 'scale(0.85)',
             }}
         >
             <div

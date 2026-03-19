@@ -8,7 +8,6 @@ interface ImageStylePanelProps {
     onClose: () => void;
     position: { x: number; y: number };
     onPositionChange: (pos: { x: number; y: number }) => void;
-    zoom: number | string;
     screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     onDragStart?: () => void;
@@ -21,7 +20,7 @@ interface ImageStylePanelProps {
 const ROTATION_PRESETS = [0, 90, 180, 270];
 const normalizeAngle = (deg: number) => ((deg % 360) + 360) % 360;
 
-export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpdate, onClose, position, onPositionChange, zoom, screenToFlowPosition, flowToScreenPosition, onDragStart, onDragEnd, isCropMode, onCropModeToggle }) => {
+export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpdate, onClose, position, onPositionChange, screenToFlowPosition, flowToScreenPosition, onDragStart, onDragEnd, isCropMode, onCropModeToggle }) => {
     const isDraggingRef = useRef(false);
     const rotation = normalizeAngle(element.imageRotation ?? 0);
     const flipX = element.imageFlipX ?? false;
@@ -115,7 +114,7 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
             style={{
                 left: flowToScreenPosition({ x: position.x, y: position.y }).x,
                 top: flowToScreenPosition({ x: position.x, y: position.y }).y,
-                transform: `scale(calc(0.85 * ${zoom}))`,
+                transform: 'scale(0.85)',
             }}
             onPointerDown={stopAll}
             onPointerUp={stopAll}
