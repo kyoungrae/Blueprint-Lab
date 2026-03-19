@@ -3356,7 +3356,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             position={imageStylePanelPos}
                                                                             onPositionChange={setImageStylePanelPos}
                                                                             screenToFlowPosition={screenToFlowPosition}
-                                                                            flowToScreenPosition={flowToScreenPosition}
                                                                             onDragStart={() => { isDraggingImageStylePanelRef.current = true; }}
                                                                             onDragEnd={() => { isDraggingImageStylePanelRef.current = false; }}
                                                                             isCropMode={imageCropMode}

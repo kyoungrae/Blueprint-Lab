@@ -9,7 +9,6 @@ interface ImageStylePanelProps {
     position: { x: number; y: number };
     onPositionChange: (pos: { x: number; y: number }) => void;
     screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
-    flowToScreenPosition: (pos: { x: number; y: number }) => { x: number; y: number };
     onDragStart?: () => void;
     onDragEnd?: () => void;
     /** 직접 크롭 모드 (캔버스에서 핸들로 영역 조절) */
@@ -20,7 +19,7 @@ interface ImageStylePanelProps {
 const ROTATION_PRESETS = [0, 90, 180, 270];
 const normalizeAngle = (deg: number) => ((deg % 360) + 360) % 360;
 
-export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpdate, onClose, position, onPositionChange, screenToFlowPosition, flowToScreenPosition, onDragStart, onDragEnd, isCropMode, onCropModeToggle }) => {
+export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpdate, onClose, position, onPositionChange, screenToFlowPosition, onDragStart, onDragEnd, isCropMode, onCropModeToggle }) => {
     const isDraggingRef = useRef(false);
     const rotation = normalizeAngle(element.imageRotation ?? 0);
     const flipX = element.imageFlipX ?? false;
@@ -110,10 +109,8 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({ element, onUpd
 
     return (
         <div
-            className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-[9000] min-w-[240px] animate-in fade-in origin-top-left"
+            className="nodrag nopan bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-[9000] min-w-[240px] animate-in fade-in origin-top-left"
             style={{
-                left: flowToScreenPosition({ x: position.x, y: position.y }).x,
-                top: flowToScreenPosition({ x: position.x, y: position.y }).y,
                 transform: 'scale(0.85)',
             }}
             onPointerDown={stopAll}
