@@ -410,7 +410,10 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                     onMouseDown={(e) => e.stopPropagation()}
                                                 >
                                                     <div className="p-1">
-                                                        {erdTables.length > 0 ? erdTables.map(table => (
+                                                        {erdTables.length > 0 ? erdTables.map(table => {
+                                                            const entity = (linkedErdProject?.data as { entities?: { name: string; comment?: string }[] } | undefined)?.entities?.find((e) => e.name === table);
+                                                            const koreanName = entity?.comment?.trim();
+                                                            return (
                                                             <button
                                                                 key={table}
                                                                 className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
@@ -428,9 +431,15 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                                 }}
                                                                 onMouseDown={(e) => e.stopPropagation()}
                                                             >
-                                                                {table}
+                                                                <div className="flex items-center justify-between gap-2 min-w-0">
+                                                                    <span className="truncate">{table}</span>
+                                                                    {koreanName && (
+                                                                        <span className="text-gray-400 font-normal truncate">{koreanName}</span>
+                                                                    )}
+                                                                </div>
                                                             </button>
-                                                        )) : (
+                                                            );
+                                                        }) : (
                                                             <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
                                                         )}
                                                     </div>
