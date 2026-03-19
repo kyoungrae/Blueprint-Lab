@@ -392,6 +392,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                     className="nodrag nopan nowheel floating-panel fixed w-48 max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
                                                     style={{
                                                         // 3. 버튼 위치에 딱 맞춰서 배치!
+                                                        width:'auto',
                                                         left: rect.left,
                                                         ...(openUpward ? { bottom: window.innerHeight - rect.top } : { top: rect.bottom }),
                                                         maxHeight: Math.max(100, Math.min(280, openUpward ? spaceAbove : spaceBelow, window.innerHeight * 0.7)),
