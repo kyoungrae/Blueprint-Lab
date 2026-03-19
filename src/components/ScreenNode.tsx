@@ -2630,16 +2630,39 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             reader.readAsDataURL(file);
                         });
                     }
+
+                    // ── ✨ NEW: 원본 이미지 비율 계산 ──
+                    const img = new Image();
+                    img.src = imageUrl;
+                    await new Promise(resolve => {
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                    });
+
+                    const natW = img.naturalWidth || 200;
+                    const natH = img.naturalHeight || 150;
+                    const ratio = natW / natH;
+
+                    // 초기 캔버스 삽입 시 너무 크지 않도록 최대 크기 지정 (비율 유지)
+                    let w = natW;
+                    let h = natH;
+                    const MAX_W = 400;
+                    const MAX_H = 300;
+
+                    if (w > MAX_W) { w = MAX_W; h = w / ratio; }
+                    if (h > MAX_H) { h = MAX_H; w = h * ratio; }
+
                     const cw = canvasRef.current?.clientWidth ?? 400;
                     const ch = canvasRef.current?.clientHeight ?? 300;
                     const newId = `el_${Date.now()}_0_${Math.random().toString(36).substr(2, 5)}`;
+                    
                     const imgEl: DrawElement = {
                         id: newId,
                         type: 'image',
-                        x: Math.max(10, cw / 2 - 100),
-                        y: Math.max(10, ch / 2 - 75),
-                        width: 200,
-                        height: 150,
+                        x: Math.max(10, cw / 2 - w / 2),
+                        y: Math.max(10, ch / 2 - h / 2),
+                        width: w,
+                        height: h,
                         zIndex: (getScreenById(screen.id)?.drawElements?.length ?? drawElements.length) + 1,
                         imageUrl,
                     };
@@ -3612,8 +3635,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                 if (!file || !file.type.startsWith('image/')) return;
                                                                 const cw = canvasRef.current?.clientWidth ?? 400;
                                                                 const ch = canvasRef.current?.clientHeight ?? 300;
-                                                                const w = 200;
-                                                                const h = 150;
                                                                 const newId = `draw_${Date.now()}`;
 
                                                                 let imageUrl: string;
@@ -3627,6 +3648,27 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                         reader.readAsDataURL(file);
                                                                     });
                                                                 }
+
+                                                                // ── ✨ NEW: 원본 이미지 비율 계산 ──
+                                                                const img = new Image();
+                                                                img.src = imageUrl;
+                                                                await new Promise(resolve => {
+                                                                    img.onload = resolve;
+                                                                    img.onerror = resolve;
+                                                                });
+
+                                                                const natW = img.naturalWidth || 200;
+                                                                const natH = img.naturalHeight || 150;
+                                                                const ratio = natW / natH;
+
+                                                                // 초기 캔버스 삽입 시 너무 크지 않도록 최대 크기 지정 (비율 유지)
+                                                                let w = natW;
+                                                                let h = natH;
+                                                                const MAX_W = 400;
+                                                                const MAX_H = 300;
+
+                                                                if (w > MAX_W) { w = MAX_W; h = w / ratio; }
+                                                                if (h > MAX_H) { h = MAX_H; w = h * ratio; }
 
                                                                 const imgEl: DrawElement = {
                                                                     id: newId,
