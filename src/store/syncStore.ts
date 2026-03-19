@@ -219,6 +219,12 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             const { lamportClock } = get();
             set({ lamportClock: Math.max(lamportClock, operation.lamportClock) + 1 });
 
+            // Chat messages
+            if (operation.type === 'CHAT_MESSAGE') {
+                window.dispatchEvent(new CustomEvent('chat:remote_message', { detail: operation }));
+                return;
+            }
+
             // Yjs가 담당하는 화면 데이터 operations는 여기서 무시
             // (실시간 브로드캐스트는 Yjs WebSocket이 처리 → 중복 처리 방지)
             const YJS_HANDLED_TYPES = new Set([

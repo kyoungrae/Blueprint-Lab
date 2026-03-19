@@ -189,7 +189,7 @@ import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
-    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3
+    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3, MessageCircle
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { RecentTextColorsProvider } from '../contexts/RecentTextColorsContext';
@@ -197,6 +197,7 @@ import { RecentStyleColorsProvider } from '../contexts/RecentStyleColorsContext'
 import { copyToClipboard } from '../utils/clipboard';
 import { syncComponentStyles } from '../utils/componentStyleSync';
 import { OnlineUsers, UserCursors } from './collaboration';
+import ChatPanel from './ChatPanel';
 import { BugReportButton } from './bug/BugReport';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
@@ -313,6 +314,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
     const [isAddSpecModalOpen, setIsAddSpecModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [chatActiveTab, setChatActiveTab] = useState<'GLOBAL' | string>('GLOBAL');
+    const [chatUnreadTabs, setChatUnreadTabs] = useState<Set<string>>(() => new Set());
     const [pptBetaExportOpen, setPptBetaExportOpen] = useState(false);
     const [selectedExportIds, setSelectedExportIds] = useState<string[]>([]);
     const flowWrapper = useRef<HTMLDivElement>(null);
@@ -364,6 +368,44 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [editingSectionName, setEditingSectionName] = useState('');
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
     const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const onRemoteChat = (e: Event) => {
+            const detail = (e as CustomEvent).detail as { payload?: any };
+            const msg = detail?.payload?.chatMessage as { senderId: string; targetId: string | null } | undefined;
+            if (!msg) return;
+            if (msg.senderId === user?.id) return;
+
+            // Ignore DM messages that are not for me
+            if (msg.targetId !== null && msg.targetId !== user?.id) return;
+
+            // GLOBAL: one shared room
+            // DM: tab is keyed by the *other user* (sender)
+            const tabKey = msg.targetId === null ? 'GLOBAL' : msg.senderId;
+            const shouldMarkUnread = !isChatOpen || chatActiveTab !== tabKey;
+            if (!shouldMarkUnread) return;
+
+            setChatUnreadTabs((prev) => {
+                const next = new Set(prev);
+                next.add(tabKey);
+                return next;
+            });
+        };
+
+        window.addEventListener('chat:remote_message', onRemoteChat);
+        return () => window.removeEventListener('chat:remote_message', onRemoteChat);
+    }, [user?.id, isChatOpen, chatActiveTab]);
+
+    const clearUnreadForTab = (tab: 'GLOBAL' | string) => {
+        setChatUnreadTabs((prev) => {
+            if (!prev.size) return prev;
+            const next = new Set(prev);
+            next.delete(tab);
+            return next;
+        });
+    };
+
+    const chatHasUnread = chatUnreadTabs.size > 0;
 
     // Broadcast cursor position (ERD와 동일)
     const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
@@ -1820,6 +1862,34 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                         <OnlineUsers />
                                     </div>
 
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 채팅">
+                                            <button
+                                                onClick={() =>
+                                                    setIsChatOpen((v) => {
+                                                        const next = !v;
+                                                        if (next) {
+                                                            clearUnreadForTab(chatActiveTab);
+                                                        }
+                                                        return next;
+                                                    })
+                                                }
+                                                className={`relative p-2 rounded-lg transition-all active:scale-95 ${
+                                                    isChatOpen
+                                                        ? 'bg-violet-100 text-violet-600'
+                                                        : 'text-gray-400 hover:text-violet-500 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                <MessageCircle size={18} />
+                                                {chatHasUnread && !isChatOpen && (
+                                                    <span className="absolute -top-1 -right-1 px-1.5 py-0.5 text-[9px] font-black bg-rose-500 text-white rounded-full border border-white">
+                                                        New
+                                                    </span>
+                                                )}
+                                            </button>
+                                        </PremiumTooltip>
+                                    </div>
+
                                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                                     {currentProject && <BugReportButton project={currentProject} />}
@@ -1853,6 +1923,18 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                         </PremiumTooltip>
                                     </div>
                                 </div>
+
+                                <ChatPanel
+                                    isOpen={isChatOpen}
+                                    onClose={() => setIsChatOpen(false)}
+                                    activeTab={chatActiveTab}
+                                    onActiveTabChange={(tab) => {
+                                        setChatActiveTab(tab);
+                                        if (isChatOpen) {
+                                            clearUnreadForTab(tab);
+                                        }
+                                    }}
+                                />
 
                                 <ReactFlow
                                     nodes={nodes}
