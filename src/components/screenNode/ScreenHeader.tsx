@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Screen } from '../../types/screenDesign';
 import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM, getCanvasDimensions } from '../../types/screenDesign';
 import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal, MessageSquare } from 'lucide-react';
@@ -37,26 +37,35 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
     screenOptionsRef,
     onToggleMemoPanel,
 }) => {
-    const [composing, setComposing] = useState<string | null>(null);
-    const displayValue = composing !== null ? composing : screen.name;
+    // 1. composing 대신 localName과 isFocused 상태를 사용합니다.
+    const [localName, setLocalName] = useState(screen.name || '');
+    const [isFocused, setIsFocused] = useState(false);
+
+    // 2. 내가 수정 중이 아닐 때만, 외부(전역 상태/다른 사용자)에서 변경된 이름을 동기화합니다.
+    useEffect(() => {
+        if (!isFocused) {
+            setLocalName(screen.name || '');
+        }
+    }, [screen.name, isFocused]);
     const isComponent = screen.screenId?.startsWith('CMP-');
     const namePlaceholder = isComponent ? '컴포넌트명' : '화면명';
 
+    // 3. onChange와 onBlur를 단순화합니다.
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const v = e.target.value;
-        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-            setComposing(v);
-            return;
-        }
-        setComposing(null);
-        update({ name: v });
+        setLocalName(v); // 로컬 상태 즉시 업데이트 (커서 위치 유지됨)
+        update({ name: v }); // 상위 캔버스 상태에도 업데이트 알림
+    };
+
+    const handleFocus = () => {
+        setIsFocused(true);
     };
 
     const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
         const v = e.target.value;
-        setComposing(null);
+        setIsFocused(false);
         update({ name: v });
-        syncUpdate({ name: v });
+        syncUpdate({ name: v }); // 입력이 끝나면 서버와 동기화
     };
 
     // 컴포넌트: MetaInfoTable과 동일한 라벨-값 스타일 (시스템명|작성자|작성일자 레이아웃)
@@ -77,14 +86,11 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
                             <td className={valueCell} style={{ width: '35%' }}>
                                 <input
                                     type="text"
-                                    value={displayValue}
+                                    value={localName} // displayValue 대신 localName 사용
                                     onChange={handleChange}
-                                    onCompositionEnd={(e) => {
-                                        const v = (e.target as HTMLInputElement).value;
-                                        setComposing(null);
-                                        update({ name: v });
-                                    }}
+                                    onFocus={handleFocus} // 추가
                                     onBlur={handleBlur}
+                                    // onCompositionEnd 제거 (더 이상 필요 없음)
                                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                                     disabled={isLocked}
                                     className={`nodrag w-full border-none focus:ring-0 font-bold text-sm p-0 outline-none placeholder-gray-400 ${!isLocked ? 'bg-transparent' : 'bg-transparent pointer-events-none'}`}
@@ -199,14 +205,11 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
                     <Monitor size={16} className="flex-shrink-0 text-white/90" />
                     <input
                         type="text"
-                        value={displayValue}
+                        value={localName} // displayValue 대신 localName 사용
                         onChange={handleChange}
-                        onCompositionEnd={(e) => {
-                            const v = (e.target as HTMLInputElement).value;
-                            setComposing(null);
-                            update({ name: v });
-                        }}
+                        onFocus={handleFocus} // 추가
                         onBlur={handleBlur}
+                        // onCompositionEnd 제거
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
                         className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
