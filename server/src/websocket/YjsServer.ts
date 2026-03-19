@@ -233,7 +233,10 @@ async function handleConnection(ws: WebSocket, projectId: string): Promise<void>
 
     // MongoDB에서 초기 데이터 로드 (첫 연결 시)
     if (info.conns.size === 1) {
-        await seedDocFromMongo(projectId, info.doc);
+        // 🚀 중요: 초기 sync를 DB I/O로 막지 않도록 비동기로 시드 처리
+        // DB가 느리거나 멈춘 경우에도 클라이언트는 빈 doc으로 우선 sync 완료 후
+        // 시드가 완료되면 update broadcast를 통해 데이터를 받게 됩니다.
+        seedDocFromMongo(projectId, info.doc).catch(() => {});
     }
 
     ws.on('message', (rawData: Buffer) => {

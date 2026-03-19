@@ -41,6 +41,10 @@ interface YjsStore {
     sections: ScreenSection[];
     isSynced: boolean;
     isConnected: boolean;
+    wsUrl: string;
+    lastStatus: string | null;
+    lastError: string | null;
+    lastSyncAt: number | null;
     currentProjectId: string | null;
 
     joinProject: (projectId: string) => void;
@@ -69,27 +73,78 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     sections: [],
     isSynced: false,
     isConnected: false,
+    wsUrl: YJS_WS_URL,
+    lastStatus: null,
+    lastError: null,
+    lastSyncAt: null,
     currentProjectId: null,
     _cleanupObservers: null,
 
     joinProject: (projectId: string) => {
         get().leaveProject();
         if (projectId.startsWith('local_')) {
-            set({ currentProjectId: projectId, isSynced: true, isConnected: true });
+            set({
+                currentProjectId: projectId,
+                isSynced: true,
+                isConnected: true,
+                lastStatus: 'connected',
+                lastError: null,
+                lastSyncAt: Date.now(),
+            });
             return;
         }
 
         const ydoc = new Y.Doc();
         const provider = new WebsocketProvider(YJS_WS_URL, projectId, ydoc, { connect: true });
 
+        // If WebSocket connects but initial Yjs sync never completes, surface a diagnostic error.
+        // This typically indicates that the server at YJS_WS_URL is not a y-websocket server,
+        // a path mismatch, or the room/projectId is not being handled correctly.
+        const syncTimeoutMs = 5000;
+        const syncTimeout = setTimeout(() => {
+            const st = get();
+            if (st.provider === provider && st.isConnected && !st.isSynced) {
+                set({ lastError: `sync-timeout (${syncTimeoutMs}ms)` });
+            }
+        }, syncTimeoutMs);
+
         provider.on('status', ({ status }: { status: string }) => {
-            set({ isConnected: status === 'connected' });
+            set({ isConnected: status === 'connected', lastStatus: status });
+            if (status !== 'connected') {
+                clearTimeout(syncTimeout);
+            }
         });
         provider.on('sync', (synced: boolean) => {
-            if (synced) set({ isSynced: true });
+            if (synced) {
+                clearTimeout(syncTimeout);
+                set({ isSynced: true, lastSyncAt: Date.now(), lastError: null });
+            }
         });
 
-        set({ ydoc, provider, currentProjectId: projectId, isSynced: false, isConnected: false });
+        // y-websocket provider diagnostic events
+        // (helps identify cases where WS connects but sync never completes)
+        provider.on('connection-error', (err: any) => {
+            const msg = (err && (err.message || String(err))) || 'connection-error';
+            clearTimeout(syncTimeout);
+            set({ lastError: msg, isConnected: false });
+        });
+        provider.on('connection-close', (evt: any) => {
+            const msg = (evt && (evt.reason || evt.code || String(evt))) || 'connection-close';
+            clearTimeout(syncTimeout);
+            set({ lastError: String(msg), isConnected: false });
+        });
+
+        set({
+            ydoc,
+            provider,
+            currentProjectId: projectId,
+            isSynced: false,
+            isConnected: false,
+            wsUrl: YJS_WS_URL,
+            lastStatus: 'connecting',
+            lastError: null,
+            lastSyncAt: null,
+        });
         const cleanup = get()._observeYMaps(ydoc);
         set({ _cleanupObservers: cleanup });
     },
@@ -102,6 +157,9 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         set({
             ydoc: null, provider: null, currentProjectId: null,
             isSynced: false, isConnected: false, screens: [], flows: [], sections: [],
+            lastStatus: null,
+            lastError: null,
+            lastSyncAt: null,
             _cleanupObservers: null,
         });
     },

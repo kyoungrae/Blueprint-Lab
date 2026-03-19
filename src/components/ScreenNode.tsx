@@ -53,6 +53,7 @@ import CanvasAlignToolbar from './screenNode/CanvasAlignToolbar';
 import GuideClipboardControls from './screenNode/GuideClipboardControls';
 import ObjectAlignToolbar from './screenNode/ObjectAlignToolbar';
 import { StickyToolbarWrapper } from './screenNode/StickyToolbarWrapper';
+import { useYjsStore } from '../store/yjsStore';
 
 type TableCellClipboard = {
     type: 'table-cells';
@@ -94,7 +95,6 @@ const FloatingPanelWrapper: React.FC<{
         </div>
     );
 };
-
 
 /** 다각형 프리셋에 따른 정규화된 꼭짓점 (0~1). [x,y] 배열 */
 const POLYGON_PRESET_NORM: Record<PolygonPreset, [number, number][]> = {
@@ -210,7 +210,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
     const zoom = 'var(--rf-zoom, 1)';
-
+    const yjsIsSynced = useYjsStore(s => s.isSynced);
 
     useOnViewportChange({
         onChange: (viewport) => {
@@ -268,9 +268,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         return normalizeImageUrlForStorage(json.url) ?? json.url;
     };
 
-    const [isTableListOpen, setIsTableListOpen] = React.useState(false);
-    const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
-    const [showMemoPanel, setShowMemoPanel] = React.useState(false);
+    const [isTableListOpen, setIsTableListOpen] = useState(false);
+    const [showScreenOptionsPanel, setShowScreenOptionsPanel] = useState(false);
+    const [showMemoPanel, setShowMemoPanel] = useState(false);
 
     const tableListRef = useRef<HTMLDivElement>(null);
     const screenOptionsRef = useRef<HTMLDivElement>(null);
@@ -309,12 +309,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             .filter((c: Screen) => c.screenId?.startsWith('CMP-'))
             .filter((c: Screen) => (c.drawElements?.length ?? 0) > 0); // drawElements가 있는 컴포넌트만 표시 (캔버스에 그린 내용이 없으면 제외)
     }, [linkedComponentProject]);
-
-
-
-
-
-
 
     // ── 4. Drawing Mode Logic ──
     const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line' | 'arrow'>('select');
@@ -999,15 +993,40 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 const aspectRatio = w / h;
                 let fitW = Math.max(newW, newH * aspectRatio);
                 let fitH = fitW / aspectRatio;
-                if (dir.includes('w')) {
-                    nextMinX = ref.maxX - fitW;
-                    newW = fitW;
+                if (fitH < RESIZE_MIN) {
+                    fitH = RESIZE_MIN;
+                    fitW = fitH * aspectRatio;
                 }
-                if (dir.includes('n')) {
+                if (fitW < RESIZE_MIN) {
+                    fitW = RESIZE_MIN;
+                    fitH = fitW / aspectRatio;
+                }
+                newW = fitW;
+                newH = fitH;
+                if (dir.includes('e') && dir.includes('s')) {
+                    nextMinX = ref.maxX - fitW;
                     nextMinY = ref.maxY - fitH;
-                    newH = fitH;
+                } else if (dir.includes('w') && dir.includes('s')) {
+                    nextMinX = ref.minX;
+                    nextMinY = ref.maxY - fitH;
+                } else if (dir.includes('e') && dir.includes('n')) {
+                    nextMinX = ref.maxX - fitW;
+                    nextMinY = ref.minY;
+                } else if (dir.includes('w') && dir.includes('n')) {
+                    nextMinX = ref.minX;
+                    nextMinY = ref.minY;
+                }
+            } else {
+                if (newW < RESIZE_MIN) {
+                    if (dir.includes('w')) nextMinX = ref.maxX - RESIZE_MIN;
+                    newW = RESIZE_MIN;
+                }
+                if (newH < RESIZE_MIN) {
+                    if (dir.includes('n')) nextMinY = ref.maxY - RESIZE_MIN;
+                    newH = RESIZE_MIN;
                 }
             }
+
             const scaleX = newW / w;
             const scaleY = newH / h;
             const nextElements = getDrawElements().map(el => {
@@ -1036,7 +1055,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             y: avgCenterY + oldPy * scaleY,
                         };
                     });
-                } else if (el.type === 'line' && el.lineX1 !== undefined && el.lineY1 !== undefined && el.lineX2 !== undefined && el.lineY2 !== undefined) {
+                } else if (el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null) {
                     const oldRelX1 = rel.lineX1! - ref.minX;
                     const oldRelY1 = rel.lineY1! - ref.minY;
                     const oldRelX2 = rel.lineX2! - ref.minX;
@@ -1153,6 +1172,14 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 const aspectRatio = w / h;
                 let fitW = Math.max(newW, newH * aspectRatio);
                 let fitH = fitW / aspectRatio;
+                if (fitH < RESIZE_MIN) {
+                    fitH = RESIZE_MIN;
+                    fitW = fitH * aspectRatio;
+                }
+                if (fitW < RESIZE_MIN) {
+                    fitW = RESIZE_MIN;
+                    fitH = fitW / aspectRatio;
+                }
                 if (dir.includes('w')) {
                     nextMinX = ref.maxX - fitW;
                     newW = fitW;
@@ -1190,7 +1217,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             y: avgCenterY + oldPy * scaleY,
                         };
                     });
-                } else if (el.type === 'line' && el.lineX1 !== undefined && el.lineY1 !== undefined && el.lineX2 !== undefined && el.lineY2 !== undefined) {
+                } else if (el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null) {
                     const oldRelX1 = rel.lineX1! - ref.minX;
                     const oldRelY1 = rel.lineY1! - ref.minY;
                     const oldRelX2 = rel.lineX2! - ref.minX;
@@ -1210,7 +1237,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 return nextEl;
             });
             update({ drawElements: nextElements });
-            syncUpdate({ drawElements: nextElements }); // 즉시 상태 동기화
         };
         const handleUp = () => {
             const ref = groupResizeStartRef.current;
@@ -1640,7 +1666,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         setSelectedElementIds(nextSelected);
 
         // Exit table cell-edit mode when clicking a different element
-        if (editingTableId && !nextSelected.includes(editingTableId)) {
+        if (editingTableId && !nextSelected.includes(id)) {
             setEditingTableId(null);
             setSelectedCellIndices([]);
             setEditingCellIndex(null);
@@ -2464,11 +2490,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             const isInput = active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || active?.isContentEditable || editingTextId != null || (editingTableId != null && editingCellIndex != null);
             if (isInput) return;
 
-            const pasteTargetId = getPasteTargetScreenId?.() ?? lastInteractedScreenId;
-            if (pasteTargetId !== screen.id) return;
-
             const cd = e.clipboardData;
             if (!cd) return;
+
+            const pasteTargetId = getPasteTargetScreenId?.() ?? lastInteractedScreenId;
+            if (pasteTargetId !== screen.id) return;
 
             const { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
 
@@ -3071,6 +3097,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                 isLocked={isLocked}
                                 isLockedByOther={isLockedByOther}
                                 lockedBy={lockedBy}
+                                isSynced={yjsIsSynced}
                                 update={update}
                                 syncUpdate={syncUpdate}
                                 onToggleLock={handleToggleLock}

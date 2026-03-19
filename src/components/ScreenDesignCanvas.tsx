@@ -272,7 +272,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     } = useScreenDesignStore();
 
     const { user, logout } = useAuthStore();
-    const { updateCursor, isSynced } = useSyncStore();
+    const { updateCursor, isSynced, isConnected } = useSyncStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
@@ -288,7 +288,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
         addFlow, updateFlow, deleteFlow,
         addSection, updateSection, deleteSection,
         joinProject: yjsJoin, leaveProject: yjsLeave, moveScreen: yjsMoveScreen,
-        isSynced: yjsIsSynced // 🚀 추가: Yjs 로딩이 완전히 끝났는지 확인하는 변수
+        isSynced: yjsIsSynced,
+        isConnected: yjsIsConnected,
+        wsUrl: yjsWsUrl,
+        lastStatus: yjsLastStatus,
+        lastError: yjsLastError,
+        lastSyncAt: yjsLastSyncAt,
     } = useYjsStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
 
@@ -1628,12 +1633,38 @@ const ScreenDesignCanvasContent: React.FC = () => {
         runExport();
     }, [fitView]);
 
-    // 서버 프로젝트: state_sync 도착 전 편집 시 이미지 등이 덮어쓰여 사라지는 것 방지
-    if (currentProjectId && !currentProjectId.startsWith('local_') && !isSynced) {
+    // 서버 프로젝트: Yjs sync 도착 전 편집 시 상태가 덮어쓰여 롤백되는 것 방지
+    // Socket(state_sync)은 ERD/락/커서 등 보조 기능에 가까우므로 화면 설계 편집 게이트는 Yjs를 기준으로 한다.
+    if (currentProjectId && !currentProjectId.startsWith('local_') && !yjsIsSynced) {
         return (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50">
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 px-6">
                 <div className="w-12 h-12 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin mb-4" />
-                <p className="text-gray-500 font-medium">서버와 동기화 중...</p>
+                <p className="text-gray-500 font-medium mb-2">서버와 동기화 중...</p>
+                <div className="text-xs text-gray-500 max-w-[680px] w-full bg-white rounded-xl border border-gray-200 p-3">
+                    <div className="font-bold text-gray-700 mb-1">진단 정보</div>
+                    <div>Socket: {isConnected ? 'connected' : 'disconnected'} / {isSynced ? 'synced' : 'not-synced'}</div>
+                    <div>Yjs: {yjsIsConnected ? 'connected' : 'disconnected'} / {yjsIsSynced ? 'synced' : 'not-synced'}</div>
+                    <div>Yjs url: {yjsWsUrl}</div>
+                    <div>Yjs status: {yjsLastStatus ?? '-'}</div>
+                    <div>Yjs error: {yjsLastError ?? '-'}</div>
+                    <div>Yjs lastSync: {yjsLastSyncAt ? new Date(yjsLastSyncAt).toLocaleString() : '-'}</div>
+                    <div className="mt-2 flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => yjsJoin(currentProjectId)}
+                            className="px-3 py-1.5 rounded-lg bg-violet-600 text-white font-bold hover:bg-violet-700 transition-colors"
+                        >
+                            재연결 시도
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => window.location.reload()}
+                            className="px-3 py-1.5 rounded-lg bg-white text-gray-700 font-bold border border-gray-200 hover:bg-gray-50 transition-colors"
+                        >
+                            새로고침
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -1682,6 +1713,26 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                         </button>
                                     </PremiumTooltip>
                                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+
+                                    <button style={{display:'none'}}
+                                        type="button"
+                                        onClick={() => {
+                                            if (!currentProjectId) return;
+                                            yjsJoin(currentProjectId);
+                                            if (!yjsIsSynced) {
+                                                const syncText = yjsLastSyncAt ? new Date(yjsLastSyncAt).toLocaleString() : '-';
+                                                alert(`Yjs 재연결 시도\n\nurl: ${yjsWsUrl}\nstatus: ${yjsLastStatus ?? '-'}\nerror: ${yjsLastError ?? '-'}\nlastSync: ${syncText}`);
+                                            }
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-1.5 bg-gray-50 rounded-lg border border-gray-100 shrink-0 hover:bg-gray-100 transition-colors"
+                                        title={`동기화가 멈춘 것 같으면 클릭해서 재연결을 시도하세요\n\nYjs url: ${yjsWsUrl}\nYjs status: ${yjsLastStatus ?? '-'}\nYjs error: ${yjsLastError ?? '-'}\nYjs lastSync: ${yjsLastSyncAt ? new Date(yjsLastSyncAt).toLocaleString() : '-'}`}
+                                    >
+                                        <span className={`text-[10px] font-black ${isConnected ? 'text-emerald-700' : 'text-rose-700'}`}>Socket</span>
+                                        <span className={`text-[10px] font-black ${isSynced ? 'text-emerald-700' : 'text-amber-700'}`}>{isSynced ? 'SYNC' : '...'}</span>
+                                        <span className="text-[10px] font-black text-gray-300">|</span>
+                                        <span className={`text-[10px] font-black ${yjsIsConnected ? 'text-emerald-700' : 'text-rose-700'}`}>Yjs</span>
+                                        <span className={`text-[10px] font-black ${yjsIsSynced ? 'text-emerald-700' : 'text-amber-700'}`}>{yjsIsSynced ? 'SYNC' : '...'}</span>
+                                    </button>
 
                                     <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
                                         <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
@@ -1805,6 +1856,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     onNodesChange={onNodesChange}
                                     onEdgesChange={onEdgesChange}
                                     onNodeDragStop={onNodeDragStop}
+                                    nodesDraggable={yjsIsSynced}
+                                    nodesConnectable={yjsIsSynced}
+                                    elementsSelectable={yjsIsSynced}
                                     onConnect={onConnect}
                                     onEdgeUpdateStart={onEdgeUpdateStart}
                                     onEdgeUpdate={onEdgeUpdate}

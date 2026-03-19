@@ -9,6 +9,7 @@ interface ScreenHeaderProps {
     isLocked: boolean;
     isLockedByOther: boolean;
     lockedBy: string | null | undefined;
+    isSynced: boolean;
     update: (updates: Partial<Screen>) => void;
     syncUpdate: (updates: Partial<Screen>) => void;
     onToggleLock: (e?: React.MouseEvent) => void;
@@ -25,6 +26,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
     isLocked,
     isLockedByOther,
     lockedBy,
+    isSynced,
     update,
     syncUpdate,
     onToggleLock,
@@ -157,9 +159,9 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
                                     <button
                                         onClick={onToggleLock}
                                         onMouseDown={(e) => e.stopPropagation()}
-                                        disabled={isLockedByOther}
-                                        className={`nodrag shrink-0 p-1.5 rounded-md transition-colors ${isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'}`}
-                                        title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? '잠금 해제' : '잠금'}
+                                        disabled={!isSynced || isLockedByOther}
+                                        className={`nodrag shrink-0 p-1.5 rounded-md transition-colors ${(!isSynced || isLockedByOther) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'}`}
+                                        title={!isSynced ? '서버와 동기화 중에는 편집할 수 없습니다.' : isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? '잠금 해제' : '잠금'}
                                     >
                                         {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
                                     </button>
@@ -291,7 +293,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
                                 onClick={onToggleMemoPanel}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 className="nodrag relative p-1.5 hover:bg-white/10 rounded-md transition-colors text-white/90 pointer-events-auto"
-                                >
+                            >
                                 <MessageSquare size={16} />
                                 {(screen.memos?.length ?? 0) > 0 && (
                                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] min-w-[14px] h-[14px] flex items-center justify-center rounded-full px-0.5 border border-[#2c3e7c] font-black">
@@ -304,10 +306,10 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
                             <button
                                 onClick={onToggleLock}
                                 onMouseDown={(e) => e.stopPropagation()}
-                                disabled={isLockedByOther}
-                                className={`nodrag p-1.5 rounded-md transition-colors pointer-events-auto ${isLockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'
+                                disabled={!isSynced || isLockedByOther}
+                                className={`nodrag p-1.5 rounded-md transition-colors pointer-events-auto ${(!isSynced || isLockedByOther) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 text-white/90'
                                     }`}
-                                title={isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? '잠금 해제' : '잠금'}
+                                title={!isSynced ? '서버와 동기화 중에는 편집할 수 없습니다.' : isLockedByOther ? `${lockedBy}님이 수정 중` : isLocked ? '잠금 해제' : '잠금'}
                             >
                                 {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
                             </button>
