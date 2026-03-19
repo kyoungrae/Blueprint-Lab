@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Bug, X, Plus, Trash2, Edit3, CheckCircle2, Clock, Check } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
+import { useSyncStore } from '../../store/syncStore';
 import type { BugReport, BugReportReply, Project } from '../../types/erd';
 import PremiumTooltip from '../screenNode/PremiumTooltip';
 
@@ -14,6 +15,7 @@ interface BugReportModalProps {
 export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose }) => {
     const { user } = useAuthStore();
     const { updateProjectMetadata } = useProjectStore();
+    const sendOperation = useSyncStore(s => s.sendOperation);
     const bugReports = project.bugReports || [];
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -23,6 +25,21 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
     const [replyDraftByBugId, setReplyDraftByBugId] = useState<Record<string, string>>({});
     const [editingReply, setEditingReply] = useState<{ bugReportId: string; replyId: string } | null>(null);
     const [editingReplyContent, setEditingReplyContent] = useState('');
+
+    // ── ✨ 1. Payload에 최신 데이터를 실어 보냅니다 ──
+    const broadcastBugUpdate = (updatedBugs: BugReport[]) => {
+        if (!user) return;
+        sendOperation({
+            type: 'BUG_REPORT_UPDATED',
+            targetId: project.id,
+            userId: user.id,
+            userName: user.name,
+            payload: { 
+                projectId: project.id, 
+                bugReports: updatedBugs // 👈 추가된 부분
+            }
+        });
+    };
 
     const bugRepliesCountById = useMemo(() => {
         const out: Record<string, number> = {};
@@ -51,6 +68,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
 
         const updatedBugs = [newReport, ...bugReports];
         await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        broadcastBugUpdate(updatedBugs);
         setNewReportContent('');
         setIsSubmitting(false);
     };
@@ -59,6 +77,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
         if (!confirm('정말 이 버그 리포트를 삭제하시겠습니까?')) return;
         const updatedBugs = bugReports.filter(b => b.id !== id);
         await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        broadcastBugUpdate(updatedBugs);
     };
 
     const handleSubmitReply = async (bugReportId: string) => {
@@ -84,6 +103,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
         });
 
         await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        broadcastBugUpdate(updatedBugs);
         setReplyDraftByBugId((prev) => ({ ...prev, [bugReportId]: '' }));
     };
 
@@ -97,6 +117,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
         });
 
         await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        broadcastBugUpdate(updatedBugs);
     };
 
     const handleStartEditReply = (bugReportId: string, reply: BugReportReply) => {
@@ -123,6 +144,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
         });
 
         await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        broadcastBugUpdate(updatedBugs);
         handleCancelEditReply();
     };
 
@@ -135,6 +157,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
             return b;
         });
         await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        broadcastBugUpdate(updatedBugs);
         setEditingReportId(null);
         setEditingContent('');
     };
@@ -155,6 +178,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
             return b;
         });
         await updateProjectMetadata(project.id, { bugReports: updatedBugs });
+        broadcastBugUpdate(updatedBugs);
     };
 
     const modalContent = (
@@ -410,6 +434,38 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({ project, onClose
 export const BugReportButton: React.FC<{ project: Project }> = ({ project }) => {
     const [isOpen, setIsOpen] = useState(false);
     const unresolvedCount = (project.bugReports || []).filter(b => !b.isResolved).length;
+
+    // ── ✨ NEW: 필요한 스토어 훅 추가 ──
+    const { fetchProjects } = useProjectStore();
+    const { user } = useAuthStore();
+
+    // ── ✨ 2. 서버 조회(fetch) 대신 로컬 즉시 덮어쓰기로 변경 ──
+    React.useEffect(() => {
+        const handleRemoteBugUpdate = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            const operation = customEvent.detail;
+            
+            if (operation.type === 'BUG_REPORT_UPDATED' && operation.targetId === project.id) {
+                if (operation.userId !== user?.id) {
+                    
+                    const latestBugs = operation.payload?.bugReports;
+                    if (latestBugs) {
+                        // Zustand의 setState를 직접 호출하여 로컬 화면(Store)을 0.01초 만에 덮어씀
+                        useProjectStore.setState((state) => ({
+                            projects: state.projects.map(p => 
+                                p.id === project.id ? { ...p, bugReports: latestBugs } : p
+                            )
+                        }));
+                    } else {
+                        fetchProjects(); // 혹시 데이터가 누락됐다면 기존 방식(fetch)으로 안전장치 가동
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('erd:remote_operation', handleRemoteBugUpdate);
+        return () => window.removeEventListener('erd:remote_operation', handleRemoteBugUpdate);
+    }, [project.id, user?.id, fetchProjects]);
 
     return (
         <>
