@@ -2477,6 +2477,45 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             }
 
             if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+
+            // 표 다중 셀 선택 상태: 표 자체 삭제가 아니라 선택된 셀의 텍스트만 일괄 삭제
+            if (editingTableId && selectedCellIndices.length > 0 && editingCellIndex === null) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const tableEl = drawElements.find(it => it.id === editingTableId);
+                if (tableEl && tableEl.type === 'table') {
+                    const cols = tableEl.tableCols ?? 1;
+                    const rows = tableEl.tableRows ?? 1;
+                    const total = rows * cols;
+
+                    const newV2 = deepCopyCells(getV2Cells(tableEl));
+                    while (newV2.length < total) newV2.push({ content: '', rowSpan: 1, colSpan: 1, isMerged: false });
+
+                    const newData = [...(tableEl.tableCellData || Array(total).fill(''))];
+                    while (newData.length < total) newData.push('');
+
+                    let isChanged = false;
+                    selectedCellIndices.forEach(idx => {
+                        if (newV2[idx] && newV2[idx].content !== '') {
+                            newV2[idx] = { ...newV2[idx], content: '' };
+                            isChanged = true;
+                        }
+                        if (newData[idx] !== undefined && newData[idx] !== '') {
+                            newData[idx] = '';
+                            isChanged = true;
+                        }
+                    });
+
+                    if (isChanged) {
+                        updateElement(tableEl.id, {
+                            tableCellDataV2: newV2,
+                            tableCellData: newData,
+                        });
+                    }
+                }
+                return;
+            }
             if (selectedElementIds.length === 0) return;
 
             // ── 3단계: 텍스트 입력 영역 ──
