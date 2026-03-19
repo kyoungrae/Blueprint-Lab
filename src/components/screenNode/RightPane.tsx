@@ -402,10 +402,28 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                         transformOrigin: openUpward ? 'bottom left' : 'top left',
                                                     }}
                                                     onWheel={(e) => {
+                                                        // 브라우저 줌 방지 (ctrl+wheel) - 항상 막아서 캔버스 줌이 동작하게 함
+                                                        if (e.ctrlKey || e.metaKey) {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            return false;
+                                                        }
+                                                        // 일반 휠도 이벤트 전파를 막아서 캔버스가 처리하게 함
+                                                        e.preventDefault();
                                                         e.stopPropagation();
+                                                        return false;
                                                     }}
                                                     onWheelCapture={(e) => {
+                                                        // 브라우저 줌 방지 (ctrl+wheel) - capture 단계에서도 막아야 확실
+                                                        if (e.ctrlKey || e.metaKey) {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            return false;
+                                                        }
+                                                        // 일반 휠도 capture 단계에서 막아서 패널 스크롤이 아닌 캔버스 줌이 동작하게 함
+                                                        e.preventDefault();
                                                         e.stopPropagation();
+                                                        return false;
                                                     }}
                                                     onPointerDown={(e) => e.stopPropagation()}
                                                     onMouseDown={(e) => e.stopPropagation()}
