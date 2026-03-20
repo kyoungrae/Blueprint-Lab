@@ -86,7 +86,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                             top: s.position.y, 
                             width: s.size.width, 
                             height: s.size.height,
-                            backgroundColor: s.color ? `${s.color}20` : undefined
+                            backgroundColor: s.color ? `${s.color}20` : '#e9d5ff20'
                         }}
                     />
                 ))}
@@ -117,8 +117,8 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                 data-section-header
                                 className="flex items-center h-14 min-h-14 px-2 rounded-t-md border-b cursor-grab active:cursor-grabbing pointer-events-auto"
                                 style={{ 
-                                    backgroundColor: s.color ? `${s.color}15` : undefined,
-                                    borderColor: s.color ? `${s.color}30` : undefined
+                                    backgroundColor: s.color ? `${s.color}15` : '#e9d5ff15',
+                                    borderColor: s.color ? `${s.color}30` : '#e9d5ff30'
                                 }}
                                 onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
@@ -170,8 +170,9 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                                         key={color}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            props.updateSection(s.id, { color });
-                                                            props.yjsUpdateSection(s.id, { color });
+                                                            const colorToSet = color;
+                                                            props.updateSection(s.id, { color: colorToSet });
+                                                            props.yjsUpdateSection(s.id, { color: colorToSet });
                                                             setColorPickerOpen(null);
                                                         }}
                                                         className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
@@ -498,7 +499,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 name = `${baseName} ${n}`;
             }
             const sectionId = `section_${Date.now()}`;
-            const newSection = { id: sectionId, name, position: { x, y }, size: { width, height }, color: '#8b5cf6' };
+            const newSection = { id: sectionId, name, position: { x, y }, size: { width, height }, color: '#e9d5ff' };
             addSection(newSection);
             yjsAddSection(newSection);
             setSectionDrag(null);

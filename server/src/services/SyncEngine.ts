@@ -27,6 +27,7 @@ export interface ISection {
     name?: string;
     position: { x: number; y: number };
     size: { width: number; height: number };
+    color?: string;
 }
 
 // ERD State Interface
