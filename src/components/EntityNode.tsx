@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect } from 'react';
+import React, { memo, useState, useEffect, useCallback } from 'react';
 import { Handle, Position, type NodeProps, useStore } from 'reactflow';
 import type { Entity, Attribute } from '../types/erd';
 import { Database, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare } from 'lucide-react';
@@ -20,12 +20,13 @@ const DATA_TYPES: Record<DBType, string[]> = {
 interface AttributeRowProps {
     attr: Attribute;
     isLocked: boolean;
+    isSelected: boolean;
     availableTypes: string[];
-    onUpdate: (updates: Partial<Attribute>, granular?: boolean) => void;
-    onDelete: (e: React.MouseEvent) => void;
+    onUpdate: (attrId: string, updates: Partial<Attribute>, granular?: boolean) => void;
+    onDelete: (attrId: string, e: React.MouseEvent) => void;
 }
 
-const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availableTypes, onUpdate, onDelete }) => {
+const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSelected, availableTypes, onUpdate, onDelete }) => {
     const [localName, setLocalName] = useState(attr.name);
     const [localComment, setLocalComment] = useState(attr.comment || '');
     const [localLength, setLocalLength] = useState(attr.length || '');
@@ -48,19 +49,19 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
 
     const handleCommitName = () => {
         if (localName !== attr.name) {
-            onUpdate({ name: localName }, true);
+            onUpdate(attr.id, { name: localName }, true);
         }
     };
 
     const handleCommitComment = () => {
         if (localComment !== (attr.comment || '')) {
-            onUpdate({ comment: localComment }, true);
+            onUpdate(attr.id, { comment: localComment }, true);
         }
     };
 
     const handleCommitLength = () => {
         if (localLength !== (attr.length || '')) {
-            onUpdate({ length: localLength }, true);
+            onUpdate(attr.id, { length: localLength }, true);
         }
     };
 
@@ -82,13 +83,57 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
         else setLocalLength(value);
     };
 
+    if (!isSelected) {
+        return (
+            <div className={`flex items-center gap-1 py-1 px-2 rounded group/attr relative cursor-default ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
+                <div className="w-8 flex-shrink-0 flex justify-center">
+                    <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
+                        <Key size={14} />
+                    </span>
+                </div>
+                <div className="flex-1 min-w-0 mx-1">
+                    <span className={`text-sm px-1.5 py-0.5 block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
+                        {attr.name}
+                    </span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="w-16 flex-shrink-0 flex items-center h-4">
+                        <span className={`text-[10px] w-full block truncate ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
+                            {attr.type.split('(')[0]}
+                        </span>
+                    </div>
+                    <div className="w-10 flex-shrink-0">
+                        <span className={`block w-full text-[9px] px-1 py-0.5 border border-transparent truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                            {attr.length || ''}
+                        </span>
+                    </div>
+                    <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
+                        <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
+                            <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                        </div>
+                        <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                    </div>
+                    <div className="w-24 flex-shrink-0 flex items-center gap-1 bg-gray-50/30 px-1 rounded h-[18px]">
+                        {attr.comment && <><MessageSquare size={11} className="shrink-0 text-blue-400" /><span className="text-[9px] text-blue-500 italic truncate">{attr.comment}</span></>}
+                    </div>
+                    <div className="w-8 flex-shrink-0 flex justify-center">
+                        <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
+                            <Link size={14} />
+                        </span>
+                    </div>
+                    {!isLocked && <div className="w-[20px]" />}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className={`flex items-center gap-1 py-1 px-2 rounded group/attr transition-colors relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'}`}>
             {/* PK Icon/Toggle */}
             <div className="w-8 flex-shrink-0 flex justify-center">
                 <PremiumTooltip label={attr.isPK ? "기본 키 (클릭 해제)" : "기본 키 (클릭 설정)"} dotColor="#eab308">
                     <button
-                        onClick={() => onUpdate({ isPK: !attr.isPK })}
+                        onClick={() => onUpdate(attr.id, { isPK: !attr.isPK })}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
                         className={`${!isLocked ? 'nodrag' : 'pointer-events-auto cursor-grab'} p-1 rounded transition-colors ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300 hover:text-gray-400'}`}
@@ -120,7 +165,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
                 <div className="w-16 flex-shrink-0">
                     <select
                         value={attr.type.includes('(') ? attr.type.split('(')[0] : attr.type}
-                        onChange={(e) => onUpdate({ type: e.target.value })}
+                        onChange={(e) => onUpdate(attr.id, { type: e.target.value })}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
                         className={`bg-transparent border-none focus:ring-0 text-[10px] outline-none w-full appearance-none transition-colors ${!isLocked ? 'nodrag text-blue-600 hover:text-blue-800 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}
@@ -151,7 +196,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
                 <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
                     <PremiumTooltip label={attr.isNullable ? "NULL 허용 (클릭 시 NOT NULL)" : "NOT NULL (클릭 시 NULL 허용)"} dotColor={!attr.isNullable ? '#ef4444' : undefined}>
                         <button
-                            onClick={() => onUpdate({ isNullable: !attr.isNullable })}
+                            onClick={() => onUpdate(attr.id, { isNullable: !attr.isNullable })}
                             disabled={isLocked}
                             className={`relative w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
                         >
@@ -182,7 +227,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
                 <div className="w-8 flex-shrink-0 flex justify-center">
                     <PremiumTooltip label={attr.isFK ? "외래 키 (클릭 해제)" : "외래 키 (클릭 설정)"} dotColor="#a855f7">
                         <button
-                            onClick={() => onUpdate({ isFK: !attr.isFK })}
+                            onClick={() => onUpdate(attr.id, { isFK: !attr.isFK })}
                             onMouseDown={(e) => !isLocked && e.stopPropagation()}
                             disabled={isLocked}
                             className={`${!isLocked ? 'nodrag' : 'pointer-events-auto cursor-grab'} p-1 rounded transition-colors ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}
@@ -196,7 +241,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, availa
                 {!isLocked && (
                     <PremiumTooltip label="컬럼 삭제" dotColor="#ef4444">
                         <button
-                            onClick={onDelete}
+                            onClick={(e) => onDelete(attr.id, e)}
                             onMouseDown={(e) => e.stopPropagation()}
                             className="nodrag opacity-0 group-hover/attr:opacity-100 transition-opacity p-1 text-red-300 hover:text-red-500"
                         >
@@ -524,8 +569,10 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
         });
     };
 
-    const handleUpdateAttribute = (attrId: string, updates: Partial<Attribute>, isGranular = false) => {
+    const handleUpdateAttribute = useCallback((attrId: string, updates: Partial<Attribute>, isGranular = false) => {
         if (isLocked) return;
+        const currentEntity = useERDStore.getState().entitiesById[entity.id];
+        if (!currentEntity) return;
 
         if (isGranular) {
             // Highly optimized granular update
@@ -539,7 +586,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                 payload: { attrId, updates }
             });
         } else {
-            const newAttributes = entity.attributes.map((attr) =>
+            const newAttributes = currentEntity.attributes.map((attr) =>
                 attr.id === attrId ? { ...attr, ...updates } : attr
             );
             updateEntity(entity.id, { attributes: newAttributes });
@@ -552,22 +599,25 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                 payload: { attributes: newAttributes }
             });
         }
-    };
+    }, [isLocked, entity.id, user, sendOperation, updateEntity]);
 
-    const handleDeleteAttribute = (e: React.MouseEvent, attrId: string) => {
+    const handleDeleteAttribute = useCallback((attrId: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (isLocked) return;
-        const newAttributes = entity.attributes.filter((attr) => attr.id !== attrId);
+        const currentEntity = useERDStore.getState().entitiesById[entity.id];
+        if (!currentEntity) return;
+
+        const newAttributes = currentEntity.attributes.filter((attr) => attr.id !== attrId);
         sendOperation({
             type: 'ATTRIBUTE_DELETE',
             targetId: entity.id,
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
             payload: { attributes: newAttributes },
-            previousState: { attributes: entity.attributes },
+            previousState: { attributes: currentEntity.attributes },
         });
         updateEntity(entity.id, { attributes: newAttributes });
-    };
+    }, [isLocked, entity.id, user, sendOperation, updateEntity]);
 
     const handleDeleteEntity = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -686,9 +736,10 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                         key={attr.id}
                         attr={attr}
                         isLocked={isLocked}
+                        isSelected={selected ?? false}
                         availableTypes={availableTypes}
-                        onUpdate={(updates, granular) => handleUpdateAttribute(attr.id, updates, granular)}
-                        onDelete={(e) => handleDeleteAttribute(e, attr.id)}
+                        onUpdate={handleUpdateAttribute}
+                        onDelete={handleDeleteAttribute}
                     />
                 ))}
             </div>
