@@ -115,12 +115,17 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                         >
                             <div
                                 data-section-header
-                                className="flex items-center h-14 min-h-14 px-2 rounded-t-md border-b cursor-grab active:cursor-grabbing pointer-events-auto"
+                                // 🚀 수정: select-none 클래스 추가
+                                className="flex items-center h-14 min-h-14 px-2 rounded-t-md border-b cursor-grab active:cursor-grabbing pointer-events-auto select-none"
                                 style={{ 
                                     backgroundColor: s.color ? `${s.color}15` : '#e9d5ff15',
                                     borderColor: s.color ? `${s.color}30` : '#e9d5ff30'
                                 }}
-                                onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
+                                onMouseDown={(ev) => {
+                                    // 🚀 수정: 브라우저 텍스트 드래그 방지
+                                    ev.preventDefault();
+                                    onSectionBodyMouseDown(ev, s.id);
+                                }}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
                                 onMouseLeave={() => setHoveredSectionId(null)}
                             >
@@ -379,9 +384,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isSectionDrawMode, setIsSectionDrawMode] = useState(false);
     const [sectionDrag, setSectionDrag] = useState<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
     const [sectionMoveState, setSectionMoveState] = useState<{
-        sectionId: string;
+        targetSectionIds: string[]; // 🚀 단일 ID가 아닌 이동할 모든 섹션 ID 배열
         startFlow: { x: number; y: number };
-        startSectionPosition: { x: number; y: number };
+        startSectionPositions: Record<string, { x: number; y: number }>; // 🚀 섹션별 시작 위치 매핑
         startScreenPositions: Record<string, { x: number; y: number }>;
     } | null>(null);
 
@@ -547,14 +552,37 @@ const ScreenDesignCanvasContent: React.FC = () => {
             const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
             const sec = sections.find((s) => s.id === sectionId);
             if (!sec) return;
+
+            // 🚀 1. 이 섹션의 모든 하위 자식(손자 포함) 섹션 ID를 재귀적으로 찾습니다.
+            const getDescendantSectionIds = (parentId: string): string[] => {
+                const children = sections.filter(s => s.parentId === parentId).map(s => s.id);
+                let descendants = [...children];
+                children.forEach(childId => {
+                    descendants = [...descendants, ...getDescendantSectionIds(childId)];
+                });
+                return descendants;
+            };
+
+            // 나와 나의 모든 하위 섹션 ID들
+            const targetSectionIds = [sectionId, ...getDescendantSectionIds(sectionId)];
+
+            // 🚀 2. 이동할 모든 섹션의 시작 위치를 저장합니다.
+            const startSectionPositions: Record<string, { x: number; y: number }> = {};
+            targetSectionIds.forEach(id => {
+                const s = sections.find(sec => sec.id === id);
+                if (s) startSectionPositions[id] = { ...s.position };
+            });
+
+            // 🚀 3. 이동할 모든 섹션에 포함된 화면 노드들의 시작 위치를 저장합니다.
             const startScreenPositions: Record<string, { x: number; y: number }> = {};
-            screens.filter((sc) => sc.sectionId === sectionId).forEach((sc) => {
+            screens.filter((sc) => sc.sectionId && targetSectionIds.includes(sc.sectionId)).forEach((sc) => {
                 startScreenPositions[sc.id] = { ...sc.position };
             });
+
             setSectionMoveState({
-                sectionId,
+                targetSectionIds,
                 startFlow: pos,
-                startSectionPosition: { ...sec.position },
+                startSectionPositions,
                 startScreenPositions,
             });
         },
@@ -582,21 +610,31 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     useEffect(() => {
         if (!sectionMoveState) return;
-        const { sectionId, startFlow, startSectionPosition, startScreenPositions } = sectionMoveState;
+        const { targetSectionIds, startFlow, startSectionPositions, startScreenPositions } = sectionMoveState;
+        
         const onMove = (e: MouseEvent) => {
             const cur = screenToFlowPosition({ x: e.clientX, y: e.clientY });
             const dx = cur.x - startFlow.x;
             const dy = cur.y - startFlow.y;
-            updateSection(sectionId, {
-                position: { x: startSectionPosition.x + dx, y: startSectionPosition.y + dy },
+            
+            // 🚀 1. 모든 타겟 섹션들을 같은 이동 거리(dx, dy)만큼 함께 이동
+            targetSectionIds.forEach(id => {
+                const startPos = startSectionPositions[id];
+                if (startPos) {
+                    updateSection(id, { position: { x: startPos.x + dx, y: startPos.y + dy } });
+                }
             });
+            
+            // 🚀 2. 하위 섹션들에 속한 모든 화면 노드들도 함께 이동
             Object.entries(startScreenPositions).forEach(([screenId, pos]) => {
                 updateScreen(screenId, { position: { x: pos.x + dx, y: pos.y + dy } });
             });
         };
+        
         const onUp = () => setSectionMoveState(null);
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
+        
         return () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
