@@ -88,11 +88,6 @@ const AutoResizeTextarea: React.FC<{
         );
     };
 
-const getRows = (text: string | undefined, minRows = 2): number => {
-    if (!text) return minRows;
-    const lines = text.split('\n').length;
-    return Math.max(minRows, lines);
-};
 
 const RightPane: React.FC<RightPaneProps> = ({
     screen,
@@ -240,7 +235,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                 <div className="w-full bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 초기화면설정
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar no-pan-scroll">
+                <div className="flex-1 min-h-0 flex flex-col">
                     <textarea
                         value={getDisplayValue('initialSettings', screen.initialSettings || '')}
                         onChange={(e) => handleChange('initialSettings', e.target.value, e)}
@@ -254,8 +249,7 @@ const RightPane: React.FC<RightPaneProps> = ({
 }}
                         onMouseDown={(e) => e.stopPropagation()}
                         disabled={isLocked}
-                        rows={getRows(getDisplayValue('initialSettings', screen.initialSettings || ''), 2)}
-                        className={`nodrag w-full text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none overflow-hidden ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
+                        className={`nodrag w-full h-full flex-1 min-h-0 text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none overflow-hidden ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
                         placeholder={isLocked ? "" : "• 화면 진입 시 초기 설정..."}
                         spellCheck={false}
                     />
