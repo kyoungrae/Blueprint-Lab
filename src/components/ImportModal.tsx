@@ -32,21 +32,36 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
     };
 
     const processImport = (data: any, importType: 'JSON' | 'SQL') => {
-        // --- 핵심 논리적 흐름(식별 관계)만 연결선으로 남기기 ---
+        // --- 핵심 논리적 흐름(식별 관계)만 연결선으로 남기기 (강력한 3단계 필터) ---
         if (data.relationships && data.entities) {
             data.relationships = data.relationships.filter((rel: any) => {
-                // rel.target: FK를 가진 자식 테이블
-                // rel.targetHandle: 자식 테이블의 FK 컬럼
+                const sourceEntity = data.entities.find((e: any) => e.id === rel.source);
                 const targetEntity = data.entities.find((e: any) => e.id === rel.target);
 
-                if (!targetEntity) return false;
+                if (!sourceEntity || !targetEntity) return false;
 
-                const targetAttr = targetEntity.attributes?.find((a: any) => a.id === rel.targetHandle);
+                // 1단계: 파서가 핸들(컬럼명)을 정확히 넘겨준 경우 (정확한 일치)
+                if (rel.targetHandle) {
+                    const exactMatch = targetEntity.attributes?.find((a: any) =>
+                        a.id === rel.targetHandle || a.name === rel.targetHandle
+                    );
+                    if (exactMatch) return exactMatch.isPK === true;
 
-                // 핵심: 자식 테이블에서 해당 FK 컬럼이 PK(기본키)의 일부인지 확인합니다.
-                // PK에 포함되어 있다면 마스터-디테일 같은 핵심 논리 흐름이므로 선을 남깁니다 (true).
-                // PK가 아닌 일반 컬럼(예: 공통코드 참조)이라면 선을 지웁니다 (false).
-                return targetAttr?.isPK === true;
+                    // 2단계: 핸들이 '테이블명-컬럼명' 같은 조합형으로 넘어온 경우 (포함 여부 확인)
+                    const fuzzyMatch = targetEntity.attributes?.find((a: any) =>
+                        String(rel.targetHandle).endsWith(String(a.id)) || 
+                        String(rel.targetHandle).endsWith(String(a.name))
+                    );
+                    if (fuzzyMatch) return fuzzyMatch.isPK === true;
+                }
+
+                // 3단계 (최후의 보루): 파서가 컬럼 정보 없이 테이블-테이블 연결 정보만 던진 경우
+                // -> 부모 테이블의 PK 이름과 자식 테이블의 PK 이름 중 똑같은 게 있는지 확인합니다.
+                // (부모의 PK를 자식이 자신의 PK로 쓰고 있다면 그것이 바로 '식별 관계'의 증명입니다)
+                const sourcePKs = sourceEntity.attributes?.filter((a: any) => a.isPK).map((a: any) => a.name.toLowerCase()) || [];
+                const targetPKs = targetEntity.attributes?.filter((a: any) => a.isPK).map((a: any) => a.name.toLowerCase()) || [];
+
+                return sourcePKs.length > 0 && sourcePKs.some((pk: string) => targetPKs.includes(pk));
             });
         }
         // --------------------------------------------------------
