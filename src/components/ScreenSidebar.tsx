@@ -39,6 +39,9 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
         s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.screenId.toLowerCase().includes(search.toLowerCase())
     );
+    // 🚀 추가: 부모가 없는 '최상위 섹션'만 필터링합니다.
+    const rootSections = sections.filter((s) => !s.parentId);
+    
     const sectionIds = new Set(sections.map((sec) => sec.id));
     // 섹션 없음: sectionId가 없거나, 해당 섹션이 sections 목록에 없는 화면 (데이터 있어도 목록에 항상 표시)
     const rootScreens = filteredScreens.filter((s) => !s.sectionId || !sectionIds.has(s.sectionId));
@@ -94,6 +97,90 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
             ...prev,
             [sectionId]: !prev[sectionId],
         }));
+    };
+
+    // 🚀 핵심 변경: 섹션을 그리는 로직을 재귀 함수로 분리했습니다.
+    const renderSection = (section: ScreenSection) => {
+        // 이 섹션을 부모로 갖는 '자식 섹션'들을 찾습니다.
+        const childSections = sections.filter(s => s.parentId === section.id);
+        // 이 섹션에 속한 '화면'들을 찾습니다.
+        const secScreens = filteredScreens.filter((s) => s.sectionId === section.id);
+        const isEditing = editingSectionId === section.id;
+        const isCollapsed = collapsedSections[section.id] ?? false;
+        
+        const hasChildren = childSections.length > 0 || secScreens.length > 0;
+
+        return (
+            <div key={section.id} className="space-y-0.5">
+                <div className="flex items-center gap-2 px-2 py-3 rounded-lg bg-gray-100/80 border border-gray-100 min-h-[32px]">
+                    <button
+                        type="button"
+                        onClick={() => toggleSectionCollapse(section.id)}
+                        className="p-0.5 rounded hover:bg-violet-100 text-gray-500 hover:text-violet-600 transition-colors flex items-center justify-center shrink-0"
+                        title={isCollapsed ? '섹션 펼치기' : '섹션 접기'}
+                    >
+                        <ChevronRight
+                            size={12}
+                            className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                        />
+                    </button>
+                    <FolderOpen size={14} className="text-violet-500 shrink-0" />
+                    {isEditing ? (
+                        <input
+                            type="text"
+                            value={editingSectionName}
+                            onChange={(e) => setEditingSectionName(e.target.value)}
+                            onBlur={() => saveSectionName(section.id)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveSectionName(section.id);
+                                if (e.key === 'Escape') {
+                                    setEditingSectionId(null);
+                                    setEditingSectionName('');
+                                }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex-1 min-w-0 text-xs font-bold text-gray-700 bg-white border border-violet-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-violet-400"
+                            autoFocus
+                        />
+                    ) : (
+                        <span
+                            className="text-xs font-bold text-gray-600 truncate flex-1 min-w-0 cursor-text"
+                            onDoubleClick={() => startEditingSectionName(section)}
+                            title="더블클릭하여 제목 수정"
+                        >
+                            {section.name ?? 'Section'}
+                        </span>
+                    )}
+                    {!isEditing && (
+                        <div className="flex items-center gap-2 ml-auto">
+                            <span className="text-[10px] text-gray-400 shrink-0">{secScreens.length}</span>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteSection(section.id, section.name ?? 'Section');
+                                }}
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors shrink-0"
+                                title="섹션 삭제"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    )}
+                </div>
+                
+                {/* 자식 섹션이나 화면이 있다면 들여쓰기(border-l, pl-3)를 적용하여 안쪽에 렌더링합니다 */}
+                {hasChildren && !isCollapsed && (
+                    <div className="pl-3 border-l border-gray-200 ml-2 space-y-0.5">
+                        {/* 1. 자식 섹션 렌더링 (재귀 호출) */}
+                        {childSections.map(child => renderSection(child))}
+                        
+                        {/* 2. 현재 섹션에 속한 화면 렌더링 */}
+                        {secScreens.map((screen) => renderScreenItem(screen))}
+                    </div>
+                )}
+            </div>
+        );
     };
 
     const renderScreenItem = (screen: Screen) => (
@@ -205,81 +292,13 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
                     </div>
                 ) : (
                     <div className="space-y-3">
-                        {sections.map((section) => {
-                            const secScreens = filteredScreens.filter((s) => s.sectionId === section.id);
-                            const isEditing = editingSectionId === section.id;
-                            const isCollapsed = collapsedSections[section.id] ?? false;
-                            return (
-                                <div key={section.id} className="space-y-0.5">
-                                    <div className="flex items-center gap-2 px-2 py-3 rounded-lg bg-gray-100/80 border border-gray-100 min-h-[32px]">
-                                        <button
-                                            type="button"
-                                            onClick={() => toggleSectionCollapse(section.id)}
-                                            className="p-0.5 rounded hover:bg-violet-100 text-gray-500 hover:text-violet-600 transition-colors flex items-center justify-center shrink-0"
-                                            title={isCollapsed ? '섹션 펼치기' : '섹션 접기'}
-                                        >
-                                            <ChevronRight
-                                                size={12}
-                                                className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
-                                            />
-                                        </button>
-                                        <FolderOpen size={14} className="text-violet-500 shrink-0" />
-                                        {isEditing ? (
-                                            <input
-                                                type="text"
-                                                value={editingSectionName}
-                                                onChange={(e) => setEditingSectionName(e.target.value)}
-                                                onBlur={() => saveSectionName(section.id)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') saveSectionName(section.id);
-                                                    if (e.key === 'Escape') {
-                                                        setEditingSectionId(null);
-                                                        setEditingSectionName('');
-                                                    }
-                                                }}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="flex-1 min-w-0 text-xs font-bold text-gray-700 bg-white border border-violet-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-violet-400"
-                                                autoFocus
-                                            />
-                                        ) : (
-                                            <span
-                                                className="text-xs font-bold text-gray-600 truncate flex-1 min-w-0 cursor-text"
-                                                onDoubleClick={() => startEditingSectionName(section)}
-                                                title="더블클릭하여 제목 수정"
-                                            >
-                                                {section.name ?? 'Section'}
-                                            </span>
-                                        )}
-                                        {!isEditing && (
-                                            <div className="flex items-center gap-2 ml-auto">
-                                                <span className="text-[10px] text-gray-400 shrink-0">{secScreens.length}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDeleteSection(section.id, section.name ?? 'Section');
-                                                    }}
-                                                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors shrink-0"
-                                                    title="섹션 삭제"
-                                                >
-                                                    <X size={14} />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    {!isCollapsed && secScreens.length > 0 && (
-                                        <div className="pl-3 border-l border-gray-200 ml-2 space-y-0.5">
-                                            {secScreens.map((screen) => renderScreenItem(screen))}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                        {/* 🚀 변경: 전체 sections가 아닌, rootSections만 먼저 렌더링합니다 */}
+                        {rootSections.map((section) => renderSection(section))}
+                        
                         {rootScreens.length > 0 && (
                             <div className="space-y-0.5">
                                 <div className="flex items-center gap-2 px-2 py-1 text-gray-500">
                                     <span className="text-[10px] font-bold uppercase">섹션 없음</span>
-                                    <span className="text-[10px] text-gray-400">({rootScreens.length})</span>
                                 </div>
                                 {rootScreens.map((screen) => renderScreenItem(screen))}
                             </div>

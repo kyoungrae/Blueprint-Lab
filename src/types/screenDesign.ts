@@ -35,6 +35,7 @@ export interface ScreenSection {
     position: { x: number; y: number };
     size: { width: number; height: number };
     color?: string;
+    parentId?: string | null; // 👈 이 줄을 추가합니다.
 }
 
 /** 화면(Screen) - 설계 문서 한 장에 해당 */

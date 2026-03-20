@@ -140,7 +140,8 @@ export interface ISection {
     name?: string;
     position: { x: number; y: number };
     size: { width: number; height: number };
-    color?: string; // 👈 이 줄을 추가합니다.
+    color?: string;
+    parentId?: string | null; // 👈 추가
 }
 
 // ERD Snapshot Interface
@@ -326,7 +327,8 @@ const SectionSchema = new Schema<ISection>({
     name: { type: String },
     position: { x: { type: Number, required: true }, y: { type: Number, required: true } },
     size: { width: { type: Number, required: true }, height: { type: Number, required: true } },
-    color: { type: String }, // 👈 이 줄을 추가합니다.
+    color: { type: String },
+    parentId: { type: String, default: null }, // 👈 추가
 }, { _id: false });
 
 const ScreenSnapshotSchema = new Schema<IScreenSnapshot>({

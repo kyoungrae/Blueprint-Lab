@@ -499,7 +499,22 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 name = `${baseName} ${n}`;
             }
             const sectionId = `section_${Date.now()}`;
-            const newSection = { id: sectionId, name, position: { x, y }, size: { width, height }, color: '#e9d5ff' };
+            const cx = x + width / 2;
+            const cy = y + height / 2;
+
+            // 🚀 새 섹션을 감싸고 있는 기존 섹션 중 '가장 작은(안쪽에 있는)' 섹션을 부모로 찾습니다.
+            const parentSection = sections
+                .filter((s) => cx >= s.position.x && cx <= s.position.x + s.size.width && cy >= s.position.y && cy <= s.position.y + s.size.height)
+                .sort((a, b) => (a.size.width * a.size.height) - (b.size.width * b.size.height))[0];
+
+            const newSection = { 
+                id: sectionId, 
+                name, 
+                position: { x, y }, 
+                size: { width, height }, 
+                color: '#e9d5ff',
+                parentId: parentSection ? parentSection.id : null // 👈 부모 ID 저장
+            };
             addSection(newSection);
             yjsAddSection(newSection);
             setSectionDrag(null);
@@ -1478,13 +1493,16 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 x: node.position.x + nodeWidth / 2,
                 y: node.position.y + nodeHeight / 2,
             };
-            const containingSection = sections.find(
-                (s) =>
-                    nodeCenter.x >= s.position.x &&
-                    nodeCenter.x <= s.position.x + s.size.width &&
-                    nodeCenter.y >= s.position.y &&
-                    nodeCenter.y <= s.position.y + s.size.height
-            );
+            const containingSection = sections
+                .filter(
+                    (s) =>
+                        nodeCenter.x >= s.position.x &&
+                        nodeCenter.x <= s.position.x + s.size.width &&
+                        nodeCenter.y >= s.position.y &&
+                        nodeCenter.y <= s.position.y + s.size.height
+                )
+                // 🚀 여러 섹션에 겹쳐 있다면, 크기가 가장 작은(최하위) 섹션을 선택합니다.
+                .sort((a, b) => (a.size.width * a.size.height) - (b.size.width * b.size.height))[0];
             const sectionId = containingSection?.id ?? undefined;
             updateScreen(node.id, { position: node.position, sectionId: sectionId ?? undefined });
             // Yjs CRDT 업데이트 → WebSocket으로 모든 피어에 자동 전파
