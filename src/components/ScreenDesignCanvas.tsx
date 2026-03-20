@@ -2151,6 +2151,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                 {isExportModalOpen && (
                                     <ScreenExportModal
                                         screens={screens}
+                                        sections={sections}
                                         onExport={handleExportImage}
                                         onClose={() => setIsExportModalOpen(false)}
                                     />
