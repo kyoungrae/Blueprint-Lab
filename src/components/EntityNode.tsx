@@ -339,9 +339,13 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
 
             {/* ── ReactFlow 연결 핸들 ── */}
             <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ top: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="target" position={Position.Top} id="top" className="!opacity-0 !w-4 !h-4" style={{ top: -2 }} />
             <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ bottom: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="target" position={Position.Bottom} id="bottom" className="!opacity-0 !w-4 !h-4" style={{ bottom: -2 }} />
             <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ left: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="target" position={Position.Left} id="left" className="!opacity-0 !w-4 !h-4" style={{ left: -2 }} />
             <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center" style={{ right: -20 }}><div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full shadow-sm pointer-events-none" /></Handle>
+            <Handle type="target" position={Position.Right} id="right" className="!opacity-0 !w-4 !h-4" style={{ right: -2 }} />
         </div>
     );
 });
@@ -769,15 +773,22 @@ const PrivHandles = memo(() => (
         <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ top: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
+        <Handle type="target" position={Position.Top} id="top" className="!opacity-0 !w-4 !h-4" style={{ top: -2, zIndex: 998 }} />
+        
         <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ bottom: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
+        <Handle type="target" position={Position.Bottom} id="bottom" className="!opacity-0 !w-4 !h-4" style={{ bottom: -2, zIndex: 998 }} />
+        
         <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ left: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
+        <Handle type="target" position={Position.Left} id="left" className="!opacity-0 !w-4 !h-4" style={{ left: -2, zIndex: 998 }} />
+        
         <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-none !w-10 !h-10 flex items-center justify-center !cursor-pointer group/handle" style={{ right: -20, zIndex: 999 }}>
             <div className="w-4 h-4 bg-blue-500 border-white border-2 rounded-full transition-all duration-200 shadow-sm pointer-events-none group-hover/handle:bg-green-500 group-hover/handle:scale-150" />
         </Handle>
+        <Handle type="target" position={Position.Right} id="right" className="!opacity-0 !w-4 !h-4" style={{ right: -2, zIndex: 998 }} />
     </>
 ));
 
