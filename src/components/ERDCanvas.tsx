@@ -1853,6 +1853,7 @@ const ERDCanvasContent: React.FC = () => {
                         nodesDraggable={true}
                         nodesConnectable={true}
                         elementsSelectable={true}
+                        onlyRenderVisibleElements={true}
                         selectNodesOnDrag={false}
                         elevateNodesOnSelect={false}
                         elevateEdgesOnSelect={false}
