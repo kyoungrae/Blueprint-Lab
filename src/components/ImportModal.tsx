@@ -32,6 +32,25 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
     };
 
     const processImport = (data: any, importType: 'JSON' | 'SQL') => {
+        // --- 핵심 논리적 흐름(식별 관계)만 연결선으로 남기기 ---
+        if (data.relationships && data.entities) {
+            data.relationships = data.relationships.filter((rel: any) => {
+                // rel.target: FK를 가진 자식 테이블
+                // rel.targetHandle: 자식 테이블의 FK 컬럼
+                const targetEntity = data.entities.find((e: any) => e.id === rel.target);
+
+                if (!targetEntity) return false;
+
+                const targetAttr = targetEntity.attributes?.find((a: any) => a.id === rel.targetHandle);
+
+                // 핵심: 자식 테이블에서 해당 FK 컬럼이 PK(기본키)의 일부인지 확인합니다.
+                // PK에 포함되어 있다면 마스터-디테일 같은 핵심 논리 흐름이므로 선을 남깁니다 (true).
+                // PK가 아닌 일반 컬럼(예: 공통코드 참조)이라면 선을 지웁니다 (false).
+                return targetAttr?.isPK === true;
+            });
+        }
+        // --------------------------------------------------------
+
         const duplicateNames = checkDuplicates(data);
         let overwrite = false;
 

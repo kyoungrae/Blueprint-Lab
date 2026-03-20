@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useDeferredValue, useRef, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useDeferredValue, useRef } from 'react';
 import ReactFlow, {
     type Node,
     type Edge,
@@ -15,7 +15,6 @@ import ReactFlow, {
     useReactFlow,
     useOnViewportChange,
     reconnectEdge,
-    useStore,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -375,27 +374,8 @@ const ERDCanvasContent: React.FC = () => {
 
     const currentProject = projects.find(p => p.id === currentProjectId);
 
-    const zoomSelector = (state: any) => state.transform[2];
-    
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-    const zoom = useStore(zoomSelector);
-    
-    // 최적화된 노드 사용
-    const optimizedNodes = useMemo(() => {
-        // 줌 아웃 시 노드 단순화
-        if (zoom < 0.3) {
-            return nodes.map(node => ({
-                ...node,
-                data: {
-                    ...node.data,
-                    // 속성 숨기기, 기본 정보만 표시
-                    simplified: true
-                }
-            }));
-        }
-        return nodes;
-    }, [nodes, zoom]);
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [editingRelationship, setEditingRelationship] = useState<Relationship | null>(null);
@@ -1836,7 +1816,7 @@ const ERDCanvasContent: React.FC = () => {
                 {/* 1) React Flow Canvas - z-[10]으로 섹션 배경(z-[1])보다 위에 그려서 엔티티 색상이 섹션 채움에 틴트되지 않음 */}
                 <div className="absolute inset-0 z-[10]" ref={paneContainerRef}>
                     <ReactFlow
-                        nodes={optimizedNodes}
+                        nodes={nodes}
                         edges={edges}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}
