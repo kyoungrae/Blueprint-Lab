@@ -345,6 +345,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         lastError: yjsLastError,
         lastSyncAt: yjsLastSyncAt,
         updateSection: yjsUpdateSection,
+        addSection: yjsAddSection,
     } = useYjsStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
 
@@ -497,7 +498,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 name = `${baseName} ${n}`;
             }
             const sectionId = `section_${Date.now()}`;
-            addSection({ id: sectionId, name, position: { x, y }, size: { width, height } });
+            const newSection = { id: sectionId, name, position: { x, y }, size: { width, height }, color: '#8b5cf6' };
+            addSection(newSection);
+            yjsAddSection(newSection);
             setSectionDrag(null);
             setIsSectionDrawMode(false);
             // 드래그 영역 안에 있는 화면 노드는 해당 섹션에 포함
