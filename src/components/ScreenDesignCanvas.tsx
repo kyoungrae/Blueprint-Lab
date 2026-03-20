@@ -35,6 +35,8 @@ interface SectionOverlayLayerProps {
     onSectionBodyMouseDown: (e: React.MouseEvent, sectionId: string) => void;
     onSectionResizeMouseDown: (e: React.MouseEvent, sectionId: string, handle: string) => void;
     sectionHeadersContainerRef: React.RefObject<HTMLDivElement | null>;
+    updateSection: (id: string, updates: Partial<ScreenSection>) => void;
+    yjsUpdateSection: (id: string, updates: Partial<ScreenSection>) => void;
 }
 
 
@@ -43,6 +45,7 @@ interface SectionOverlayLayerProps {
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
     const layerRef = useRef<HTMLDivElement>(null);
     const [portalTarget, setPortalTarget] = useState<Element | null>(null);
+    const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
 
     useEffect(() => {
         // 🚀 ReactFlow의 진짜 도화지(줌/팬 엔진) DOM을 찾아냅니다.
@@ -77,8 +80,14 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                 {sections.map((s) => (
                     <div
                         key={s.id}
-                        className={`absolute border-2 border-violet-400/80 bg-violet-400/5 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-violet-400/40' : 'shadow-none'}`}
-                        style={{ left: s.position.x, top: s.position.y, width: s.size.width, height: s.size.height }}
+                        className={`absolute border-2 border-violet-400/80 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-violet-400/40' : 'shadow-none'}`}
+                        style={{ 
+                            left: s.position.x, 
+                            top: s.position.y, 
+                            width: s.size.width, 
+                            height: s.size.height,
+                            backgroundColor: s.color ? `${s.color}20` : undefined
+                        }}
                     />
                 ))}
             </div>
@@ -106,7 +115,11 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                         >
                             <div
                                 data-section-header
-                                className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-violet-400/15 border-b border-violet-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
+                                className="flex items-center h-14 min-h-14 px-2 rounded-t-md border-b cursor-grab active:cursor-grabbing pointer-events-auto"
+                                style={{ 
+                                    backgroundColor: s.color ? `${s.color}15` : undefined,
+                                    borderColor: s.color ? `${s.color}30` : undefined
+                                }}
                                 onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
                                 onMouseLeave={() => setHoveredSectionId(null)}
@@ -134,6 +147,41 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         {s.name || 'Section'}
                                     </span>
                                 )}
+                                <div className="relative">
+                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="색상변경">
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                e.preventDefault();
+                                                setColorPickerOpen(colorPickerOpen === s.id ? null : s.id);
+                                            }}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
+                                        >
+                                            <Palette size={18} />
+                                        </button>
+                                        </PremiumTooltip>
+                                        {colorPickerOpen === s.id && (
+                                            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50 min-w-[120px]">
+                                                <div className="grid grid-cols-4 gap-1">
+                                                    {['#e5e7eb', '#fef3c7', '#dbeafe', '#dcfce7', '#fce7f3', '#fed7aa', '#e9d5ff', '#f3f4f6'].map((color) => (
+                                                        <button
+                                                        key={color}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            props.updateSection(s.id, { color });
+                                                            props.yjsUpdateSection(s.id, { color });
+                                                            setColorPickerOpen(null);
+                                                        }}
+                                                        className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
+                                                        style={{ backgroundColor: color }}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                </div>
                                 <PremiumTooltip placement="bottom" offsetBottom={30} label="섹션 삭제">
                                     <button
                                         type="button"
@@ -189,7 +237,8 @@ import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
-    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3, MessageCircle
+    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3, MessageCircle,
+    Palette
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { RecentTextColorsProvider } from '../contexts/RecentTextColorsContext';
@@ -295,6 +344,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         lastStatus: yjsLastStatus,
         lastError: yjsLastError,
         lastSyncAt: yjsLastSyncAt,
+        updateSection: yjsUpdateSection,
     } = useYjsStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
 
@@ -1991,6 +2041,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                         onSectionBodyMouseDown={onSectionBodyMouseDown}
                                         onSectionResizeMouseDown={onSectionResizeMouseDown}
                                         sectionHeadersContainerRef={sectionHeadersContainerRef}
+                                        updateSection={updateSection}
+                                        yjsUpdateSection={yjsUpdateSection}
                                     />
                                     <UserCursorsLayer />
                                     <Controls />

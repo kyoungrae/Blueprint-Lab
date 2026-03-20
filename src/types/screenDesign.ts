@@ -34,6 +34,7 @@ export interface ScreenSection {
     name?: string;
     position: { x: number; y: number };
     size: { width: number; height: number };
+    color?: string;
 }
 
 /** 화면(Screen) - 설계 문서 한 장에 해당 */
