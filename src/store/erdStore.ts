@@ -50,6 +50,7 @@ interface ERDStore {
     undo: () => void;
     redo: () => void;
     addLog: (log: Omit<HistoryLog, 'id' | 'timestamp'>) => void;
+    batchSectionChanges: (operations: Array<{ type: 'add' | 'update' | 'delete'; payload: any }>, user?: any) => void;
 }
 
 const MAX_HISTORY = 50;
@@ -261,7 +262,9 @@ export const useERDStore = create<ERDStore>((set, get) => {
 
         deleteSection: (id, _user) =>
             set((state) => {
-                const sections = state.sections.filter((s) => s.id !== id);
+                const sections = state.sections
+                    .filter((s) => s.id !== id)
+                    .map((s) => (s.parentId === id ? { ...s, parentId: null } : s));
                 const nextById = { ...state.entitiesById };
                 Object.keys(nextById).forEach(eid => {
                     if (nextById[eid].sectionId === id) nextById[eid] = { ...nextById[eid], sectionId: undefined as string | undefined };
@@ -423,6 +426,67 @@ export const useERDStore = create<ERDStore>((set, get) => {
                 });
 
                 return { ...state, ...history, entitiesById: newById, relationshipsById: newRelsById, sections: mergedSections };
+            }),
+
+        batchSectionChanges: (operations, _user) =>
+            set((state) => {
+                let newSections = [...state.sections];
+                let newEntitiesById = { ...state.entitiesById };
+                const logs: string[] = [];
+
+                operations.forEach(({ type, payload }) => {
+                    switch (type) {
+                        case 'add': {
+                            if (!newSections.some(s => s.id === payload.id)) {
+                                newSections.push(payload);
+                                logs.push(`Created section: ${payload.name ?? 'Section'}`);
+                            }
+                            break;
+                        }
+                        case 'update': {
+                            const { id, updates } = payload;
+                            const existing = newSections.find(s => s.id === id);
+                            if (existing) {
+                                newSections = newSections.map(s => s.id === id ? { ...s, ...updates } : s);
+                                const changedKeys = Object.keys(updates);
+                                if (changedKeys.includes('name')) {
+                                    logs.push(`Renamed section to: ${updates.name ?? 'Section'}`);
+                                }
+                                if (changedKeys.includes('color')) {
+                                    logs.push(`Changed section color`);
+                                }
+                                if (changedKeys.includes('position') || changedKeys.includes('size')) {
+                                    logs.push(`Moved/resized section`);
+                                }
+                            }
+                            break;
+                        }
+                        case 'delete': {
+                            const { id } = payload;
+                            const deleted = newSections.find(s => s.id === id);
+                            if (deleted) {
+                                newSections = newSections
+                                    .filter((s) => s.id !== id)
+                                    .map((s) => (s.parentId === id ? { ...s, parentId: null } : s));
+                                Object.keys(newEntitiesById).forEach(eid => {
+                                    if (newEntitiesById[eid].sectionId === id) {
+                                        newEntitiesById[eid] = { ...newEntitiesById[eid], sectionId: undefined as string | undefined };
+                                    }
+                                });
+                                logs.push(`Deleted section: ${deleted.name ?? 'Section'}`);
+                            }
+                            break;
+                        }
+                    }
+                });
+
+                return {
+                    ...state,
+                    ...pushHistory(state),
+                    sections: newSections,
+                    entitiesById: newEntitiesById,
+                    history: logs.length > 0 ? [createLog(_user, 'BATCH', 'SECTION', 'Batch', logs.join('; ')), ...state.history].slice(0, 100) : state.history,
+                };
             }),
     };
 });

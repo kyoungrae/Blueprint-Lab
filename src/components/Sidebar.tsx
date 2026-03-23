@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useERDStore } from '../store/erdStore';
-import { Database, Search, ChevronRight, Table as TableIcon, Hash, Focus, FolderOpen } from 'lucide-react';
+import { Database, Search, ChevronRight, Table as TableIcon, Hash, Focus, FolderOpen, X, Palette } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import type { Section } from '../types/erd';
 import type { Entity } from '../types/erd';
@@ -44,17 +44,21 @@ const Sidebar: React.FC = () => {
     const entities = React.useMemo(() => Object.values(entitiesById), [entitiesById]);
     const sections = useERDStore((s) => s.sections);
     const updateSection = useERDStore((s) => s.updateSection);
+    const deleteSection = useERDStore((s) => s.deleteSection);
     const { fitView, setNodes } = useReactFlow();
     const [search, setSearch] = useState('');
     const [composing, setComposing] = useState<string | null>(null);
     const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
     const [editingSectionName, setEditingSectionName] = useState('');
+    const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+    const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
     const displaySearch = composing !== null ? composing : search;
 
     const filteredEntities = entities.filter(e =>
         e.name.toLowerCase().includes(search.toLowerCase())
     );
     const sectionList = sections as Section[];
+    const rootSections = sectionList.filter((s) => !s.parentId);
     const rootEntities = filteredEntities.filter((e) => !e.sectionId);
 
     const handleFocusNode = (e: React.MouseEvent, nodeId: string) => {
@@ -88,6 +92,126 @@ const Sidebar: React.FC = () => {
         updateSection(sectionId, { name });
         setEditingSectionId(null);
         setEditingSectionName('');
+    };
+
+    const handleDeleteSection = (sectionId: string, sectionName: string) => {
+        if (window.confirm(`섹션 "${sectionName}"을(를) 삭제하시겠습니까?\n\n섹션에 속한 테이블들은 "섹션 없음"으로 이동됩니다.`)) {
+            deleteSection(sectionId);
+        }
+    };
+
+    const toggleSectionCollapse = (sectionId: string) => {
+        setCollapsedSections((prev) => ({
+            ...prev,
+            [sectionId]: !prev[sectionId],
+        }));
+    };
+
+    const renderSection = (section: Section) => {
+        const childSections = sectionList.filter((s) => s.parentId === section.id);
+        const secEntities = filteredEntities.filter((e) => e.sectionId === section.id);
+        const isEditing = editingSectionId === section.id;
+        const isCollapsed = collapsedSections[section.id] ?? false;
+        const hasChildren = childSections.length > 0 || secEntities.length > 0;
+
+        return (
+            <div key={section.id} className="space-y-0.5">
+                <div className="flex items-center gap-2 px-2 py-3 rounded-lg bg-gray-100/80 border border-gray-100 min-h-[32px]">
+                    <button
+                        type="button"
+                        onClick={() => toggleSectionCollapse(section.id)}
+                        className="p-0.5 rounded hover:bg-blue-100 text-gray-500 hover:text-blue-600 transition-colors flex items-center justify-center shrink-0"
+                        title={isCollapsed ? '섹션 펼치기' : '섹션 접기'}
+                    >
+                        <ChevronRight
+                            size={12}
+                            className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                        />
+                    </button>
+                    <FolderOpen size={14} className="text-blue-500 shrink-0" />
+                    {isEditing ? (
+                        <input
+                            type="text"
+                            value={editingSectionName}
+                            onChange={(e) => setEditingSectionName(e.target.value)}
+                            onBlur={() => saveSectionName(section.id)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveSectionName(section.id);
+                                if (e.key === 'Escape') {
+                                    setEditingSectionId(null);
+                                    setEditingSectionName('');
+                                }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex-1 min-w-0 text-xs font-bold text-gray-700 bg-white border border-blue-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-400"
+                            autoFocus
+                        />
+                    ) : (
+                        <span
+                            className="text-xs font-bold text-gray-600 truncate flex-1 min-w-0 cursor-text"
+                            onDoubleClick={() => startEditingSectionName(section)}
+                            title="더블클릭하여 제목 수정"
+                        >
+                            {section.name ?? 'Section'}
+                        </span>
+                    )}
+                    {!isEditing && (
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setColorPickerOpen(colorPickerOpen === section.id ? null : section.id);
+                                }}
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-blue-100 text-gray-500 hover:text-blue-600 transition-colors shrink-0"
+                                title="색상 변경"
+                            >
+                                <Palette size={14} />
+                            </button>
+                            {colorPickerOpen === section.id && (
+                                <div className="absolute mt-10 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50 min-w-[120px]">
+                                    <div className="grid grid-cols-4 gap-1">
+                                        {['#e5e7eb', '#fef3c7', '#dbeafe', '#dcfce7', '#fce7f3', '#fed7aa', '#e9d5ff', '#f3f4f6'].map((color) => (
+                                            <button
+                                                key={color}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    updateSection(section.id, { color });
+                                                    setColorPickerOpen(null);
+                                                }}
+                                                className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
+                                                style={{ backgroundColor: color }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <span className="text-[10px] text-gray-400 shrink-0">{secEntities.length}</span>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteSection(section.id, section.name ?? 'Section');
+                                }}
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors shrink-0"
+                                title="섹션 삭제"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {hasChildren && !isCollapsed && (
+                    <div className="pl-3 border-l border-gray-200 ml-2 space-y-0.5">
+                        {childSections.map((child) => renderSection(child))}
+                        {secEntities.map((entity) => (
+                            <EntityItem key={entity.id} entity={entity} onFocus={handleFocusNode} />
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
     };
 
     return (
@@ -144,51 +268,7 @@ const Sidebar: React.FC = () => {
                     </div>
                 ) : (
                     <div className="space-y-3">
-                        {sectionList.map((section) => {
-                            const secEntities = filteredEntities.filter((e) => e.sectionId === section.id);
-                            const isEditing = editingSectionId === section.id;
-                            return (
-                                <div key={section.id} className="space-y-0.5">
-                                    <div className="flex items-center gap-2 px-2 py-3 rounded-lg bg-gray-100/80 border border-gray-100 min-h-[32px]">
-                                        <FolderOpen size={14} className="text-blue-500 shrink-0" />
-                                        {isEditing ? (
-                                            <input
-                                                type="text"
-                                                value={editingSectionName}
-                                                onChange={(e) => setEditingSectionName(e.target.value)}
-                                                onBlur={() => saveSectionName(section.id)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') saveSectionName(section.id);
-                                                    if (e.key === 'Escape') {
-                                                        setEditingSectionId(null);
-                                                        setEditingSectionName('');
-                                                    }
-                                                }}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="flex-1 min-w-0 text-xs font-bold text-gray-700 bg-white border border-blue-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-400"
-                                                autoFocus
-                                            />
-                                        ) : (
-                                            <span
-                                                className="text-xs font-bold text-gray-600 truncate flex-1 min-w-0 cursor-text"
-                                                onDoubleClick={() => startEditingSectionName(section)}
-                                                title="더블클릭하여 제목 수정"
-                                            >
-                                                {section.name ?? 'Section'}
-                                            </span>
-                                        )}
-                                        {!isEditing && <span className="ml-auto text-[10px] text-gray-400 shrink-0">{secEntities.length}</span>}
-                                    </div>
-                                    {secEntities.length > 0 && (
-                                        <div className="pl-3 border-l border-gray-200 ml-2 space-y-0.5">
-                                            {secEntities.map((entity) => (
-                                                <EntityItem key={entity.id} entity={entity} onFocus={handleFocusNode} />
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                        {rootSections.map((section) => renderSection(section))}
                         {rootEntities.length > 0 && (
                             <div className="space-y-0.5">
                                 {sectionList.length > 0 && (

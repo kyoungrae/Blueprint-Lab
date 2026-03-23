@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState, useDeferredValue, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import ReactFlow, {
     type Node,
     type Edge,
@@ -108,7 +109,7 @@ import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { OnlineUsers, UserCursors } from './collaboration';
 import PremiumTooltip from './screenNode/PremiumTooltip';
-import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Zap, Undo2, Redo2, History, Square, Link } from 'lucide-react';
+import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Zap, Undo2, Redo2, History, Square, Link, Palette } from 'lucide-react';
 import { getLayoutedElements } from '../utils/layout';
 import { getForceLayoutedElements } from '../utils/forceLayout';
 import { getRelationshipLayoutedElements } from '../utils/relationshipLayout';
@@ -194,12 +195,30 @@ interface SectionOverlayLayerProps {
     startEditingSectionName: (section: Section) => void;
     saveSectionName: (sectionId: string) => void;
     deleteSection: (id: string) => void;
+    updateSection: (id: string, updates: Partial<Section>) => void;
     onSectionBodyMouseDown: (e: React.MouseEvent, sectionId: string) => void;
     onSectionResizeMouseDown: (e: React.MouseEvent, sectionId: string, handle: string) => void;
     sectionHeadersContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 /** Section overlays (background + headers). Uses useViewport() so only this layer re-renders during zoom/pan; parent stays idle. */
 const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
+    const layerRef = useRef<HTMLDivElement>(null);
+    const [portalTarget, setPortalTarget] = useState<Element | null>(null);
+    const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
+
+    useEffect(() => {
+        const target = document.querySelector('.react-flow__viewport');
+        setPortalTarget(target);
+    }, []);
+
+    useOnViewportChange({
+        onChange: (vp) => {
+            if (layerRef.current) {
+                layerRef.current.style.setProperty('--zoom', vp.zoom.toString());
+            }
+        },
+    });
+
     const {
         sections,
         hoveredSectionId,
@@ -213,125 +232,166 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
         startEditingSectionName,
         saveSectionName,
         deleteSection,
+        updateSection,
         onSectionBodyMouseDown,
         onSectionResizeMouseDown,
         sectionHeadersContainerRef,
     } = props;
-    if (sections.length === 0) return null;
+    if (!portalTarget || sections.length === 0) return null;
+
     const sectionList = sections as Section[];
     return (
-        <>
-            <div
-                className="erd-viewport-sync absolute inset-0 z-[1] overflow-visible pointer-events-none"
-                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
-            >
-                {sectionList.map((s) => (
-                    <div
-                        key={s.id}
-                        className={`absolute border-2 border-blue-400/80 bg-blue-400/5 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-blue-400/40' : 'shadow-none'}`}
-                        style={{ left: s.position.x, top: s.position.y, width: s.size.width, height: s.size.height }}
-                    />
-                ))}
-            </div>
-            <div
-                ref={sectionHeadersContainerRef}
-                className="erd-viewport-sync absolute inset-0 z-[15] overflow-visible pointer-events-none"
-                style={{ transform: 'translate(0px, 0px) scale(1)', transformOrigin: '0 0' }}
-            >
-                {sectionList.map((s) => {
-                    const isEditing = editingSectionId === s.id;
-                    const w = s.size.width;
-                    const h = s.size.height;
-                    const handles: { key: string; cursor: string; left: number; top: number }[] = [
-                        { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
-                        { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
-                        { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
-                        { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
-                        { key: 'se', cursor: 'nwse-resize', left: w, top: h },
-                        { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
-                        { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
-                        { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
-                    ];
-                    return (
+        createPortal(
+            <div ref={layerRef} style={{ '--zoom': '1' } as React.CSSProperties}>
+                <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-[-1]">
+                    {sectionList.map((s) => (
                         <div
                             key={s.id}
-                            className="absolute pointer-events-none"
-                            style={{ left: s.position.x, top: s.position.y, width: s.size.width, height: s.size.height }}
-                        >
+                            className={`absolute border-2 border-blue-400/80 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-blue-400/40' : 'shadow-none'}`}
+                            style={{
+                                left: s.position.x,
+                                top: s.position.y,
+                                width: s.size.width,
+                                height: s.size.height,
+                                backgroundColor: s.color ? `${s.color}20` : '#93c5fd20',
+                            }}
+                        />
+                    ))}
+                </div>
+                <div ref={sectionHeadersContainerRef} className="absolute top-0 left-0 w-full h-full pointer-events-none z-[15]">
+                    {sectionList.map((s) => {
+                        const isEditing = editingSectionId === s.id;
+                        const w = s.size.width;
+                        const h = s.size.height;
+                        const handles = [
+                            { key: 'nw', cursor: 'nwse-resize', left: 0, top: 0 },
+                            { key: 'n', cursor: 'ns-resize', left: w / 2, top: 0 },
+                            { key: 'ne', cursor: 'nesw-resize', left: w, top: 0 },
+                            { key: 'e', cursor: 'ew-resize', left: w, top: h / 2 },
+                            { key: 'se', cursor: 'nwse-resize', left: w, top: h },
+                            { key: 's', cursor: 'ns-resize', left: w / 2, top: h },
+                            { key: 'sw', cursor: 'nesw-resize', left: 0, top: h },
+                            { key: 'w', cursor: 'ew-resize', left: 0, top: h / 2 },
+                        ];
+                        return (
                             <div
-                                data-section-header
-                                className="flex items-center h-14 min-h-14 px-2 rounded-t-md bg-blue-400/15 border-b border-blue-400/30 cursor-grab active:cursor-grabbing pointer-events-auto"
-                                onMouseDown={(ev) => onSectionBodyMouseDown(ev, s.id)}
-                                onMouseEnter={() => setHoveredSectionId(s.id)}
-                                onMouseLeave={() => setHoveredSectionId(null)}
+                                key={s.id}
+                                className="absolute pointer-events-none"
+                                style={{ left: s.position.x, top: s.position.y, width: s.size.width, height: s.size.height }}
                             >
-                                {isEditing ? (
-                                    <input
-                                        type="text"
-                                        value={editingSectionName}
-                                        onChange={(e) => setEditingSectionName(e.target.value)}
-                                        onBlur={() => saveSectionName(s.id)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') saveSectionName(s.id);
-                                            if (e.key === 'Escape') {
-                                                setEditingSectionId(null);
-                                                setEditingSectionName('');
-                                            }
-                                        }}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        className="flex-1 min-w-0 bg-white/90 border border-blue-300 rounded px-1.5 py-0.5 text-xs font-semibold text-gray-800 outline-none focus:ring-1 focus:ring-blue-400"
-                                        autoFocus
-                                    />
-                                ) : (
-                                    <span
-                                        className="text-xl font-semibold text-gray-700 truncate flex-1 min-w-0"
-                                        onDoubleClick={(e) => {
-                                            e.stopPropagation();
-                                            startEditingSectionName(s);
-                                        }}
-                                    >
-                                        {s.name || 'Section'}
-                                    </span>
-                                )}
-                                <PremiumTooltip placement="bottom" offsetBottom={30} label="섹션 삭제">
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            deleteSection(s.id);
-                                        }}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                                    </button>
-                                </PremiumTooltip>
-                            </div>
-                            {selectedSectionId === s.id && handles.map((handle) => (
                                 <div
-                                    key={handle.key}
-                                    className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
+                                    data-section-header
+                                    className="flex items-center h-14 min-h-14 px-2 rounded-t-md border-b cursor-grab active:cursor-grabbing pointer-events-auto select-none"
                                     style={{
-                                        left: handle.left,
-                                        top: handle.top,
-                                        width: HANDLE_SIZE,
-                                        height: HANDLE_SIZE,
-                                        transform: 'translate(-50%, -50%) scale(calc(1 / var(--erd-zoom, 1)))',
-                                        cursor: handle.cursor,
+                                        backgroundColor: s.color ? `${s.color}15` : '#93c5fd15',
+                                        borderColor: s.color ? `${s.color}30` : '#93c5fd30',
                                     }}
                                     onMouseDown={(ev) => {
-                                        setSelectedSectionId(s.id);
-                                        onSectionResizeMouseDown(ev, s.id, handle.key);
+                                        ev.preventDefault();
+                                        onSectionBodyMouseDown(ev, s.id);
                                     }}
-                                />
-                            ))}
-                        </div>
-                    );
-                })}
-            </div>
-        </>
+                                    onMouseEnter={() => setHoveredSectionId(s.id)}
+                                    onMouseLeave={() => setHoveredSectionId(null)}
+                                >
+                                    {isEditing ? (
+                                        <input
+                                            type="text"
+                                            value={editingSectionName}
+                                            onChange={(e) => setEditingSectionName(e.target.value)}
+                                            onBlur={() => saveSectionName(s.id)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') saveSectionName(s.id);
+                                                if (e.key === 'Escape') { setEditingSectionId(null); setEditingSectionName(''); }
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            className="flex-1 min-w-0 bg-white/90 border border-blue-300 rounded px-1.5 py-0.5 text-xs font-semibold text-gray-800 outline-none focus:ring-1 focus:ring-blue-400"
+                                            autoFocus
+                                        />
+                                    ) : (
+                                        <span
+                                            className="text-xl font-semibold text-gray-700 truncate flex-1 min-w-0"
+                                            onDoubleClick={(e) => { e.stopPropagation(); startEditingSectionName(s); }}
+                                        >
+                                            {s.name || 'Section'}
+                                        </span>
+                                    )}
+                                    <div className="relative">
+                                        <PremiumTooltip placement="bottom" offsetBottom={30} label="색상변경">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    setColorPickerOpen(colorPickerOpen === s.id ? null : s.id);
+                                                }}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                                className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-blue-500/20 text-gray-500 hover:text-blue-600 transition-colors"
+                                            >
+                                                <Palette size={18} />
+                                            </button>
+                                        </PremiumTooltip>
+                                        {colorPickerOpen === s.id && (
+                                            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50 min-w-[120px] pointer-events-auto">
+                                                <div className="grid grid-cols-4 gap-1">
+                                                    {['#e5e7eb', '#fef3c7', '#dbeafe', '#dcfce7', '#fce7f3', '#fed7aa', '#e9d5ff', '#f3f4f6'].map((color) => (
+                                                        <button
+                                                            key={color}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                updateSection(s.id, { color });
+                                                                setColorPickerOpen(null);
+                                                            }}
+                                                            className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
+                                                            style={{ backgroundColor: color }}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="relative">
+                                        <PremiumTooltip placement="bottom" offsetBottom={30} label="섹션 삭제">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    deleteSection(s.id);
+                                                }}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                                className="shrink-0 w-8 h-8 flex items-center justify-center rounded hover:bg-red-500/20 text-gray-500 hover:text-red-600 transition-colors"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                                            </button>
+                                        </PremiumTooltip>
+                                    </div>
+                                </div>
+                                {selectedSectionId === s.id && handles.map((handle) => (
+                                    <div
+                                        key={handle.key}
+                                        className="absolute bg-blue-500 border border-white rounded-sm shadow cursor-pointer hover:bg-blue-600 z-10 pointer-events-auto"
+                                        style={{
+                                            left: handle.left,
+                                            top: handle.top,
+                                            width: HANDLE_SIZE,
+                                            height: HANDLE_SIZE,
+                                            transform: 'translate(-50%, -50%) scale(calc(1 / var(--zoom)))',
+                                            cursor: handle.cursor,
+                                        }}
+                                        onMouseDown={(ev) => {
+                                            setSelectedSectionId(s.id);
+                                            onSectionResizeMouseDown(ev, s.id, handle.key);
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>,
+            portalTarget
+        )
     );
 };
 
@@ -356,8 +416,9 @@ const ERDCanvasContent: React.FC = () => {
         addSection,
         updateSection,
         deleteSection,
-        exportData,
+        batchSectionChanges,
         importData,
+        exportData,
         mergeData,
         addLog,
         undo,
@@ -528,13 +589,17 @@ const ERDCanvasContent: React.FC = () => {
                 while (existingNames.has(`${baseName} ${n}`)) n++;
                 name = `${baseName} ${n}`;
             }
+
+            const cx = x + width / 2;
+            const cy = y + height / 2;
+            const parentSection = (sections as Section[])
+                .filter((s) => cx >= s.position.x && cx <= s.position.x + s.size.width && cy >= s.position.y && cy <= s.position.y + s.size.height)
+                .sort((a, b) => (a.size.width * a.size.height) - (b.size.width * b.size.height))[0];
+
             const newSectionId = `section_${Date.now()}`;
-            addSection({
-                id: newSectionId,
-                name,
-                position: { x, y },
-                size: { width, height },
-            });
+            batchSectionChanges([
+                { type: 'add', payload: { id: newSectionId, name, color: '#93c5fd', parentId: parentSection ? parentSection.id : null, position: { x, y }, size: { width, height } } }
+            ], user);
 
             // newly added section automatically assigns entities inside its bounds
             const nodes = getNodes().filter(n => n.type === 'entity' || n.type === 'entityPlaceholder');
@@ -695,11 +760,15 @@ const ERDCanvasContent: React.FC = () => {
     const saveSectionName = useCallback(
         (sectionId: string) => {
             const trimmed = editingSectionName.trim();
-            if (trimmed) updateSection(sectionId, { name: trimmed });
+            if (trimmed) {
+                batchSectionChanges([
+                    { type: 'update', payload: { id: sectionId, updates: { name: trimmed } } }
+                ], user);
+            }
             setEditingSectionId(null);
             setEditingSectionName('');
         },
-        [editingSectionName, updateSection]
+        [editingSectionName, batchSectionChanges, user]
     );
 
     // 섹션 제목/X 버튼 위에서 휠: 브라우저 동작 차단 + 캔버스와 동일하게 휠=패닝, Ctrl/Cmd+휠=마우스 위치 기준 줌
@@ -1978,6 +2047,7 @@ const ERDCanvasContent: React.FC = () => {
                             startEditingSectionName={startEditingSectionName}
                             saveSectionName={saveSectionName}
                             deleteSection={deleteSection}
+                            updateSection={updateSection}
                             onSectionBodyMouseDown={onSectionBodyMouseDown}
                             onSectionResizeMouseDown={onSectionResizeMouseDown}
                             sectionHeadersContainerRef={sectionHeadersContainerRef}

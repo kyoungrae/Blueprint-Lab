@@ -25,8 +25,10 @@ export interface Entity {
 export interface Section {
     id: string;
     name?: string;
+    parentId?: string | null;
     position: { x: number; y: number };
     size: { width: number; height: number };
+    color?: string;
 }
 
 /** 관계선 끝 기호: 일 필수(1), 일 선택(0또는1), 다 필수(1이상), 다 선택(0이상) */
