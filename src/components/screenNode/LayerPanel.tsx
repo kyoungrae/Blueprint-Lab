@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Layers, GripVertical, X, ChevronDown } from 'lucide-react';
+import { Layers, GripVertical, X, ChevronDown, ChevronsUp, ChevronsDown } from 'lucide-react';
 import { useStore } from 'reactflow';
 
 interface LayerPanelProps {
@@ -91,7 +91,7 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
                     className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
                 >
                     <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                        <ChevronDown size={18} className="rotate-180 scale-y-150" />
+                        <ChevronsUp size={18} className="scale-y-150" />
                     </div>
                     <span className="text-[10px] font-bold text-gray-600">맨 앞으로</span>
                 </button>
@@ -105,6 +105,15 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
                     <span className="text-[10px] font-bold text-gray-600">한 단계 위로</span>
                 </button>
                 <button
+                    onClick={() => onLayerAction('back')}
+                    className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
+                >
+                    <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
+                        <ChevronsDown size={18} className="scale-y-150" />
+                    </div>
+                    <span className="text-[10px] font-bold text-gray-600">맨 뒤로</span>
+                </button>
+                <button
                     onClick={() => onLayerAction('backward')}
                     className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
                 >
@@ -112,15 +121,6 @@ const LayerPanel: React.FC<LayerPanelProps> = ({
                         <ChevronDown size={18} />
                     </div>
                     <span className="text-[10px] font-bold text-gray-600">한 단계 아래로</span>
-                </button>
-                <button
-                    onClick={() => onLayerAction('back')}
-                    className="flex flex-col items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-blue-50 border border-gray-100 rounded-xl transition-all group"
-                >
-                    <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center group-hover:text-blue-600 transition-colors">
-                        <ChevronDown size={18} className="scale-y-150" />
-                    </div>
-                    <span className="text-[10px] font-bold text-gray-600">맨 뒤로</span>
                 </button>
             </div>
         </div>
