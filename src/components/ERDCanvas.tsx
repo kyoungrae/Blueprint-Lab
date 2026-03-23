@@ -990,8 +990,8 @@ const ERDCanvasContent: React.FC = () => {
     }, [currentProjectId, entities.length, fitView]);
 
     // Auto-save ERDStore (entities, relationships, sections) to ProjectStore
-    // - Local: persist to localStorage via projectStore
-    // - Remote: PATCH to server so refresh/state_sync restores sections
+    // - Local: persist to localStorage via projectStore (빠른 반영으로 새로고침 시 유실 방지)
+    // - Remote: WebSocket ops → 서버 즉시 Mongo 저장 (ENTITY_*/ATTRIBUTE_* critical op)
     useEffect(() => {
         if (!currentProjectId || entities.length === 0) return;
         const timer = setTimeout(() => {
@@ -1000,7 +1000,7 @@ const ERDCanvasContent: React.FC = () => {
                 relationships,
                 sections,
             });
-        }, 1000); // 1000ms debounce
+        }, 300); // 300ms debounce - 입력 직후 저장 체감
         return () => clearTimeout(timer);
     }, [entities, relationships, sections, currentProjectId, updateProjectData]);
 

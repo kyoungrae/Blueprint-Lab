@@ -719,11 +719,29 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                             }
                             setEntityCommentComposing(null);
                             updateEntity(entity.id, { comment: v });
+                            if (!isLocked) {
+                                sendOperation({
+                                    type: 'ENTITY_UPDATE',
+                                    targetId: entity.id,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: { comment: v },
+                                });
+                            }
                         }}
                         onCompositionEnd={(e) => {
                             const v = (e.target as HTMLInputElement).value;
                             setEntityCommentComposing(null);
                             updateEntity(entity.id, { comment: v });
+                            if (!isLocked) {
+                                sendOperation({
+                                    type: 'ENTITY_UPDATE',
+                                    targetId: entity.id,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: { comment: v },
+                                });
+                            }
                         }}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}

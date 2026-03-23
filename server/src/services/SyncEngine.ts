@@ -141,6 +141,21 @@ export class SyncEngine {
                 });
                 break;
 
+            case 'ATTRIBUTE_FIELD_UPDATE':
+                const fieldPayload = operation.payload as { attrId: string; updates: Record<string, unknown> };
+                const attrId = fieldPayload?.attrId;
+                const attrUpdates = fieldPayload?.updates;
+                if (attrId && attrUpdates && typeof attrUpdates === 'object') {
+                    newState.entities = state.entities.map(e => {
+                        if (e.id !== operation.targetId) return e;
+                        const newAttrs = (e.attributes || []).map((a: any) =>
+                            a.id === attrId ? { ...a, ...attrUpdates } : a
+                        );
+                        return { ...e, attributes: newAttrs };
+                    });
+                }
+                break;
+
             case 'RELATIONSHIP_CREATE':
                 newState.relationships = [...state.relationships, operation.payload as unknown as IRelationship];
                 break;
