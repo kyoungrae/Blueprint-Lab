@@ -414,7 +414,7 @@ const ERDCanvasContent: React.FC = () => {
     paneSizeRef.current = paneSize;
     entitiesRef.current = entities;
 
-    const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
+    const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes, fitView } = useReactFlow();
 
     // Pane size for viewport culling
     useEffect(() => {
@@ -825,34 +825,120 @@ const ERDCanvasContent: React.FC = () => {
     useEffect(() => {
         if (currentProjectId && currentProject?.data) {
             const d = currentProject.data as import('../types/erd').ERDState;
+            const rawEntities = d.entities ?? [];
+            const rawRelationships = d.relationships ?? [];
+            const rawSections = d.sections ?? [];
+            const rawHistory = d.history ?? [];
+
+            let entitiesToImport = rawEntities;
+            if (rawEntities.length > 0) {
+                let minX = Infinity;
+                let minY = Infinity;
+                let maxX = -Infinity;
+                let maxY = -Infinity;
+                rawEntities.forEach((e) => {
+                    const x = e.position?.x ?? 0;
+                    const y = e.position?.y ?? 0;
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                });
+                const spanX = maxX - minX;
+                const spanY = maxY - minY;
+                const farAwayAbs = Math.max(Math.abs(minX), Math.abs(minY), Math.abs(maxX), Math.abs(maxY));
+                const MAX_WORLD = 12000;
+
+                // 1) Far-away correction (translate only): if diagram is far from origin but not huge,
+                // move it near (0,0) so refresh doesn't zoom out to oblivion.
+                const FAR_AWAY_LIMIT = 20000;
+                const isFarAway = farAwayAbs > FAR_AWAY_LIMIT;
+                const isHugeSpan = Math.max(spanX, spanY) > MAX_WORLD;
+
+                // 2) Hard safety net: extreme coordinates/spans are clamped (may scale down if truly huge)
+                const HARD_LIMIT = 200000;
+                const needsHardSafety = farAwayAbs > HARD_LIMIT || spanX > HARD_LIMIT || spanY > HARD_LIMIT;
+
+                if (isFarAway || needsHardSafety) {
+                    const maxDim = Math.max(spanX, spanY);
+                    const scale = maxDim > MAX_WORLD ? MAX_WORLD / maxDim : 1;
+                    const pad = 50;
+                    entitiesToImport = rawEntities.map((e) => ({
+                        ...e,
+                        position: {
+                            x: Math.round(((((e.position?.x ?? 0) - minX + pad) * scale) / 50)) * 50,
+                            y: Math.round(((((e.position?.y ?? 0) - minY + pad) * scale) / 50)) * 50,
+                        },
+                    }));
+                    updateProjectData(currentProjectId, {
+                        entities: entitiesToImport,
+                        relationships: rawRelationships,
+                        sections: rawSections,
+                        history: rawHistory,
+                    });
+                } else if (isHugeSpan) {
+                    // huge span but within far-away threshold: scale down only
+                    const scale = MAX_WORLD / Math.max(spanX, spanY);
+                    entitiesToImport = rawEntities.map((e) => ({
+                        ...e,
+                        position: {
+                            x: Math.round((((e.position?.x ?? 0) * scale) / 50)) * 50,
+                            y: Math.round((((e.position?.y ?? 0) * scale) / 50)) * 50,
+                        },
+                    }));
+                    updateProjectData(currentProjectId, {
+                        entities: entitiesToImport,
+                        relationships: rawRelationships,
+                        sections: rawSections,
+                        history: rawHistory,
+                    });
+                }
+            }
+
             importData({
-                entities: d.entities ?? [],
-                relationships: d.relationships ?? [],
-                sections: d.sections ?? [],
-                history: d.history ?? [],
+                entities: entitiesToImport,
+                relationships: rawRelationships,
+                sections: rawSections,
+                history: rawHistory,
             });
         }
-    }, [currentProjectId, currentProject?.id, importData, projects.length]);
+    }, [currentProjectId, currentProject?.id, importData, projects.length, updateProjectData]);
+
+    // After initial load, center viewport on diagram once (does not modify persisted positions)
+    const didFitViewRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!currentProjectId) return;
+        if (!entities.length) return;
+        if (didFitViewRef.current === currentProjectId) return;
+        didFitViewRef.current = currentProjectId;
+
+        // Wait a tick for nodes to mount / measured sizes to settle
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                fitView({ padding: 0.2, duration: 0 });
+            });
+        });
+    }, [currentProjectId, entities.length, fitView]);
 
     // Auto-save ERDStore (entities, relationships, sections) to ProjectStore
     // - Local: persist to localStorage via projectStore
     // - Remote: PATCH to server so refresh/state_sync restores sections
     useEffect(() => {
-        if (!currentProjectId) return;
+        if (!currentProjectId || entities.length === 0) return;
         const timer = setTimeout(() => {
             updateProjectData(currentProjectId, {
                 entities,
                 relationships,
                 sections,
             });
-        }, 300); // 300ms debounce
+        }, 1000); // 1000ms debounce
         return () => clearTimeout(timer);
     }, [entities, relationships, sections, currentProjectId, updateProjectData]);
 
     // Save immediately when sections change (so refresh before debounce doesn't lose sections)
     const prevSectionsRef = React.useRef(sections);
     useEffect(() => {
-        if (!currentProjectId) return;
+        if (!currentProjectId || entities.length === 0) return;
         if (prevSectionsRef.current !== sections) {
             prevSectionsRef.current = sections;
             updateProjectData(currentProjectId, {
@@ -869,6 +955,7 @@ const ERDCanvasContent: React.FC = () => {
             const pid = useProjectStore.getState().currentProjectId;
             if (!pid) return;
             const data = useERDStore.getState().exportData();
+            if ((data.entities ?? []).length === 0) return;
             useProjectStore.getState().updateProjectData(pid, data);
         };
         window.addEventListener('beforeunload', flush);
@@ -1324,20 +1411,32 @@ const ERDCanvasContent: React.FC = () => {
             sections,
         });
 
-
-        // Broadcast Batch Move
-        finalNodes.forEach(node => {
-            sendOperation({
-                type: 'ENTITY_MOVE',
-                targetId: node.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: { position: node.position }
+        // Save immediately so refresh right after layout doesn't revert due to debounce
+        if (currentProjectId && updatedEntities.length > 0) {
+            updateProjectData(currentProjectId, {
+                entities: updatedEntities,
+                relationships,
+                sections,
             });
+        }
+
+
+        // Broadcast Batch Move (단일 통신으로 부분 동기화 방지)
+        sendOperation({
+            type: 'ERD_IMPORT',
+            targetId: currentProjectId || 'bulk',
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: {
+                entities: updatedEntities,
+                relationships: relationships,
+                sections: sections,
+                overwrite: true,
+            },
         });
 
         setIsLayoutMenuOpen(false);
-    }, [nodes, edges, entities, relationships, sections, setNodes, setEdges, importData, getViewport, sendOperation, user]);
+    }, [nodes, edges, entities, relationships, sections, setNodes, setEdges, importData, getViewport, sendOperation, user, currentProjectId, updateProjectData]);
 
     const onForceLayout = useCallback(() => {
         const { nodes: layoutedNodes } = getForceLayoutedElements(nodes, edges);
@@ -1360,19 +1459,22 @@ const ERDCanvasContent: React.FC = () => {
             sections,
         });
 
-        // Broadcast Batch Move
-        layoutedNodes.forEach(node => {
-            sendOperation({
-                type: 'ENTITY_MOVE',
-                targetId: node.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: { position: node.position }
-            });
+        // Broadcast Batch Move (단일 통신으로 부분 동기화 방지)
+        sendOperation({
+            type: 'ERD_IMPORT',
+            targetId: currentProjectId || 'bulk',
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: {
+                entities: updatedEntities,
+                relationships: relationships,
+                sections: sections,
+                overwrite: true,
+            },
         });
 
         setIsLayoutMenuOpen(false);
-    }, [nodes, edges, entities, relationships, sections, setNodes, importData, sendOperation, user]);
+    }, [nodes, edges, entities, relationships, sections, setNodes, importData, sendOperation, user, currentProjectId, updateProjectData]);
 
     const onRelationshipLayout = useCallback(() => {
         if (entities.length === 0) {
@@ -1406,25 +1508,23 @@ const ERDCanvasContent: React.FC = () => {
             'LR'
         );
 
-        // Place layout in current viewport so the user sees the result
-        let finalPositions = layoutedNodes.map((n) => ({ id: n.id, position: n.position }));
-        if (flowWrapper.current) {
-            const { x: vpX, y: vpY, zoom } = getViewport();
-            const pad = 60;
-            const vpMinX = -vpX / zoom + pad;
-            const vpMinY = -vpY / zoom + pad;
-            let layoutMinX = Infinity, layoutMinY = Infinity;
-            layoutedNodes.forEach((n) => {
-                layoutMinX = Math.min(layoutMinX, n.position.x);
-                layoutMinY = Math.min(layoutMinY, n.position.y);
-            });
-            const dx = vpMinX - layoutMinX;
-            const dy = vpMinY - layoutMinY;
-            finalPositions = layoutedNodes.map((n) => ({
-                id: n.id,
-                position: { x: n.position.x + dx, y: n.position.y + dy },
-            }));
-        }
+        // Persist-safe: 레이아웃 결과를 항상 원점 근처로 정규화하여 큰 절대좌표가 저장되지 않게 함.
+        // (기존 bounds 중심에 맞추는 방식은 기존 좌표가 이미 커진 상태면 그대로 큰 값이 저장됨)
+        const rawPositions = layoutedNodes.map((n) => ({ id: n.id, position: n.position }));
+        let minX = Infinity;
+        let minY = Infinity;
+        rawPositions.forEach((p) => {
+            minX = Math.min(minX, p.position.x);
+            minY = Math.min(minY, p.position.y);
+        });
+        const pad = 50;
+        const finalPositions = rawPositions.map((p) => ({
+            id: p.id,
+            position: {
+                x: Math.round(((p.position.x - minX + pad) / 50)) * 50,
+                y: Math.round(((p.position.y - minY + pad) / 50)) * 50,
+            },
+        }));
 
         const positionById = new Map(finalPositions.map((p) => [p.id, p.position]));
         const newNodes = nodes.map((node) => {
@@ -1456,28 +1556,31 @@ const ERDCanvasContent: React.FC = () => {
             sections,
         });
 
-        newNodes.forEach((node) => {
-            sendOperation({
-                type: 'ENTITY_MOVE',
-                targetId: node.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: { position: node.position },
+        // 관계 정렬 직후에는 autosave 디바운스/초기 가드 타이밍으로 저장이 누락될 수 있어 즉시 저장
+        if (currentProjectId && updatedEntities.length > 0) {
+            updateProjectData(currentProjectId, {
+                entities: updatedEntities,
+                relationships: updatedRelationships,
+                sections,
             });
-        });
+        }
 
-        updatedRelationships.forEach((rel) => {
-            sendOperation({
-                type: 'RELATIONSHIP_UPDATE',
-                targetId: rel.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: { sourceHandle: rel.sourceHandle, targetHandle: rel.targetHandle },
-            });
+        // Broadcast Batch Sync (Node와 Relationship 통신 통합)
+        sendOperation({
+            type: 'ERD_IMPORT',
+            targetId: currentProjectId || 'bulk',
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: {
+                entities: updatedEntities,
+                relationships: updatedRelationships,
+                sections: sections,
+                overwrite: true,
+            },
         });
 
         setIsLayoutMenuOpen(false);
-    }, [nodes, entities, relationships, sections, setNodes, importData, sendOperation, user, getViewport]);
+    }, [nodes, entities, relationships, sections, setNodes, importData, sendOperation, user, currentProjectId, updateProjectData]);
 
     const onNodeDragStart = useCallback(() => {
         isDraggingRef.current = true;

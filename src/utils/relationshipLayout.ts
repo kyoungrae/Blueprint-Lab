@@ -5,26 +5,27 @@ import { type Node, type Edge } from 'reactflow';
  */
 function getNodeSize(node: Node): { width: number; height: number } {
     const measured = (node as any).measured;
-    let width = 350;
-    if (measured && measured.width > 0) width = Math.max(width, measured.width);
-    else if (node.width) width = Math.max(width, node.width);
+    const width =
+        (measured && measured.width > 0 ? measured.width : undefined) ??
+        (typeof node.width === 'number' && node.width > 0 ? node.width : undefined) ??
+        350;
 
-    let estimatedHeight = 200;
-    const data = node.data as any;
-    const attributes = data?.entity?.attributes || data?.attributes;
-
-    if (Array.isArray(attributes)) {
-        // 컬럼당 40px + 헤더/여백 160px
-        estimatedHeight = 160 + (attributes.length * 40);
-    } else {
-        estimatedHeight = 800;
+    // height는 measured/node.height가 있으면 그것을 최우선으로 사용 (추정치로 과대 계산 방지)
+    const measuredHeight = measured && measured.height > 0 ? measured.height : undefined;
+    const nodeHeight = typeof node.height === 'number' && node.height > 0 ? node.height : undefined;
+    if (measuredHeight != null || nodeHeight != null) {
+        return { width, height: measuredHeight ?? nodeHeight! };
     }
 
-    let height = estimatedHeight;
-    if (measured && measured.height > 0) height = Math.max(height, measured.height);
-    else if (node.height) height = Math.max(height, node.height);
+    const data = node.data as any;
+    const attributes = data?.entity?.attributes || data?.attributes;
+    if (Array.isArray(attributes)) {
+        // 컬럼당 40px + 헤더/여백 160px
+        return { width, height: 160 + (attributes.length * 40) };
+    }
 
-    return { width, height };
+    // 속성 정보도 없으면 보수적인 기본값 사용
+    return { width, height: 400 };
 }
 
 /**
@@ -189,20 +190,73 @@ export function getRelationshipLayoutedElements(nodes: Node[], edges: Edge[], _d
     linkedComponents.forEach(comp => islands.push(layoutRadialIsland(comp, edges)));
     if (isolatedNodes.length > 0) islands.push(layoutGridIsland(isolatedNodes));
 
-    // 섬(군락)들 사이의 간격
-    const ISLAND_GAP = 2000; 
-    let totalArea = 0;
-    islands.forEach(island => totalArea += (island.width + ISLAND_GAP) * (island.height + ISLAND_GAP));
-    const worldWidth = Math.max(Math.sqrt(totalArea) * 1.3, Math.max(...islands.map(i => i.width)) + ISLAND_GAP);
+    // 섬(군락) 배치: 새로고침 직후 measured가 불안정해도 흔들리지 않도록 고정 열 그리드 배치
+    const ISLAND_GAP = 800;
+    const COLUMNS_PER_ROW = 3;
 
-    let worldX = 0, worldY = 0, worldRowHeight = 0;
-    const finalNodes: Node[] = [];
-    islands.forEach(island => {
-        if (worldX + island.width > worldWidth && worldX > 0) { worldX = 0; worldY += worldRowHeight + ISLAND_GAP; worldRowHeight = 0; }
-        island.nodes.forEach(node => finalNodes.push({ ...node, position: { x: node.position.x + worldX, y: node.position.y + worldY } }));
-        worldX += island.width + ISLAND_GAP;
-        worldRowHeight = Math.max(worldRowHeight, island.height);
+    let finalNodes: Node[] = [];
+    let currentX = 0;
+    let currentY = 0;
+    let maxHInRow = 0;
+
+    islands.forEach((island, index) => {
+        if (index > 0 && index % COLUMNS_PER_ROW === 0) {
+            currentX = 0;
+            currentY += maxHInRow + ISLAND_GAP;
+            maxHInRow = 0;
+        }
+
+        island.nodes.forEach(node => {
+            finalNodes.push({
+                ...node,
+                position: {
+                    x: node.position.x + currentX,
+                    y: node.position.y + currentY,
+                }
+            });
+        });
+
+        currentX += island.width + ISLAND_GAP;
+        maxHInRow = Math.max(maxHInRow, island.height);
     });
+
+    // 전체 좌표 정규화: 좌상단이 (0,0) 근처로 오도록 평행이동
+    if (finalNodes.length > 0) {
+        let minWorldX = Infinity;
+        let minWorldY = Infinity;
+        finalNodes.forEach((n) => {
+            minWorldX = Math.min(minWorldX, n.position.x);
+            minWorldY = Math.min(minWorldY, n.position.y);
+        });
+        finalNodes = finalNodes.map((n) => ({
+            ...n,
+            position: {
+                x: Math.round(((n.position.x - minWorldX) / 50)) * 50,
+                y: Math.round(((n.position.y - minWorldY) / 50)) * 50,
+            },
+        }));
+    }
+
+    // 레이아웃 결과가 과도하게 커질 경우 전체를 축소해 안정화
+    const MAX_WORLD = 12000;
+    let maxX = 0;
+    let maxY = 0;
+    finalNodes.forEach((n) => {
+        const { width, height } = getNodeSize(n);
+        maxX = Math.max(maxX, n.position.x + width);
+        maxY = Math.max(maxY, n.position.y + height);
+    });
+    const maxDim = Math.max(maxX, maxY);
+    if (maxDim > MAX_WORLD) {
+        const scale = MAX_WORLD / maxDim;
+        finalNodes = finalNodes.map((n) => ({
+            ...n,
+            position: {
+                x: Math.round((n.position.x * scale) / 50) * 50,
+                y: Math.round((n.position.y * scale) / 50) * 50,
+            },
+        }));
+    }
 
     const finalEdges = edges.map(edge => {
         const forced = nodeToMasterHandleMap.get(edge.source) || nodeToMasterHandleMap.get(edge.target);
