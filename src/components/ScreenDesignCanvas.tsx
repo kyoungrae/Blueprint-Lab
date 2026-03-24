@@ -681,8 +681,18 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 const nh = typeof node.height === 'number' ? node.height : 100;
                 const cx = node.position.x + nw / 2;
                 const cy = node.position.y + nh / 2;
+                // 리사이즈한 섹션 영역 안에 있는 노드만 소속을 다시 계산 (중첩 시 가장 안쪽 섹션 = onNodeDragStop와 동일)
                 if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
-                    updateScreen(node.id, { sectionId: sec.id });
+                    const containingSection = sections
+                        .filter(
+                            (s) =>
+                                cx >= s.position.x &&
+                                cx <= s.position.x + s.size.width &&
+                                cy >= s.position.y &&
+                                cy <= s.position.y + s.size.height
+                        )
+                        .sort((a, b) => a.size.width * a.size.height - b.size.width * b.size.height)[0];
+                    updateScreen(node.id, { sectionId: containingSection?.id });
                     // Yjs CRDT가 자동으로 전파합니다.
                 }
             });

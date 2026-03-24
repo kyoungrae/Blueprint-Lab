@@ -728,6 +728,7 @@ const ERDCanvasContent: React.FC = () => {
             const y = sec.position.y;
             const width = sec.size.width;
             const height = sec.size.height;
+            const sectionList = sections as Section[];
 
             const nodes = getNodes().filter((n) => n.type === 'entity' || n.type === 'entityPlaceholder');
             nodes.forEach((n) => {
@@ -737,9 +738,18 @@ const ERDCanvasContent: React.FC = () => {
                 const nh = n.height || 100;
                 const cx = nx + nw / 2;
                 const cy = ny + nh / 2;
-                // Check if the center of the entity is inside the resized section
+                // 리사이즈한 섹션 영역 안에 있는 노드만 소속을 다시 계산 (중첩 시 가장 안쪽 섹션 유지)
                 if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
-                    updateEntity(n.id, { sectionId: sec.id }, user);
+                    const containingSection = sectionList
+                        .filter(
+                            (s) =>
+                                cx >= s.position.x &&
+                                cx <= s.position.x + s.size.width &&
+                                cy >= s.position.y &&
+                                cy <= s.position.y + s.size.height
+                        )
+                        .sort((a, b) => a.size.width * a.size.height - b.size.width * b.size.height)[0];
+                    updateEntity(n.id, { sectionId: containingSection?.id ?? null }, user);
                 }
             });
 
