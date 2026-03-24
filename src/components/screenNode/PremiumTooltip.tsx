@@ -98,6 +98,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
     }, [updatePosition]);
 
     const handleMouseLeave = useCallback(() => setVisible(false), []);
+    const handleClickCapture = useCallback(() => setVisible(false), []);
 
     const inlineStyle: React.CSSProperties =
         placement === 'top'
@@ -140,6 +141,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
             data-screen-id={screenId}
             className={`nodrag nopan relative inline-flex items-center justify-center ${wrapperClassName ?? ''}`.trim()}
             onMouseDown={(e) => e.stopPropagation()}
+            onClickCapture={handleClickCapture}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
         >
