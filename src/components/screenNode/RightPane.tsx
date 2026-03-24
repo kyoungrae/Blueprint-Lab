@@ -7,6 +7,7 @@ import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
 
 const DEFAULT_RATIOS: [number, number, number] = [40, 35, 25];
 const MIN_PANEL_PCT = 10;
+const IDLE_TRANSFORM: [number, number, number] = [0, 0, 1];
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 const RESIZE_HANDLE_HEIGHT = 6;
 const TOTAL_HANDLE_HEIGHT = RESIZE_HANDLE_HEIGHT * 2;
@@ -106,8 +107,13 @@ const RightPane: React.FC<RightPaneProps> = ({
 }) => {
     // updateScreen을 직접 가져와서 rightPaneRatios 업데이트에 사용
     const { updateScreen } = useScreenNodeStore();
-    // React Flow transform 변경(패닝/줌/노드 이동) 시 이 컴포넌트를 즉시 리렌더
-    useRFStore((s) => s.transform);
+    // 테이블 추가 패널이 열려 있을 때만 transform 변화를 구독해 불필요한 리렌더를 줄인다.
+    useRFStore(
+        useCallback(
+            (s: { transform: [number, number, number] }) => (isTableListOpen ? s.transform : IDLE_TRANSFORM),
+            [isTableListOpen]
+        )
+    );
 
     const funcNos = (drawElements || [])
         .filter(el => el.type === 'func-no')
@@ -194,6 +200,7 @@ const RightPane: React.FC<RightPaneProps> = ({
         
         e.preventDefault();
         e.stopPropagation();
+        let latestClamped: [number, number, number] = ratios;
         const onMove = (ev: MouseEvent) => {
             const container = rightPaneRef.current;
             if (!container) return;
@@ -218,21 +225,23 @@ const RightPane: React.FC<RightPaneProps> = ({
                 next = [r0, r1, r2];
             }
             const clamped = clampRatios(next);
+            latestClamped = clamped;
             // 잠금 상태가 아닐 때만 높이 조절 가능
             if (!isLocked) {
-                const updatedRatios = { rightPaneRatios: clamped };
-                // 로컬 상태 즉시 업데이트 후 서버 동기화
-                updateScreen(screen.id, updatedRatios);
-                syncUpdate(updatedRatios);
+                // 로컬은 즉시 반영하고, 협업 동기화는 mouseup 시점에 한 번만 전송한다.
+                updateScreen(screen.id, { rightPaneRatios: clamped });
             }
         };
         const onUp = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
+            if (!isLocked) {
+                syncUpdate({ rightPaneRatios: latestClamped });
+            }
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
-    }, [ratios, update, syncUpdate, updateScreen]);
+    }, [isLocked, ratios, rightPaneRef, screen.id, syncUpdate, updateScreen]);
 
     const handleTableListHeaderMouseDown = useCallback((e: React.MouseEvent) => {
         e.preventDefault();

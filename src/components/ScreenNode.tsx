@@ -1,6 +1,6 @@
 import React, { memo, useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { type NodeProps, useReactFlow, useOnViewportChange, useStore as useRFStore } from 'reactflow';
+import { type NodeProps, useReactFlow, useStore as useRFStore } from 'reactflow';
 import type { Screen, DrawElement, TableCellData, PolygonPreset, ArrowPreset, LineEnd } from '../types/screenDesign';
 import { getCanvasDimensions } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
@@ -153,7 +153,8 @@ function getClickTargetElement(target: EventTarget | null): Element | null {
 }
 
 /** 줌아웃 임계값 — 이 줌 레벨 이하에서는 무거운 편집 UI 대신 경량 Placeholder를 렌더링한다. */
-const SCREEN_ZOOM_THRESHOLD = 0;
+const SCREEN_ZOOM_THRESHOLD = 0.09;
+const INTERACTION_SYNC_INTERVAL_MS = 120;
 const rfZoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
 
 /** 줌아웃 시 사용되는 초경량 화면 노드.
@@ -195,8 +196,14 @@ const ScreenNodeLite: React.FC<{ screen: Screen; selected?: boolean }> = memo(({
                     <Monitor size={16} className="flex-shrink-0 text-white/90" />
                     <span className="font-bold text-lg flex-1 truncate">{screen.name || (isComponent ? '컴포넌트명' : '화면명')}</span>
                 </div>
-                {/* 빈 캔버스 영역 */}
-                <div className="flex-1 bg-gray-50" />
+                {/* 빈 캔버스 영역 (줌아웃 시 중앙에 화면명 표시) */}
+                <div className="relative flex-1 bg-gray-50">
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="px-3 py-1.5 rounded-lg bg-white/90 border border-gray-200 text-gray-600 text-[100px] font-semibold max-w-[80%] truncate shadow-sm">
+                            {screen.name || (isComponent ? '컴포넌트명' : '화면명')}
+                        </span>
+                    </div>
+                </div>
             </div>
             <ScreenHandles />
         </div>
@@ -224,12 +231,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const isExporting = useContext(ExportModeContext);
     const canvasOnlyMode = useContext(CanvasOnlyModeContext);
     const yjsIsSynced = useYjsStore(s => s.isSynced);
-
-    useOnViewportChange({
-        onChange: (viewport) => {
-            document.documentElement.style.setProperty('--rf-zoom', viewport.zoom.toString());
-        }
-    });
 
     const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
     const { setHandlers } = useScreenDesignUndoRedo();
@@ -360,6 +361,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     /** rAF throttle refs — 드래그·리사이즈 중 setState 호출 빈도를 requestAnimationFrame으로 제한 */
     const dragRafIdRef = useRef<number | undefined>(undefined);
     const resizeRafIdRef = useRef<number | undefined>(undefined);
+    /** 협업 데이터는 1프레임마다 영속 반영하지 않고 짧은 간격으로만 전송 */
+    const lastDragSyncAtRef = useRef(0);
+    const lastResizeSyncAtRef = useRef(0);
     const [showGridPanel, setShowGridPanel] = useState(false);
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
     const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
@@ -377,6 +381,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [componentPickerPos, setComponentPickerPos] = useState({ x: 0, y: 0 });
     const isDraggingTablePickerRef = useRef(false);
     const isDraggingComponentPickerRef = useRef(false);
+
+    const syncDrawElementsDuringInteraction = useCallback(
+        (elements: DrawElement[], lastSyncAtRef: React.MutableRefObject<number>) => {
+            const now = Date.now();
+            if (now - lastSyncAtRef.current < INTERACTION_SYNC_INTERVAL_MS) return;
+            lastSyncAtRef.current = now;
+            syncDrawElements(elements);
+        },
+        [syncDrawElements]
+    );
     const tablePickerRef = useRef<HTMLDivElement>(null);
     const componentPickerRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -1476,7 +1490,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             resizeRafIdRef.current = requestAnimationFrame(() => {
                 resizeRafIdRef.current = undefined;
                 update({ drawElements: updated });
-                syncDrawElements(updated); // drawElements 전용 실시간 동기화
+                syncDrawElementsDuringInteraction(updated, lastResizeSyncAtRef);
             });
         };
 
@@ -1489,6 +1503,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 const currentElements = getScreenById(screen.id)?.drawElements || [];
                 syncDrawElements(currentElements); // drawElements 전용 실시간 동기화
             }
+            lastResizeSyncAtRef.current = 0;
             resizeSnapStateRef.current = {};
             setAlignmentGuides(null);
             elementResizeStartRef.current = null;
@@ -1980,10 +1995,54 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
             const nextElements = getDrawElements().map(item => {
                 const o = withOffsets.find(w => w.id === item.id);
-                if (o) {
-                    return { ...item, x: o.newX + snapX + corrX, y: o.newY + snapY + corrY };
+                if (!o) return item;
+
+                const nextX = o.newX + snapX + corrX;
+                const nextY = o.newY + snapY + corrY;
+                const dx = nextX - item.x;
+                const dy = nextY - item.y;
+
+                // 드래그 중에도 선/다각형의 내부 좌표를 함께 이동시켜
+                // 프레임 중간 상태 동기화 시 "원위치로 튕김"처럼 보이는 현상을 방지한다.
+                if (item.type === 'polygon' && item.polygonPoints?.length) {
+                    const movedPoints = item.polygonPoints.map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
+                    const minX = Math.min(...movedPoints.map((pt) => pt.x));
+                    const minY = Math.min(...movedPoints.map((pt) => pt.y));
+                    const maxX = Math.max(...movedPoints.map((pt) => pt.x));
+                    const maxY = Math.max(...movedPoints.map((pt) => pt.y));
+                    return {
+                        ...item,
+                        x: minX,
+                        y: minY,
+                        width: maxX - minX,
+                        height: maxY - minY,
+                        polygonPoints: movedPoints,
+                    };
                 }
-                return item;
+
+                if (item.type === 'line' && item.lineX1 != null && item.lineY1 != null && item.lineX2 != null && item.lineY2 != null) {
+                    const lineX1 = item.lineX1 + dx;
+                    const lineY1 = item.lineY1 + dy;
+                    const lineX2 = item.lineX2 + dx;
+                    const lineY2 = item.lineY2 + dy;
+                    const minX = Math.min(lineX1, lineX2);
+                    const minY = Math.min(lineY1, lineY2);
+                    const maxX = Math.max(lineX1, lineX2);
+                    const maxY = Math.max(lineY1, lineY2);
+                    return {
+                        ...item,
+                        x: minX,
+                        y: minY,
+                        width: maxX - minX || 1,
+                        height: maxY - minY || 1,
+                        lineX1,
+                        lineY1,
+                        lineX2,
+                        lineY2,
+                    };
+                }
+
+                return { ...item, x: nextX, y: nextY };
             });
             const preview: Record<string, { x: number; y: number }> = {};
             nextElements.forEach((el) => {
@@ -1998,10 +2057,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 setDragPreviews(preview);
                 setAlignmentGuides(guides.vertical.length > 0 || guides.horizontal.length > 0 ? guides : null);
 
-                // 드래그 중에도 실시간 동기화 전송 (자신의 작업은 걸러짐)
+                // 드래그 중 협업 전송은 유지하되, 짧은 간격으로만 보내 메인 스레드 부담을 낮춘다.
                 if (draggingElementIds.length > 0) {
-                    // console.log(`📤 [Drag] Syncing ${nextElements.length} elements during drag`);
-                    syncDrawElements(nextElements);
+                    syncDrawElementsDuringInteraction(nextElements, lastDragSyncAtRef);
                 }
             });
         }
@@ -2135,6 +2193,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 : drawElements;
             update({ drawElements: committedElements });
             syncDrawElements(committedElements); // drawElements 전용 실시간 동기화
+            lastDragSyncAtRef.current = 0;
             saveHistory(committedElements);
             setDraggingElementIds([]);
             setIsMoving(false);

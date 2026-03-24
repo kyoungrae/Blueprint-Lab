@@ -4,19 +4,20 @@ import { useProjectStore } from '../store/projectStore';
 interface PollingOptions {
     interval?: number; // 폴링 간격 (ms)
     projectId: string;
+    enabled?: boolean;
 }
 
 /**
  * 데이터베이스 폴링 훅 - 실시간 소켓 대신 주기적으로 데이터 변경 확인
  * 다른 사용자의 변경사항을 감지하여 UI 업데이트
  */
-export function useDatabasePolling({ interval = 5000, projectId }: PollingOptions) {
+export function useDatabasePolling({ interval = 5000, projectId, enabled = true }: PollingOptions) {
     const { fetchProjects } = useProjectStore();
     const lastUpdateRef = useRef<number>(Date.now());
     const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
-        if (!projectId) return;
+        if (!projectId || !enabled) return;
 
         const startPolling = () => {
             pollingIntervalRef.current = setInterval(async () => {
@@ -42,7 +43,7 @@ export function useDatabasePolling({ interval = 5000, projectId }: PollingOption
                 pollingIntervalRef.current = null;
             }
         };
-    }, [projectId, interval, fetchProjects]);
+    }, [projectId, interval, enabled, fetchProjects]);
 
     // 수동으로 새로고침하는 함수
     const refresh = async () => {

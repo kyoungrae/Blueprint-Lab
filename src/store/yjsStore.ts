@@ -177,36 +177,182 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const yFlows = ydoc.getMap<Y.Map<any>>('flows');
         const ySections = ydoc.getMap<Y.Map<any>>('sections');
 
-        const syncScreens = () => {
-            const newScreens = Array.from(yScreens.values()).map(yMap => yMap.toJSON() as Screen);
-            set({ screens: newScreens });
-            useScreenDesignStore.setState({ screens: newScreens });
-            useComponentStore.setState({ components: newScreens });
+        const screenIdByMap = new WeakMap<Y.Map<any>, string>();
+        const flowIdByMap = new WeakMap<Y.Map<any>, string>();
+        const sectionIdByMap = new WeakMap<Y.Map<any>, string>();
+
+        const buildScreens = () =>
+            Array.from(yScreens.entries()).map(([id, yMap]) => {
+                screenIdByMap.set(yMap, id);
+                return yMap.toJSON() as Screen;
+            });
+
+        const buildFlows = () =>
+            Array.from(yFlows.entries()).map(([id, yMap]) => {
+                flowIdByMap.set(yMap, id);
+                return yMap.toJSON() as ScreenFlow;
+            });
+
+        const buildSections = () =>
+            Array.from(ySections.entries()).map(([id, yMap]) => {
+                sectionIdByMap.set(yMap, id);
+                return yMap.toJSON() as ScreenSection;
+            });
+
+        const applyScreens = (nextScreens: Screen[]) => {
+            set({ screens: nextScreens });
+            useScreenDesignStore.setState({ screens: nextScreens });
+            useComponentStore.setState({ components: nextScreens });
         };
 
-        const syncFlows = () => {
-            const newFlows = Array.from(yFlows.values()).map(yMap => yMap.toJSON() as ScreenFlow);
-            set({ flows: newFlows });
-            useScreenDesignStore.setState({ flows: newFlows });
-            useComponentStore.setState({ flows: newFlows });
+        const applyFlows = (nextFlows: ScreenFlow[]) => {
+            set({ flows: nextFlows });
+            useScreenDesignStore.setState({ flows: nextFlows });
+            useComponentStore.setState({ flows: nextFlows });
         };
 
-        const syncSections = () => {
-            const newSections = Array.from(ySections.values()).map(yMap => yMap.toJSON() as ScreenSection);
-            set({ sections: newSections });
-            useScreenDesignStore.setState({ sections: newSections });
+        const applySections = (nextSections: ScreenSection[]) => {
+            set({ sections: nextSections });
+            useScreenDesignStore.setState({ sections: nextSections });
         };
 
-        yScreens.observeDeep(syncScreens);
-        yFlows.observeDeep(syncFlows);
-        ySections.observeDeep(syncSections);
+        const collectChangedIds = (
+            events: Y.YEvent<any>[],
+            rootMap: Y.Map<Y.Map<any>>,
+            idByMap: WeakMap<Y.Map<any>, string>,
+        ) => {
+            const changedIds = new Set<string>();
+            const removedIds = new Set<string>();
 
-        syncScreens(); syncFlows(); syncSections();
+            events.forEach((event) => {
+                if (event.target === rootMap) {
+                    const keyChanges = (event as { changes?: { keys?: Map<unknown, { action?: string }> } }).changes?.keys;
+                    keyChanges?.forEach((change, key) => {
+                        const id = String(key);
+                        if (change?.action === 'delete') {
+                            removedIds.add(id);
+                            return;
+                        }
+                        changedIds.add(id);
+                        const nestedMap = rootMap.get(id);
+                        if (nestedMap) {
+                            idByMap.set(nestedMap, id);
+                        }
+                    });
+                    return;
+                }
+
+                if (event.target instanceof Y.Map) {
+                    const id = idByMap.get(event.target as Y.Map<any>);
+                    if (id) {
+                        changedIds.add(id);
+                    }
+                }
+            });
+
+            return { changedIds, removedIds };
+        };
+
+        const syncScreens = (events?: Y.YEvent<any>[]) => {
+            if (!events) {
+                applyScreens(buildScreens());
+                return;
+            }
+
+            const { changedIds, removedIds } = collectChangedIds(events, yScreens, screenIdByMap);
+            if (changedIds.size === 0 && removedIds.size === 0) {
+                applyScreens(buildScreens());
+                return;
+            }
+
+            const nextById = new Map(get().screens.map((screen) => [screen.id, screen]));
+            removedIds.forEach((id) => nextById.delete(id));
+            changedIds.forEach((id) => {
+                const yMap = yScreens.get(id);
+                if (!yMap) return;
+                screenIdByMap.set(yMap, id);
+                nextById.set(id, yMap.toJSON() as Screen);
+            });
+
+            const nextScreens = Array.from(yScreens.entries())
+                .map(([id]) => nextById.get(id))
+                .filter((screen): screen is Screen => Boolean(screen));
+
+            applyScreens(nextScreens);
+        };
+
+        const syncFlows = (events?: Y.YEvent<any>[]) => {
+            if (!events) {
+                applyFlows(buildFlows());
+                return;
+            }
+
+            const { changedIds, removedIds } = collectChangedIds(events, yFlows, flowIdByMap);
+            if (changedIds.size === 0 && removedIds.size === 0) {
+                applyFlows(buildFlows());
+                return;
+            }
+
+            const nextById = new Map(get().flows.map((flow) => [flow.id, flow]));
+            removedIds.forEach((id) => nextById.delete(id));
+            changedIds.forEach((id) => {
+                const yMap = yFlows.get(id);
+                if (!yMap) return;
+                flowIdByMap.set(yMap, id);
+                nextById.set(id, yMap.toJSON() as ScreenFlow);
+            });
+
+            const nextFlows = Array.from(yFlows.entries())
+                .map(([id]) => nextById.get(id))
+                .filter((flow): flow is ScreenFlow => Boolean(flow));
+
+            applyFlows(nextFlows);
+        };
+
+        const syncSections = (events?: Y.YEvent<any>[]) => {
+            if (!events) {
+                applySections(buildSections());
+                return;
+            }
+
+            const { changedIds, removedIds } = collectChangedIds(events, ySections, sectionIdByMap);
+            if (changedIds.size === 0 && removedIds.size === 0) {
+                applySections(buildSections());
+                return;
+            }
+
+            const nextById = new Map(get().sections.map((section) => [section.id, section]));
+            removedIds.forEach((id) => nextById.delete(id));
+            changedIds.forEach((id) => {
+                const yMap = ySections.get(id);
+                if (!yMap) return;
+                sectionIdByMap.set(yMap, id);
+                nextById.set(id, yMap.toJSON() as ScreenSection);
+            });
+
+            const nextSections = Array.from(ySections.entries())
+                .map(([id]) => nextById.get(id))
+                .filter((section): section is ScreenSection => Boolean(section));
+
+            applySections(nextSections);
+        };
+
+        const handleScreensChange = (events: Y.YEvent<any>[]) => syncScreens(events);
+        const handleFlowsChange = (events: Y.YEvent<any>[]) => syncFlows(events);
+        const handleSectionsChange = (events: Y.YEvent<any>[]) => syncSections(events);
+
+        yScreens.observeDeep(handleScreensChange);
+        yFlows.observeDeep(handleFlowsChange);
+        ySections.observeDeep(handleSectionsChange);
+
+        syncScreens();
+        syncFlows();
+        syncSections();
 
         return () => {
-            yScreens.unobserveDeep(syncScreens);
-            yFlows.unobserveDeep(syncFlows);
-            ySections.unobserveDeep(syncSections);
+            yScreens.unobserveDeep(handleScreensChange);
+            yFlows.unobserveDeep(handleFlowsChange);
+            ySections.unobserveDeep(handleSectionsChange);
         };
     },
 

@@ -355,10 +355,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
     } = useYjsStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
 
-    // 데이터베이스 폴링으로 실시간 동기화 대체 (5초 간격)
+    // Yjs가 정상 동기화 중일 때는 폴링을 꺼서 불필요한 대형 상태 갱신을 줄인다.
     useDatabasePolling({
         projectId: currentProjectId || '',
-        interval: 5000
+        interval: 5000,
+        enabled: Boolean(currentProjectId && !currentProjectId.startsWith('local_') && !yjsIsSynced),
     });
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [sidebarWidth, setSidebarWidth] = useState(280); // Default width in pixels
@@ -464,8 +465,12 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     const chatHasUnread = chatUnreadTabs.size > 0;
 
-    // Broadcast cursor position (ERD와 동일)
+    // Broadcast cursor position (ERD와 동일하게 throttle)
+    const cursorThrottleRef = useRef<number>(0);
     const onPaneMouseMove = useCallback((event: React.MouseEvent) => {
+        const now = Date.now();
+        if (now - cursorThrottleRef.current < 50) return;
+        cursorThrottleRef.current = now;
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         updateCursor({ ...position });
     }, [screenToFlowPosition, updateCursor]);
