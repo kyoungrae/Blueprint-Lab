@@ -3119,16 +3119,20 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
     // Entity dimensions from getCanvasDimensions (컴포넌트는 용지=캔버스, 화면 설계는 70% 비율)
     const CANVAS_WIDTH_RATIO = 0.7; // 화면 설계: 캔버스가 entity의 70%
-    const FIXED_TOP_HEIGHT = 162; // 화면 설계: 헤더+메타+툴바 (하단 여백 제거용)
+    const FIXED_TOP_HEIGHT = 162; // 화면 설계: 헤더+메타+툴바
     const FIXED_TOP_HEIGHT_COMPONENT = 88; // 컴포넌트: 헤더 + 툴바 2행
+    const TOOLBAR_AREA_HEIGHT = 44; // 화면 설계 수정 모드에서만 노출되는 툴바 영역 높이
     const CANVAS_INSET = 14; // 캔버스 여백 (눈금자 숫자 표시 공간 확보)
     const ENTITY_CANVAS_GAP = 0; // 캔버스와 엔티티 테두리 사이 간격 (0=영역 딱 맞춤)
     const isComponent = screen.screenId?.startsWith('CMP-');
     const entityWidth = isComponent
         ? canvasW + ENTITY_CANVAS_GAP * 2
         : Math.ceil((canvasW + ENTITY_CANVAS_GAP * 2) / CANVAS_WIDTH_RATIO);
+    const screenTopHeight = isLocked
+        ? Math.max(0, FIXED_TOP_HEIGHT - TOOLBAR_AREA_HEIGHT)
+        : FIXED_TOP_HEIGHT;
     const entityHeight =
-        canvasH + ENTITY_CANVAS_GAP * 2 + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : FIXED_TOP_HEIGHT);
+        canvasH + ENTITY_CANVAS_GAP * 2 + (isComponent ? FIXED_TOP_HEIGHT_COMPONENT : screenTopHeight);
     // 잠금 해제 시 항상 inset 고정 → 격자 ON/OFF 전환해도 그리기 영역·스케일 동일하게 유지 (객체 위치 밀림 방지)
     const canvasInset = !isLocked ? CANVAS_INSET : 0;
     return (
