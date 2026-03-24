@@ -183,7 +183,26 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
         );
     };
 
-    const renderScreenItem = (screen: Screen) => (
+    const renderScreenItem = (screen: Screen) => {
+        const screenType = (screen.screenType || '').trim().toLowerCase();
+        const screenTypeBadgeClassMap: Record<string, string> = {
+            '조회': 'bg-[#3b82f6] text-white',      // 연결선과 동일한 블루 계열
+            '신청': 'bg-indigo-500 text-white',
+            '등록': 'bg-cyan-500 text-white',
+            '수정': 'bg-emerald-500 text-white',
+            '삭제': 'bg-rose-500 text-white',
+            '관리': 'bg-violet-500 text-white',
+            '팝업': 'bg-yellow-400 text-gray-900',
+            '대시보드': 'bg-amber-500 text-white',
+            '로그인': 'bg-teal-500 text-white',
+            '기타': 'bg-slate-500 text-white',
+            // 호환용 별칭
+            'popup': 'bg-yellow-400 text-gray-900',
+            '팝업창': 'bg-yellow-400 text-gray-900',
+        };
+        const screenTypeBadgeClass = screenTypeBadgeClassMap[screenType] || 'bg-[#3b82f6] text-white';
+
+        return (
         <div key={screen.id} className="group/item">
             <details className="group">
                 <summary className="list-none flex items-center gap-2 p-2 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors group/summary">
@@ -201,7 +220,7 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
                         <span className="text-sm font-semibold text-gray-700 truncate leading-tight">{screen.name}</span>
                         <span className="text-[10px] text-gray-400 font-mono truncate leading-tight">{screen.screenId}</span>
                     </div>
-                    <span className="text-[9px] bg-[#2c3e7c] text-white px-1.5 py-0.5 rounded font-bold">
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${screenTypeBadgeClass}`}>
                         {screen.screenType}
                     </span>
                     <button
@@ -237,6 +256,7 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
             </details>
         </div>
     );
+    };
 
     return (
         <div className="w-full min-w-0 h-full bg-white flex flex-col z-20 overflow-hidden">
