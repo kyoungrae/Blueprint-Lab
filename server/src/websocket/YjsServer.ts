@@ -24,6 +24,7 @@ import * as map from 'lib0/map';
 import { Project } from '../models';
 import { Types } from 'mongoose';
 import logger from '../utils/logger';
+import { touchProjectMemberLastEditedAtMany } from '../services/projectMemberActivity';
 
 // ─── 상수 ───────────────────────────────────────────────────────────────────
 const YJS_PORT = parseInt(process.env.YJS_PORT || '4000', 10);
@@ -40,6 +41,8 @@ interface DocInfo {
     awareness: awarenessProtocol.Awareness;
     conns: Map<WebSocket, Set<number>>;       // ws → subscribedTopics
     snapshotTimer: NodeJS.Timeout | null;
+    /** 이 저장 주기 동안 문서를 수정한 멤버 userId (WebSocket에 yjsUserId 부착) */
+    editorsSinceLastSave: Set<string>;
 }
 
 /** projectId → DocInfo */
@@ -50,7 +53,16 @@ function getOrCreateDoc(projectId: string): DocInfo {
         const doc = new Y.Doc({ gc: true });
         const awareness = new awarenessProtocol.Awareness(doc);
 
-        const info: DocInfo = { doc, awareness, conns: new Map(), snapshotTimer: null };
+        const info: DocInfo = { doc, awareness, conns: new Map(), snapshotTimer: null, editorsSinceLastSave: new Set() };
+
+        doc.on('update', (_update: Uint8Array, origin: unknown) => {
+            if (!origin || typeof origin !== 'object') return;
+            const ws = origin as WebSocket & { yjsUserId?: string };
+            const uid = ws.yjsUserId;
+            if (uid && Types.ObjectId.isValid(uid)) {
+                info.editorsSinceLastSave.add(uid);
+            }
+        });
 
         // 문서가 변경될 때마다 연결된 모든 클라이언트에 브로드캐스트
         doc.on('update', (update: Uint8Array, _origin: unknown, _doc: Y.Doc) => {
@@ -186,6 +198,9 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
 export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<void> {
     if (!Types.ObjectId.isValid(projectId)) return;
 
+    const info = docs.get(projectId);
+    const editors = info ? Array.from(info.editorsSinceLastSave) : [];
+
     try {
         const project = await Project.findById(projectId).select('projectType').lean();
         if (!project) return;
@@ -200,6 +215,7 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
         const flowsArr    = extractJson(doc.getMap<any>('flows').values());
         const sectionsArr = extractJson(doc.getMap<any>('sections').values());
 
+        let didPersist = false;
         if (projectType === 'COMPONENT') {
             await Project.findByIdAndUpdate(projectId, {
                 componentSnapshot: {
@@ -209,6 +225,7 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
                 },
                 updatedAt: new Date(),
             });
+            didPersist = true;
         } else if (projectType === 'SCREEN_DESIGN') {
             await Project.findByIdAndUpdate(projectId, {
                 screenSnapshot: {
@@ -219,6 +236,14 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
                 },
                 updatedAt: new Date(),
             });
+            didPersist = true;
+        }
+
+        if (didPersist) {
+            if (info) {
+                info.editorsSinceLastSave.clear();
+            }
+            await touchProjectMemberLastEditedAtMany(projectId, editors);
         }
     } catch (err) {
         logger.error('Yjs saveDocToMongo failed: %o', err);
@@ -227,8 +252,10 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
 
 // ─── WebSocket 연결 처리 ─────────────────────────────────────────────────────
 
-async function handleConnection(ws: WebSocket, projectId: string): Promise<void> {
+async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: string): Promise<void> {
     const info = getOrCreateDoc(projectId);
+    (ws as WebSocket & { yjsUserId?: string }).yjsUserId =
+        yjsUserId && Types.ObjectId.isValid(yjsUserId) ? yjsUserId : undefined;
     info.conns.set(ws, new Set());
 
     // MongoDB에서 초기 데이터 로드 (첫 연결 시)
@@ -319,17 +346,25 @@ export function startYjsServer(): void {
 
     wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
         /**
-         * URL 형식: ws://localhost:4000/<projectId>
-         * req.url = "/<projectId>"
+         * URL 형식: ws://localhost:4000/<projectId>?userId=<mongoObjectId>
          */
-        const projectId = (req.url || '/').replace(/^\//, '').split('?')[0];
+        const raw = (req.url || '/').replace(/^\//, '');
+        const [pathPart, queryPart] = raw.split('?');
+        const segments = pathPart.split('/').filter(Boolean);
+        // localhost: /<projectId>  ·  프록시: /yjs/<projectId>
+        const projectId = segments[segments.length - 1] || '';
+        let yjsUserId: string | undefined;
+        if (queryPart) {
+            const uid = new URLSearchParams(queryPart).get('userId') || '';
+            if (uid && Types.ObjectId.isValid(uid)) yjsUserId = uid;
+        }
 
         if (!projectId) {
             ws.close();
             return;
         }
 
-        handleConnection(ws, projectId).catch((err) => {
+        handleConnection(ws, projectId, yjsUserId).catch((err) => {
             logger.error('Yjs handleConnection error: %o', err);
             ws.close();
         });

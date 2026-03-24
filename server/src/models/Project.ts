@@ -42,6 +42,8 @@ export interface IProjectMember {
     userId: Types.ObjectId;
     role: 'OWNER' | 'EDITOR' | 'VIEWER';
     joinedAt: Date;
+    /** 해당 멤버가 프로젝트 데이터를 마지막으로 저장·동기화한 시각 (관리자 회원별 목록용) */
+    lastEditedAt?: Date;
 }
 
 // Screen Field Interface
@@ -239,6 +241,7 @@ const ProjectMemberSchema = new Schema<IProjectMember>({
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     role: { type: String, enum: ['OWNER', 'EDITOR', 'VIEWER'], required: true },
     joinedAt: { type: Date, default: Date.now },
+    lastEditedAt: { type: Date },
 }, { _id: false });
 
 const ScreenFieldSchema = new Schema<IScreenField>({

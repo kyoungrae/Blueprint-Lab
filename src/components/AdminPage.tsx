@@ -218,6 +218,8 @@ interface AdminProject {
     dbType: string;
     description?: string;
     updatedAt: string;
+    /** 관리자가 선택한 회원 기준 마지막 편집(저장) 시각 */
+    memberLastEditedAt?: string | null;
     memberCount: number;
 }
 
@@ -758,7 +760,7 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                                 <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">유형</th>
                                                 <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">DB</th>
                                                 <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">멤버 수</th>
-                                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">수정일</th>
+                                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">회원 수정일</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -773,7 +775,17 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                                     </td>
                                                     <td className="px-4 py-3 text-gray-600">{p.dbType}</td>
                                                     <td className="px-4 py-3 text-gray-600">{p.memberCount}</td>
-                                                    <td className="px-4 py-3 text-gray-500 text-sm">{formatDate(p.updatedAt)}</td>
+                                                    <td
+                                                        className="px-4 py-3 text-gray-500 text-sm"
+                                                        title={p.memberLastEditedAt ? undefined : '이 회원의 편집 기록이 없어 프로젝트 전체 수정일을 표시합니다.'}
+                                                    >
+                                                        {p.memberLastEditedAt
+                                                            ? formatDate(p.memberLastEditedAt)
+                                                            : formatDate(p.updatedAt)}
+                                                        {!p.memberLastEditedAt && (
+                                                            <span className="block text-[10px] text-gray-400 font-medium mt-0.5">(프로젝트 기준)</span>
+                                                        )}
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>

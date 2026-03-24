@@ -57,6 +57,8 @@ export interface ProjectMember {
     email: string;
     picture?: string;
     role: 'OWNER' | 'EDITOR' | 'VIEWER' | 'MEMBER';
+    /** 서버: 해당 멤버가 프로젝트를 마지막으로 저장한 시각 */
+    lastEditedAt?: string;
 }
 
 export interface BugReport {

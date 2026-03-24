@@ -12,6 +12,7 @@ import { create } from 'zustand';
 import type { Screen, ScreenFlow, ScreenSection } from '../types/screenDesign';
 import { useScreenDesignStore } from './screenDesignStore';
 import { useComponentStore } from './componentStore';
+import { useAuthStore } from './authStore';
 
 // ✅ 수정: 현재 브라우저 주소창에 찍힌 정보를 그대로 따라가도록 변경
 const host = window.location.hostname; // 'localhost', '192.168...', '210.92...' 자동 감지
@@ -95,7 +96,13 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         }
 
         const ydoc = new Y.Doc();
-        const provider = new WebsocketProvider(YJS_WS_URL, projectId, ydoc, { connect: true });
+        const authUserId = useAuthStore.getState().user?.id;
+        const yjsParams =
+            authUserId && /^[a-f0-9]{24}$/i.test(authUserId) ? { userId: authUserId } : undefined;
+        const provider = new WebsocketProvider(YJS_WS_URL, projectId, ydoc, {
+            connect: true,
+            ...(yjsParams ? { params: yjsParams } : {}),
+        });
 
         // If WebSocket connects but initial Yjs sync never completes, surface a diagnostic error.
         // This typically indicates that the server at YJS_WS_URL is not a y-websocket server,

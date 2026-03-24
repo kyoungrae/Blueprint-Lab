@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import { Types } from 'mongoose';
 import { sendInvitationEmail } from '../services/EmailService';
 import { presenceManager, projectStateManager } from '../services/PresenceManager';
+import { touchProjectMemberLastEditedAt } from '../services/projectMemberActivity';
 import { lockManager } from '../services/LockManager';
 import crypto from 'crypto';
 
@@ -240,6 +241,7 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         }
 
         await project.save();
+        await touchProjectMemberLastEditedAt(id, userId);
         res.json(project);
     } catch (error: any) {
         // console.error('Update project error:', error);

@@ -156,15 +156,21 @@ export const getUserProjects = async (req: AuthRequest, res: Response) => {
             .sort({ updatedAt: -1 })
             .lean();
 
-        const data = projects.map((p: any) => ({
-            id: p._id?.toString?.() || p._id,
-            name: p.name,
-            projectType: p.projectType || 'ERD',
-            dbType: p.dbType,
-            description: p.description,
-            updatedAt: p.updatedAt,
-            memberCount: p.members?.length || 0,
-        }));
+        const uid = id.toString();
+        const data = projects.map((p: any) => {
+            const member = (p.members || []).find((m: any) => m.userId?.toString?.() === uid);
+            return {
+                id: p._id?.toString?.() || p._id,
+                name: p.name,
+                projectType: p.projectType || 'ERD',
+                dbType: p.dbType,
+                description: p.description,
+                updatedAt: p.updatedAt,
+                /** 선택한 회원이 이 프로젝트에서 마지막으로 저장한 시각 */
+                memberLastEditedAt: member?.lastEditedAt ?? null,
+                memberCount: p.members?.length || 0,
+            };
+        });
 
         res.json(data);
     } catch (error) {

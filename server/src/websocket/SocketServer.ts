@@ -6,6 +6,7 @@ import { syncEngine, type CRDTOperation, type ERDState } from '../services/SyncE
 import { lockManager } from '../services/LockManager';
 import { presenceManager, projectStateManager } from '../services/PresenceManager';
 import { Project, History, User } from '../models';
+import { touchProjectMemberLastEditedAtMany } from '../services/projectMemberActivity';
 
 interface UserInfo {
     id: string;
@@ -329,7 +330,8 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     isERDDataOp ||
                     (operation.type === 'SCREEN_UPDATE' && (hasDrawElements || hasRightPaneRatios || hasMemos)) ||
                     operation.type === 'SCREEN_DRAW_DELETE';
-                const savePromise = debouncedSaveToMongo(projectId, newState, isCriticalOperation);
+                const editorUserId = operation.userId || socketData.user.id;
+                const savePromise = debouncedSaveToMongo(projectId, newState, isCriticalOperation, editorUserId);
                 if (savePromise) await savePromise;
 
                 // Record history in MongoDB
@@ -508,18 +510,28 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
 }
 
 // Debounced save to MongoDB
-// Queue for pending saves
-const pendingSaves = new Map<string, { timer: NodeJS.Timeout; state: ERDState }>();
+// Queue for pending saves (누적 편집자 → 멤버별 lastEditedAt 반영)
+const pendingSaves = new Map<string, { timer: NodeJS.Timeout; state: ERDState; editorUserIds: Set<string> }>();
+
+function isValidMemberEditorId(userId: string | undefined): userId is string {
+    return !!userId && userId !== 'anonymous' && Types.ObjectId.isValid(userId);
+}
 
 // Force save immediately (e.g., on disconnect or critical op)
-async function flushPendingSave(projectId: string, state?: ERDState) {
+async function flushPendingSave(projectId: string, state?: ERDState, extraEditorIds?: Set<string>) {
     const pending = pendingSaves.get(projectId);
 
     // If no pending save and no state provided, nothing to do
     if (!pending && !state) return;
 
-    // If pending exists, clear timer
+    const editorUserIds = new Set<string>();
+    extraEditorIds?.forEach((id) => {
+        if (isValidMemberEditorId(id)) editorUserIds.add(id);
+    });
     if (pending) {
+        pending.editorUserIds.forEach((id) => {
+            if (isValidMemberEditorId(id)) editorUserIds.add(id);
+        });
         clearTimeout(pending.timer);
         pendingSaves.delete(projectId);
     }
@@ -575,25 +587,40 @@ async function flushPendingSave(projectId: string, state?: ERDState) {
                 });
             }
         }
+        await touchProjectMemberLastEditedAtMany(projectId, editorUserIds);
     } catch (error) {
         // console.error('MongoDB flush error:', error);
     }
 }
 
-function debouncedSaveToMongo(projectId: string, state: ERDState, immediate = false): Promise<void> | void {
+function debouncedSaveToMongo(
+    projectId: string,
+    state: ERDState,
+    immediate = false,
+    editorUserId?: string
+): Promise<void> | void {
     const existing = pendingSaves.get(projectId);
+    const nextEditors = new Set(existing?.editorUserIds ?? []);
+    if (isValidMemberEditorId(editorUserId)) {
+        nextEditors.add(editorUserId);
+    }
+
+    if (immediate) {
+        if (existing) {
+            clearTimeout(existing.timer);
+            pendingSaves.delete(projectId);
+        }
+        // Execute immediately and return promise so caller can await (prevents stale state on refresh)
+        return flushPendingSave(projectId, state, nextEditors);
+    }
+
     if (existing) {
         clearTimeout(existing.timer);
     }
 
-    if (immediate) {
-        // Execute immediately and return promise so caller can await (prevents stale state on refresh)
-        return flushPendingSave(projectId, state);
-    }
-
     const timer = setTimeout(async () => {
-        await flushPendingSave(projectId, state);
+        await flushPendingSave(projectId);
     }, 1500); // 1.5 seconds debounce
 
-    pendingSaves.set(projectId, { timer, state });
+    pendingSaves.set(projectId, { timer, state, editorUserIds: nextEditors });
 }
