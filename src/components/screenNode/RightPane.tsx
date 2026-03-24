@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useReactFlow } from 'reactflow';
-import { Trash2, Database, GripHorizontal, Edit3, X } from 'lucide-react';
+import { useStore as useRFStore, useReactFlow } from 'reactflow';
+import { Trash2, Database, GripHorizontal, GripVertical, Edit3, Search, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
 import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
 
@@ -106,7 +106,8 @@ const RightPane: React.FC<RightPaneProps> = ({
 }) => {
     // updateScreen을 직접 가져와서 rightPaneRatios 업데이트에 사용
     const { updateScreen } = useScreenNodeStore();
-    const { getViewport } = useReactFlow(); // 🚀 추가: 항상 최신 캔버스 상태를 가져옴
+    // React Flow transform 변경(패닝/줌/노드 이동) 시 이 컴포넌트를 즉시 리렌더
+    useRFStore((s) => s.transform);
 
     const funcNos = (drawElements || [])
         .filter(el => el.type === 'func-no')
@@ -125,6 +126,19 @@ const RightPane: React.FC<RightPaneProps> = ({
     // 테이블명 직접 입력 패널
     const [showDirectInputPanel, setShowDirectInputPanel] = useState(false);
     const [directInputValue, setDirectInputValue] = useState('');
+    const [tableListPanelPos, setTableListPanelPos] = useState<{ x: number; y: number } | null>(null);
+    const [tableListSearch, setTableListSearch] = useState('');
+    const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
+
+    const getTableKoreanName = useCallback(
+        (tableName: string) => {
+            const entity = (linkedErdProject?.data as { entities?: { name: string; comment?: string }[] } | undefined)?.entities?.find(
+                (e) => e.name === tableName
+            );
+            return entity?.comment?.trim() ?? '';
+        },
+        [linkedErdProject]
+    );
 
     const handleChange = (field: 'initialSettings' | 'functionDetails', value: string, e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setLocalValue({ field, value });
@@ -219,6 +233,29 @@ const RightPane: React.FC<RightPaneProps> = ({
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
     }, [ratios, update, syncUpdate, updateScreen]);
+
+    const handleTableListHeaderMouseDown = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!tableListPanelPos) return;
+
+        const panelScreenPos = flowToScreenPosition(tableListPanelPos);
+        const offsetX = e.clientX - panelScreenPos.x;
+        const offsetY = e.clientY - panelScreenPos.y;
+
+        const onMove = (me: MouseEvent) => {
+            const nextScreenX = Math.max(8, me.clientX - offsetX);
+            const nextScreenY = Math.max(8, me.clientY - offsetY);
+            const nextFlowPos = screenToFlowPosition({ x: nextScreenX, y: nextScreenY });
+            setTableListPanelPos(nextFlowPos);
+        };
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    }, [tableListPanelPos, flowToScreenPosition, screenToFlowPosition]);
 
     return (
         <div 
@@ -359,41 +396,52 @@ const RightPane: React.FC<RightPaneProps> = ({
                             {linkedErdProject && (
                                 <div className="relative" ref={tableListRef}>
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); setIsTableListOpen(!isTableListOpen); }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (!isTableListOpen) {
+                                                setTableListSearch('');
+                                                if (tableListRef.current) {
+                                                    const rect = tableListRef.current.getBoundingClientRect();
+                                                    setTableListPanelPos(screenToFlowPosition({ x: rect.left, y: rect.bottom }));
+                                                }
+                                            }
+                                            setIsTableListOpen(!isTableListOpen);
+                                        }}
                                         onMouseDown={(e) => e.stopPropagation()}
                                         className="nodrag flex items-center gap-1 text-[9px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors"
                                     >
                                         <Database size={10} />
                                         <span>추가</span>
                                     </button>
-                                    {/* 🚀 수정: tableListPanelPos 대신 tableListRef.current 를 직접 확인합니다 */}
+                                    {/* 버튼(anchor) 기준으로 매 렌더 좌표를 재계산해 패널이 화면 이동을 안정적으로 추적 */}
                                     {isTableListOpen && tableListRef.current && createPortal(
                                         (() => {
-                                            // 1. 버튼의 '진짜' 현재 화면 좌표를 즉시 가져옵니다.
                                             const rect = tableListRef.current.getBoundingClientRect();
-                                            // 2. 캔버스의 가장 최신 줌(Zoom) 배율을 가져옵니다.
-                                            const currentZoom = getViewport().zoom;
-                                            
-                                            // 위아래 공간 계산
-                                            const spaceBelow = window.innerHeight - rect.bottom;
-                                            const spaceAbove = rect.top;
-                                            const openUpward = spaceBelow < 280 && spaceAbove > spaceBelow;
+                                            const panelFlowPos = tableListPanelPos ?? screenToFlowPosition({ x: rect.left, y: rect.bottom });
+                                            const panelScreenPos = flowToScreenPosition(panelFlowPos);
+                                            const panelLeft = panelScreenPos.x;
+                                            const panelTop = panelScreenPos.y;
+
+                                            const searchQ = tableListSearch.trim().toLowerCase();
+                                            const filteredErdTables =
+                                                !searchQ
+                                                    ? erdTables
+                                                    : erdTables.filter((table) => {
+                                                          const en = table.toLowerCase();
+                                                          const ko = getTableKoreanName(table).toLowerCase();
+                                                          return en.includes(searchQ) || (ko.length > 0 && ko.includes(searchQ));
+                                                      });
 
                                             return (
                                                 <div
                                                     data-table-list-portal
                                                     data-screen-id={screenId}
-                                                    className="nodrag nopan nowheel floating-panel fixed w-48 max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
+                                                    className="nodrag nopan nowheel floating-panel fixed min-w-[220px] max-w-[min(100vw-16px,360px)] max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
                                                     style={{
-                                                        // 3. 버튼 위치에 딱 맞춰서 배치!
-                                                        width:'auto',
-                                                        left: rect.left,
-                                                        ...(openUpward ? { bottom: window.innerHeight - rect.top } : { top: rect.bottom }),
-                                                        maxHeight: Math.max(100, Math.min(280, openUpward ? spaceAbove : spaceBelow, window.innerHeight * 0.7)),
-                                                        
-                                                        // 4. 줌 배율 적용 (너무 작아지거나 너무 거대해지지 않도록 최소/최대 크기 안전장치 적용)
-                                                        transform: `scale(${Math.max(0.75, Math.min(currentZoom * 0.85, 1.5))})`,
-                                                        transformOrigin: openUpward ? 'bottom left' : 'top left',
+                                                        width: 'auto',
+                                                        left: panelLeft,
+                                                        top: panelTop,
+                                                        maxHeight: Math.max(100, Math.min(280, window.innerHeight - panelTop - 8, window.innerHeight * 0.7)),
                                                     }}
                                                     onWheel={(e) => {
                                                         // 브라우저 줌 방지 (ctrl+wheel) - 항상 막아서 캔버스 줌이 동작하게 함
@@ -422,14 +470,47 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                     onPointerDown={(e) => e.stopPropagation()}
                                                     onMouseDown={(e) => e.stopPropagation()}
                                                 >
+                                                    <div
+                                                        className="flex items-center justify-between border-b border-gray-100 px-2 py-1.5 cursor-grab active:cursor-grabbing group/header"
+                                                        onMouseDown={handleTableListHeaderMouseDown}
+                                                        title="드래그하여 이동"
+                                                    >
+                                                        <div className="flex items-center gap-1.5">
+                                                            <GripVertical size={12} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
+                                                            <Database size={12} className="text-[#2c3e7c]" />
+                                                            <span className="text-[10px] font-bold text-gray-600">테이블 추가</span>
+                                                        </div>
+                                                    </div>
+                                                    <div
+                                                        className="px-2 py-1.5 border-b border-gray-100"
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                    >
+                                                        <div className="relative">
+                                                            <Search
+                                                                size={12}
+                                                                className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                                                            />
+                                                            <input
+                                                                type="text"
+                                                                value={tableListSearch}
+                                                                onChange={(e) => setTableListSearch(e.target.value)}
+                                                                placeholder="영문명·한글명 검색"
+                                                                className="nodrag w-full pl-7 pr-2 py-1 text-[10px] border border-gray-200 rounded-lg outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                                                                onMouseDown={(e) => e.stopPropagation()}
+                                                                autoComplete="off"
+                                                                spellCheck={false}
+                                                            />
+                                                        </div>
+                                                    </div>
                                                     <div className="p-1">
-                                                        {erdTables.length > 0 ? erdTables.map(table => {
-                                                            const entity = (linkedErdProject?.data as { entities?: { name: string; comment?: string }[] } | undefined)?.entities?.find((e) => e.name === table);
-                                                            const koreanName = entity?.comment?.trim();
+                                                        {erdTables.length > 0 ? (
+                                                            filteredErdTables.length > 0 ? (
+                                                                filteredErdTables.map((table) => {
+                                                            const koreanName = getTableKoreanName(table);
                                                             return (
                                                             <button
                                                                 key={table}
-                                                                className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] text-gray-700 rounded block"
+                                                                className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[12px] text-gray-700 rounded block"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     if (isLocked) return; // 잠금 상태에서는 업데이트 방지
@@ -452,7 +533,13 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                                 </div>
                                                             </button>
                                                             );
-                                                        }) : (
+                                                                })
+                                                            ) : (
+                                                                <div className="px-2 py-2 text-[10px] text-gray-400 text-center">
+                                                                    검색 결과가 없습니다
+                                                                </div>
+                                                            )
+                                                        ) : (
                                                             <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
                                                         )}
                                                     </div>
