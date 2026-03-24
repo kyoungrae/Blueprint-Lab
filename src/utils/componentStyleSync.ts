@@ -1,4 +1,4 @@
-import type { DrawElement, Screen } from '../types/screenDesign';
+import type { DrawElement, Screen, TableCellData } from '../types/screenDesign';
 
 /** 동기화할 스타일 속성 (위치/크기 제외).
  *  - 표 구조(tableRows, tableCols, 셀 수/크기 등)는 인스턴스에서 자유롭게 수정할 수 있도록 SYNC 대상에서 제외한다.
@@ -29,43 +29,61 @@ function mergeTableCellData(target: DrawElement, source: DrawElement): DrawEleme
 
     if (!srcLegacy && !srcV2) return target;
 
-    const rows = source.tableRows || target.tableRows || 3;
-    const cols = source.tableCols || target.tableCols || 3;
-    const totalCells = rows * cols;
+    // 원본(컴포넌트)과 대상(화면 인스턴스)의 행·열 수가 다를 수 있음(인스턴스에서 열/행 추가 등).
+    // 동일한 평탄 인덱스 i로 양쪽을 읽으면 칸이 엇갈려 잘못 덮어쓴다 → (row,col)로 겹치는 영역만 동기화.
+    const srcRows = source.tableRows || 3;
+    const srcCols = source.tableCols || 3;
+    const tgtRows = target.tableRows ?? source.tableRows ?? 3;
+    const tgtCols = target.tableCols ?? source.tableCols ?? 3;
+
+    const tgtTotal = tgtRows * tgtCols;
 
     let changed = false;
-    const newLegacy = [...(tgtLegacy || Array(totalCells).fill(''))];
-    while (newLegacy.length < totalCells) newLegacy.push('');
-    const newV2 = (tgtV2 && tgtV2.length >= totalCells)
-        ? tgtV2.map(c => ({ ...c }))
-        : Array.from({ length: totalCells }, (_, i) => ({
+    const newLegacy = [...(tgtLegacy || [])];
+    while (newLegacy.length < tgtTotal) newLegacy.push('');
+    if (newLegacy.length > tgtTotal) newLegacy.length = tgtTotal;
+
+    let newV2: TableCellData[];
+    if (tgtV2 && tgtV2.length >= tgtTotal) {
+        newV2 = tgtV2.slice(0, tgtTotal).map((c) => ({ ...c }));
+    } else {
+        newV2 = Array.from({ length: tgtTotal }, (_, i) => ({
             content: tgtLegacy?.[i] ?? tgtV2?.[i]?.content ?? '',
             rowSpan: tgtV2?.[i]?.rowSpan ?? 1,
             colSpan: tgtV2?.[i]?.colSpan ?? 1,
             isMerged: tgtV2?.[i]?.isMerged ?? false,
         }));
+    }
 
-    for (let i = 0; i < totalCells; i++) {
-        const srcVal = (srcV2?.[i]?.content ?? srcLegacy?.[i] ?? '').trim();
-        const tgtVal = (newV2[i]?.content ?? newLegacy[i] ?? '').trim();
+    const syncRows = Math.min(srcRows, tgtRows);
+    const syncCols = Math.min(srcCols, tgtCols);
 
-        // 값이 같으면 동기화할 필요 없음 (trim 후 비교로 미세한 공백 차이 무시)
-        if (srcVal === tgtVal) continue;
+    for (let r = 0; r < syncRows; r++) {
+        for (let c = 0; c < syncCols; c++) {
+            const srcIdx = r * srcCols + c;
+            const tgtIdx = r * tgtCols + c;
 
-        // 사용자가 인스턴스에서 해당 셀을 직접 수정한 경우(tableCellLockedIndices에서 제거됨), 동기화하지 않는다.
-        if (target.fromComponentId) {
-            if (target.tableCellLockedIndices) {
-                if (!target.tableCellLockedIndices.includes(i)) continue;
-            } else {
-                if (tgtVal.length > 0) continue;
-                if (!srcVal.length) continue;
+            const srcVal = (srcV2?.[srcIdx]?.content ?? srcLegacy?.[srcIdx] ?? '').trim();
+            const tgtVal = (newV2[tgtIdx]?.content ?? newLegacy[tgtIdx] ?? '').trim();
+
+            // 값이 같으면 동기화할 필요 없음 (trim 후 비교로 미세한 공백 차이 무시)
+            if (srcVal === tgtVal) continue;
+
+            // 사용자가 인스턴스에서 해당 셀을 직접 수정한 경우(tableCellLockedIndices에서 제거됨), 동기화하지 않는다.
+            if (target.fromComponentId) {
+                if (target.tableCellLockedIndices) {
+                    if (!target.tableCellLockedIndices.includes(tgtIdx)) continue;
+                } else {
+                    if (tgtVal.length > 0) continue;
+                    if (!srcVal.length) continue;
+                }
             }
-        }
 
-        const actualSrcVal = srcV2?.[i]?.content ?? srcLegacy?.[i] ?? '';
-        newLegacy[i] = actualSrcVal;
-        if (newV2[i]) newV2[i] = { ...newV2[i], content: actualSrcVal };
-        changed = true;
+            const actualSrcVal = srcV2?.[srcIdx]?.content ?? srcLegacy?.[srcIdx] ?? '';
+            newLegacy[tgtIdx] = actualSrcVal;
+            if (newV2[tgtIdx]) newV2[tgtIdx] = { ...newV2[tgtIdx], content: actualSrcVal };
+            changed = true;
+        }
     }
 
     if (!changed) return target;
