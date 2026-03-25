@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore as useRFStore, useReactFlow } from 'reactflow';
 import { Trash2, Database, GripHorizontal, GripVertical, Edit3, Search, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
+import type { Project } from '../../types/erd';
 import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
 
 const DEFAULT_RATIOS: [number, number, number] = [40, 35, 25];
@@ -21,7 +22,8 @@ interface RightPaneProps {
     tableListRef: React.RefObject<HTMLDivElement | null>;
     isTableListOpen: boolean;
     setIsTableListOpen: (v: boolean) => void;
-    linkedErdProject: any;
+    /** 연결된 ERD 전체 — 첫 번째만 보면 테이블이 다른 ERD에 있을 때 한글명을 못 찾음 */
+    linkedErdProjects: Project[];
     erdTables: string[];
     drawElements: DrawElement[];
 
@@ -99,7 +101,7 @@ const RightPane: React.FC<RightPaneProps> = ({
     tableListRef,
     isTableListOpen,
     setIsTableListOpen,
-    linkedErdProject,
+    linkedErdProjects,
     erdTables,
     drawElements,
 
@@ -123,7 +125,19 @@ const RightPane: React.FC<RightPaneProps> = ({
             return aNum - bNum;
         });
 
-    const tableLines = (screen.relatedTables || '').split('\n').filter(line => line.trim() !== '');
+    const relatedTableEntries = useMemo(() => {
+        const rawLines = (screen.relatedTables || '').split('\n');
+        const sortKey = (line: string) => {
+            const t = line.trim();
+            return t.startsWith('•') ? t.substring(1).trim() : t;
+        };
+        const entries = rawLines
+            .map((line, originalIndex) => ({ line, originalIndex }))
+            .filter(({ line }) => line.trim() !== '');
+        return [...entries].sort((a, b) =>
+            sortKey(a.line).localeCompare(sortKey(b.line), undefined, { sensitivity: 'base', numeric: true })
+        );
+    }, [screen.relatedTables]);
 
 
 
@@ -136,15 +150,21 @@ const RightPane: React.FC<RightPaneProps> = ({
     const [tableListSearch, setTableListSearch] = useState('');
     const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
 
-    const getTableKoreanName = useCallback(
-        (tableName: string) => {
-            const entity = (linkedErdProject?.data as { entities?: { name: string; comment?: string }[] } | undefined)?.entities?.find(
-                (e) => e.name === tableName
+    const getTableKoreanName = useCallback((tableName: string) => {
+        const trimmed = tableName.trim();
+        if (!trimmed) return '';
+        const upper = trimmed.toUpperCase();
+        for (const erdProj of linkedErdProjects) {
+            const entities = (erdProj?.data as { entities?: { name: string; comment?: string }[] } | undefined)?.entities;
+            if (!entities?.length) continue;
+            const entity = entities.find(
+                (e) => e.name === trimmed || (e.name && e.name.toUpperCase() === upper)
             );
-            return entity?.comment?.trim() ?? '';
-        },
-        [linkedErdProject]
-    );
+            const ko = entity?.comment?.trim();
+            if (ko) return ko;
+        }
+        return '';
+    }, [linkedErdProjects]);
 
     const handleChange = (field: 'initialSettings' | 'functionDetails', value: string, e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setLocalValue({ field, value });
@@ -402,7 +422,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 <Edit3 size={10} />
                                 <span>직접 입력</span>
                             </button>
-                            {linkedErdProject && (
+                            {linkedErdProjects.length > 0 && (
                                 <div className="relative" ref={tableListRef}>
                                     <button
                                         onClick={(e) => {
@@ -646,26 +666,38 @@ const RightPane: React.FC<RightPaneProps> = ({
                 {/* Table list - scrollable area only (직접 입력은 버튼으로 모달에서) */}
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                     <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar no-pan-scroll p-2">
-                        {tableLines.length === 0 ? (
+                        {relatedTableEntries.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-4 text-gray-300 text-center">
                                 <Database size={18} className="opacity-20 mb-1" />
                                 <p className="text-[10px] font-bold">관련 테이블 없음</p>
                             </div>
                         ) : (
                             <div className="space-y-0.5">
-                                {tableLines.map((line, idx) => {
+                                {relatedTableEntries.map(({ line, originalIndex }) => {
                                     const displayLine = line.trim().startsWith('•') ? line.trim().substring(1).trim() : line.trim();
+                                    const koreanName = !isLocked ? getTableKoreanName(displayLine) : '';
                                     return (
-                                        <div key={idx} className="flex items-center justify-between group/table px-1.5 py-1 hover:bg-blue-50/50 rounded transition-colors text-[10px] font-mono min-w-0">
-                                            <div className="flex items-center gap-1.5 flex-1">
+                                        <div key={originalIndex} className="flex items-center justify-between group/table px-1.5 py-1 hover:bg-blue-50/50 rounded transition-colors text-[10px] font-mono min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
                                                 <span className="text-blue-500 font-bold shrink-0 text-[8px]">•</span>
-                                                <span className="text-gray-700 font-bold break-all">{displayLine}</span>
+                                                <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0 min-w-0 flex-1">
+                                                    <span className="text-gray-700 font-bold break-all">{displayLine}</span>
+                                                    {koreanName ? (
+                                                        <span
+                                                            className="text-gray-500 font-normal font-sans text-[9px] break-all"
+                                                            title={koreanName}
+                                                        >
+                                                            {koreanName}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
                                             </div>
                                             {!isLocked && (
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        const newLines = tableLines.filter((_, i) => i !== idx);
+                                                        const rawLines = (screen.relatedTables || '').split('\n');
+                                                        const newLines = rawLines.filter((_, i) => i !== originalIndex);
                                                         update({ relatedTables: newLines.join('\n') });
                                                         syncUpdate({ relatedTables: newLines.join('\n') });
                                                     }}
