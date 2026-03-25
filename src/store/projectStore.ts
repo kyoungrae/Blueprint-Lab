@@ -1,9 +1,45 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
 import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
+
+/**
+ * createJSONStorage가 사용할 "원본" storage 래퍼.
+ * localStorage quota 초과 시에도 앱이 죽지 않도록 안전하게 저장한다.
+ * (quota 초과 상황에서 setItem이 DOMException을 던지며, uncaught로 앱 렌더가 깨질 수 있음)
+ */
+const safeStateStorage: StateStorage<void> = {
+    getItem: (name: string) => {
+        try {
+            return localStorage.getItem(name);
+        } catch {
+            return null;
+        }
+    },
+    setItem: (name: string, value: string) => {
+        try {
+            localStorage.setItem(name, value);
+        } catch (err: any) {
+            // Typically: QuotaExceededError / DOMException
+            try {
+                localStorage.removeItem(name);
+            } catch {
+                // ignore
+            }
+        }
+        return undefined;
+    },
+    removeItem: (name: string) => {
+        try {
+            localStorage.removeItem(name);
+        } catch {
+            // ignore
+        }
+        return undefined;
+    },
+};
 
 
 
@@ -408,11 +444,55 @@ export const useProjectStore = create<ProjectStore>()(
         }),
         {
             name: 'project-storage',
-            // Only persist essential state, not the full project list if fetched from API
+            version: 2,
+            storage: createJSONStorage(() => safeStateStorage),
+            // localStorage quota 초과 방지를 위해 ERD/SCREEN_DESIGN/COMPONENT의 큰 data를 저장하지 않는다.
             partialize: (state) => ({
                 currentProjectId: state.currentProjectId,
-                projects: state.projects
+                projects: state.projects.map((p) => {
+                    const base = {
+                        id: p.id,
+                        name: p.name,
+                        projectType: p.projectType,
+                        dbType: p.dbType,
+                        description: p.description,
+                        author: p.author,
+                        updatedAt: p.updatedAt,
+                        linkedErdProjectIds: p.linkedErdProjectIds,
+                        linkedErdProjectId: p.linkedErdProjectId,
+                        linkedComponentProjectId: p.linkedComponentProjectId,
+                        members: p.members,
+                        // data/bugReports는 용량 폭증을 유발하므로 persist에서 비워둔다.
+                        data:
+                            p.projectType === 'ERD'
+                                ? { entities: [], relationships: [], sections: [] }
+                                : p.projectType === 'SCREEN_DESIGN'
+                                    ? { screens: [], flows: [], sections: [] }
+                                    : { components: [], flows: [] },
+                        bugReports: [],
+                    };
+                    return base as Project;
+                }),
             }),
+            migrate: (persistedState: any, _version: number) => {
+                // 기존 version(1)의 과대 저장(localStorage에 data 포함)이 남아있을 수 있으므로
+                // rehydrate 시점에라도 data/bugReports를 제거해 용량을 줄인다.
+                const ps = persistedState as any;
+                if (!ps?.projects?.length) return ps;
+                return {
+                    ...ps,
+                    projects: ps.projects.map((p: any) => ({
+                        ...p,
+                        data:
+                            p.projectType === 'ERD'
+                                ? { entities: [], relationships: [], sections: [] }
+                                : p.projectType === 'SCREEN_DESIGN'
+                                    ? { screens: [], flows: [], sections: [] }
+                                    : { components: [], flows: [] },
+                        bugReports: [],
+                    })),
+                };
+            },
         }
     )
 );
