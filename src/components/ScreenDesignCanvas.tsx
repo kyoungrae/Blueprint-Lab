@@ -19,6 +19,8 @@ import ReactFlow, {
 } from 'reactflow';
 
 const SECTION_HANDLE_SIZE = 8;
+/** 화면 설계 캔버스 최소 줌(최대 줌아웃). 새로고침·프로젝트 진입 시 초기 뷰에 사용 */
+const SCREEN_DESIGN_MIN_ZOOM = 0.05;
 interface SectionOverlayLayerProps {
     sections: ScreenSection[];
     hoveredSectionId: string | null;
@@ -381,6 +383,32 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
     const lastSyncedComponentAtRef = useRef<string | null>(null);
     const { getNodes, fitView, screenToFlowPosition, flowToScreenPosition, getViewport, setViewport } = useReactFlow();
+
+    /** 새로고침·프로젝트 전환 후 첫 로드에서만 최대 줌아웃(최소 줌)으로 맞춤 */
+    const initialMaxZoomOutForProjectRef = useRef<string | null>(null);
+    useEffect(() => {
+        initialMaxZoomOutForProjectRef.current = null;
+    }, [currentProjectId]);
+    useEffect(() => {
+        if (!currentProjectId || screens.length === 0 || nodes.length !== screens.length) return;
+        if (initialMaxZoomOutForProjectRef.current === currentProjectId) return;
+        const raf = requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                try {
+                    fitView({
+                        minZoom: SCREEN_DESIGN_MIN_ZOOM,
+                        maxZoom: SCREEN_DESIGN_MIN_ZOOM,
+                        padding: 0.12,
+                        duration: 0,
+                    });
+                    initialMaxZoomOutForProjectRef.current = currentProjectId;
+                } catch {
+                    /* ignore */
+                }
+            });
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [currentProjectId, screens.length, nodes.length, fitView]);
 
     const [isSectionDrawMode, setIsSectionDrawMode] = useState(false);
     const [sectionDrag, setSectionDrag] = useState<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
@@ -2085,10 +2113,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     zoomOnScroll={false}
                     zoomOnDoubleClick={false}
                     zoomActivationKeyCode="Control"
-                    minZoom={0.05}
+                    minZoom={SCREEN_DESIGN_MIN_ZOOM}
                     maxZoom={4}
                                     onlyRenderVisibleElements={true}
-                    fitView
                     multiSelectionKeyCode="Shift"
                     selectionKeyCode="Shift"
                     deleteKeyCode={null}
