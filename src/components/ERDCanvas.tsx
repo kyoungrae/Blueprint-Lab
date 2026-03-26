@@ -103,7 +103,7 @@ import ImportModal from './ImportModal';
 import Sidebar from './Sidebar';
 import HistoryModal from './HistoryModal';
 import { useERDStore } from '../store/erdStore';
-import { type Relationship, type Section } from '../types/erd';
+import { type Relationship, type Section, type Attribute, type Entity } from '../types/erd';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -116,6 +116,7 @@ import { getRelationshipLayoutedElements } from '../utils/relationshipLayout';
 import { generateSQLFromERD } from '../utils/sqlGenerator';
 import { copyToClipboard } from '../utils/clipboard';
 import { BugReportButton } from './bug/BugReport';
+import ERDExcelView from './ERDExcelView';
 const nodeTypes: NodeTypes = {
     entity: EntityNode,
     entityPlaceholder: EntityNodePlaceholder,
@@ -444,6 +445,7 @@ const ERDCanvasContent: React.FC = () => {
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
     const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
+    const [viewMode, setViewMode] = useState<'diagram' | 'excel'>('diagram');
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
     const [isSectionDrawMode, setIsSectionDrawMode] = useState(false);
     const [sectionDrag, setSectionDrag] = useState<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
@@ -1350,6 +1352,138 @@ const ERDCanvasContent: React.FC = () => {
         });
     }, [entities, addEntity, user, sendOperation]);
 
+    const handleUpdateEntityFromExcel = useCallback((entityId: string, updates: Partial<Entity>) => {
+        updateEntity(entityId, updates, user);
+        sendOperation({
+            type: 'ENTITY_UPDATE',
+            targetId: entityId,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: updates as unknown as Record<string, unknown>,
+        });
+    }, [updateEntity, user, sendOperation]);
+
+    const handleDeleteEntityFromExcel = useCallback((entityId: string) => {
+        const entity = entitiesById[entityId];
+        if (!entity) return;
+        if (!window.confirm(`Delete entity "${entity.name}"?`)) return;
+        sendOperation({
+            type: 'ENTITY_DELETE',
+            targetId: entityId,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: {},
+            previousState: entity as unknown as Record<string, unknown>,
+        });
+        deleteEntity(entityId, user);
+    }, [entitiesById, deleteEntity, sendOperation, user]);
+
+    const handleAddAttributeFromExcel = useCallback((entityId: string) => {
+        const entity = entitiesById[entityId];
+        if (!entity) return;
+        const newAttr: Attribute = {
+            id: `attr_${Date.now()}`,
+            name: 'new_column',
+            type: 'VARCHAR',
+            length: '255',
+            isPK: false,
+            isFK: false,
+            isNullable: true,
+        };
+        const newAttributes = [...entity.attributes, newAttr];
+        updateEntity(entityId, { attributes: newAttributes }, user);
+        sendOperation({
+            type: 'ATTRIBUTE_ADD',
+            targetId: entityId,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: { attributes: newAttributes },
+        });
+    }, [entitiesById, updateEntity, user, sendOperation]);
+
+    const handleUpdateAttributeFromExcel = useCallback((entityId: string, attrId: string, updates: Partial<Attribute>, isGranular = true) => {
+        const currentEntity = entitiesById[entityId];
+        if (!currentEntity) return;
+        if (isGranular) {
+            (useERDStore.getState() as any).updateAttribute(entityId, attrId, updates, user);
+            sendOperation({
+                type: 'ATTRIBUTE_FIELD_UPDATE',
+                targetId: entityId,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: { attrId, updates },
+            });
+            return;
+        }
+        const newAttributes = currentEntity.attributes.map((attr) =>
+            attr.id === attrId ? { ...attr, ...updates } : attr
+        );
+        updateEntity(entityId, { attributes: newAttributes }, user);
+        sendOperation({
+            type: 'ATTRIBUTE_UPDATE',
+            targetId: entityId,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: { attributes: newAttributes },
+        });
+    }, [entitiesById, updateEntity, user, sendOperation]);
+
+    const handleDeleteAttributeFromExcel = useCallback((entityId: string, attrId: string) => {
+        const currentEntity = entitiesById[entityId];
+        if (!currentEntity) return;
+        const newAttributes = currentEntity.attributes.filter((attr) => attr.id !== attrId);
+        sendOperation({
+            type: 'ATTRIBUTE_DELETE',
+            targetId: entityId,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: { attributes: newAttributes },
+            previousState: { attributes: currentEntity.attributes },
+        });
+        updateEntity(entityId, { attributes: newAttributes }, user);
+    }, [entitiesById, sendOperation, updateEntity, user]);
+
+    const handleAddRelationshipFromExcel = useCallback((sourceId: string, targetId: string, type: Relationship['type']) => {
+        const existingRel = relationships.find((r) =>
+            (r.source === sourceId && r.target === targetId) ||
+            (r.source === targetId && r.target === sourceId)
+        );
+        if (existingRel) {
+            alert('이미 동일한 테이블 간 관계가 존재합니다.');
+            return;
+        }
+        const newRel: Relationship = {
+            id: `rel_${Date.now()}`,
+            source: sourceId,
+            target: targetId,
+            type,
+        };
+        addRelationship(newRel, user);
+        sendOperation({
+            type: 'RELATIONSHIP_CREATE',
+            targetId: newRel.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: newRel as unknown as Record<string, unknown>,
+        });
+    }, [relationships, addRelationship, user, sendOperation]);
+
+    const handleDeleteRelationshipFromExcel = useCallback((relationshipId: string) => {
+        deleteRelationship(relationshipId, user);
+        sendOperation({
+            type: 'RELATIONSHIP_DELETE',
+            targetId: relationshipId,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: {},
+        });
+    }, [deleteRelationship, user, sendOperation]);
+
+    const handleEditRelationshipFromExcel = useCallback((relationshipId: string) => {
+        const rel = relationships.find((r) => r.id === relationshipId);
+        if (rel) setEditingRelationship(rel);
+    }, [relationships]);
+
     const handleExportJSON = () => {
         const data = exportData();
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1865,6 +1999,19 @@ const ERDCanvasContent: React.FC = () => {
                         )}
                     </div>
 
+                    <div className="shrink-0">
+                        <PremiumTooltip placement="bottom" offsetBottom={30} label="보기 모드">
+                            <select
+                                value={viewMode}
+                                onChange={(e) => setViewMode(e.target.value as 'diagram' | 'excel')}
+                                className="px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm"
+                            >
+                                <option value="diagram">ERD 다이어그램</option>
+                                <option value="excel">Excel 형태</option>
+                            </select>
+                        </PremiumTooltip>
+                    </div>
+
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="flex bg-gray-50/50 rounded-lg border border-gray-100 p-0.5 shrink-0">
@@ -1995,113 +2142,132 @@ const ERDCanvasContent: React.FC = () => {
                     </div>
                 </div> {/* This closes the toolbar div from line 481 */}
 
-                {/* 1) React Flow Canvas - z-[10]으로 섹션 배경(z-[1])보다 위에 그려서 엔티티 색상이 섹션 채움에 틴트되지 않음 */}
-                <div className="absolute inset-0 z-[10]" ref={paneContainerRef}>
-                    <ReactFlow
-                        nodes={nodes}
-                        edges={edges}
-                        onNodesChange={onNodesChange}
-                        onEdgesChange={onEdgesChange}
-                        onConnect={onConnect}
-                        onConnectStart={onConnectStart}
-                        onConnectEnd={onConnectEnd}
-                        onEdgeUpdate={onEdgeUpdate}
-                        onEdgeUpdateStart={onEdgeUpdateStart}
-                        onEdgeUpdateEnd={onEdgeUpdateEnd}
-                        edgeUpdaterRadius={20}
-                        isValidConnection={isValidConnection}
-                        onEdgeDoubleClick={onEdgeDoubleClick}
-                        onNodeDragStart={onNodeDragStart}
-                        onNodeDragStop={onNodeDragStop}
-                        nodeTypes={nodeTypes}
-                        edgeTypes={edgeTypes}
-                        connectionMode={ConnectionMode.Loose}
-                        panOnScroll={true}
-                        panOnScrollMode={PanOnScrollMode.Free}
-                        zoomOnScroll={true} // Ctrl+휠 줌 활성화
-                        zoomOnDoubleClick={false}
-                        zoomActivationKeyCode="Control"
-                        minZoom={0.05}
-                        maxZoom={4}
-                        fitView
-                        fitViewOptions={{ padding: 0.25 }}
-                        multiSelectionKeyCode="Shift"
-                        selectionKeyCode="Shift"
-                        deleteKeyCode={null}
-                        style={{ 
-                            transition: 'none', // 애니메이션 비활성화로 즉시 반응
-                            willChange: 'transform' // GPU 가속
-                        }}
-                        nodesDraggable={true}
-                        nodesConnectable={true}
-                        elementsSelectable={true}
-                        onlyRenderVisibleElements={true}
-                        selectNodesOnDrag={false}
-                        elevateNodesOnSelect={false}
-                        elevateEdgesOnSelect={false}
-                        onPaneMouseMove={onPaneMouseMove}
-                        onPaneClick={() => setSelectedSectionId(null)}
-                    >
-                        <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
-                        <GlobalViewportUpdater />
-                        <SectionOverlayLayer
-                            sections={sections}
-                            hoveredSectionId={hoveredSectionId}
-                            setHoveredSectionId={setHoveredSectionId}
-                            selectedSectionId={selectedSectionId}
-                            setSelectedSectionId={setSelectedSectionId}
-                            editingSectionId={editingSectionId}
-                            editingSectionName={editingSectionName}
-                            setEditingSectionName={setEditingSectionName}
-                            setEditingSectionId={setEditingSectionId}
-                            startEditingSectionName={startEditingSectionName}
-                            saveSectionName={saveSectionName}
-                            deleteSection={deleteSection}
-                            updateSection={updateSection}
-                            onSectionBodyMouseDown={onSectionBodyMouseDown}
-                            onSectionResizeMouseDown={onSectionResizeMouseDown}
-                            sectionHeadersContainerRef={sectionHeadersContainerRef}
-                        />
-                        <UserCursorsLayer />
-                        <FigmaStyleZoomControls />
-                        <MiniMap
-                            nodeColor={() => '#3b82f6'}
-                            className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
-                        />
-                        <Background
-                            variant={BackgroundVariant.Dots}
-                            gap={20}
-                            size={1.5}
-                            color="#84878bff"
-                        />
-                    </ReactFlow>
-                </div>
-
-                {/* 3) 섹션 그리기 오버레이 (영역 지정 시에만) */}
-                {isSectionDrawMode && (
-                    <div
-                        className="absolute inset-0 z-[100] cursor-crosshair"
-                        onMouseDown={onSectionOverlayMouseDown}
-                        onMouseMove={onSectionOverlayMouseMove}
-                        onMouseUp={onSectionOverlayMouseUp}
-                        onMouseLeave={onSectionOverlayMouseLeave}
-                    >
-                        {sectionDrag && flowWrapper.current && (() => {
-                            const a = flowToScreenPosition(sectionDrag.start);
-                            const b = flowToScreenPosition(sectionDrag.current);
-                            const r = flowWrapper.current.getBoundingClientRect();
-                            const left = Math.min(a.x, b.x) - r.left;
-                            const top = Math.min(a.y, b.y) - r.top;
-                            const width = Math.max(1, Math.abs(b.x - a.x));
-                            const height = Math.max(1, Math.abs(b.y - a.y));
-                            return (
-                                <div
-                                    className="absolute border-2 border-blue-500 bg-blue-500/10 pointer-events-none"
-                                    style={{ left, top, width, height }}
+                {viewMode === 'diagram' ? (
+                    <>
+                        {/* 1) React Flow Canvas - z-[10]으로 섹션 배경(z-[1])보다 위에 그려서 엔티티 색상이 섹션 채움에 틴트되지 않음 */}
+                        <div className="absolute inset-0 z-[10]" ref={paneContainerRef}>
+                            <ReactFlow
+                                nodes={nodes}
+                                edges={edges}
+                                onNodesChange={onNodesChange}
+                                onEdgesChange={onEdgesChange}
+                                onConnect={onConnect}
+                                onConnectStart={onConnectStart}
+                                onConnectEnd={onConnectEnd}
+                                onEdgeUpdate={onEdgeUpdate}
+                                onEdgeUpdateStart={onEdgeUpdateStart}
+                                onEdgeUpdateEnd={onEdgeUpdateEnd}
+                                edgeUpdaterRadius={20}
+                                isValidConnection={isValidConnection}
+                                onEdgeDoubleClick={onEdgeDoubleClick}
+                                onNodeDragStart={onNodeDragStart}
+                                onNodeDragStop={onNodeDragStop}
+                                nodeTypes={nodeTypes}
+                                edgeTypes={edgeTypes}
+                                connectionMode={ConnectionMode.Loose}
+                                panOnScroll={true}
+                                panOnScrollMode={PanOnScrollMode.Free}
+                                zoomOnScroll={true} // Ctrl+휠 줌 활성화
+                                zoomOnDoubleClick={false}
+                                zoomActivationKeyCode="Control"
+                                minZoom={0.05}
+                                maxZoom={4}
+                                fitView
+                                fitViewOptions={{ padding: 0.25 }}
+                                multiSelectionKeyCode="Shift"
+                                selectionKeyCode="Shift"
+                                deleteKeyCode={null}
+                                style={{
+                                    transition: 'none', // 애니메이션 비활성화로 즉시 반응
+                                    willChange: 'transform' // GPU 가속
+                                }}
+                                nodesDraggable={true}
+                                nodesConnectable={true}
+                                elementsSelectable={true}
+                                onlyRenderVisibleElements={true}
+                                selectNodesOnDrag={false}
+                                elevateNodesOnSelect={false}
+                                elevateEdgesOnSelect={false}
+                                onPaneMouseMove={onPaneMouseMove}
+                                onPaneClick={() => setSelectedSectionId(null)}
+                            >
+                                <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
+                                <GlobalViewportUpdater />
+                                <SectionOverlayLayer
+                                    sections={sections}
+                                    hoveredSectionId={hoveredSectionId}
+                                    setHoveredSectionId={setHoveredSectionId}
+                                    selectedSectionId={selectedSectionId}
+                                    setSelectedSectionId={setSelectedSectionId}
+                                    editingSectionId={editingSectionId}
+                                    editingSectionName={editingSectionName}
+                                    setEditingSectionName={setEditingSectionName}
+                                    setEditingSectionId={setEditingSectionId}
+                                    startEditingSectionName={startEditingSectionName}
+                                    saveSectionName={saveSectionName}
+                                    deleteSection={deleteSection}
+                                    updateSection={updateSection}
+                                    onSectionBodyMouseDown={onSectionBodyMouseDown}
+                                    onSectionResizeMouseDown={onSectionResizeMouseDown}
+                                    sectionHeadersContainerRef={sectionHeadersContainerRef}
                                 />
-                            );
-                        })()}
-                    </div>
+                                <UserCursorsLayer />
+                                <FigmaStyleZoomControls />
+                                <MiniMap
+                                    nodeColor={() => '#3b82f6'}
+                                    className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg"
+                                />
+                                <Background
+                                    variant={BackgroundVariant.Dots}
+                                    gap={20}
+                                    size={1.5}
+                                    color="#84878bff"
+                                />
+                            </ReactFlow>
+                        </div>
+
+                        {/* 3) 섹션 그리기 오버레이 (영역 지정 시에만) */}
+                        {isSectionDrawMode && (
+                            <div
+                                className="absolute inset-0 z-[100] cursor-crosshair"
+                                onMouseDown={onSectionOverlayMouseDown}
+                                onMouseMove={onSectionOverlayMouseMove}
+                                onMouseUp={onSectionOverlayMouseUp}
+                                onMouseLeave={onSectionOverlayMouseLeave}
+                            >
+                                {sectionDrag && flowWrapper.current && (() => {
+                                    const a = flowToScreenPosition(sectionDrag.start);
+                                    const b = flowToScreenPosition(sectionDrag.current);
+                                    const r = flowWrapper.current.getBoundingClientRect();
+                                    const left = Math.min(a.x, b.x) - r.left;
+                                    const top = Math.min(a.y, b.y) - r.top;
+                                    const width = Math.max(1, Math.abs(b.x - a.x));
+                                    const height = Math.max(1, Math.abs(b.y - a.y));
+                                    return (
+                                        <div
+                                            className="absolute border-2 border-blue-500 bg-blue-500/10 pointer-events-none"
+                                            style={{ left, top, width, height }}
+                                        />
+                                    );
+                                })()}
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <ERDExcelView
+                        entities={entities}
+                        relationships={relationships}
+                        dbType={currentProject?.dbType || 'MySQL'}
+                        onAddEntity={handleAddEntity}
+                        onDeleteEntity={handleDeleteEntityFromExcel}
+                        onUpdateEntity={handleUpdateEntityFromExcel}
+                        onAddAttribute={handleAddAttributeFromExcel}
+                        onDeleteAttribute={handleDeleteAttributeFromExcel}
+                        onUpdateAttribute={handleUpdateAttributeFromExcel}
+                        onAddRelationship={handleAddRelationshipFromExcel}
+                        onDeleteRelationship={handleDeleteRelationshipFromExcel}
+                        onEditRelationship={handleEditRelationshipFromExcel}
+                    />
                 )}
 
                 {/* Modals */}
