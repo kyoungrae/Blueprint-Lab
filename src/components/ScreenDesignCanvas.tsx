@@ -21,6 +21,11 @@ import ReactFlow, {
 const SECTION_HANDLE_SIZE = 8;
 /** 화면 설계 캔버스 최소 줌(최대 줌아웃). 새로고침·프로젝트 진입 시 초기 뷰에 사용 */
 const SCREEN_DESIGN_MIN_ZOOM = 0.05;
+/** 브라우저 줌을 낮추지 않아도 더 많은 정보를 보도록 상단바/사이드바 UI를 축소 */
+const SCREEN_DESIGN_UI_COMPACT_SCALE = 0.8;
+const SCREEN_DESIGN_SIDEBAR_DEFAULT_WIDTH = Math.round(280 * SCREEN_DESIGN_UI_COMPACT_SCALE);
+const SCREEN_DESIGN_SIDEBAR_MIN_WIDTH = Math.round(200 * SCREEN_DESIGN_UI_COMPACT_SCALE);
+const SCREEN_DESIGN_SIDEBAR_MAX_WIDTH = Math.round(600 * SCREEN_DESIGN_UI_COMPACT_SCALE);
 interface SectionOverlayLayerProps {
     sections: ScreenSection[];
     hoveredSectionId: string | null;
@@ -364,7 +369,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         enabled: Boolean(currentProjectId && !currentProjectId.startsWith('local_') && !yjsIsSynced),
     });
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [sidebarWidth, setSidebarWidth] = useState(280); // Default width in pixels
+    const [sidebarWidth, setSidebarWidth] = useState(SCREEN_DESIGN_SIDEBAR_DEFAULT_WIDTH);
     const sidebarResizingRef = useRef(false);
     const [sidebarListKey, setSidebarListKey] = useState(0); // 가져오기 후 사이드바 목록 갱신용
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -428,7 +433,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
         const onMouseMove = (moveEvent: MouseEvent) => {
             if (!sidebarResizingRef.current) return;
-            const newWidth = Math.max(200, Math.min(600, moveEvent.clientX));
+            const newWidth = Math.max(
+                SCREEN_DESIGN_SIDEBAR_MIN_WIDTH,
+                Math.min(SCREEN_DESIGN_SIDEBAR_MAX_WIDTH, moveEvent.clientX),
+            );
             setSidebarWidth(newWidth);
         };
 
@@ -1877,7 +1885,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     className={`relative h-full border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'flex-shrink-0' : 'w-0 border-none'}`}
                                     style={{ width: isSidebarOpen ? sidebarWidth : 0, transition: sidebarResizingRef.current ? 'none' : 'width 0.3s ease-in-out' }}
                 >
-                                    <div className="h-full min-w-0" style={{ width: sidebarWidth }}>
+                                    <div
+                                        className="h-full min-w-0"
+                                        style={{
+                                            width: sidebarWidth / SCREEN_DESIGN_UI_COMPACT_SCALE,
+                                            height: `${100 / SCREEN_DESIGN_UI_COMPACT_SCALE}%`,
+                                            transform: `scale(${SCREEN_DESIGN_UI_COMPACT_SCALE})`,
+                                            transformOrigin: 'top left',
+                                        }}
+                                    >
                                         <ScreenSidebar key={`sidebar-${sidebarListKey}`} screens={screens} sections={sections} />
                     </div>
 
@@ -1892,15 +1908,22 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                 <button
                     onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-12 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-violet-500 hover:w-6 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-5' : 'left-0'}`}
+                    className={`absolute top-1/2 -translate-y-1/2 z-30 w-4 h-10 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-violet-500 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-4' : 'left-0'}`}
                     title={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
                 >
-                    {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                    {isSidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
                 </button>
             </div>
 
             <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
-                <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
+                <div
+                    className="absolute top-4 left-1/2 z-[10001] transition-all duration-300"
+                    style={{
+                        transform: `translateX(-50%) scale(${SCREEN_DESIGN_UI_COMPACT_SCALE})`,
+                        transformOrigin: 'top center',
+                    }}
+                >
+                <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-nowrap items-center gap-2 whitespace-nowrap overflow-x-auto max-w-[calc(100%-2rem)]">
                                     <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
                     <button
                         onClick={() => setCurrentProject(null)}
@@ -2075,6 +2098,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         </button>
                                         </PremiumTooltip>
                     </div>
+                </div>
                 </div>
 
                                 <ChatPanel
