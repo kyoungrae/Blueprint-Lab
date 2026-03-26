@@ -86,10 +86,10 @@ const ComponentSidebar: React.FC = () => {
                 ) : (
                     <div className="space-y-1">
                         {filteredComponents.map((screen) => (
-                            <div key={screen.id} className="group/item">
-                                <details className="group">
+                            <div key={screen.id} className="group/item flex items-stretch gap-0.5">
+                                <details className="group min-w-0 flex-1">
                                     <summary className="list-none flex items-center gap-2 p-2 hover:bg-teal-50 rounded-lg cursor-pointer transition-colors group/summary">
-                                        <ChevronRight size={14} className="text-gray-400 group-open:rotate-90 transition-transform" />
+                                        <ChevronRight size={14} className="text-gray-400 group-open:rotate-90 transition-transform shrink-0" />
 
                                         {screen.imageUrl ? (
                                             <div className="w-8 h-8 rounded border border-gray-200 overflow-hidden flex-shrink-0 bg-white">
@@ -105,16 +105,9 @@ const ComponentSidebar: React.FC = () => {
                                             <span className="text-sm font-semibold text-gray-700 truncate leading-tight">{screen.name}</span>
                                             <span className="text-[10px] text-gray-400 font-mono truncate leading-tight">{screen.screenId}</span>
                                         </div>
-                                        <span className="text-[9px] bg-teal-600 text-white px-1.5 py-0.5 rounded font-bold">
+                                        <span className="text-[9px] bg-teal-600 text-white px-1.5 py-0.5 rounded font-bold shrink-0">
                                             {screen.screenType}
                                         </span>
-                                        <button
-                                            onClick={(e) => handleFocusNode(e, screen.id)}
-                                            className="p-1.5 hover:bg-teal-100 rounded text-teal-600 transition-all active:scale-90"
-                                            title="컴포넌트 위치로 이동"
-                                        >
-                                            <Focus size={14} />
-                                        </button>
                                     </summary>
 
                                     <div className="pl-8 pr-2 py-2 space-y-1.5 border-l border-gray-100 ml-4 mb-2 mt-1">
@@ -155,6 +148,14 @@ const ComponentSidebar: React.FC = () => {
                                         )}
                                     </div>
                                 </details>
+                                <button
+                                    type="button"
+                                    onClick={(e) => handleFocusNode(e, screen.id)}
+                                    className="shrink-0 self-center p-1.5 hover:bg-teal-100 rounded text-teal-600 transition-all active:scale-90"
+                                    title="컴포넌트 위치로 이동"
+                                >
+                                    <Focus size={14} />
+                                </button>
                             </div>
                         ))}
                     </div>

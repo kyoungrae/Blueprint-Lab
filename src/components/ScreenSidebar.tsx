@@ -203,10 +203,10 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
         const screenTypeBadgeClass = screenTypeBadgeClassMap[screenType] || 'bg-[#3b82f6] text-white';
 
         return (
-        <div key={screen.id} className="group/item">
-            <details className="group">
+        <div key={screen.id} className="group/item flex items-stretch gap-0.5">
+            <details className="group min-w-0 flex-1">
                 <summary className="list-none flex items-center gap-2 p-2 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors group/summary">
-                    <ChevronRight size={14} className="text-gray-400 group-open:rotate-90 transition-transform" />
+                    <ChevronRight size={14} className="text-gray-400 group-open:rotate-90 transition-transform shrink-0" />
                     {screen.imageUrl ? (
                         <div className="w-8 h-8 rounded border border-gray-200 overflow-hidden flex-shrink-0 bg-white">
                             <img src={getImageDisplayUrl(screen.imageUrl)} className="w-full h-full object-cover" alt="thumb" />
@@ -220,16 +220,9 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
                         <span className="text-sm font-semibold text-gray-700 truncate leading-tight">{screen.name}</span>
                         <span className="text-[10px] text-gray-400 font-mono truncate leading-tight">{screen.screenId}</span>
                     </div>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${screenTypeBadgeClass}`}>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${screenTypeBadgeClass}`}>
                         {screen.screenType}
                     </span>
-                    <button
-                        onClick={(e) => handleFocusNode(e, screen.id)}
-                        className="p-1.5 hover:bg-blue-100 rounded text-[#2c3e7c] transition-all active:scale-90"
-                        title="화면 위치로 이동"
-                    >
-                        <Focus size={14} />
-                    </button>
                 </summary>
                 <div className="pl-8 pr-2 py-2 space-y-1.5 border-l border-gray-100 ml-4 mb-2 mt-1">
                     <div className="text-[10px] text-gray-400 space-y-0.5">
@@ -254,6 +247,14 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
                     )}
                 </div>
             </details>
+            <button
+                type="button"
+                onClick={(e) => handleFocusNode(e, screen.id)}
+                className="shrink-0 self-center p-1.5 hover:bg-blue-100 rounded text-[#2c3e7c] transition-all active:scale-90"
+                title="화면 위치로 이동"
+            >
+                <Focus size={14} />
+            </button>
         </div>
     );
     };

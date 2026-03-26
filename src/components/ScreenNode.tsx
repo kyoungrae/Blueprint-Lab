@@ -152,8 +152,10 @@ function getClickTargetElement(target: EventTarget | null): Element | null {
     return null;
 }
 
-/** 줌아웃 임계값 — 이 줌 레벨 이하에서는 무거운 편집 UI 대신 경량 Placeholder를 렌더링한다. */
-const SCREEN_ZOOM_THRESHOLD = 0.09;
+/** 줌이 이 값 미만이면 경량 UI(Lite)로 전환 (기존 단일 임계값과 동일). */
+const ZOOM_OUT_TO_LITE = 0.09;
+/** Lite에서 다시 Full로 올릴 때는 더 높은 줌이 필요 — 경계에서 Lite/Full이 번갈아 깜빡이지 않게 함. */
+const ZOOM_IN_TO_FULL = 0.12;
 const INTERACTION_SYNC_INTERVAL_MS = 120;
 const rfZoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
 
@@ -220,11 +222,22 @@ interface ScreenNodeData {
 const ScreenNode: React.FC<NodeProps<ScreenNodeData>> = ({ data, selected }) => {
     // ── 줌아웃 시 경량 렌더링 (store 구독·이벤트 핸들러 0개) ──
     const rfZoom = useRFStore(rfZoomSelector);
-    if (rfZoom < SCREEN_ZOOM_THRESHOLD) {
+    const modeRef = useRef<'lite' | 'full' | null>(null);
+    if (modeRef.current === null) {
+        modeRef.current = rfZoom < ZOOM_OUT_TO_LITE ? 'lite' : 'full';
+    }
+    let mode = modeRef.current;
+    if (mode === 'full' && rfZoom < ZOOM_OUT_TO_LITE) {
+        mode = 'lite';
+    } else if (mode === 'lite' && rfZoom > ZOOM_IN_TO_FULL) {
+        mode = 'full';
+    }
+    modeRef.current = mode;
+
+    if (mode === 'lite') {
         return <ScreenNodeLite screen={data.screen} selected={selected} />;
     }
 
-    // ── 줌인 시 전체 편집 UI ──
     return <ScreenNodeFull data={data} selected={selected} />;
 };
 const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = memo(({ data, selected }) => {
