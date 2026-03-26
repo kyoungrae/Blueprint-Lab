@@ -1,4 +1,5 @@
-import { forwardRef, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Attribute, DBType, Entity, Relationship } from '../types/erd';
 
 const DATA_TYPES: Record<DBType, string[]> = {
@@ -51,13 +52,33 @@ const ERDExcelView = forwardRef<HTMLDivElement, ERDExcelViewProps>(function ERDE
     const [newRelSource, setNewRelSource] = useState('');
     const [newRelTarget, setNewRelTarget] = useState('');
     const [newRelType, setNewRelType] = useState<RelationshipType>('1:N');
+    const [collapsedEntityIds, setCollapsedEntityIds] = useState<Set<string>>(() => new Set());
     const availableTypes = DATA_TYPES[dbType] ?? DATA_TYPES.MySQL;
+
+    const toggleEntityColumnsCollapsed = useCallback((entityId: string) => {
+        setCollapsedEntityIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(entityId)) next.delete(entityId);
+            else next.add(entityId);
+            return next;
+        });
+    }, []);
+
+    const expandAllEntityColumns = useCallback(() => {
+        setCollapsedEntityIds(new Set());
+    }, []);
+
+    const collapseAllEntityColumns = useCallback(() => {
+        setCollapsedEntityIds(new Set(entities.map((e) => e.id)));
+    }, [entities]);
 
     const entityNameById = useMemo(() => {
         return new Map(entities.map((e) => [e.id, e.name]));
     }, [entities]);
 
     const stickyThStyle = useMemo(() => ({ top: stickyHeaderTopPx }), [stickyHeaderTopPx]);
+    /** ERD 상단 툴바에 가리지 않도록 본문 시작 위치 (sticky 헤더 오프셋과 동일 기준) */
+    const contentPaddingTopPx = Math.max(stickyHeaderTopPx, 16);
 
     const rows = useMemo(() => {
         let seq = 1;
@@ -118,13 +139,30 @@ const ERDExcelView = forwardRef<HTMLDivElement, ERDExcelViewProps>(function ERDE
 
     return (
         <div ref={ref} className="absolute inset-0 z-[10] bg-white/70 backdrop-blur-[1px] overflow-auto">
-            <div className="p-4 space-y-4">
+            <div className="px-4 pb-4 space-y-4" style={{ paddingTop: contentPaddingTopPx }}>
                 <div className="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
                     <button
                         onClick={onAddEntity}
                         className="px-3 py-1.5 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
                         테이블 추가
+                    </button>
+                    <div className="h-6 w-px bg-gray-200" />
+                    <button
+                        type="button"
+                        onClick={expandAllEntityColumns}
+                        disabled={entities.length === 0}
+                        className="px-3 py-1.5 text-sm font-semibold border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                        컬럼 전체 펼치기
+                    </button>
+                    <button
+                        type="button"
+                        onClick={collapseAllEntityColumns}
+                        disabled={entities.length === 0}
+                        className="px-3 py-1.5 text-sm font-semibold border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                        컬럼 전체 접기
                     </button>
                     <div className="h-6 w-px bg-gray-200" />
                     <select
@@ -203,8 +241,57 @@ const ERDExcelView = forwardRef<HTMLDivElement, ERDExcelViewProps>(function ERDE
                         </thead>
                         <tbody>
                             {rows.flatMap((groupRows) => {
-                                const rowSpan = groupRows.length;
                                 const entity = groupRows[0].entity;
+                                const isCollapsed = collapsedEntityIds.has(entity.id);
+                                const attrCount = entity.attributes.length;
+                                const firstSeq = groupRows[0].seq;
+
+                                if (isCollapsed) {
+                                    return [
+                                        <tr
+                                            key={`${entity.id}_collapsed`}
+                                            className="border-b-4 border-blue-100 bg-gray-50/40 hover:bg-blue-50/30"
+                                        >
+                                            <td className="px-2 py-1.5 text-gray-500 align-top">{firstSeq}</td>
+                                            <td className="px-2 py-1.5 align-top">
+                                                <div className="flex gap-1.5 items-start">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleEntityColumnsCollapsed(entity.id)}
+                                                        className="shrink-0 mt-0.5 p-1 rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                                                        title="컬럼 영역 펼치기"
+                                                        aria-expanded={false}
+                                                        aria-label="컬럼 영역 펼치기"
+                                                    >
+                                                        <ChevronRight size={16} strokeWidth={2} />
+                                                    </button>
+                                                    <div className="min-w-0 flex-1">
+                                                        <input
+                                                            value={entity.name}
+                                                            onChange={(e) => onUpdateEntity(entity.id, { name: e.target.value })}
+                                                            className="w-full px-2 py-1 border border-gray-200 rounded bg-white"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-2 py-1.5 align-top">
+                                                <input
+                                                    value={entity.comment || ''}
+                                                    onChange={(e) => onUpdateEntity(entity.id, { comment: e.target.value })}
+                                                    className="w-full px-2 py-1 border border-gray-200 rounded bg-white"
+                                                    placeholder="한글명/설명"
+                                                />
+                                            </td>
+                                            <td colSpan={7} className="px-2 py-1.5 align-middle text-gray-500">
+                                                <span className="text-[11px]">
+                                                    컬럼 영역 접힘 · 컬럼 {attrCount}개
+                                                </span>
+                                            </td>
+                                        </tr>,
+                                    ];
+                                }
+
+                                const rowSpan = groupRows.length;
                                 const dataRows = groupRows.map(({ entity: ent, attr, seq }, idx) => {
                                     const isPlaceholder = attr.id.endsWith('_empty');
                                     return (
@@ -216,18 +303,32 @@ const ERDExcelView = forwardRef<HTMLDivElement, ERDExcelViewProps>(function ERDE
                                             {idx === 0 && (
                                                 <>
                                                     <td rowSpan={rowSpan} className="px-2 py-1.5 align-top">
-                                                        <input
-                                                            value={ent.name}
-                                                            onChange={(e) => onUpdateEntity(ent.id, { name: e.target.value })}
-                                                            className="w-full px-2 py-1 border border-gray-200 rounded"
-                                                        />
-                                                        <div className="mt-2 flex gap-1">
+                                                        <div className="flex gap-1.5 items-start">
                                                             <button
-                                                                onClick={() => onDeleteEntity(ent.id)}
-                                                                className="px-2 py-1 rounded border border-red-200 text-red-600 text-[11px] hover:bg-red-50"
+                                                                type="button"
+                                                                onClick={() => toggleEntityColumnsCollapsed(ent.id)}
+                                                                className="shrink-0 mt-0.5 p-1 rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                                                                title="컬럼 영역 접기"
+                                                                aria-expanded={true}
+                                                                aria-label="컬럼 영역 접기"
                                                             >
-                                                                테이블 삭제
+                                                                <ChevronDown size={16} strokeWidth={2} />
                                                             </button>
+                                                            <div className="min-w-0 flex-1 space-y-2">
+                                                                <input
+                                                                    value={ent.name}
+                                                                    onChange={(e) => onUpdateEntity(ent.id, { name: e.target.value })}
+                                                                    className="w-full px-2 py-1 border border-gray-200 rounded"
+                                                                />
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    <button
+                                                                        onClick={() => onDeleteEntity(ent.id)}
+                                                                        className="px-2 py-1 rounded border border-red-200 text-red-600 text-[11px] hover:bg-red-50"
+                                                                    >
+                                                                        테이블 삭제
+                                                                    </button>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </td>
                                                     <td rowSpan={rowSpan} className="px-2 py-1.5 align-top">
