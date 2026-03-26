@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { forwardRef, useMemo, useState } from 'react';
 import type { Attribute, DBType, Entity, Relationship } from '../types/erd';
 
 const DATA_TYPES: Record<DBType, string[]> = {
@@ -23,22 +23,31 @@ interface ERDExcelViewProps {
     onAddRelationship: (source: string, target: string, type: RelationshipType) => void;
     onDeleteRelationship: (relationshipId: string) => void;
     onEditRelationship: (relationshipId: string) => void;
+    /** ERD 상단 툴바 아래에 헤더가 붙도록 스크롤 컨테이너 기준 픽셀 오프셋 (부모에서 측정) */
+    stickyHeaderTopPx?: number;
 }
 
-const ERDExcelView: React.FC<ERDExcelViewProps> = ({
-    entities,
-    relationships,
-    dbType,
-    onAddEntity,
-    onDeleteEntity,
-    onUpdateEntity,
-    onAddAttribute,
-    onDeleteAttribute,
-    onUpdateAttribute,
-    onAddRelationship,
-    onDeleteRelationship,
-    onEditRelationship,
-}) => {
+const headerThClass =
+    'sticky z-20 bg-gray-50 px-2 py-2 font-bold border-b border-gray-200 shadow-[0_1px_0_0_rgb(229_231_235)]';
+
+const ERDExcelView = forwardRef<HTMLDivElement, ERDExcelViewProps>(function ERDExcelView(
+    {
+        entities,
+        relationships,
+        dbType,
+        onAddEntity,
+        onDeleteEntity,
+        onUpdateEntity,
+        onAddAttribute,
+        onDeleteAttribute,
+        onUpdateAttribute,
+        onAddRelationship,
+        onDeleteRelationship,
+        onEditRelationship,
+        stickyHeaderTopPx = 0,
+    },
+    ref,
+) {
     const [newRelSource, setNewRelSource] = useState('');
     const [newRelTarget, setNewRelTarget] = useState('');
     const [newRelType, setNewRelType] = useState<RelationshipType>('1:N');
@@ -47,6 +56,8 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
     const entityNameById = useMemo(() => {
         return new Map(entities.map((e) => [e.id, e.name]));
     }, [entities]);
+
+    const stickyThStyle = useMemo(() => ({ top: stickyHeaderTopPx }), [stickyHeaderTopPx]);
 
     const rows = useMemo(() => {
         let seq = 1;
@@ -106,7 +117,7 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
     };
 
     return (
-        <div className="absolute inset-0 z-[10] bg-white/70 backdrop-blur-[1px] overflow-auto">
+        <div ref={ref} className="absolute inset-0 z-[10] bg-white/70 backdrop-blur-[1px] overflow-auto">
             <div className="p-4 space-y-4">
                 <div className="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
                     <button
@@ -153,20 +164,41 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                     </button>
                 </div>
 
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                    <table className="min-w-full text-xs">
-                        <thead className="bg-gray-50 text-gray-700 sticky top-0 z-10">
-                            <tr className="border-b border-gray-200">
-                                <th className="px-2 py-2 text-left font-bold">순번</th>
-                                <th className="px-2 py-2 text-left font-bold">테이블명</th>
-                                <th className="px-2 py-2 text-left font-bold">테이블한글명</th>
-                                <th className="px-2 py-2 text-left font-bold">컬럼명</th>
-                                <th className="px-2 py-2 text-left font-bold">타입</th>
-                                <th className="px-2 py-2 text-left font-bold">크기</th>
-                                <th className="px-2 py-2 text-center font-bold">PK(Y)</th>
-                                <th className="px-2 py-2 text-center font-bold">FK(Y)</th>
-                                <th className="px-2 py-2 text-left font-bold">Default</th>
-                                <th className="px-2 py-2 text-left font-bold">비고</th>
+                {/* overflow-hidden 제거: 조상 overflow는 thead/th sticky가 스크롤 영역(바깥 overflow-auto)에 붙는 것을 막음 */}
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+                    <table className="min-w-full text-xs border-collapse">
+                        <thead className="text-gray-700">
+                            <tr>
+                                <th style={stickyThStyle} className={`${headerThClass} text-left`}>
+                                    순번
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-left`}>
+                                    테이블명
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-left`}>
+                                    테이블한글명
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-left`}>
+                                    컬럼명
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-left`}>
+                                    타입
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-left`}>
+                                    크기
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-center`}>
+                                    PK(Y)
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-center`}>
+                                    FK(Y)
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-left`}>
+                                    Default
+                                </th>
+                                <th style={stickyThStyle} className={`${headerThClass} text-left`}>
+                                    비고
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
@@ -366,6 +398,8 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
             </div>
         </div>
     );
-};
+});
+
+ERDExcelView.displayName = 'ERDExcelView';
 
 export default ERDExcelView;

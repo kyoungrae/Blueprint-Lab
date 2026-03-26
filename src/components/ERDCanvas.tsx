@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useDeferredValue, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useState, useDeferredValue, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import ReactFlow, {
     type Node,
@@ -467,6 +467,9 @@ const ERDCanvasContent: React.FC = () => {
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
     const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
     const flowWrapper = React.useRef<HTMLDivElement>(null);
+    const erdToolbarRef = React.useRef<HTMLDivElement>(null);
+    const erdExcelScrollRef = React.useRef<HTMLDivElement>(null);
+    const [excelStickyHeaderTopPx, setExcelStickyHeaderTopPx] = useState(72);
     const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
     const isDraggingRef = React.useRef(false);
     const skipNextEntitySyncRef = React.useRef(false);
@@ -490,6 +493,31 @@ const ERDCanvasContent: React.FC = () => {
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
+
+    const syncExcelStickyHeaderTop = useCallback(() => {
+        const scrollEl = erdExcelScrollRef.current;
+        const bar = erdToolbarRef.current;
+        if (!scrollEl || !bar) return;
+        const sr = scrollEl.getBoundingClientRect();
+        const br = bar.getBoundingClientRect();
+        const gap = 6;
+        const next = Math.max(0, Math.round(br.bottom - sr.top + gap));
+        setExcelStickyHeaderTopPx((p) => (p === next ? p : next));
+    }, []);
+
+    useLayoutEffect(() => {
+        syncExcelStickyHeaderTop();
+        const scrollEl = erdExcelScrollRef.current;
+        const bar = erdToolbarRef.current;
+        const ro = new ResizeObserver(() => syncExcelStickyHeaderTop());
+        if (bar) ro.observe(bar);
+        if (scrollEl) ro.observe(scrollEl);
+        window.addEventListener('resize', syncExcelStickyHeaderTop);
+        return () => {
+            ro.disconnect();
+            window.removeEventListener('resize', syncExcelStickyHeaderTop);
+        };
+    }, [syncExcelStickyHeaderTop, viewMode, isSidebarOpen]);
 
     const computeInView = useCallback((viewport: { x: number; y: number; zoom: number }, pane: { width: number; height: number } | null, ents: typeof entities) => {
         if (!pane || !ents.length) return new Set<string>();
@@ -1880,7 +1908,10 @@ const ERDCanvasContent: React.FC = () => {
             {/* Main Canvas Area - pr-4 pt-4 prevents edge/handle clipping at boundaries */}
             <div id="erd-canvas-container" className="flex-1 min-w-0 h-full relative select-none pr-4 pt-4 pb-4 pl-4" ref={flowWrapper}>
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
-                <div className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}>
+                <div
+                    ref={erdToolbarRef}
+                    className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}
+                >
                     <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
                         <button
                             onClick={() => setCurrentProject(null)}
@@ -2255,6 +2286,8 @@ const ERDCanvasContent: React.FC = () => {
                     </>
                 ) : (
                     <ERDExcelView
+                        ref={erdExcelScrollRef}
+                        stickyHeaderTopPx={excelStickyHeaderTopPx}
                         entities={entities}
                         relationships={relationships}
                         dbType={currentProject?.dbType || 'MySQL'}
