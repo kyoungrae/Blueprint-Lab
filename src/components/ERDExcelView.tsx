@@ -172,32 +172,26 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                         <tbody>
                             {rows.flatMap((groupRows) => {
                                 const rowSpan = groupRows.length;
-                                return groupRows.map(({ entity, attr, seq }, idx) => {
+                                const entity = groupRows[0].entity;
+                                const dataRows = groupRows.map(({ entity: ent, attr, seq }, idx) => {
                                     const isPlaceholder = attr.id.endsWith('_empty');
-                                    const isGroupLast = idx === groupRows.length - 1;
                                     return (
                                         <tr
-                                            key={`${entity.id}_${attr.id}_${idx}`}
-                                            className={`${isGroupLast ? 'border-b-4 border-blue-100' : 'border-b border-gray-100'} hover:bg-blue-50/40`}
+                                            key={`${ent.id}_${attr.id}_${idx}`}
+                                            className="border-b border-gray-100 hover:bg-blue-50/40"
                                         >
                                             <td className="px-2 py-1.5 text-gray-500">{seq}</td>
                                             {idx === 0 && (
                                                 <>
                                                     <td rowSpan={rowSpan} className="px-2 py-1.5 align-top">
                                                         <input
-                                                            value={entity.name}
-                                                            onChange={(e) => onUpdateEntity(entity.id, { name: e.target.value })}
+                                                            value={ent.name}
+                                                            onChange={(e) => onUpdateEntity(ent.id, { name: e.target.value })}
                                                             className="w-full px-2 py-1 border border-gray-200 rounded"
                                                         />
                                                         <div className="mt-2 flex gap-1">
                                                             <button
-                                                                onClick={() => onAddAttribute(entity.id)}
-                                                                className="px-2 py-1 rounded border border-gray-200 text-[11px] hover:bg-gray-50"
-                                                            >
-                                                                컬럼 추가
-                                                            </button>
-                                                            <button
-                                                                onClick={() => onDeleteEntity(entity.id)}
+                                                                onClick={() => onDeleteEntity(ent.id)}
                                                                 className="px-2 py-1 rounded border border-red-200 text-red-600 text-[11px] hover:bg-red-50"
                                                             >
                                                                 테이블 삭제
@@ -206,8 +200,8 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                                     </td>
                                                     <td rowSpan={rowSpan} className="px-2 py-1.5 align-top">
                                                         <input
-                                                            value={entity.comment || ''}
-                                                            onChange={(e) => onUpdateEntity(entity.id, { comment: e.target.value })}
+                                                            value={ent.comment || ''}
+                                                            onChange={(e) => onUpdateEntity(ent.id, { comment: e.target.value })}
                                                             className="w-full px-2 py-1 border border-gray-200 rounded"
                                                             placeholder="한글명/설명"
                                                         />
@@ -220,7 +214,7 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                                 ) : (
                                                     <input
                                                         value={attr.name}
-                                                        onChange={(e) => onUpdateAttribute(entity.id, attr.id, { name: e.target.value }, true)}
+                                                        onChange={(e) => onUpdateAttribute(ent.id, attr.id, { name: e.target.value }, true)}
                                                         className="w-full px-2 py-1 border border-gray-200 rounded"
                                                     />
                                                 )}
@@ -231,7 +225,7 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                                 ) : (
                                                     <select
                                                         value={attr.type}
-                                                        onChange={(e) => onUpdateAttribute(entity.id, attr.id, { type: e.target.value }, true)}
+                                                        onChange={(e) => onUpdateAttribute(ent.id, attr.id, { type: e.target.value }, true)}
                                                         className="w-full px-2 py-1 border border-gray-200 rounded bg-white"
                                                     >
                                                         {availableTypes.map((t) => (
@@ -246,7 +240,7 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                                 ) : (
                                                     <input
                                                         value={attr.length || ''}
-                                                        onChange={(e) => onUpdateAttribute(entity.id, attr.id, { length: e.target.value }, true)}
+                                                        onChange={(e) => onUpdateAttribute(ent.id, attr.id, { length: e.target.value }, true)}
                                                         className="w-full px-2 py-1 border border-gray-200 rounded"
                                                     />
                                                 )}
@@ -258,7 +252,7 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                                     <input
                                                         type="checkbox"
                                                         checked={!!attr.isPK}
-                                                        onChange={(e) => onUpdateAttribute(entity.id, attr.id, { isPK: e.target.checked }, true)}
+                                                        onChange={(e) => onUpdateAttribute(ent.id, attr.id, { isPK: e.target.checked }, true)}
                                                     />
                                                 )}
                                             </td>
@@ -270,11 +264,11 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                                         type="checkbox"
                                                         checked={!!attr.isFK}
                                                         onChange={(e) => {
-                                                            onUpdateAttribute(entity.id, attr.id, { isFK: e.target.checked }, true);
+                                                            onUpdateAttribute(ent.id, attr.id, { isFK: e.target.checked }, true);
                                                             if (e.target.checked) {
-                                                                tryAutoCreateRelationshipForFK(entity);
+                                                                tryAutoCreateRelationshipForFK(ent);
                                                             } else {
-                                                                tryAutoDeleteRelationshipForFK(entity, attr.id);
+                                                                tryAutoDeleteRelationshipForFK(ent, attr.id);
                                                             }
                                                         }}
                                                     />
@@ -286,7 +280,7 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                                 ) : (
                                                     <input
                                                         value={attr.defaultVal || ''}
-                                                        onChange={(e) => onUpdateAttribute(entity.id, attr.id, { defaultVal: e.target.value }, true)}
+                                                        onChange={(e) => onUpdateAttribute(ent.id, attr.id, { defaultVal: e.target.value }, true)}
                                                         className="w-full px-2 py-1 border border-gray-200 rounded"
                                                     />
                                                 )}
@@ -298,11 +292,11 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                                     <div className="flex items-center gap-1">
                                                         <input
                                                             value={attr.comment || ''}
-                                                            onChange={(e) => onUpdateAttribute(entity.id, attr.id, { comment: e.target.value }, true)}
+                                                            onChange={(e) => onUpdateAttribute(ent.id, attr.id, { comment: e.target.value }, true)}
                                                             className="w-full px-2 py-1 border border-gray-200 rounded"
                                                         />
                                                         <button
-                                                            onClick={() => onDeleteAttribute(entity.id, attr.id)}
+                                                            onClick={() => onDeleteAttribute(ent.id, attr.id)}
                                                             style={{minWidth:'40px'}}
                                                             className="px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 text-[11px]"
                                                         >
@@ -314,6 +308,26 @@ const ERDExcelView: React.FC<ERDExcelViewProps> = ({
                                         </tr>
                                     );
                                 });
+                                const footerRow = (
+                                    <tr
+                                        key={`${entity.id}_add_column_footer`}
+                                        className="border-b-4 border-blue-100 bg-blue-50/30"
+                                    >
+                                        <td className="px-2 py-2" />
+                                        <td className="px-2 py-2" />
+                                        <td className="px-2 py-2" />
+                                        <td colSpan={7} className="px-2 py-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => onAddAttribute(entity.id)}
+                                                className="px-2 py-1 rounded border w-full border-gray-300 bg-white text-[11px] font-semibold text-gray-700 hover:bg-gray-50 shadow-sm"
+                                            >
+                                                컬럼 추가
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                                return [...dataRows, footerRow];
                             })}
                         </tbody>
                     </table>
