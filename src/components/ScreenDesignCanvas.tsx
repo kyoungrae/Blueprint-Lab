@@ -81,7 +81,11 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
 
     // 🚀 도화지 안쪽으로 섹션을 텔레포트 시킵니다!
     return createPortal(
-        <div ref={layerRef} style={{ '--zoom': '1' } as React.CSSProperties}>
+        <div
+            ref={layerRef}
+            className="absolute inset-0 pointer-events-none z-[30]"
+            style={{ '--zoom': '1' } as React.CSSProperties}
+        >
             {/* 섹션 배경: z-index를 낮게 설정해서 화면 엔티티 뒤에 깔리게 합니다 */}
             <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-[-1]">
                 {sections.map((s) => (
@@ -122,8 +126,8 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                         >
                             <div
                                 data-section-header
-                                // 🚀 수정: select-none 클래스 추가
-                                className="flex items-center h-14 min-h-14 px-2 rounded-t-md border-b cursor-grab active:cursor-grabbing pointer-events-auto select-none"
+                                // 🚀 수정: select-none 클래스 추가 · z-30으로 좌우 풀높이 레일 위에 둠
+                                className="relative z-30 flex items-center h-14 min-h-14 px-2 rounded-t-md border-b cursor-grab active:cursor-grabbing pointer-events-auto select-none"
                                 style={{ 
                                     backgroundColor: s.color ? `${s.color}15` : '#e9d5ff15',
                                     borderColor: s.color ? `${s.color}30` : '#e9d5ff30'
@@ -210,12 +214,61 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                     </button>
                                 </PremiumTooltip>
                             </div>
+
+                            <div
+                                data-section-footer
+                                className="absolute bottom-0 left-0 right-0 z-30 flex items-center justify-center gap-2 h-14 min-h-14 px-2 rounded-b-md border-t cursor-grab active:cursor-grabbing pointer-events-auto select-none"
+                                style={{
+                                    backgroundColor: s.color ? `${s.color}15` : '#e9d5ff15',
+                                    borderColor: s.color ? `${s.color}30` : '#e9d5ff30',
+                                }}
+                                onMouseDown={(ev) => {
+                                    ev.preventDefault();
+                                    onSectionBodyMouseDown(ev, s.id);
+                                }}
+                                onMouseEnter={() => setHoveredSectionId(s.id)}
+                                onMouseLeave={() => setHoveredSectionId(null)}
+                            >
+                            </div>
+
+                            <div
+                                data-section-left-rail
+                                className="absolute inset-y-0 left-0 z-20 flex w-14 min-w-14 shrink-0 flex-col items-center justify-center gap-1 border-r cursor-grab active:cursor-grabbing pointer-events-auto select-none rounded-l-md"
+                                style={{
+                                    backgroundColor: s.color ? `${s.color}15` : '#e9d5ff15',
+                                    borderColor: s.color ? `${s.color}30` : '#e9d5ff30',
+                                }}
+                                onMouseDown={(ev) => {
+                                    ev.preventDefault();
+                                    ev.stopPropagation();
+                                    onSectionBodyMouseDown(ev, s.id);
+                                }}
+                                onMouseEnter={() => setHoveredSectionId(s.id)}
+                                onMouseLeave={() => setHoveredSectionId(null)}
+                            >
+                            </div>
+                            <div
+                                data-section-right-rail
+                                className="absolute inset-y-0 right-0 z-20 flex w-14 min-w-14 shrink-0 flex-col items-center justify-center gap-1 border-l cursor-grab active:cursor-grabbing pointer-events-auto select-none rounded-r-md"
+                                style={{
+                                    backgroundColor: s.color ? `${s.color}15` : '#e9d5ff15',
+                                    borderColor: s.color ? `${s.color}30` : '#e9d5ff30',
+                                }}
+                                onMouseDown={(ev) => {
+                                    ev.preventDefault();
+                                    ev.stopPropagation();
+                                    onSectionBodyMouseDown(ev, s.id);
+                                }}
+                                onMouseEnter={() => setHoveredSectionId(s.id)}
+                                onMouseLeave={() => setHoveredSectionId(null)}
+                            >
+                            </div>
                             
                             {/* 크기 조절 핸들 */}
                             {selectedSectionId === s.id && handles.map((handle) => (
                                 <div
                                     key={handle.key}
-                                    className="absolute bg-violet-500 border border-white rounded-sm shadow cursor-pointer hover:bg-violet-600 z-10 pointer-events-auto"
+                                    className="absolute bg-violet-500 border border-white rounded-sm shadow cursor-pointer hover:bg-violet-600 z-[40] pointer-events-auto"
                                     style={{
                                         left: handle.left, top: handle.top,
                                         width: SECTION_HANDLE_SIZE, height: SECTION_HANDLE_SIZE,
@@ -251,7 +304,7 @@ import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
     Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3, MessageCircle,
-    Palette
+    Palette, GripHorizontal, GripVertical,
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { RecentTextColorsProvider } from '../contexts/RecentTextColorsContext';
@@ -830,7 +883,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
         const container = sectionHeadersContainerRef.current;
         const paneEl = flowWrapper.current;
         if (!container || !paneEl || sections.length === 0) return;
-        const headers = container.querySelectorAll('[data-section-header]');
+        const headers = container.querySelectorAll(
+            '[data-section-header], [data-section-footer], [data-section-left-rail], [data-section-right-rail]'
+        );
         const MIN_ZOOM = 0.05;
         const MAX_ZOOM = 4;
         const handler = (e: Event) => {
