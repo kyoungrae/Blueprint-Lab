@@ -232,10 +232,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                 }}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
                                 onMouseLeave={() => setHoveredSectionId(null)}
-                                title="섹션 선택 · 이동"
                             >
-                                <GripHorizontal size={18} className="text-gray-400 shrink-0" aria-hidden />
-                                <span className="text-xs font-semibold text-gray-500">섹션 이동</span>
                             </div>
 
                             <div
@@ -252,10 +249,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                 }}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
                                 onMouseLeave={() => setHoveredSectionId(null)}
-                                title="섹션 선택 · 이동"
                             >
-                                <GripVertical size={18} className="text-gray-400 shrink-0" aria-hidden />
-                                <span className="text-[10px] font-semibold text-gray-500 [writing-mode:vertical-rl] rotate-180">이동</span>
                             </div>
                             <div
                                 data-section-right-rail
@@ -271,10 +265,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                 }}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
                                 onMouseLeave={() => setHoveredSectionId(null)}
-                                title="섹션 선택 · 이동"
                             >
-                                <GripVertical size={18} className="text-gray-400 shrink-0" aria-hidden />
-                                <span className="text-[10px] font-semibold text-gray-500 [writing-mode:vertical-rl]">이동</span>
                             </div>
                             
                             {/* 크기 조절 핸들 */}
