@@ -2441,6 +2441,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         const handleKeyDown = (e: KeyboardEvent) => {
             const active = document.activeElement as HTMLElement | null;
             const isInput = active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || active?.isContentEditable || editingTextId != null || (editingTableId != null && editingCellIndex != null);
+            const hotkeyTargetId = getPasteTargetScreenId?.() ?? lastInteractedScreenId ?? (selected ? screen.id : null);
 
             // Ctrl+C (Copy) - Table cell copy (content + per-cell styles)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
@@ -2535,6 +2536,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             // Ctrl+Z (Undo)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
                 if (isInput) return;
+                if (!hotkeyTargetId || hotkeyTargetId !== screen.id) return;
                 e.preventDefault();
                 undo();
                 return;
@@ -2543,6 +2545,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             // Ctrl+Y or Ctrl+Shift+Z (Redo)
             if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
                 if (isInput) return;
+                if (!hotkeyTargetId || hotkeyTargetId !== screen.id) return;
                 e.preventDefault();
                 redo();
                 return;
