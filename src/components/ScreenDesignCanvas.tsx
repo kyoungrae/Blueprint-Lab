@@ -1989,7 +1989,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     }}
                 >
                 <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-nowrap items-center gap-2 whitespace-nowrap overflow-x-auto max-w-[calc(100%-2rem)]">
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="프로젝트 목록으로 돌아가기">
                     <button
                         onClick={() => setCurrentProject(null)}
                         className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
@@ -2041,7 +2041,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     </div>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="화면 추가">
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="화면 추가">
                     <button
                         onClick={handleAddScreenClick}
                         className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
@@ -2050,7 +2050,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         <span className="whitespace-nowrap">화면 추가</span>
                     </button>
                                     </PremiumTooltip>
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="명세 추가">
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="명세 추가">
                     <button
                         onClick={handleAddSpecClick}
                         className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
@@ -2060,7 +2060,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     </button>
                                     </PremiumTooltip>
 
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label={isSectionDrawMode ? '캔버스에서 영역을 드래그해 섹션을 만드세요' : '섹션 추가'}>
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label={isSectionDrawMode ? '캔버스에서 영역을 드래그해 섹션을 만드세요' : '섹션 추가'}>
                                         <button
                                             onClick={() => setIsSectionDrawMode((v) => !v)}
                                             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-bold shadow-md shrink-0 ${isSectionDrawMode ? 'bg-violet-600 text-white ring-2 ring-violet-300' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}
@@ -2076,7 +2076,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="내보내기">
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="내보내기">
                     <button
                         onClick={() => setIsExportModalOpen(true)}
                         className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
@@ -2087,7 +2087,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     </PremiumTooltip>
 
                                     
-                                    <PremiumTooltip placement="bottom" offsetBottom={30} label="가져오기 (다른 프로젝트에서 내보낸 데이터 붙여넣기)">
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="가져오기 (다른 프로젝트에서 내보낸 데이터 붙여넣기)">
                     <button
                                             onClick={() => { setIsImportModalOpen(true); setImportError(null); setImportJsonText(''); }}
                                             className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
@@ -2104,7 +2104,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     </div>
 
                                     <div className="flex items-center gap-2 shrink-0">
-                                        <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 채팅">
+                                        <PremiumTooltip placement="bottom" offsetBottom={10} label="프로젝트 채팅">
                                             <button
                                                 onClick={() =>
                                                     setIsChatOpen((v) => {
@@ -2138,17 +2138,23 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                     <div className="flex items-center gap-2 px-1 shrink-0">
-                        <div className="flex items-center gap-2 pl-2 pr-2 sm:pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100 min-w-0">
-                            {user?.picture ? (
-                                <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm shrink-0" />
-                            ) : (
-                                <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
-                                    <UserIcon size={14} />
-                                </div>
-                            )}
-                            <span className="text-sm font-bold text-gray-700 truncate max-w-[80px] sm:max-w-none">{user?.name}</span>
+                        <div className="flex items-center gap-2 pl-2 pr-2 sm:pr-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100 shrink-0">
+                            <PremiumTooltip placement="bottom" offsetBottom={14} forceBodyPortal label={user?.name ?? '사용자'}>
+                                {user?.picture ? (
+                                    <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full border border-white shadow-sm shrink-0" />
+                                ) : (
+                                    <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
+                                        <UserIcon size={14} />
+                                    </div>
+                                )}
+                            </PremiumTooltip>
+                            <span
+                                className="text-sm font-bold text-gray-700 whitespace-nowrap"
+                            >
+                                {user?.name}
+                            </span>
                         </div>
-                                        <PremiumTooltip placement="bottom" offsetBottom={30} label="로그아웃">
+                                        <PremiumTooltip placement="bottom" offsetBottom={10} label="로그아웃">
                         <button
                             onClick={() => {
                                 if (window.confirm('로그아웃 하시겠습니까?')) {

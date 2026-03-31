@@ -88,8 +88,12 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
             setUseBodyPortal(true);
             return;
         }
-        // 컨텍스트 없음(ERD 캔버스 등) → 인라인으로 줌/패닝 시 레이블에 붙어서 스케일되도록
-        setUseBodyPortal(false);
+        // 컨텍스트 없음(상단바/일반 UI 등) → body 포탈로 렌더해 부모 overflow/scroll 계산에 영향 없게
+        setViewportPos({
+            left: centerX,
+            top: placement === 'top' ? tr.top - gap : tr.bottom + gap,
+        });
+        setUseBodyPortal(true);
     }, [placement, gap, portalRootRef, forceBodyPortalProp]);
 
     const handleMouseEnter = useCallback(() => {

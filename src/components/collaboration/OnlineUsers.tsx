@@ -1,5 +1,6 @@
 import { User as UserIcon } from 'lucide-react';
 import { useSyncStore, type OnlineUser } from '../../store/syncStore';
+import PremiumTooltip from '../screenNode/PremiumTooltip';
 
 export function OnlineUsers() {
     const onlineUsers = useSyncStore((state) => state.onlineUsers);
@@ -57,29 +58,24 @@ export function OnlineUsers() {
 function UserAvatar({ user, index }: { user: OnlineUser; index: number }) {
     return (
         <div
-            className="relative group"
+            className="relative"
             style={{ zIndex: 10 - index }}
         >
-            {user.picture ? (
-                <img
-                    src={user.picture}
-                    alt={user.name}
-                    className="w-8 h-8 rounded-full border-2 border-zinc-800 object-cover"
-                    title={user.name}
-                />
-            ) : (
-                <div
-                    className="w-8 h-8 rounded-full border-2 border-zinc-800 flex items-center justify-center text-zinc-400 bg-zinc-800"
-                    title={user.name}
-                >
-                    <UserIcon size={14} />
-                </div>
-            )}
-
-            {/* Tooltip */}
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-zinc-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                {user.name}
-            </div>
+            <PremiumTooltip placement="bottom" offsetBottom={10} forceBodyPortal label={user.name}>
+                {user.picture ? (
+                    <img
+                        src={user.picture}
+                        alt={user.name}
+                        className="w-8 h-8 rounded-full border-2 border-zinc-800 object-cover"
+                    />
+                ) : (
+                    <div
+                        className="w-8 h-8 rounded-full border-2 border-zinc-800 flex items-center justify-center text-zinc-400 bg-zinc-800"
+                    >
+                        <UserIcon size={14} />
+                    </div>
+                )}
+            </PremiumTooltip>
         </div>
     );
 }
