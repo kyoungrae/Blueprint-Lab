@@ -37,6 +37,7 @@ const AutoResizeTextarea: React.FC<{
     onCompositionEnd?: (e: React.CompositionEvent<HTMLTextAreaElement>) => void;
     onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void;
     onMouseDown?: (e: React.MouseEvent<HTMLTextAreaElement>) => void;
+    onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
     placeholder?: string;
     disabled?: boolean;
     minRows?: number;
@@ -48,6 +49,7 @@ const AutoResizeTextarea: React.FC<{
     onCompositionEnd,
     onBlur,
     onMouseDown,
+    onKeyDown,
     placeholder,
     disabled,
     minRows = 1,
@@ -78,6 +80,7 @@ const AutoResizeTextarea: React.FC<{
                 onCompositionEnd={onCompositionEnd}
                 onBlur={onBlur}
                 onMouseDown={onMouseDown}
+                onKeyDown={onKeyDown}
                 placeholder={placeholder}
                 disabled={disabled}
                 rows={1}
@@ -198,6 +201,63 @@ const RightPane: React.FC<RightPaneProps> = ({
         if (localValue?.field === field) return localValue.value;
         return propValue;
     };
+
+    /** 기능상세(번호별): ↑ 첫 번째는 맨 앞, 맨 앞에서 한 번 더 ↑면 이전 번호 입력란 · ↓는 맨 끝, 맨 끝에서 한 번 더 ↓면 다음 번호 입력란 */
+    const handleFuncDescKeyDown = useCallback(
+        (fnIndex: number) => (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+            if (isLocked) return;
+            if ((e.nativeEvent as KeyboardEvent).isComposing || e.key === 'Process') return;
+            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+            if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+
+            const ta = e.currentTarget;
+            const len = ta.value.length;
+            const s = ta.selectionStart ?? 0;
+            const t = ta.selectionEnd ?? 0;
+
+            if (e.key === 'ArrowUp') {
+                if (s !== 0 || t !== 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    ta.setSelectionRange(0, 0);
+                    return;
+                }
+                if (fnIndex > 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const prevId = funcNos[fnIndex - 1]?.id;
+                    if (!prevId) return;
+                    const prev = document.getElementById(`func-${prevId}`) as HTMLTextAreaElement | null;
+                    prev?.focus();
+                    requestAnimationFrame(() => {
+                        prev?.setSelectionRange(0, 0);
+                    });
+                }
+                return;
+            }
+
+            if (e.key === 'ArrowDown') {
+                if (s !== len || t !== len) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    ta.setSelectionRange(len, len);
+                    return;
+                }
+                if (fnIndex < funcNos.length - 1) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const nextId = funcNos[fnIndex + 1]?.id;
+                    if (!nextId) return;
+                    const nextEl = document.getElementById(`func-${nextId}`) as HTMLTextAreaElement | null;
+                    nextEl?.focus();
+                    requestAnimationFrame(() => {
+                        nextEl?.setSelectionRange(0, 0);
+                    });
+                }
+            }
+        },
+        [isLocked, funcNos]
+    );
 
     // 🚀 수정: 데이터가 정확히 3개의 숫자를 가진 배열일 때만 사용하고, 아니면 기본값(DEFAULT_RATIOS) 사용
     const isValidRatios = Array.isArray(screen.rightPaneRatios) && 
@@ -342,7 +402,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 기능상세
                 </div>
                 <div className="p-3 space-y-2">
-                    {funcNos.map(fn => (
+                    {funcNos.map((fn, fnIndex) => (
                         <div key={fn.id} className="flex gap-2 items-start">
                             <div
                                 className="w-6 h-6 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0 shadow-sm mt-0.5"
@@ -357,6 +417,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 onCompositionEnd={(e) => handleFuncDescCompositionEnd(fn as any, (e.target as HTMLTextAreaElement).value)}
                                 onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; setLocalValue(null); const next = drawElements.map(it => it.id === fn.id ? { ...it, description: v } : it); update({ drawElements: next }); syncUpdate({ drawElements: next }); }}
                                 onMouseDown={(e) => e.stopPropagation()}
+                                onKeyDown={handleFuncDescKeyDown(fnIndex)}
                                 disabled={isLocked}
                                 placeholder={isLocked ? "" : `${fn.text}번에 대한 기능 설명...`}
                                 minRows={1}
