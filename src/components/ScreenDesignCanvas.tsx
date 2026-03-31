@@ -26,6 +26,7 @@ const SCREEN_DESIGN_UI_COMPACT_SCALE = 0.8;
 const SCREEN_DESIGN_SIDEBAR_DEFAULT_WIDTH = Math.round(280 * SCREEN_DESIGN_UI_COMPACT_SCALE);
 const SCREEN_DESIGN_SIDEBAR_MIN_WIDTH = Math.round(200 * SCREEN_DESIGN_UI_COMPACT_SCALE);
 const SCREEN_DESIGN_SIDEBAR_MAX_WIDTH = Math.round(600 * SCREEN_DESIGN_UI_COMPACT_SCALE);
+const ENTITY_NODE_BASE_Z = 20;
 interface SectionOverlayLayerProps {
     sections: ScreenSection[];
     hoveredSectionId: string | null;
@@ -79,30 +80,33 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
     // 도화지가 아직 안 찾아졌거나 섹션이 없으면 렌더링하지 않음
     if (!portalTarget || sections.length === 0) return null;
 
-    // 🚀 도화지 안쪽으로 섹션을 텔레포트 시킵니다!
-    return createPortal(
-        <div
-            ref={layerRef}
-            className="absolute inset-0 pointer-events-none z-[30]"
-            style={{ '--zoom': '1' } as React.CSSProperties}
-        >
-            {/* 섹션 배경: z-index를 낮게 설정해서 화면 엔티티 뒤에 깔리게 합니다 */}
-            <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-[-1]">
-                {sections.map((s) => (
-                    <div
-                        key={s.id}
-                        className={`absolute border-2 border-violet-400/80 rounded-lg transition-shadow duration-200 ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-violet-400/40' : 'shadow-none'}`}
-                        style={{ 
-                            left: s.position.x, 
-                            top: s.position.y, 
-                            width: s.size.width, 
-                            height: s.size.height,
-                            backgroundColor: s.color ? `${s.color}20` : '#e9d5ff20'
-                        }}
-                    />
-                ))}
-            </div>
-
+    // 섹션 레이어는 모두 z-3로 유지: 화면/명세 엔티티(.react-flow__renderer, z-4)가 항상 위에 보이도록 고정.
+    return (
+        <>
+            {createPortal(
+                <div className="absolute inset-0 pointer-events-none z-[3]">
+                    {sections.map((s) => (
+                        <div
+                            key={s.id}
+                            className={`absolute border-2 border-violet-400/80 rounded-lg transition-shadow duration-200 pointer-events-none ${hoveredSectionId === s.id ? 'shadow-xl ring-2 ring-violet-400/40' : 'shadow-none'}`}
+                            style={{
+                                left: s.position.x,
+                                top: s.position.y,
+                                width: s.size.width,
+                                height: s.size.height,
+                                backgroundColor: s.color ? `${s.color}20` : '#e9d5ff20',
+                            }}
+                        />
+                    ))}
+                </div>,
+                portalTarget
+            )}
+            {createPortal(
+                <div
+                    ref={layerRef}
+                    className="absolute inset-0 pointer-events-none z-[3]"
+                    style={{ '--zoom': '1' } as React.CSSProperties}
+                >
             {/* 섹션 헤더 및 리사이즈 핸들: 마우스로 클릭하고 끌 수 있도록 설정합니다 */}
             <div 
                 ref={sectionHeadersContainerRef}
@@ -228,7 +232,10 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                 }}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
                                 onMouseLeave={() => setHoveredSectionId(null)}
+                                title="섹션 선택 · 이동"
                             >
+                                <GripHorizontal size={18} className="text-gray-400 shrink-0" aria-hidden />
+                                <span className="text-xs font-semibold text-gray-500">섹션 이동</span>
                             </div>
 
                             <div
@@ -245,7 +252,10 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                 }}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
                                 onMouseLeave={() => setHoveredSectionId(null)}
+                                title="섹션 선택 · 이동"
                             >
+                                <GripVertical size={18} className="text-gray-400 shrink-0" aria-hidden />
+                                <span className="text-[10px] font-semibold text-gray-500 [writing-mode:vertical-rl] rotate-180">이동</span>
                             </div>
                             <div
                                 data-section-right-rail
@@ -261,7 +271,10 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                 }}
                                 onMouseEnter={() => setHoveredSectionId(s.id)}
                                 onMouseLeave={() => setHoveredSectionId(null)}
+                                title="섹션 선택 · 이동"
                             >
+                                <GripVertical size={18} className="text-gray-400 shrink-0" aria-hidden />
+                                <span className="text-[10px] font-semibold text-gray-500 [writing-mode:vertical-rl]">이동</span>
                             </div>
                             
                             {/* 크기 조절 핸들 */}
@@ -283,8 +296,10 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                     );
                 })}
             </div>
-        </div>,
-        portalTarget
+                </div>,
+                portalTarget
+            )}
+        </>
     );
 };
 import 'reactflow/dist/style.css';
@@ -1061,6 +1076,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     id: screen.id,
                     type: screen.variant === 'SPEC' ? 'spec' : 'screen',
                     position: screen.position,
+                    zIndex: ENTITY_NODE_BASE_Z,
             data: {
                 screen,
                 // ❌ 제거됨: onFlushProjectData (REST 즉시 저장 콜백)
@@ -1082,7 +1098,11 @@ const ScreenDesignCanvasContent: React.FC = () => {
             const prevById = new Map(prevNodes.map((n) => [n.id, n]));
             return screens.map((screen) => {
                 const prevNode = prevById.get(screen.id);
-                if (prevNode && prevNode.data?.screen === screen) return prevNode;
+                if (
+                    prevNode &&
+                    prevNode.data?.screen === screen &&
+                    prevNode.zIndex === ENTITY_NODE_BASE_Z
+                ) return prevNode;
                 return createNodeFromScreen(screen, prevNode ?? undefined);
             });
         });
