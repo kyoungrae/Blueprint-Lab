@@ -198,6 +198,8 @@ export const useProjectStore = create<ProjectStore>()(
                             ? { components: [], flows: [] }
                             : projectType === 'SCREEN_DESIGN'
                                 ? { screens: [], flows: [], sections: [] }
+                                : projectType === 'PROCESS_FLOW'
+                                    ? { nodes: [], edges: [], sections: [] }
                                 : { entities: [], relationships: [], sections: [] },
                         updatedAt: new Date().toISOString()
                     };
@@ -232,7 +234,13 @@ export const useProjectStore = create<ProjectStore>()(
                             picture: m.userId?.picture,
                             role: m.role || 'MEMBER'
                         })),
-                        data: { entities: [], relationships: [] },
+                        data: (p.projectType || projectType) === 'COMPONENT'
+                            ? { components: [], flows: [] }
+                            : (p.projectType || projectType) === 'SCREEN_DESIGN'
+                                ? { screens: [], flows: [], sections: [] }
+                                : (p.projectType || projectType) === 'PROCESS_FLOW'
+                                    ? { nodes: [], edges: [], sections: [] }
+                                    : { entities: [], relationships: [], sections: [] },
                         bugReports: [],
                     };
 
@@ -468,7 +476,9 @@ export const useProjectStore = create<ProjectStore>()(
                                 ? { entities: [], relationships: [], sections: [] }
                                 : p.projectType === 'SCREEN_DESIGN'
                                     ? { screens: [], flows: [], sections: [] }
-                                    : { components: [], flows: [] },
+                                    : p.projectType === 'PROCESS_FLOW'
+                                        ? { nodes: [], edges: [], sections: [] }
+                                        : { components: [], flows: [] },
                         bugReports: [],
                     };
                     return base as Project;
@@ -488,7 +498,9 @@ export const useProjectStore = create<ProjectStore>()(
                                 ? { entities: [], relationships: [], sections: [] }
                                 : p.projectType === 'SCREEN_DESIGN'
                                     ? { screens: [], flows: [], sections: [] }
-                                    : { components: [], flows: [] },
+                                    : p.projectType === 'PROCESS_FLOW'
+                                        ? { nodes: [], edges: [], sections: [] }
+                                        : { components: [], flows: [] },
                         bugReports: [],
                     })),
                 };

@@ -163,6 +163,55 @@ export interface IComponentSnapshot {
     savedAt: Date;
 }
 
+// Process Flow Node Interface
+export interface IProcessFlowNode {
+    id: string;
+    type: 'USER' | 'RECT';
+    position: { x: number; y: number };
+    text?: string;
+    style?: {
+        fill?: string;
+        stroke?: string;
+        strokeWidth?: number;
+        width?: number;
+        height?: number;
+        radius?: number;
+    };
+    textStyle?: {
+        fontSize?: number;
+        color?: string;
+        bold?: boolean;
+        italic?: boolean;
+    };
+    sectionId?: string | null;
+}
+
+// Process Flow Edge Interface
+export interface IProcessFlowEdge {
+    id: string;
+    source: string;
+    target: string;
+    sourceHandle?: string;
+    targetHandle?: string;
+    style?: {
+        stroke?: string;
+        strokeWidth?: number;
+    };
+    arrow?: {
+        start: 'none' | 'arrow';
+        end: 'none' | 'arrow';
+    };
+}
+
+// Process Flow Snapshot Interface
+export interface IProcessFlowSnapshot {
+    version: number;
+    nodes: IProcessFlowNode[];
+    edges: IProcessFlowEdge[];
+    sections?: ISection[];
+    savedAt: Date;
+}
+
 // Project Document Interface
 export interface IBugReport {
     id: string;
@@ -181,7 +230,7 @@ export interface IBugReport {
 
 export interface IProject extends Document {
     name: string;
-    projectType: 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT';
+    projectType: 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT' | 'PROCESS_FLOW';
     dbType: 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';
     description?: string;
     /** 프로젝트 생성자 표시명 (미설정 시 members OWNER의 name 사용) */
@@ -192,6 +241,7 @@ export interface IProject extends Document {
     updatedAt: Date;
     screenSnapshot?: IScreenSnapshot;
     componentSnapshot?: IComponentSnapshot;
+    processFlowSnapshot?: IProcessFlowSnapshot;
     linkedErdProjectId?: string;
     /** 화면 설계에 연결된 ERD 프로젝트 ID 배열 (여러 개 연결 가능) */
     linkedErdProjectIds?: string[];
@@ -357,6 +407,55 @@ const ERDSnapshotSchema = new Schema<IERDSnapshot>({
     savedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
+const ProcessFlowNodeSchema = new Schema<IProcessFlowNode>({
+    id: { type: String, required: true },
+    type: { type: String, enum: ['USER', 'RECT'], required: true },
+    position: {
+        x: { type: Number, required: true },
+        y: { type: Number, required: true }
+    },
+    text: { type: String },
+    style: {
+        fill: { type: String },
+        stroke: { type: String },
+        strokeWidth: { type: Number },
+        width: { type: Number },
+        height: { type: Number },
+        radius: { type: Number }
+    },
+    textStyle: {
+        fontSize: { type: Number },
+        color: { type: String },
+        bold: { type: Boolean },
+        italic: { type: Boolean }
+    },
+    sectionId: { type: String }
+}, { _id: false });
+
+const ProcessFlowEdgeSchema = new Schema<IProcessFlowEdge>({
+    id: { type: String, required: true },
+    source: { type: String, required: true },
+    target: { type: String, required: true },
+    sourceHandle: { type: String },
+    targetHandle: { type: String },
+    style: {
+        stroke: { type: String },
+        strokeWidth: { type: Number }
+    },
+    arrow: {
+        start: { type: String, enum: ['none', 'arrow'], default: 'none' },
+        end: { type: String, enum: ['none', 'arrow'], default: 'arrow' }
+    }
+}, { _id: false });
+
+const ProcessFlowSnapshotSchema = new Schema<IProcessFlowSnapshot>({
+    version: { type: Number, default: 1 },
+    nodes: [ProcessFlowNodeSchema],
+    edges: [ProcessFlowEdgeSchema],
+    sections: { type: [SectionSchema], default: [] },
+    savedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const BugReportSchema = new Schema<IBugReport>({
     id: { type: String, required: true },
     projectId: { type: String, required: true },
@@ -374,7 +473,7 @@ const BugReportSchema = new Schema<IBugReport>({
 
 const ProjectSchema = new Schema<IProject>({
     name: { type: String, required: true },
-    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN', 'COMPONENT'], default: 'ERD' },
+    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN', 'COMPONENT', 'PROCESS_FLOW'], default: 'ERD' },
     dbType: { type: String, enum: ['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'], required: true },
     description: { type: String },
     author: { type: String, default: '' },
@@ -382,6 +481,7 @@ const ProjectSchema = new Schema<IProject>({
     currentSnapshot: { type: ERDSnapshotSchema, default: { version: 1, entities: [], relationships: [], savedAt: new Date() } },
     screenSnapshot: { type: ScreenSnapshotSchema, default: { version: 1, screens: [], flows: [], savedAt: new Date() } },
     componentSnapshot: { type: ComponentSnapshotSchema, default: { version: 1, components: [], flows: [], savedAt: new Date() } },
+    processFlowSnapshot: { type: ProcessFlowSnapshotSchema, default: { version: 1, nodes: [], edges: [], sections: [], savedAt: new Date() } },
     linkedErdProjectId: { type: String },
     linkedErdProjectIds: [{ type: String }],
     linkedComponentProjectId: { type: String },

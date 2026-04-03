@@ -49,7 +49,7 @@ export interface Relationship {
 
 export type DBType = 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';
 
-export type ProjectType = 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT';
+export type ProjectType = 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT' | 'PROCESS_FLOW';
 
 export interface ProjectMember {
     id: string;

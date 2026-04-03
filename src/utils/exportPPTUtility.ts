@@ -5,7 +5,7 @@ const cleanColor = (color?: string) => color ? color.replace('#', '') : '000000'
 
 export async function exportEditablePPT(screens: Screen[]): Promise<void> {
     try {
-        console.log('최종 보정판 PPT 생성을 시작합니다...');
+        // console.log('최종 보정판 PPT 생성을 시작합니다...');
         const pres = new pptxgen();
         pres.layout = 'LAYOUT_16x9'; 
 

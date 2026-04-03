@@ -43,17 +43,21 @@ interface DocInfo {
     snapshotTimer: NodeJS.Timeout | null;
     /** 이 저장 주기 동안 문서를 수정한 멤버 userId (WebSocket에 yjsUserId 부착) */
     editorsSinceLastSave: Set<string>;
+    /** 즉시 저장용 디바운스 타이머 */
+    immediateSaveTimer: NodeJS.Timeout | null;
 }
 
 /** projectId → DocInfo */
 const docs = new Map<string, DocInfo>();
+
+const IMMEDIATE_SAVE_DEBOUNCE_MS = 2000; // 2초 후 즉시 저장
 
 function getOrCreateDoc(projectId: string): DocInfo {
     return map.setIfUndefined(docs, projectId, () => {
         const doc = new Y.Doc({ gc: true });
         const awareness = new awarenessProtocol.Awareness(doc);
 
-        const info: DocInfo = { doc, awareness, conns: new Map(), snapshotTimer: null, editorsSinceLastSave: new Set() };
+        const info: DocInfo = { doc, awareness, conns: new Map(), snapshotTimer: null, editorsSinceLastSave: new Set(), immediateSaveTimer: null };
 
         doc.on('update', (_update: Uint8Array, origin: unknown) => {
             if (!origin || typeof origin !== 'object') return;
@@ -62,6 +66,15 @@ function getOrCreateDoc(projectId: string): DocInfo {
             if (uid && Types.ObjectId.isValid(uid)) {
                 info.editorsSinceLastSave.add(uid);
             }
+
+            // 🚀 ProcessFlow 타입은 변경 시 즉시 저장 (2초 디바운스)
+            if (info.immediateSaveTimer) {
+                clearTimeout(info.immediateSaveTimer);
+            }
+            info.immediateSaveTimer = setTimeout(() => {
+                logger.info(`[DEBUG] Immediate save triggered for project ${projectId}`);
+                saveDocToMongo(projectId, doc).catch(() => {});
+            }, IMMEDIATE_SAVE_DEBOUNCE_MS);
         });
 
         // 문서가 변경될 때마다 연결된 모든 클라이언트에 브로드캐스트
@@ -84,6 +97,7 @@ function getOrCreateDoc(projectId: string): DocInfo {
 
         // 30초마다 MongoDB에 스냅샷 저장
         info.snapshotTimer = setInterval(() => {
+            logger.info(`[DEBUG] Periodic save triggered for project ${projectId}`);
             saveDocToMongo(projectId, doc).catch(() => {});
         }, MONGO_SNAPSHOT_INTERVAL_MS);
 
@@ -115,6 +129,12 @@ function closeConn(projectId: string, ws: WebSocket): void {
             null
         );
 
+        // 즉시 저장 타이머 정리
+        if (info.immediateSaveTimer) {
+            clearTimeout(info.immediateSaveTimer);
+            info.immediateSaveTimer = null;
+        }
+
         saveDocToMongo(projectId, info.doc).catch(() => {});
 
         if (info.snapshotTimer) clearInterval(info.snapshotTimer);
@@ -134,7 +154,7 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
 
     try {
         const project = await Project.findById(projectId)
-            .select('projectType screenSnapshot componentSnapshot')
+            .select('projectType screenSnapshot componentSnapshot processFlowSnapshot')
             .lean();
         if (!project) return;
 
@@ -160,6 +180,47 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
                 screens  = p.screenSnapshot?.screens || [];
                 flows    = p.screenSnapshot?.flows || [];
                 sections = p.screenSnapshot?.sections || [];
+            } else if (projectType === 'PROCESS_FLOW') {
+                // ProcessFlow는 별도의 Map 사용
+                const pfNodes   = p.processFlowSnapshot?.nodes || [];
+                const pfEdges   = p.processFlowSnapshot?.edges || [];
+                const pfSections = p.processFlowSnapshot?.sections || [];
+                
+                logger.info(`[DEBUG] Loading ProcessFlow data from MongoDB: ${pfNodes.length} nodes, ${pfEdges.length} edges, ${pfSections.length} sections`);
+                
+                const pfNodesMap = doc.getMap<any>('pf_nodes');
+                const pfEdgesMap = doc.getMap<any>('pf_edges');
+                const pfSectionsMap = doc.getMap<any>('pf_sections');
+                
+                logger.info(`[DEBUG] Current Yjs map sizes - pf_nodes: ${pfNodesMap.size}, pf_edges: ${pfEdgesMap.size}, pf_sections: ${pfSectionsMap.size}`);
+                
+                if (pfNodesMap.size === 0 && pfEdgesMap.size === 0 && pfSectionsMap.size === 0) {
+                    logger.info(`[DEBUG] Yjs maps are empty, seeding from MongoDB...`);
+                    pfNodes.forEach((n: any) => {
+                        if (n?.id) {
+                            const yMap = new Y.Map();
+                            Object.entries(n).forEach(([k, v]) => yMap.set(k, v));
+                            pfNodesMap.set(n.id, yMap);
+                        }
+                    });
+                    pfEdges.forEach((e: any) => {
+                        if (e?.id) {
+                            const yMap = new Y.Map();
+                            Object.entries(e).forEach(([k, v]) => yMap.set(k, v));
+                            pfEdgesMap.set(e.id, yMap);
+                        }
+                    });
+                    pfSections.forEach((s: any) => {
+                        if (s?.id) {
+                            const yMap = new Y.Map();
+                            Object.entries(s).forEach(([k, v]) => yMap.set(k, v));
+                            pfSectionsMap.set(s.id, yMap);
+                        }
+                    });
+                    logger.info(`[DEBUG] Seeded ProcessFlow data into Yjs - pf_nodes: ${pfNodesMap.size}, pf_edges: ${pfEdgesMap.size}, pf_sections: ${pfSectionsMap.size}`);
+                } else {
+                    logger.info(`[DEBUG] Yjs maps already have data, skipping seed`);
+                }
             }
 
             // 🚀 수정: 일반 객체를 Y.Map으로 변환하여 삽입
@@ -237,6 +298,24 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
                 updatedAt: new Date(),
             });
             didPersist = true;
+        } else if (projectType === 'PROCESS_FLOW') {
+            const pfNodesArr    = extractJson(doc.getMap<any>('pf_nodes').values());
+            const pfEdgesArr    = extractJson(doc.getMap<any>('pf_edges').values());
+            const pfSectionsArr = extractJson(doc.getMap<any>('pf_sections').values());
+            
+            logger.info(`[DEBUG] Saving ProcessFlow data: ${pfNodesArr.length} nodes, ${pfEdgesArr.length} edges, ${pfSectionsArr.length} sections`);
+            
+            await Project.findByIdAndUpdate(projectId, {
+                processFlowSnapshot: {
+                    nodes: pfNodesArr,
+                    edges: pfEdgesArr,
+                    sections: pfSectionsArr,
+                    savedAt: new Date(),
+                },
+                updatedAt: new Date(),
+            });
+            didPersist = true;
+            logger.info(`[DEBUG] ProcessFlow data saved successfully for project ${projectId}`);
         }
 
         if (didPersist) {

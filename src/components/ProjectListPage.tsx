@@ -9,7 +9,7 @@ import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 import AdminPage from './AdminPage';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 
-const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2 };
+const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2, PROCESS_FLOW: 3 };
 
 /** 화면 설계에 연결된 ERD 프로젝트 ID 목록 (단일/다중 모두 지원) */
 function getLinkedErdIds(project: Project): string[] {
@@ -316,7 +316,7 @@ const ProjectListPage: React.FC = () => {
         try {
             const project = await addProject(
                 newProjectName,
-                newProjectDbType,
+                selectedProjectType === 'PROCESS_FLOW' ? 'MySQL' : newProjectDbType, // Process Flow doesn't need DB but API requires it
                 [],
                 newProjectDesc,
                 selectedProjectType
@@ -526,9 +526,11 @@ const ProjectListPage: React.FC = () => {
                                                 ? 'bg-violet-50 text-violet-500 group-hover:bg-violet-600 group-hover:text-white'
                                                 : project.projectType === 'COMPONENT'
                                                     ? 'bg-teal-50 text-teal-500 group-hover:bg-teal-600 group-hover:text-white'
-                                                    : 'bg-gray-50 text-blue-500 group-hover:bg-blue-600 group-hover:text-white'
+                                                    : project.projectType === 'PROCESS_FLOW'
+                                                        ? 'bg-amber-50 text-amber-500 group-hover:bg-amber-600 group-hover:text-white'
+                                                        : 'bg-gray-50 text-blue-500 group-hover:bg-blue-600 group-hover:text-white'
                                                 }`}>
-                                                {project.projectType === 'SCREEN_DESIGN' ? <Monitor size={24} /> : project.projectType === 'COMPONENT' ? <Box size={24} /> : <Database size={24} />}
+                                                {project.projectType === 'SCREEN_DESIGN' ? <Monitor size={24} /> : project.projectType === 'COMPONENT' ? <Box size={24} /> : project.projectType === 'PROCESS_FLOW' ? <Users size={24} /> : <Database size={24} />}
                                             </div>
                                             <div className="flex flex-col gap-1">
                                                 {isLocal && (
@@ -540,9 +542,11 @@ const ProjectListPage: React.FC = () => {
                                                     ? 'bg-violet-50 text-violet-600'
                                                     : project.projectType === 'COMPONENT'
                                                         ? 'bg-teal-50 text-teal-600'
-                                                        : 'bg-blue-50 text-blue-600'
+                                                        : project.projectType === 'PROCESS_FLOW'
+                                                            ? 'bg-amber-50 text-amber-600'
+                                                            : 'bg-blue-50 text-blue-600'
                                                     }`}>
-                                                    {project.projectType === 'SCREEN_DESIGN' ? '화면설계' : project.projectType === 'COMPONENT' ? '컴포넌트' : project.dbType}
+                                                    {project.projectType === 'SCREEN_DESIGN' ? '화면설계' : project.projectType === 'COMPONENT' ? '컴포넌트' : project.projectType === 'PROCESS_FLOW' ? '프로세스흐름' : project.dbType}
                                                 </div>
                                             </div>
                                         </div>
@@ -910,7 +914,7 @@ const ProjectListPage: React.FC = () => {
                             </button>
                         </div>
                         <div className="p-8">
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-4 gap-4">
                                 <button onClick={() => handleSelectProjectType('ERD')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-blue-400 hover:bg-blue-50/80 transition-all duration-300 active:scale-[0.97]">
                                     <div className="w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-5 group-hover:bg-blue-600 group-hover:text-white transition-all">
                                         <Database size={28} />
@@ -925,9 +929,16 @@ const ProjectListPage: React.FC = () => {
                                     <h4 className="text-lg font-black text-gray-900 mb-2">화면 설계서</h4>
                                     <p className="text-xs text-gray-500 text-center font-medium">UI/UX 화면 구조를 설계하고 관리합니다</p>
                                 </button>
+                                <button onClick={() => handleSelectProjectType('PROCESS_FLOW')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-amber-400 hover:bg-amber-50/80 transition-all duration-300 active:scale-[0.97]">
+                                    <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-5 group-hover:bg-amber-600 group-hover:text-white transition-all">
+                                        <Users size={28} />
+                                    </div>
+                                    <h4 className="text-lg font-black text-gray-900 mb-2">프로세스 흐름도</h4>
+                                    <p className="text-xs text-gray-500 text-center font-medium">업무/사용자 흐름을 도형과 연결선으로 설계합니다</p>
+                                </button>
                                 <PremiumTooltip
                                     label={(user?.tier === 'PRO' || user?.tier === 'MASTER')
-                                        ? '컴포넌트 프로젝트 생성'
+                                        ? ''
                                         : 'Pro tier 이상부터 사용 가능합니다. 관리자에게 문의해 주세요.'}
                                     dotColor={(user?.tier === 'PRO' || user?.tier === 'MASTER') ? '#14b8a6' : undefined}
                                 >
@@ -978,7 +989,13 @@ const ProjectListPage: React.FC = () => {
                                 </button>
                                 <div>
                                     <h3 className="text-2xl font-black text-gray-900">
-                                        {selectedProjectType === 'SCREEN_DESIGN' ? '화면 설계서 생성' : selectedProjectType === 'COMPONENT' ? '컴포넌트 프로젝트 생성' : 'ERD 프로젝트 생성'}
+                                        {selectedProjectType === 'SCREEN_DESIGN'
+                                            ? '화면 설계서 생성'
+                                            : selectedProjectType === 'COMPONENT'
+                                                ? '컴포넌트 프로젝트 생성'
+                                                : selectedProjectType === 'PROCESS_FLOW'
+                                                    ? '프로세스 흐름도 생성'
+                                                    : 'ERD 프로젝트 생성'}
                                     </h3>
                                 </div>
                             </div>
@@ -1033,6 +1050,14 @@ const ProjectListPage: React.FC = () => {
                                     </div>
                                 </div>
                             )}
+                            {selectedProjectType === 'PROCESS_FLOW' && (
+                                <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl">
+                                    <div className="flex items-center gap-2 text-amber-700">
+                                        <Users size={16} />
+                                        <span className="text-sm font-medium">프로세스 흐름도는 데이터베이스가 필요 없습니다</span>
+                                    </div>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">설명 (선택사항)</label>
                                 <textarea
@@ -1059,7 +1084,7 @@ const ProjectListPage: React.FC = () => {
                             {createError && <div className="p-3 bg-red-50 text-red-500 text-xs rounded-xl border border-red-100">{createError}</div>}
                             <div className="flex gap-3 pt-2">
                                 <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-4 px-6 bg-gray-50 text-gray-600 rounded-2xl font-bold">취소</button>
-                                <button type="submit" disabled={isLoading} className={`flex-[2] py-4 px-6 text-white rounded-2xl font-bold ${selectedProjectType === 'SCREEN_DESIGN' ? 'bg-violet-600' : selectedProjectType === 'COMPONENT' ? 'bg-teal-600' : 'bg-blue-600'}`}>
+                                <button type="submit" disabled={isLoading} className={`flex-[2] py-4 px-6 text-white rounded-2xl font-bold ${selectedProjectType === 'SCREEN_DESIGN' ? 'bg-violet-600' : selectedProjectType === 'COMPONENT' ? 'bg-teal-600' : selectedProjectType === 'PROCESS_FLOW' ? 'bg-amber-600' : 'bg-blue-600'}`}>
                                     {isLoading ? '생성 중...' : '생성하기'}
                                 </button>
                             </div>

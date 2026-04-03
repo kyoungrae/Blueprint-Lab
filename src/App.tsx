@@ -1,6 +1,7 @@
 import ERDCanvas from './components/ERDCanvas';
 import ScreenDesignCanvas from './components/ScreenDesignCanvas';
 import ComponentCanvas from './components/ComponentCanvas';
+import ProcessFlowCanvas from './components/processFlow/ProcessFlowCanvas';
 import LoginPage from './components/LoginPage';
 import ProjectListPage from './components/ProjectListPage';
 import { useAuthStore } from './store/authStore';
@@ -121,6 +122,14 @@ function App() {
     return (
       <div className="w-full h-screen">
         <ComponentCanvas />
+      </div>
+    );
+  }
+
+  if (projectType === 'PROCESS_FLOW') {
+    return (
+      <div className="w-full h-screen">
+        <ProcessFlowCanvas />
       </div>
     );
   }

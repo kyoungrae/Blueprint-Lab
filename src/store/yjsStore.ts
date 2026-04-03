@@ -10,6 +10,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { create } from 'zustand';
 import type { Screen, ScreenFlow, ScreenSection } from '../types/screenDesign';
+import type { ProcessFlowNode, ProcessFlowEdge, ProcessFlowSection } from '../types/processFlow';
 import { useScreenDesignStore } from './screenDesignStore';
 import { useComponentStore } from './componentStore';
 import { useAuthStore } from './authStore';
@@ -32,7 +33,7 @@ if (host === 'localhost' || host === '127.0.0.1') {
     YJS_WS_URL = `${protocol}//${host}:${port}/yjs`;
 }
 
-console.log("� Current Yjs URL:", YJS_WS_URL);
+// console.log("� Current Yjs URL:", YJS_WS_URL);
 
 interface YjsStore {
     ydoc: Y.Doc | null;
@@ -40,6 +41,9 @@ interface YjsStore {
     screens: Screen[];
     flows: ScreenFlow[];
     sections: ScreenSection[];
+    pfNodes: ProcessFlowNode[];
+    pfEdges: ProcessFlowEdge[];
+    pfSections: ProcessFlowSection[];
     isSynced: boolean;
     isConnected: boolean;
     wsUrl: string;
@@ -60,8 +64,33 @@ interface YjsStore {
     updateSection: (id: string, patch: Partial<ScreenSection>) => void;
     addSection: (section: ScreenSection) => void;
     deleteSection: (id: string) => void;
-    exportData: () => { screens: Screen[]; flows: ScreenFlow[]; sections: ScreenSection[] };
-    importData: (data: { screens?: Screen[]; flows?: ScreenFlow[]; sections?: ScreenSection[] }) => void;
+
+    pfUpdateNode: (id: string, patch: Partial<ProcessFlowNode>) => void;
+    pfAddNode: (node: ProcessFlowNode) => void;
+    pfDeleteNode: (id: string) => void;
+    pfUpdateEdge: (id: string, patch: Partial<ProcessFlowEdge>) => void;
+    pfAddEdge: (edge: ProcessFlowEdge) => void;
+    pfDeleteEdge: (id: string) => void;
+    pfUpdateSection: (id: string, patch: Partial<ProcessFlowSection>) => void;
+    pfAddSection: (section: ProcessFlowSection) => void;
+    pfDeleteSection: (id: string) => void;
+
+    exportData: () => {
+        screens: Screen[];
+        flows: ScreenFlow[];
+        sections: ScreenSection[];
+        pfNodes: ProcessFlowNode[];
+        pfEdges: ProcessFlowEdge[];
+        pfSections: ProcessFlowSection[];
+    };
+    importData: (data: {
+        screens?: Screen[];
+        flows?: ScreenFlow[];
+        sections?: ScreenSection[];
+        pfNodes?: ProcessFlowNode[];
+        pfEdges?: ProcessFlowEdge[];
+        pfSections?: ProcessFlowSection[];
+    }) => boolean;
     _observeYMaps: (ydoc: Y.Doc) => () => void;
     _cleanupObservers: (() => void) | null;
 }
@@ -72,6 +101,9 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     screens: [],
     flows: [],
     sections: [],
+    pfNodes: [],
+    pfEdges: [],
+    pfSections: [],
     isSynced: false,
     isConnected: false,
     wsUrl: YJS_WS_URL,
@@ -163,7 +195,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         ydoc?.destroy();
         set({
             ydoc: null, provider: null, currentProjectId: null,
-            isSynced: false, isConnected: false, screens: [], flows: [], sections: [],
+            isSynced: false, isConnected: false, screens: [], flows: [], sections: [], pfNodes: [], pfEdges: [], pfSections: [],
             lastStatus: null,
             lastError: null,
             lastSyncAt: null,
@@ -176,10 +208,16 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const yScreens = ydoc.getMap<Y.Map<any>>('screens');
         const yFlows = ydoc.getMap<Y.Map<any>>('flows');
         const ySections = ydoc.getMap<Y.Map<any>>('sections');
+        const yPfNodes = ydoc.getMap<Y.Map<any>>('pf_nodes');
+        const yPfEdges = ydoc.getMap<Y.Map<any>>('pf_edges');
+        const yPfSections = ydoc.getMap<Y.Map<any>>('pf_sections');
 
         const screenIdByMap = new WeakMap<Y.Map<any>, string>();
         const flowIdByMap = new WeakMap<Y.Map<any>, string>();
         const sectionIdByMap = new WeakMap<Y.Map<any>, string>();
+        const pfNodeIdByMap = new WeakMap<Y.Map<any>, string>();
+        const pfEdgeIdByMap = new WeakMap<Y.Map<any>, string>();
+        const pfSectionIdByMap = new WeakMap<Y.Map<any>, string>();
 
         const buildScreens = () =>
             Array.from(yScreens.entries()).map(([id, yMap]) => {
@@ -199,6 +237,24 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
                 return yMap.toJSON() as ScreenSection;
             });
 
+        const buildPfNodes = () =>
+            Array.from(yPfNodes.entries()).map(([id, yMap]) => {
+                pfNodeIdByMap.set(yMap, id);
+                return yMap.toJSON() as ProcessFlowNode;
+            });
+
+        const buildPfEdges = () =>
+            Array.from(yPfEdges.entries()).map(([id, yMap]) => {
+                pfEdgeIdByMap.set(yMap, id);
+                return yMap.toJSON() as ProcessFlowEdge;
+            });
+
+        const buildPfSections = () =>
+            Array.from(yPfSections.entries()).map(([id, yMap]) => {
+                pfSectionIdByMap.set(yMap, id);
+                return yMap.toJSON() as ProcessFlowSection;
+            });
+
         const applyScreens = (nextScreens: Screen[]) => {
             set({ screens: nextScreens });
             useScreenDesignStore.setState({ screens: nextScreens });
@@ -214,6 +270,18 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const applySections = (nextSections: ScreenSection[]) => {
             set({ sections: nextSections });
             useScreenDesignStore.setState({ sections: nextSections });
+        };
+
+        const applyPfNodes = (nextNodes: ProcessFlowNode[]) => {
+            set({ pfNodes: nextNodes });
+        };
+
+        const applyPfEdges = (nextEdges: ProcessFlowEdge[]) => {
+            set({ pfEdges: nextEdges });
+        };
+
+        const applyPfSections = (nextSections: ProcessFlowSection[]) => {
+            set({ pfSections: nextSections });
         };
 
         const collectChangedIds = (
@@ -337,22 +405,118 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
             applySections(nextSections);
         };
 
+        const syncPfNodes = (events?: Y.YEvent<any>[]) => {
+            if (!events) {
+                applyPfNodes(buildPfNodes());
+                return;
+            }
+
+            const { changedIds, removedIds } = collectChangedIds(events, yPfNodes, pfNodeIdByMap);
+            if (changedIds.size === 0 && removedIds.size === 0) {
+                applyPfNodes(buildPfNodes());
+                return;
+            }
+
+            const nextById = new Map(get().pfNodes.map((n) => [n.id, n]));
+            removedIds.forEach((id) => nextById.delete(id));
+            changedIds.forEach((id) => {
+                const yMap = yPfNodes.get(id);
+                if (!yMap) return;
+                pfNodeIdByMap.set(yMap, id);
+                nextById.set(id, yMap.toJSON() as ProcessFlowNode);
+            });
+
+            const nextNodes = Array.from(yPfNodes.entries())
+                .map(([id]) => nextById.get(id))
+                .filter((n): n is ProcessFlowNode => Boolean(n));
+
+            applyPfNodes(nextNodes);
+        };
+
+        const syncPfEdges = (events?: Y.YEvent<any>[]) => {
+            if (!events) {
+                applyPfEdges(buildPfEdges());
+                return;
+            }
+
+            const { changedIds, removedIds } = collectChangedIds(events, yPfEdges, pfEdgeIdByMap);
+            if (changedIds.size === 0 && removedIds.size === 0) {
+                applyPfEdges(buildPfEdges());
+                return;
+            }
+
+            const nextById = new Map(get().pfEdges.map((e) => [e.id, e]));
+            removedIds.forEach((id) => nextById.delete(id));
+            changedIds.forEach((id) => {
+                const yMap = yPfEdges.get(id);
+                if (!yMap) return;
+                pfEdgeIdByMap.set(yMap, id);
+                nextById.set(id, yMap.toJSON() as ProcessFlowEdge);
+            });
+
+            const nextEdges = Array.from(yPfEdges.entries())
+                .map(([id]) => nextById.get(id))
+                .filter((e): e is ProcessFlowEdge => Boolean(e));
+
+            applyPfEdges(nextEdges);
+        };
+
+        const syncPfSections = (events?: Y.YEvent<any>[]) => {
+            if (!events) {
+                applyPfSections(buildPfSections());
+                return;
+            }
+
+            const { changedIds, removedIds } = collectChangedIds(events, yPfSections, pfSectionIdByMap);
+            if (changedIds.size === 0 && removedIds.size === 0) {
+                applyPfSections(buildPfSections());
+                return;
+            }
+
+            const nextById = new Map(get().pfSections.map((s) => [s.id, s]));
+            removedIds.forEach((id) => nextById.delete(id));
+            changedIds.forEach((id) => {
+                const yMap = yPfSections.get(id);
+                if (!yMap) return;
+                pfSectionIdByMap.set(yMap, id);
+                nextById.set(id, yMap.toJSON() as ProcessFlowSection);
+            });
+
+            const nextSections = Array.from(yPfSections.entries())
+                .map(([id]) => nextById.get(id))
+                .filter((s): s is ProcessFlowSection => Boolean(s));
+
+            applyPfSections(nextSections);
+        };
+
         const handleScreensChange = (events: Y.YEvent<any>[]) => syncScreens(events);
         const handleFlowsChange = (events: Y.YEvent<any>[]) => syncFlows(events);
         const handleSectionsChange = (events: Y.YEvent<any>[]) => syncSections(events);
+        const handlePfNodesChange = (events: Y.YEvent<any>[]) => syncPfNodes(events);
+        const handlePfEdgesChange = (events: Y.YEvent<any>[]) => syncPfEdges(events);
+        const handlePfSectionsChange = (events: Y.YEvent<any>[]) => syncPfSections(events);
 
         yScreens.observeDeep(handleScreensChange);
         yFlows.observeDeep(handleFlowsChange);
         ySections.observeDeep(handleSectionsChange);
+        yPfNodes.observeDeep(handlePfNodesChange);
+        yPfEdges.observeDeep(handlePfEdgesChange);
+        yPfSections.observeDeep(handlePfSectionsChange);
 
         syncScreens();
         syncFlows();
         syncSections();
+        syncPfNodes();
+        syncPfEdges();
+        syncPfSections();
 
         return () => {
             yScreens.unobserveDeep(handleScreensChange);
             yFlows.unobserveDeep(handleFlowsChange);
             ySections.unobserveDeep(handleSectionsChange);
+            yPfNodes.unobserveDeep(handlePfNodesChange);
+            yPfEdges.unobserveDeep(handlePfEdgesChange);
+            yPfSections.unobserveDeep(handlePfSectionsChange);
         };
     },
 
@@ -434,40 +598,166 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     deleteSection: (id) => {
         const { ydoc, isSynced } = get();
         if (!ydoc || !isSynced) return;
-        ydoc.getMap<Y.Map<any>>('sections').delete(id);
+        ydoc.getMap('sections').delete(id);
+    },
+
+    pfUpdateNode: (id, patch) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        const yMap = ydoc.getMap<Y.Map<any>>('pf_nodes').get(id);
+        if (yMap) {
+            ydoc.transact(() => {
+                Object.entries(patch).forEach(([k, v]) => yMap.set(k, v));
+            });
+        }
+    },
+
+    pfAddNode: (node) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        const root = ydoc.getMap<Y.Map<any>>('pf_nodes');
+        if (root.get(node.id)) return;
+        ydoc.transact(() => {
+            const yMap = new Y.Map<any>();
+            Object.entries(node).forEach(([k, v]) => yMap.set(k, v));
+            root.set(node.id, yMap);
+        });
+    },
+
+    pfDeleteNode: (id) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        ydoc.getMap('pf_nodes').delete(id);
+    },
+
+    pfUpdateEdge: (id, patch) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        const yMap = ydoc.getMap<Y.Map<any>>('pf_edges').get(id);
+        if (yMap) {
+            ydoc.transact(() => {
+                Object.entries(patch).forEach(([k, v]) => yMap.set(k, v));
+            });
+        }
+    },
+
+    pfAddEdge: (edge) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        const root = ydoc.getMap<Y.Map<any>>('pf_edges');
+        if (root.get(edge.id)) return;
+        ydoc.transact(() => {
+            const yMap = new Y.Map<any>();
+            Object.entries(edge).forEach(([k, v]) => yMap.set(k, v));
+            root.set(edge.id, yMap);
+        });
+    },
+
+    pfDeleteEdge: (id) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        ydoc.getMap('pf_edges').delete(id);
+    },
+
+    pfUpdateSection: (id, patch) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        const yMap = ydoc.getMap<Y.Map<any>>('pf_sections').get(id);
+        if (yMap) {
+            ydoc.transact(() => {
+                Object.entries(patch).forEach(([k, v]) => yMap.set(k, v));
+            });
+        }
+    },
+
+    pfAddSection: (section) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        const root = ydoc.getMap<Y.Map<any>>('pf_sections');
+        if (root.get(section.id)) return;
+        ydoc.transact(() => {
+            const yMap = new Y.Map<any>();
+            Object.entries(section).forEach(([k, v]) => yMap.set(k, v));
+            root.set(section.id, yMap);
+        });
+    },
+
+    pfDeleteSection: (id) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return;
+        ydoc.getMap('pf_sections').delete(id);
     },
 
     exportData: () => {
-        const { screens, flows, sections } = get();
-        return { screens, flows, sections };
+        const { screens, flows, sections, pfNodes, pfEdges, pfSections } = get();
+        return { screens, flows, sections, pfNodes, pfEdges, pfSections };
     },
 
     importData: (data) => {
         const { ydoc, isSynced } = get();
-        if (!ydoc || !isSynced) return;
+        if (!ydoc || !isSynced) return false;
         ydoc.transact(() => {
             const yScreens = ydoc.getMap<Y.Map<any>>('screens');
             const yFlows = ydoc.getMap<Y.Map<any>>('flows');
             const ySections = ydoc.getMap<Y.Map<any>>('sections');
+            const yPfNodes = ydoc.getMap<Y.Map<any>>('pf_nodes');
+            const yPfEdges = ydoc.getMap<Y.Map<any>>('pf_edges');
+            const yPfSections = ydoc.getMap<Y.Map<any>>('pf_sections');
 
-            data.screens?.forEach(s => {
-                if (!s?.id) return;
-                const yMap = yScreens.get(s.id) || new Y.Map();
-                Object.entries(s).forEach(([k, v]) => yMap.set(k, v));
-                yScreens.set(s.id, yMap);
-            });
-            data.flows?.forEach(f => {
-                if (!f?.id) return;
-                const yMap = yFlows.get(f.id) || new Y.Map();
-                Object.entries(f).forEach(([k, v]) => yMap.set(k, v));
-                yFlows.set(f.id, yMap);
-            });
-            data.sections?.forEach(sec => {
-                if (!sec?.id) return;
-                const yMap = ySections.get(sec.id) || new Y.Map();
-                Object.entries(sec).forEach(([k, v]) => yMap.set(k, v));
-                ySections.set(sec.id, yMap);
-            });
+            if (data.screens) {
+                yScreens.clear();
+                data.screens.forEach((screen) => {
+                    const yMap = new Y.Map();
+                    Object.entries(screen).forEach(([k, v]) => yMap.set(k, v));
+                    yScreens.set(screen.id, yMap);
+                });
+            }
+
+            if (data.flows) {
+                yFlows.clear();
+                data.flows.forEach((flow) => {
+                    const yMap = new Y.Map();
+                    Object.entries(flow).forEach(([k, v]) => yMap.set(k, v));
+                    yFlows.set(flow.id, yMap);
+                });
+            }
+
+            if (data.sections) {
+                ySections.clear();
+                data.sections.forEach((section) => {
+                    const yMap = new Y.Map();
+                    Object.entries(section).forEach(([k, v]) => yMap.set(k, v));
+                    ySections.set(section.id, yMap);
+                });
+            }
+
+            if (data.pfNodes) {
+                yPfNodes.clear();
+                data.pfNodes.forEach((node) => {
+                    const yMap = new Y.Map();
+                    Object.entries(node).forEach(([k, v]) => yMap.set(k, v));
+                    yPfNodes.set(node.id, yMap);
+                });
+            }
+
+            if (data.pfEdges) {
+                yPfEdges.clear();
+                data.pfEdges.forEach((edge) => {
+                    const yMap = new Y.Map();
+                    Object.entries(edge).forEach(([k, v]) => yMap.set(k, v));
+                    yPfEdges.set(edge.id, yMap);
+                });
+            }
+
+            if (data.pfSections) {
+                yPfSections.clear();
+                data.pfSections.forEach((section) => {
+                    const yMap = new Y.Map();
+                    Object.entries(section).forEach(([k, v]) => yMap.set(k, v));
+                    yPfSections.set(section.id, yMap);
+                });
+            }
         });
+        return true;
     },
 }));

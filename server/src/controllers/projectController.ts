@@ -41,7 +41,34 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 entities: [],
                 relationships: [],
                 savedAt: new Date()
-            }
+            },
+            // Add appropriate snapshot based on project type
+            ...(pt === 'SCREEN_DESIGN' && {
+                screenSnapshot: {
+                    version: 1,
+                    screens: [],
+                    flows: [],
+                    sections: [],
+                    savedAt: new Date()
+                }
+            }),
+            ...(pt === 'COMPONENT' && {
+                componentSnapshot: {
+                    version: 1,
+                    components: [],
+                    flows: [],
+                    savedAt: new Date()
+                }
+            }),
+            ...(pt === 'PROCESS_FLOW' && {
+                processFlowSnapshot: {
+                    version: 1,
+                    nodes: [],
+                    edges: [],
+                    sections: [],
+                    savedAt: new Date()
+                }
+            })
         });
 
         await project.save();
@@ -176,6 +203,14 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                     screens: data.screens ?? project.screenSnapshot?.screens ?? [],
                     flows: data.flows ?? project.screenSnapshot?.flows ?? [],
                     sections: Array.isArray(data.sections) ? data.sections : (project.screenSnapshot?.sections ?? []),
+                    savedAt: new Date()
+                };
+            } else if (project.projectType === 'PROCESS_FLOW' && (data.nodes !== undefined || data.edges !== undefined || data.sections !== undefined)) {
+                project.processFlowSnapshot = {
+                    version: (project.processFlowSnapshot?.version || 0) + 1,
+                    nodes: data.nodes ?? project.processFlowSnapshot?.nodes ?? [],
+                    edges: data.edges ?? project.processFlowSnapshot?.edges ?? [],
+                    sections: Array.isArray(data.sections) ? data.sections : (project.processFlowSnapshot?.sections ?? []),
                     savedAt: new Date()
                 };
             } else {

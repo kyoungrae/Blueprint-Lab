@@ -154,7 +154,7 @@ export function getOptimizedRelationshipLayout(
     
     // 3. 유효한 관계만으로 레이아웃 수행
     if (valid.length === 0) {
-        console.log('No valid relationships to layout');
+        // console.log('No valid relationships to layout');
         return { nodes, edges: [], connectionInfo: [] };
     }
     
@@ -223,8 +223,8 @@ export function getOptimizedRelationshipLayout(
     });
     
     console.timeEnd('Optimized Relationship Layout');
-    console.log(`Layout complete: ${layoutedNodes.length} nodes, ${layoutedEdges.length} edges`);
-    console.log(`Invalid relationships removed: ${invalid.length}`);
+    // console.log(`Layout complete: ${layoutedNodes.length} nodes, ${layoutedEdges.length} edges`);
+    // console.log(`Invalid relationships removed: ${invalid.length}`);
     
     return {
         nodes: layoutedNodes,
@@ -303,12 +303,12 @@ export function validateExcelRelationships(excelData: any[]): {
         summary.validCount++;
     });
     
-    console.log('=== Excel Relationship Validation ===');
-    console.log(`Total: ${summary.total}`);
-    console.log(`Valid: ${summary.validCount}`);
-    console.log(`Invalid: ${summary.invalidCount}`);
-    console.log(`Self-referencing: ${summary.selfReferencing}`);
-    console.log('===================================');
+    // console.log('=== Excel Relationship Validation ===');
+    // console.log(`Total: ${summary.total}`);
+    // console.log(`Valid: ${summary.validCount}`);
+    // console.log(`Invalid: ${summary.invalidCount}`);
+    // console.log(`Self-referencing: ${summary.selfReferencing}`);
+    // console.log('===================================');
     
     return { valid, invalid, summary };
 }

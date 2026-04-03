@@ -2,13 +2,13 @@ import { redis } from './src/config/redis';
 
 async function checkRedis() {
     const keys = await redis.keys('project:*:online');
-    console.log('Online user keys found:', keys);
+    // console.log('Online user keys found:', keys);
 
     for (const key of keys) {
         const data = await redis.hgetall(key);
-        console.log(`\nKey: ${key}`);
+        // console.log(`\nKey: ${key}`);
         for (const [field, value] of Object.entries(data)) {
-            console.log(`  Field: ${field} -> ${value}`);
+            // console.log(`  Field: ${field} -> ${value}`);
         }
     }
 
