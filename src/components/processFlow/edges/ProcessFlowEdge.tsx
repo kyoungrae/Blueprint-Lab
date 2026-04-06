@@ -1,6 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { BaseEdge, getSmoothStepPath, Position, useReactFlow, useStore } from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, Position } from 'reactflow';
 import { useYjsStore } from '../../../store/yjsStore';
 import type { ProcessFlowEdge as ProcessFlowEdgeType } from '../../../types/processFlow';
 import type { EdgeProps } from 'reactflow';
@@ -34,6 +33,12 @@ const LINE_COLOR_PRESETS = [
     { label: '삭제', hint: 'Delete', color: '#dc2626' },
 ] as const;
 
+function edgeKindLabelFromStroke(color: string): string {
+    const c = color.trim().toLowerCase();
+    const preset = LINE_COLOR_PRESETS.find((p) => p.color.toLowerCase() === c);
+    return preset ? preset.label : '기타';
+}
+
 const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     id,
     sourceX,
@@ -45,15 +50,6 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     data,
     label = '연결방향 설정',
 }) => {
-    const { flowToScreenPosition } = useReactFlow();
-    /**
-     * transform 전체를 구독해야 함. zoom(transform[2])만 구독하면 팬(translate) 시 리렌더가 안 나서
-     * flowToScreenPosition 결과가 갱신되지 않고, body 포탈 점이 화면에 붙어 다니는 것처럼 보임.
-     */
-    const transform = useStore((s) => s.transform);
-    const viewportZoom = transform[2];
-    const handleUiScale = Math.max(0.22, viewportZoom);
-
     const yjsUpdateEdge = useYjsStore((s: any) => s.pfUpdateEdge);
     const yjsDeleteEdge = useYjsStore((s: any) => s.pfDeleteEdge);
     const [isEditing, setIsEditing] = useState(false);
@@ -151,87 +147,101 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     const labelX = Number.isFinite(rawLabelX) ? rawLabelX : (sourceX + targetX) / 2;
     const labelY = Number.isFinite(rawLabelY) ? rawLabelY : (sourceY + targetY) / 2;
 
-    const anchorScreen = flowToScreenPosition({ x: labelX, y: labelY });
+    const edgeKindLabel = edgeKindLabelFromStroke(edgeColor);
 
     const mkId = (suffix: string) => `pf-arrow-${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}-${suffix}`;
 
-    const handlePortal =
-        !isEditing && typeof document !== 'undefined' ? (
-            <div
-                className="nodrag nopan"
-                style={{
-                    position: 'fixed',
-                    left: anchorScreen.x,
-                    top: anchorScreen.y,
-                    transform: `translate(-50%, -50%) scale(${handleUiScale})`,
-                    transformOrigin: 'center center',
-                    zIndex: PF_EDGE_HANDLE_Z,
-                    pointerEvents: 'none',
-                }}
-            >
-                <div className="pointer-events-auto flex flex-col items-center">
-                    <PremiumTooltip
-                        label="더블클릭 — 연결 방향·색상 설정"
-                        dotColor={edgeColor}
-                        placement="top"
-                        forceBodyPortal
-                        bodyZIndexExact
-                        zIndex={PF_EDGE_HANDLE_Z + 1}
-                    >
-                        <button
-                            type="button"
-                            title="연결 설정 (더블 클릭)"
-                            aria-label="연결선 설정 열기"
-                            className={`nodrag nopan flex items-center justify-center border-2 shadow-sm backdrop-blur-sm bg-white/95 transition-all duration-200 ease-out select-none outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-blue-400 ${
-                                isHovered
-                                    ? 'px-3 py-1.5 rounded-lg min-h-[30px]'
-                                    : 'w-[14px] h-[14px] min-w-[14px] min-h-[14px] rounded-full p-0'
-                            }`}
-                            style={{
-                                borderColor: isHovered ? edgeColor : `${edgeColor}aa`,
-                                color: edgeColor,
-                                backgroundColor: isHovered ? `${edgeColor}14` : 'rgba(255, 255, 255, 0.96)',
-                            }}
-                            onMouseEnter={() => trySetHandleHovered(true)}
-                            onMouseLeave={() => trySetHandleHovered(false)}
-                            onDoubleClick={handleOpenEdgePanel}
-                            onPointerDown={(e) => e.stopPropagation()}
+    const handleSize = isHovered ? 28 : 12;
+    /** 점(핸들) 중심이 정확히 선 위에 오도록 Y 기준 보정 */
+    const edgeUiBaseStyle = {
+        position: 'absolute' as const,
+        transform: `translate(${labelX}px, ${labelY}px) translate(-50%, -${handleSize / 2}px)`,
+        transformOrigin: 'center center' as const,
+        zIndex: PF_EDGE_HANDLE_Z,
+        pointerEvents: 'none' as const,
+    };
+
+    const edgeLabels =
+        !isEditing ? (
+            <EdgeLabelRenderer>
+                <div className="nodrag nopan" style={edgeUiBaseStyle}>
+                    <div className="pointer-events-auto relative flex items-center justify-center">
+                        <PremiumTooltip
+                            label="더블클릭 — 연결 방향·색상 설정"
+                            dotColor={edgeColor}
+                            placement="top"
+                            forceBodyPortal
+                            bodyZIndexExact
+                            zIndex={PF_EDGE_HANDLE_Z + 1}
                         >
-                            {isHovered ? (
-                                <span className="text-[10px] font-black whitespace-nowrap leading-tight text-center">
-                                    {label}
-                                </span>
-                            ) : (
-                                <span
-                                    className="pointer-events-none h-2 w-2 shrink-0 rounded-full"
-                                    style={{ backgroundColor: edgeColor }}
-                                    aria-hidden
-                                />
-                            )}
-                        </button>
-                    </PremiumTooltip>
+                            <button
+                                type="button"
+                                title="연결 설정 (더블 클릭)"
+                                aria-label="연결선 설정 열기"
+                                className={`nodrag nopan flex items-center justify-center border-0 backdrop-blur-sm bg-white/95 transition-all duration-200 ease-out select-none outline-none focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-blue-400/60 ${
+                                    isHovered
+                                        ? 'px-3 py-1.5 rounded-lg min-h-[28px]'
+                                        : 'h-3 w-3 min-h-3 min-w-3 rounded-full p-0'
+                                }`}
+                                style={{
+                                    boxShadow: isHovered
+                                        ? `0 0 0 1px ${edgeColor}aa, 0 1px 2px rgba(15,23,42,0.05)`
+                                        : `0 0 0 1px ${edgeColor}99`,
+                                    color: edgeColor,
+                                    backgroundColor: isHovered ? `${edgeColor}12` : 'rgba(255, 255, 255, 0.98)',
+                                }}
+                                onMouseEnter={() => trySetHandleHovered(true)}
+                                onMouseLeave={() => trySetHandleHovered(false)}
+                                onDoubleClick={handleOpenEdgePanel}
+                                onPointerDown={(e) => e.stopPropagation()}
+                            >
+                                {isHovered ? (
+                                    <span className="text-[11px] font-semibold whitespace-nowrap leading-tight text-center tracking-tight">
+                                        {label}
+                                    </span>
+                                ) : (
+                                    <span
+                                        className="pointer-events-none h-[5px] w-[5px] shrink-0 rounded-full"
+                                        style={{ backgroundColor: edgeColor }}
+                                        aria-hidden
+                                    />
+                                )}
+                            </button>
+                        </PremiumTooltip>
+                        <div
+                            className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 flex items-center gap-1 rounded-md border-0 px-2 py-1 backdrop-blur-sm bg-white/95"
+                            style={{
+                                color: edgeColor,
+                                boxShadow: `0 0 0 1px ${edgeColor}, 0 1px 3px rgba(15,23,42,0.08)`,
+                            }}
+                            role="note"
+                            aria-label={`연결 구분: ${edgeKindLabel}`}
+                        >
+                            <span className="h-[5px] w-[5px] shrink-0 rounded-full" style={{ backgroundColor: edgeColor }} aria-hidden />
+                            <span className="text-[11px] font-semibold leading-none whitespace-nowrap tracking-tight">{edgeKindLabel}</span>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            </EdgeLabelRenderer>
         ) : null;
 
     const editPanel = isEditing ? (
-        <div
-            className="nodrag nopan pointer-events-auto"
-            style={{
-                position: 'fixed',
-                left: anchorScreen.x,
-                top: anchorScreen.y,
-                transform: `translate(-50%, calc(-100% - 10px)) scale(${handleUiScale})`,
-                transformOrigin: 'center bottom',
-                zIndex: PF_EDGE_PANEL_Z,
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-        >
-            <div className="flex w-64 flex-col items-center animate-in fade-in zoom-in-[0.92] duration-200 ease-out origin-bottom">
-                <div className="relative w-full rounded-2xl border border-gray-200/95 bg-white/95 shadow-xl shadow-black/[0.08] backdrop-blur-xl">
-                    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-                        <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                            <div className="h-2 w-2 rounded-full bg-blue-500" />
+        <EdgeLabelRenderer>
+            <div
+                className="nodrag nopan pointer-events-auto"
+                style={{
+                    position: 'absolute',
+                    transform: `translate(${labelX}px, ${labelY}px) translate(-50%, calc(-100% - 8px))`,
+                    transformOrigin: 'center bottom',
+                    zIndex: PF_EDGE_PANEL_Z,
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+            >
+            <div className="flex w-[15.5rem] flex-col items-center animate-in fade-in duration-200 ease-out origin-bottom">
+                <div className="relative w-full rounded-xl border border-gray-200/90 bg-white/95 shadow-md shadow-black/[0.05] backdrop-blur-md">
+                    <div className="flex items-center justify-between border-b border-gray-100/90 px-3 py-2">
+                        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
+                            <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
                             연결 방향 설정
                         </h3>
                         <button
@@ -239,11 +249,11 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                             onClick={() => setIsEditing(false)}
                             className="rounded-lg p-1 transition-colors hover:bg-gray-100"
                         >
-                            <X size={16} className="text-gray-500" />
+                            <X size={14} className="text-gray-500" />
                         </button>
                     </div>
 
-                    <div className="space-y-4 px-4 pb-2 pt-4">
+                    <div className="space-y-3 px-3 pb-2 pt-3">
                         <div className="flex items-end gap-1.5">
                             <div className="min-w-0 flex-1">
                                 <label className="mb-1 block text-xs font-medium text-gray-600">시작 화살표</label>
@@ -264,7 +274,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                     ev.stopPropagation();
                                     handleSwapArrows();
                                 }}
-                                className="nodrag nopan mb-px flex h-[34px] w-8 shrink-0 flex-col items-center justify-center gap-0 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 active:scale-95"
+                                className="nodrag nopan mb-px flex h-[30px] w-7 shrink-0 flex-col items-center justify-center gap-0 rounded-md border border-gray-200 bg-gray-50/90 text-gray-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 active:scale-95"
                             >
                                 <ArrowLeft size={11} strokeWidth={2.25} className="-mb-px" aria-hidden />
                                 <ArrowRight size={11} strokeWidth={2.25} className="-mt-px" aria-hidden />
@@ -311,7 +321,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                             key={p.hint}
                                             type="button"
                                             onClick={() => handleColorChange(p.color)}
-                                            className="nodrag nopan min-w-0 flex-1 rounded-md border-2 bg-white px-1 py-1.5 text-[10px] font-bold leading-tight tracking-tight transition-colors hover:bg-gray-50/90 active:scale-[0.97]"
+                                            className="nodrag nopan min-w-0 flex-1 rounded-md border border-solid bg-white px-1 py-1 text-[9px] font-semibold leading-tight tracking-tight transition-colors hover:bg-gray-50/90 active:scale-[0.97]"
                                             style={{
                                                 borderColor: p.color,
                                                 color: p.color,
@@ -327,7 +337,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                         </div>
                     </div>
 
-                    <div className="flex gap-2 border-t border-gray-100 px-4 py-3">
+                    <div className="flex gap-1.5 border-t border-gray-100/90 px-3 py-2">
                         <button
                             type="button"
                             onClick={() => {
@@ -336,15 +346,15 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                     setIsEditing(false);
                                 }
                             }}
-                            className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-red-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-red-600"
+                            className="flex flex-1 items-center justify-center gap-1 rounded-md bg-red-500 px-2.5 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-red-600"
                         >
-                            <Trash2 size={12} />
+                            <Trash2 size={11} />
                             삭제
                         </button>
                         <button
                             type="button"
                             onClick={() => setIsEditing(false)}
-                            className="flex-1 rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
+                            className="flex-1 rounded-md bg-gray-100 px-2.5 py-1.5 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-200"
                         >
                             확인
                         </button>
@@ -355,7 +365,8 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-px border-x-[10px] border-x-transparent border-t-[11px] border-t-[rgba(255,255,255,0.96)]" />
                 </div>
             </div>
-        </div>
+            </div>
+        </EdgeLabelRenderer>
     ) : null;
 
     return (
@@ -369,8 +380,8 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                 style={{ stroke: edgeColor, strokeWidth: strokeW, strokeLinecap: 'round', strokeLinejoin: 'round' }}
             />
 
-            {handlePortal && createPortal(handlePortal, document.body)}
-            {isEditing && editPanel && createPortal(editPanel, document.body)}
+            {edgeLabels}
+            {editPanel}
 
             <defs>
                 {showEndArrow && (
@@ -379,8 +390,8 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                         viewBox="-2 -2 16 16"
                         refX="0"
                         refY="6"
-                        markerWidth="14"
-                        markerHeight="14"
+                        markerWidth="12"
+                        markerHeight="12"
                         markerUnits="userSpaceOnUse"
                         orient="auto"
                         overflow="visible"
@@ -394,8 +405,8 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                         viewBox="-2 -2 16 16"
                         refX="0"
                         refY="6"
-                        markerWidth="14"
-                        markerHeight="14"
+                        markerWidth="12"
+                        markerHeight="12"
                         markerUnits="userSpaceOnUse"
                         orient="auto-start-reverse"
                         overflow="visible"

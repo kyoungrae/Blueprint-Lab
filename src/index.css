@@ -53,6 +53,11 @@
   overflow: visible;
 }
 
+/* 연결선 본선: 캔버스 줌에 두께만 커지지 않게 (오버레이 UI와 동일하게 ‘고정 픽셀’ 느낌) */
+.process-flow-canvas-rf .react-flow__edge-path {
+  vector-effect: non-scaling-stroke;
+}
+
 /*
   섹션 반투명 레이어가 viewport 안에서 DOM 순서상 엣지 SVG 뒤에 붙으면 같은 z-index에서 위에 그려져 점선·화살표가 잘린 것처럼 보임.
   엣지 → 섹션 배경보다 위, 노드(핸들)보다 아래로 고정한다.
@@ -73,6 +78,11 @@
 .process-flow-canvas-rf .react-flow__viewport > .react-flow__nodes {
   position: relative;
   z-index: 10 !important;
+}
+
+/* HTML 엣지 라벨(연결 팝업/배지): 노드 위에 표시 */
+.process-flow-canvas-rf .react-flow__edgelabel-renderer {
+  z-index: 30 !important;
 }
 
 .process-flow-canvas-rf .react-flow__node {

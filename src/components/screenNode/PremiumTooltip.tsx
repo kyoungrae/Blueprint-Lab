@@ -142,7 +142,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({
 
     const tooltipContent = (
         <div
-            className="absolute px-2.5 py-1.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] font-medium rounded-lg shadow-2xl border border-slate-700/50 whitespace-nowrap flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150 pointer-events-none"
+            className="absolute px-2.5 py-1.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] font-medium rounded-lg shadow-2xl border border-slate-700/50 whitespace-nowrap flex items-center gap-2 animate-in fade-in duration-150 pointer-events-none"
             style={tooltipStyle}
         >
             {dotColor && <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />}
