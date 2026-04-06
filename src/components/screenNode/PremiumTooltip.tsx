@@ -114,10 +114,11 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
             ? { position: 'absolute' as const, left: portalPos.left, top: portalPos.top, transform: 'translate(-50%, -100%)', zIndex }
             : { position: 'absolute' as const, left: portalPos.left, top: portalPos.top, transform: 'translate(-50%, 0)', zIndex };
 
+    const bodyZ = Math.max(zIndex, BODY_PORTAL_Z_INDEX);
     const bodyPortalStyle: React.CSSProperties =
         placement === 'top'
-            ? { position: 'fixed' as const, left: viewportPos.left, top: viewportPos.top, transform: 'translate(-50%, -100%)', zIndex: BODY_PORTAL_Z_INDEX }
-            : { position: 'fixed' as const, left: viewportPos.left, top: viewportPos.top, transform: 'translate(-50%, 0)', zIndex: BODY_PORTAL_Z_INDEX };
+            ? { position: 'fixed' as const, left: viewportPos.left, top: viewportPos.top, transform: 'translate(-50%, -100%)', zIndex: bodyZ }
+            : { position: 'fixed' as const, left: viewportPos.left, top: viewportPos.top, transform: 'translate(-50%, 0)', zIndex: bodyZ };
 
     const useContainerPortal = visible && !useBodyPortal && !insideFloatingPanel && portalRootRef?.current != null;
     const useBody = visible && useBodyPortal && typeof document !== 'undefined' && document.body;
