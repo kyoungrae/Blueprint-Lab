@@ -158,6 +158,8 @@ const ViewportDebounceUpdater: React.FC<{ onViewportIdle: (viewport: { x: number
 };
 
 const HANDLE_SIZE = 8;
+const ERD_UI_COMPACT_SCALE = 0.8;
+const ERD_SIDEBAR_DEFAULT_WIDTH = Math.round(280 * ERD_UI_COMPACT_SCALE);
 interface SectionOverlayLayerProps {
     sections: Section[];
     hoveredSectionId: string | null;
@@ -415,6 +417,7 @@ const ERDCanvasContent: React.FC = () => {
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [sidebarWidth] = useState(ERD_SIDEBAR_DEFAULT_WIDTH);
     const [editingRelationship, setEditingRelationship] = useState<Relationship | null>(null);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
@@ -1858,12 +1861,21 @@ const ERDCanvasContent: React.FC = () => {
 
     return (
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
-            {/* Left Sidebar wrapper with transition (반응형: 화면 설계와 동일) */}
+            {/* Left Sidebar wrapper with compact scale (화면 설계와 동일) */}
             <div className="relative flex h-full min-w-0">
                 <div
-                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'w-56 sm:w-64 md:w-72 flex-shrink-0' : 'w-0 border-none'}`}
+                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'flex-shrink-0' : 'w-0 border-none'}`}
+                    style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
                 >
-                    <div className="w-56 sm:w-64 md:w-72 h-full min-w-0">
+                    <div
+                        className="h-full min-w-0"
+                        style={{
+                            width: sidebarWidth / ERD_UI_COMPACT_SCALE,
+                            height: `${100 / ERD_UI_COMPACT_SCALE}%`,
+                            transform: `scale(${ERD_UI_COMPACT_SCALE})`,
+                            transformOrigin: 'top left',
+                        }}
+                    >
                         <Sidebar />
                     </div>
                 </div>
@@ -1885,7 +1897,11 @@ const ERDCanvasContent: React.FC = () => {
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
                 <div
                     ref={erdToolbarRef}
-                    className={`absolute top-4 right-4 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] ${isSidebarOpen ? 'left-6' : 'left-4'} transition-all duration-300`}
+                    className="absolute top-4 left-1/2 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] transition-all duration-300"
+                    style={{
+                        transform: `translateX(-50%) scale(${ERD_UI_COMPACT_SCALE})`,
+                        transformOrigin: 'top center',
+                    }}
                 >
                     <PremiumTooltip placement="bottom" offsetBottom={30} label="프로젝트 목록으로 돌아가기">
                         <button
