@@ -16,12 +16,12 @@ import 'reactflow/dist/style.css';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useYjsStore } from '../../store/yjsStore';
-import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog, Database, Diamond, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog, Database, Diamond, Upload, Download } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
-import type { ProcessFlowNode, ProcessFlowEdge, ProcessFlowRectShape } from '../../types/processFlow';
+import type { ProcessFlowNode, ProcessFlowEdge, ProcessFlowRectShape, ProcessFlowSection } from '../../types/processFlow';
 import type { Screen } from '../../types/screenDesign';
 import ProcessFlowSidebar from './ProcessFlowSidebar';
 import { ProcessFlowNode as ProcessFlowNodeComponent } from './nodes/ProcessFlowNode';
@@ -61,6 +61,68 @@ const PROCESS_FLOW_SIDEBAR_MAX_WIDTH = 600;
 const PROCESS_FLOW_UI_COMPACT_SCALE = 0.85;
 const SECTION_HANDLE_SIZE = 8;
 
+function mergeProcessFlowImport(
+    existing: { pfNodes: ProcessFlowNode[]; pfEdges: ProcessFlowEdge[]; pfSections: ProcessFlowSection[] },
+    incoming: { nodes: ProcessFlowNode[]; edges: ProcessFlowEdge[]; sections: ProcessFlowSection[] }
+): { pfNodes: ProcessFlowNode[]; pfEdges: ProcessFlowEdge[]; pfSections: ProcessFlowSection[] } {
+    const ts = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const existingSectionIds = new Set(existing.pfSections.map((s) => s.id));
+    const sectionIdMap = new Map<string, string>();
+
+    const incomingSections = incoming.sections ?? [];
+    for (const sec of incomingSections) {
+        const newId = existingSectionIds.has(sec.id) ? `pf_sec_${ts()}` : sec.id;
+        sectionIdMap.set(sec.id, newId);
+        existingSectionIds.add(newId);
+    }
+
+    const mergedSections: ProcessFlowSection[] = [...existing.pfSections];
+    for (const sec of incomingSections) {
+        const newId = sectionIdMap.get(sec.id)!;
+        let parentId = sec.parentId;
+        if (parentId != null && sectionIdMap.has(parentId)) {
+            parentId = sectionIdMap.get(parentId)!;
+        }
+        mergedSections.push({ ...sec, id: newId, parentId: parentId ?? null });
+    }
+
+    const existingNodeIds = new Set(existing.pfNodes.map((n) => n.id));
+    const nodeIdMap = new Map<string, string>();
+    const incomingNodes = incoming.nodes ?? [];
+    for (const node of incomingNodes) {
+        const newId = existingNodeIds.has(node.id) ? `pf_node_${ts()}` : node.id;
+        if (newId !== node.id) nodeIdMap.set(node.id, newId);
+        existingNodeIds.add(newId);
+    }
+
+    const mergedNodes: ProcessFlowNode[] = [...existing.pfNodes];
+    for (const node of incomingNodes) {
+        const newId = nodeIdMap.get(node.id) ?? node.id;
+        let sectionId = node.sectionId;
+        if (sectionId != null && sectionIdMap.has(sectionId)) {
+            sectionId = sectionIdMap.get(sectionId)!;
+        }
+        mergedNodes.push({ ...node, id: newId, sectionId: sectionId ?? undefined });
+    }
+
+    const mergedNodeIds = new Set(mergedNodes.map((n) => n.id));
+    const mergedEdges: ProcessFlowEdge[] = [...existing.pfEdges];
+    const existingEdgeIds = new Set(existing.pfEdges.map((e) => e.id));
+    for (const edge of incoming.edges ?? []) {
+        const src = nodeIdMap.get(edge.source) ?? edge.source;
+        const tgt = nodeIdMap.get(edge.target) ?? edge.target;
+        if (!mergedNodeIds.has(src) || !mergedNodeIds.has(tgt)) continue;
+        const newEdgeId =
+            existingEdgeIds.has(edge.id) || mergedEdges.some((e) => e.id === edge.id)
+                ? `pf_edge_${ts()}`
+                : edge.id;
+        existingEdgeIds.add(newEdgeId);
+        mergedEdges.push({ ...edge, id: newEdgeId, source: src, target: tgt });
+    }
+
+    return { pfNodes: mergedNodes, pfEdges: mergedEdges, pfSections: mergedSections };
+}
+
 const ProcessFlowCanvasInner: React.FC = () => {
     const { logout, user } = useAuthStore();
     const { projects, currentProjectId, setCurrentProject } = useProjectStore();
@@ -94,6 +156,9 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [shapePanelOpen, setShapePanelOpen] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [importJsonText, setImportJsonText] = useState('');
+    const [importError, setImportError] = useState<string | null>(null);
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [selectionBox, setSelectionBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
 
@@ -1072,6 +1137,21 @@ const ProcessFlowCanvasInner: React.FC = () => {
                                 <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
                             </button>
                         </PremiumTooltip>
+                        <PremiumTooltip placement="bottom" offsetBottom={10} label="가져오기 (다른 프로젝트에서보낸 데이터 붙여넣기)">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsImportModalOpen(true);
+                                    setImportError(null);
+                                    setImportJsonText('');
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                            >
+                                <Download size={16} className="text-violet-500 shrink-0" />
+                                <span className="whitespace-nowrap hidden sm:inline">가져오기</span>
+                            </button>
+                        </PremiumTooltip>
+
 
                         <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
@@ -1520,6 +1600,116 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         onExport={handleProcessFlowExport}
                         onClose={() => setIsExportModalOpen(false)}
                     />
+                )}
+                {isImportModalOpen && (
+                    <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[10050] p-4">
+                        <div className="bg-white rounded-[15px] w-full max-w-2xl shadow-2xl overflow-hidden scale-in max-h-[90vh] flex flex-col">
+                            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+                                <h3 className="text-lg font-black text-gray-900">데이터 가져오기</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsImportModalOpen(false);
+                                        setImportError(null);
+                                    }}
+                                    className="p-2 hover:bg-gray-100 rounded-full text-gray-400"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <p className="px-6 py-2 text-sm text-gray-500 shrink-0">
+                                다른 프로젝트에서 <strong>데이터(JSON) 보내기</strong>로 저장한 JSON을 붙여넣거나 파일을 선택하세요. 기존 다이어그램에
+                                병합됩니다.
+                            </p>
+                            {importError && (
+                                <div className="mx-6 mb-2 p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium shrink-0">{importError}</div>
+                            )}
+                            <div className="px-6 py-2 flex-1 min-h-0 flex flex-col">
+                                <textarea
+                                    value={importJsonText}
+                                    onChange={(e) => {
+                                        setImportJsonText(e.target.value);
+                                        setImportError(null);
+                                    }}
+                                    placeholder='{"nodes":[...],"edges":[...],"sections":[...]}'
+                                    className="flex-1 min-h-[200px] w-full p-4 border border-gray-200 rounded-xl font-mono text-sm resize-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+                                />
+                                <div className="flex items-center gap-3 mt-3 shrink-0">
+                                    <label className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-bold text-gray-700 cursor-pointer transition-colors">
+                                        <Download size={16} />
+                                        파일 선택
+                                        <input
+                                            type="file"
+                                            accept=".json"
+                                            className="sr-only"
+                                            onChange={(e) => {
+                                                const f = e.target.files?.[0];
+                                                e.target.value = '';
+                                                if (!f) return;
+                                                const r = new FileReader();
+                                                r.onload = () => {
+                                                    setImportJsonText(String(r.result ?? ''));
+                                                    setImportError(null);
+                                                };
+                                                r.readAsText(f);
+                                            }}
+                                        />
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setImportError(null);
+                                            try {
+                                                const parsed = JSON.parse(importJsonText.trim());
+                                                const nodes: ProcessFlowNode[] = Array.isArray(parsed?.pfNodes)
+                                                    ? parsed.pfNodes
+                                                    : Array.isArray(parsed?.nodes)
+                                                      ? parsed.nodes
+                                                      : [];
+                                                const edges: ProcessFlowEdge[] = Array.isArray(parsed?.pfEdges)
+                                                    ? parsed.pfEdges
+                                                    : Array.isArray(parsed?.edges)
+                                                      ? parsed.edges
+                                                      : [];
+                                                const sections: ProcessFlowSection[] = Array.isArray(parsed?.pfSections)
+                                                    ? parsed.pfSections
+                                                    : Array.isArray(parsed?.sections)
+                                                      ? parsed.sections
+                                                      : [];
+                                                if (nodes.length === 0 && edges.length === 0 && sections.length === 0) {
+                                                    setImportError('노드, 연결, 섹션 데이터가 없습니다.');
+                                                    return;
+                                                }
+                                                const { pfNodes, pfEdges, pfSections } = useYjsStore.getState();
+                                                const merged = mergeProcessFlowImport(
+                                                    { pfNodes, pfEdges, pfSections },
+                                                    { nodes, edges, sections }
+                                                );
+                                                const ok = useYjsStore.getState().importData(merged);
+                                                if (!ok) {
+                                                    setImportError('동기화 연결 후 다시 시도해주세요.');
+                                                    return;
+                                                }
+                                                setSidebarListKey((k) => k + 1);
+                                                setIsImportModalOpen(false);
+                                                setImportJsonText('');
+                                                alert(
+                                                    `가져오기 완료. 노드 ${nodes.length}개, 연결 ${edges.length}개, 섹션 ${sections.length}개가 병합되었습니다.`
+                                                );
+                                            } catch (err: unknown) {
+                                                const msg = err instanceof Error ? err.message : 'JSON 형식이 올바르지 않습니다.';
+                                                setImportError(msg);
+                                            }
+                                        }}
+                                        disabled={!importJsonText.trim()}
+                                        className="px-5 py-2 bg-violet-600 text-white rounded-lg font-bold text-sm hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        가져오기
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>
