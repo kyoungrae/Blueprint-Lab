@@ -15,7 +15,7 @@ import 'reactflow/dist/style.css';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useYjsStore } from '../../store/yjsStore';
-import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, Users, UserCog } from 'lucide-react';
 
 import type { ProcessFlowNode, ProcessFlowEdge } from '../../types/processFlow';
 import ProcessFlowSidebar from './ProcessFlowSidebar';
@@ -85,6 +85,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
         startSize: { width: number; height: number };
     } | null>(null);
     const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
+    const [userTypePanelOpen, setUserTypePanelOpen] = useState(false);
 
     const {
         joinProject: yjsJoin,
@@ -542,7 +543,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     );
 
     const createNodeAtCenter = useCallback(
-        (type: ProcessFlowNode['type']) => {
+        (type: ProcessFlowNode['type'], customText?: string) => {
             const el = flowWrapper.current;
             if (!el) return;
             const rect = el.getBoundingClientRect();
@@ -553,7 +554,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 id,
                 type,
                 position: { x: center.x - (DEFAULT_NODE_STYLE.width ?? 240) / 2, y: center.y - (DEFAULT_NODE_STYLE.height ?? 120) / 2 },
-                text: type === 'USER' ? 'User' : 'Process',
+                text: customText || (type === 'USER' ? 'User' : 'Process'),
                 textStyle: { ...DEFAULT_TEXT_STYLE },
                 style: { ...DEFAULT_NODE_STYLE },
             });
@@ -695,14 +696,53 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
                         <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
                         
-                        <button
-                            onClick={() => createNodeAtCenter('USER')}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                            title="User 노드 추가"
-                        >
-                            <Plus size={16} className="shrink-0" />
-                            <span className="whitespace-nowrap hidden sm:inline">사용자</span>
-                        </button>
+                        {/* 사용자 버튼 + 선택 패널 */}
+                        <div className="relative shrink-0" id="user-type-button-container">
+                            <button
+                                onClick={() => setUserTypePanelOpen((v) => !v)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                                title="사용자 노드 추가"
+                            >
+                                <Plus size={16} className="shrink-0" />
+                                <span className="whitespace-nowrap hidden sm:inline">사용자</span>
+                            </button>
+                        </div>
+                        
+                        {userTypePanelOpen && createPortal(
+                            <div 
+                                className="fixed bg-white border border-gray-200 rounded-lg shadow-lg p-1 z-[99999] min-w-[120px]"
+                                style={(() => {
+                                    const btn = document.getElementById('user-type-button-container')?.getBoundingClientRect();
+                                    return btn ? {
+                                        left: btn.left,
+                                        top: btn.top - 8,
+                                        transform: 'translateY(-100%)'
+                                    } : {};
+                                })()}
+                            >
+                                <button
+                                    onClick={() => {
+                                        createNodeAtCenter('USER', '사용자');
+                                        setUserTypePanelOpen(false);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-700 rounded-md transition-colors flex items-center gap-2"
+                                >
+                                    <Users size={14} className="text-amber-600" />
+                                    사용자
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        createNodeAtCenter('USER', '관리자');
+                                        setUserTypePanelOpen(false);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-700 rounded-md transition-colors flex items-center gap-2"
+                                >
+                                    <UserCog size={14} className="text-amber-600" />
+                                    관리자
+                                </button>
+                            </div>,
+                            document.body
+                        )}
                         
                         <button
                             onClick={() => createNodeAtCenter('RECT')}

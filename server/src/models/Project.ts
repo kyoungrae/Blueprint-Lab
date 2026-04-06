@@ -213,6 +213,16 @@ export interface IProcessFlowSnapshot {
 }
 
 // Project Document Interface
+export interface IBugReportReply {
+    id: string;
+    bugReportId: string;
+    userId: string;
+    userName: string;
+    userPicture?: string;
+    content: string;
+    createdAt: Date;
+}
+
 export interface IBugReport {
     id: string;
     projectId: string;
@@ -226,6 +236,7 @@ export interface IBugReport {
     resolvedAt?: Date;
     resolvedBy?: string;
     resolvedByName?: string;
+    replies?: IBugReportReply[];
 }
 
 export interface IProject extends Document {
@@ -456,6 +467,16 @@ const ProcessFlowSnapshotSchema = new Schema<IProcessFlowSnapshot>({
     savedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+const BugReportReplySchema = new Schema<IBugReportReply>({
+    id: { type: String, required: true },
+    bugReportId: { type: String, required: true },
+    userId: { type: String, required: true },
+    userName: { type: String, required: true },
+    userPicture: { type: String },
+    content: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+}, { _id: false });
+
 const BugReportSchema = new Schema<IBugReport>({
     id: { type: String, required: true },
     projectId: { type: String, required: true },
@@ -469,6 +490,7 @@ const BugReportSchema = new Schema<IBugReport>({
     resolvedAt: { type: Date },
     resolvedBy: { type: String },
     resolvedByName: { type: String },
+    replies: { type: [BugReportReplySchema], default: [] },
 }, { _id: false });
 
 const ProjectSchema = new Schema<IProject>({
