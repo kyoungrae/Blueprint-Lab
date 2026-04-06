@@ -4,13 +4,17 @@ export const parseSQLToERD = (sql: string): { entities: Entity[], relationships:
     const entities: Entity[] = [];
     const relationships: Relationship[] = [];
 
-    // Normalize SQL: remove comments and extra whitespace
+    // Normalize SQL: remove comments, support Oracle "/" delimiter, and compact whitespace
     const cleanSql = sql
         .replace(/\/\*[\s\S]*?\*\/|--.*/g, '') // Remove block and line comments
+        // Oracle SQL*Plus delimiter: "/" on its own line
+        .replace(/^\s*\/\s*$/gm, ';')
+        // Also support ") / CREATE ..." style delimiter
+        .replace(/\)\s*\/\s*(?=(CREATE|ALTER|DROP|TRUNCATE)\b)/gi, '); ')
         .replace(/\s+/g, ' ')
         .trim();
 
-    // Split by semicolons for multiple statements
+    // Split by semicolons for multiple statements (Oracle "/" converted above)
     const statements = cleanSql.split(';').map(s => s.trim()).filter(Boolean);
 
     statements.forEach(statement => {

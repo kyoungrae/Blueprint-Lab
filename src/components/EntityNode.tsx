@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useCallback } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { Handle, Position, type NodeProps, useStore } from 'reactflow';
 import type { Entity, Attribute } from '../types/erd';
 import { Database, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare } from 'lucide-react';
@@ -522,7 +522,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
         });
     };
 
-    const handleUpdateAttribute = useCallback((attrId: string, updates: Partial<Attribute>, isGranular = false) => {
+    const handleUpdateAttribute = (attrId: string, updates: Partial<Attribute>, isGranular = false) => {
         if (isLocked) return;
         const currentEntity = useERDStore.getState().entitiesById[entity.id];
         if (!currentEntity) return;
@@ -552,9 +552,9 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                 payload: { attributes: newAttributes }
             });
         }
-    }, [isLocked, entity.id, user, sendOperation, updateEntity]);
+    };
 
-    const handleDeleteAttribute = useCallback((attrId: string, e: React.MouseEvent) => {
+    const handleDeleteAttribute = (attrId: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (isLocked) return;
         const currentEntity = useERDStore.getState().entitiesById[entity.id];
@@ -570,7 +570,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
             previousState: { attributes: currentEntity.attributes },
         });
         updateEntity(entity.id, { attributes: newAttributes });
-    }, [isLocked, entity.id, user, sendOperation, updateEntity]);
+    };
 
     const handleDeleteEntity = (e: React.MouseEvent) => {
         e.stopPropagation();
