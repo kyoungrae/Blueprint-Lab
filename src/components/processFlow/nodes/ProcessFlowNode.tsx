@@ -1,8 +1,19 @@
-import React, { memo, useCallback, useState, useRef, useEffect } from 'react';
-import { Handle, Position } from 'reactflow';
+import React, { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
+import { Handle, Position, useReactFlow } from 'reactflow';
 import { useYjsStore } from '../../../store/yjsStore';
+import { useProjectStore } from '../../../store/projectStore';
 import type { ProcessFlowNode as ProcessFlowNodeType, ProcessFlowRectShape } from '../../../types/processFlow';
-import { User as UserIcon, UserCog } from 'lucide-react';
+import type { Project } from '../../../types/erd';
+import { User as UserIcon, UserCog, Search, ClipboardList } from 'lucide-react';
+import PremiumTooltip from '../../screenNode/PremiumTooltip';
+import ErdTableSearchPanel from '../../erd/ErdTableSearchPanel';
+import ErdTableDetailPanel from '../../erd/ErdTableDetailPanel';
+import {
+    collectErdTableNames,
+    resolveLinkedErdProjects,
+    findErdEntityByPhysicalName,
+    getErdTableKoreanName,
+} from '../../../utils/linkedErdProjects';
 
 interface ProcessFlowNodeProps {
     data: ProcessFlowNodeType & { label?: string };
@@ -25,9 +36,60 @@ function parallelogramParams(W: number, H: number, bw: number) {
 
 const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, selected }) => {
     const yjsUpdateNode = useYjsStore((s: any) => s.pfUpdateNode);
+    const { projects, currentProjectId } = useProjectStore();
+    const { screenToFlowPosition } = useReactFlow();
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(data.text ?? '');
+    const [dbTableSearchOpen, setDbTableSearchOpen] = useState(false);
+    const [dbTablePanelPos, setDbTablePanelPos] = useState<{ x: number; y: number } | null>(null);
+    const [dbDetailOpen, setDbDetailOpen] = useState(false);
+    const dbErdAnchorRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const currentProject = useMemo(
+        () => projects.find((p) => p.id === currentProjectId),
+        [projects, currentProjectId],
+    );
+    const linkedErdProjects = useMemo(
+        () => resolveLinkedErdProjects(projects as Project[], currentProject as Project | undefined),
+        [projects, currentProject],
+    );
+    const erdTableNames = useMemo(() => collectErdTableNames(linkedErdProjects), [linkedErdProjects]);
+
+    const erdDetailColumnRows = useMemo(() => {
+        const nameEn = data.linkedErdTableName;
+        if (!nameEn) return [];
+        const found = findErdEntityByPhysicalName(linkedErdProjects, nameEn);
+        if (!found) return [];
+        return found.entity.attributes.map((a) => ({
+            nameEn: a.name,
+            nameKr: (a.comment ?? '').trim(),
+            dataType: a.type ?? '',
+            length: a.length ?? '',
+        }));
+    }, [data.linkedErdTableName, linkedErdProjects]);
+
+    const erdDetailTableKr = useMemo(() => {
+        const en = data.linkedErdTableName;
+        if (!en) return '';
+        return getErdTableKoreanName(linkedErdProjects, en);
+    }, [data.linkedErdTableName, linkedErdProjects]);
+
+    useEffect(() => {
+        if (!dbTableSearchOpen && !dbDetailOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            if (dbDetailOpen) {
+                e.preventDefault();
+                setDbDetailOpen(false);
+            } else if (dbTableSearchOpen) {
+                e.preventDefault();
+                setDbTableSearchOpen(false);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [dbTableSearchOpen, dbDetailOpen]);
 
     const handleDoubleClick = useCallback(() => {
         setIsEditing(true);
@@ -263,6 +325,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                     { yTop: y1, c: c1 },
                     { yTop: y2, c: c2 },
                 ] as const;
+                const showErdUi = linkedErdProjects.length > 0;
                 return (
                     <div
                         className={`relative cursor-pointer transition-all duration-200 hover:shadow-lg ${ringClass}`}
@@ -300,6 +363,76 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                             </g>
                         </svg>
                         <div className="relative z-10 flex h-full w-full items-center justify-center px-3 py-5">{rectBody}</div>
+                        {showErdUi ? (
+                            <>
+                                <div
+                                    ref={dbErdAnchorRef}
+                                    className="nodrag nopan absolute right-1 top-1 z-20 flex gap-0.5 rounded-md border border-amber-200/80 bg-white/95 p-0.5 shadow-sm pointer-events-auto"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onDoubleClick={(e) => e.stopPropagation()}
+                                >
+                                    <PremiumTooltip placement="bottom" offsetBottom={8} label="연결 ERD에서 테이블 검색">
+                                        <button
+                                            type="button"
+                                            title="테이블 검색"
+                                            className="rounded p-1 text-amber-800 transition-colors hover:bg-amber-50"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (!dbTableSearchOpen && dbErdAnchorRef.current) {
+                                                    const r = dbErdAnchorRef.current.getBoundingClientRect();
+                                                    setDbTablePanelPos(screenToFlowPosition({ x: r.left, y: r.bottom }));
+                                                }
+                                                setDbTableSearchOpen((o) => !o);
+                                            }}
+                                        >
+                                            <Search size={13} strokeWidth={2.25} className="shrink-0" />
+                                        </button>
+                                    </PremiumTooltip>
+                                    {data.linkedErdTableName ? (
+                                        <PremiumTooltip placement="bottom" offsetBottom={8} label="컬럼(영·한·타입·길이) 상세">
+                                            <button
+                                                type="button"
+                                                title="테이블 상세"
+                                                className="rounded p-1 text-slate-700 transition-colors hover:bg-slate-100"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setDbDetailOpen(true);
+                                                }}
+                                            >
+                                                <ClipboardList size={13} strokeWidth={2.25} className="shrink-0" />
+                                            </button>
+                                        </PremiumTooltip>
+                                    ) : null}
+                                </div>
+                                <ErdTableSearchPanel
+                                    open={dbTableSearchOpen}
+                                    onClose={() => setDbTableSearchOpen(false)}
+                                    anchorRef={dbErdAnchorRef}
+                                    panelPos={dbTablePanelPos}
+                                    onPanelPosChange={setDbTablePanelPos}
+                                    linkedErdProjects={linkedErdProjects}
+                                    erdTables={erdTableNames}
+                                    dataContextId={data.id}
+                                    portalTitle="테이블 검색"
+                                    onPickTable={(physicalName) => {
+                                        const ko = getErdTableKoreanName(linkedErdProjects, physicalName);
+                                        const text = ko ? `${ko}\n${physicalName}` : physicalName;
+                                        yjsUpdateNode(data.id, {
+                                            linkedErdTableName: physicalName,
+                                            text,
+                                        });
+                                    }}
+                                />
+                                <ErdTableDetailPanel
+                                    open={dbDetailOpen && Boolean(data.linkedErdTableName)}
+                                    onClose={() => setDbDetailOpen(false)}
+                                    tableNameEn={data.linkedErdTableName ?? ''}
+                                    tableNameKr={erdDetailTableKr}
+                                    columns={erdDetailColumnRows}
+                                />
+                            </>
+                        ) : null}
                     </div>
                 );
             }
