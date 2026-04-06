@@ -75,6 +75,10 @@
   z-index: 10 !important;
 }
 
+.process-flow-canvas-rf .react-flow__node {
+  overflow: visible !important;
+}
+
 /* ERD: prevent edge/connector clipping at viewport boundaries */
 .react-flow,
 .react-flow__container,

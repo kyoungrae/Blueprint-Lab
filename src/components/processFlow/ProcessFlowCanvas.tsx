@@ -16,10 +16,10 @@ import 'reactflow/dist/style.css';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useYjsStore } from '../../store/yjsStore';
-import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog, Database, Diamond } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
-import type { ProcessFlowNode, ProcessFlowEdge } from '../../types/processFlow';
+import type { ProcessFlowNode, ProcessFlowEdge, ProcessFlowRectShape } from '../../types/processFlow';
 import ProcessFlowSidebar from './ProcessFlowSidebar';
 import { ProcessFlowNode as ProcessFlowNodeComponent } from './nodes/ProcessFlowNode';
 import { ProcessFlowEdge as ProcessFlowEdgeComponent } from './edges/ProcessFlowEdge';
@@ -87,6 +87,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     } | null>(null);
     const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
     const [userTypePanelOpen, setUserTypePanelOpen] = useState(false);
+    const [shapePanelOpen, setShapePanelOpen] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [selectionBox, setSelectionBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
@@ -537,7 +538,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '8px',
+                /* padding 없음: 도형(SVG)이 width×height 전체를 쓰는데 패딩이 있으면 잘림 */
+                overflow: 'visible',
                 textAlign: 'center',
                 whiteSpace: 'pre-wrap',
             },
@@ -603,7 +605,10 @@ const ProcessFlowCanvasInner: React.FC = () => {
     );
 
     const createNodeAtCenter = useCallback(
-        (type: ProcessFlowNode['type'], options?: { text?: string; userRole?: 'user' | 'admin' }) => {
+        (
+            type: ProcessFlowNode['type'],
+            options?: { text?: string; userRole?: 'user' | 'admin'; shape?: ProcessFlowRectShape }
+        ) => {
             const el = flowWrapper.current;
             if (!el) return;
             const rect = el.getBoundingClientRect();
@@ -612,15 +617,16 @@ const ProcessFlowCanvasInner: React.FC = () => {
             const id = `pf_node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             const nodeWidth = type === 'USER' ? 120 : (DEFAULT_NODE_STYLE.width ?? 240);
             const nodeHeight = type === 'USER' ? 120 : (DEFAULT_NODE_STYLE.height ?? 120);
-            
+
             pfAddNode({
                 id,
                 type,
+                ...(type === 'RECT' && options?.shape ? { shape: options.shape } : {}),
                 position: { x: center.x - nodeWidth / 2, y: center.y - nodeHeight / 2 },
                 text: options?.text || (type === 'USER' ? 'User' : 'Process'),
                 userRole: options?.userRole,
                 textStyle: { ...DEFAULT_TEXT_STYLE },
-                style: { 
+                style: {
                     ...DEFAULT_NODE_STYLE,
                     width: nodeWidth,
                     height: nodeHeight,
@@ -821,7 +827,10 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         {/* 사용자 버튼 + 선택 패널 */}
                         <div className="relative shrink-0" id="user-type-button-container">
                             <button
-                                onClick={() => setUserTypePanelOpen((v) => !v)}
+                                onClick={() => {
+                                    setShapePanelOpen(false);
+                                    setUserTypePanelOpen((v) => !v);
+                                }}
                                 className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
                                 title="사용자 노드 추가"
                             >
@@ -865,14 +874,88 @@ const ProcessFlowCanvasInner: React.FC = () => {
                             document.body
                         )}
                         
-                        <button
-                            onClick={() => createNodeAtCenter('RECT')}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
-                            title="사각형 노드 추가"
-                        >
-                            <Plus size={16} className="shrink-0" />
-                            <span className="whitespace-nowrap">사각형</span>
-                        </button>
+                        <div className="relative shrink-0" id="shape-button-container">
+                            <button
+                                onClick={() => {
+                                    setUserTypePanelOpen(false);
+                                    setShapePanelOpen((v) => !v);
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-all text-sm font-bold shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                                title="도형 노드 추가"
+                            >
+                                <Plus size={16} className="shrink-0" />
+                                <span className="whitespace-nowrap">도형</span>
+                            </button>
+                        </div>
+
+                        {shapePanelOpen && createPortal(
+                            <div
+                                className="fixed z-[99999] min-w-[168px] rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
+                                style={(() => {
+                                    const btn = document.getElementById('shape-button-container')?.getBoundingClientRect();
+                                    return btn
+                                        ? {
+                                              left: btn.left,
+                                              top: btn.bottom + 8,
+                                          }
+                                        : {};
+                                })()}
+                            >
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        createNodeAtCenter('RECT', { shape: 'db' });
+                                        setShapePanelOpen(false);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-yellow-50 hover:text-yellow-800"
+                                >
+                                    <Database size={14} className="shrink-0 text-yellow-700" />
+                                    데이터베이스
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        createNodeAtCenter('RECT', { shape: 'rectangle' });
+                                        setShapePanelOpen(false);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-yellow-50 hover:text-yellow-800"
+                                >
+                                    <Square size={14} className="shrink-0 text-yellow-700" />
+                                    사각형
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        createNodeAtCenter('RECT', { shape: 'diamond' });
+                                        setShapePanelOpen(false);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-yellow-50 hover:text-yellow-800"
+                                >
+                                    <Diamond size={14} className="shrink-0 text-yellow-700" />
+                                    마름모
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        createNodeAtCenter('RECT', { shape: 'trapezoid' });
+                                        setShapePanelOpen(false);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-yellow-50 hover:text-yellow-800"
+                                >
+                                    <svg className="h-[14px] w-[14px] shrink-0 text-yellow-700" viewBox="0 0 14 12" aria-hidden>
+                                        <polygon
+                                            points="3,1.5 12.5,1.5 11,10.5 1.5,10.5"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="1.35"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
+                                    사다리꼴
+                                </button>
+                            </div>,
+                            document.body
+                        )}
 
                         <PremiumTooltip placement="bottom" offsetBottom={10} label={isSectionDrawMode ? '캔버스에서 영역을 드래그해 섹션을 만드세요' : '섹션 추가'}>
                             <button

@@ -1,5 +1,8 @@
 export type ProcessFlowNodeType = 'RECT' | 'USER';
 
+/** RECT 노드의 시각적 도형 (미지정 시 사각형과 동일) */
+export type ProcessFlowRectShape = 'rectangle' | 'diamond' | 'trapezoid' | 'db';
+
 export interface ProcessFlowTextStyle {
     fontSize?: number;
     color?: string;
@@ -19,6 +22,8 @@ export interface ProcessFlowNodeStyle {
 export interface ProcessFlowNode {
     id: string;
     type: ProcessFlowNodeType;
+    /** type이 RECT일 때만 사용. 생략 시 rectangle */
+    shape?: ProcessFlowRectShape;
     position: { x: number; y: number };
     text?: string;
     userRole?: 'user' | 'admin';
