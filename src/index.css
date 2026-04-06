@@ -25,7 +25,7 @@
     0 2px 10px rgba(15, 23, 42, 0.25) !important;
   z-index: 2;
 }
-.process-flow-canvas-rf .react-flow__handle-top.pf-process-flow-conn-handle:hover {
+/* .process-flow-canvas-rf .react-flow__handle-top.pf-process-flow-conn-handle:hover {
   transform: translateX(-50%) scale(1.25) !important;
 }
 .process-flow-canvas-rf .react-flow__handle-bottom.pf-process-flow-conn-handle:hover {
@@ -36,7 +36,7 @@
 }
 .process-flow-canvas-rf .react-flow__handle-left.pf-process-flow-conn-handle:hover {
   transform: translateY(-50%) scale(1.25) !important;
-}
+} */
 
 .react-flow__edge-path {
   transition: stroke-width 0.2s;

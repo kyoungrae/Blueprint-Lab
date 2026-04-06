@@ -392,7 +392,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                     <marker
                         id={mkId('start')}
                         viewBox="-2 -2 16 16"
-                        refX="1"
+                        refX="0"
                         refY="6"
                         markerWidth="14"
                         markerHeight="14"
