@@ -245,7 +245,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                     autoFocus
                 />
             ) : (
-                <span className="px-1 text-center" style={{ ...textStyleProps, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                <span className="px-1 text-center" style={{ ...textStyleProps, whiteSpace: 'pre-wrap', wordBreak: 'break-word' ,backgroundColor: '#ffffff'}}>
                     {data.text ?? 'Process'}
                 </span>
             )}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ReactFlow,
     Background,
@@ -16,16 +16,20 @@ import 'reactflow/dist/style.css';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useYjsStore } from '../../store/yjsStore';
-import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog, Database, Diamond } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog, Database, Diamond, Upload } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 import type { ProcessFlowNode, ProcessFlowEdge, ProcessFlowRectShape } from '../../types/processFlow';
+import type { Screen } from '../../types/screenDesign';
 import ProcessFlowSidebar from './ProcessFlowSidebar';
 import { ProcessFlowNode as ProcessFlowNodeComponent } from './nodes/ProcessFlowNode';
 import { ProcessFlowEdge as ProcessFlowEdgeComponent } from './edges/ProcessFlowEdge';
 import type { Connection, Node, Edge } from 'reactflow';
 import { copyToClipboard } from '../../utils/clipboard';
 import PremiumTooltip from '../screenNode/PremiumTooltip';
+import ScreenExportModal, { type ExportFormat } from '../ScreenExportModal';
 
 const nodeTypes = {
     processFlow: ProcessFlowNodeComponent,
@@ -89,6 +93,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [userTypePanelOpen, setUserTypePanelOpen] = useState(false);
     const [shapePanelOpen, setShapePanelOpen] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [selectionBox, setSelectionBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
 
@@ -133,6 +138,29 @@ const ProcessFlowCanvasInner: React.FC = () => {
     }, [onNodesChange]);
 
     const currentProject = projects.find(p => p.id === currentProjectId);
+
+    const processFlowExportScreens = useMemo((): Screen[] => {
+        const name = currentProject?.name ? `${currentProject.name} 프로세스 흐름` : '프로세스 흐름';
+        return [
+            {
+                id: 'process-flow-canvas',
+                sectionId: null,
+                systemName: '',
+                screenId: 'PROCESS_FLOW',
+                name,
+                author: '',
+                createdDate: '',
+                screenType: '프로세스 흐름',
+                page: '1/1',
+                screenDescription: '',
+                initialSettings: '',
+                functionDetails: '',
+                relatedTables: '',
+                fields: [],
+                position: { x: 0, y: 0 },
+            },
+        ];
+    }, [currentProject?.name]);
 
     const flowWrapper = useRef<HTMLDivElement>(null);
     const layerRef = useRef<HTMLDivElement>(null);
@@ -729,6 +757,69 @@ const ProcessFlowCanvasInner: React.FC = () => {
         setDeleteConfirmOpen(false);
     };
 
+    const handleProcessFlowExport = useCallback(
+        async (_selectedIds: string[], format: ExportFormat) => {
+            const projectName = (currentProject?.name || 'process_flow').replace(/[/\\?%*:|"<>]/g, '_');
+            const now = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+
+            if (format === 'json') {
+                const payload = {
+                    nodes: pfNodes ?? [],
+                    edges: pfEdges ?? [],
+                    sections: pfSections ?? [],
+                };
+                const json = JSON.stringify(payload, null, 2);
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${projectName}_process_flow_${now}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                setIsExportModalOpen(false);
+                return;
+            }
+
+            const target = flowWrapper.current;
+            if (!target) {
+                alert('보내기 영역을 찾을 수 없습니다.');
+                return;
+            }
+            const canvas = await html2canvas(target, {
+                backgroundColor: '#f8fafc',
+                scale: 2,
+                useCORS: true,
+                allowTaint: false,
+                logging: false,
+            });
+
+            if (format === 'pdf') {
+                const imgData = canvas.toDataURL('image/png');
+                const orientation = canvas.width >= canvas.height ? 'landscape' : 'portrait';
+                const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height] });
+                pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+                pdf.save(`${projectName}_process_flow_${now}.pdf`);
+                setIsExportModalOpen(false);
+                return;
+            }
+
+            if (format === 'ppt_beta') {
+                alert('프로세스 흐름 PPT_BETA는 준비 중입니다. PNG로 저장합니다.');
+            }
+            const imageUrl = canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = imageUrl;
+            a.download = `${projectName}_process_flow_${now}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setIsExportModalOpen(false);
+        },
+        [currentProject?.name, pfNodes, pfEdges, pfSections]
+    );
+
     return (
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
             <div className="relative flex h-full min-w-0">
@@ -826,7 +917,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         </div>
 
                         <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
-                        
+
                         {/* 사용자 버튼 + 선택 패널 */}
                         <div className="relative shrink-0" id="user-type-button-container">
                             <button
@@ -967,6 +1058,18 @@ const ProcessFlowCanvasInner: React.FC = () => {
                             >
                                 <Square size={16} className="shrink-0" />
                                 <span className="whitespace-nowrap hidden sm:inline">섹션 추가</span>
+                            </button>
+                        </PremiumTooltip>
+
+                        <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
+                        <PremiumTooltip placement="bottom" offsetBottom={10} label="내보내기">
+                            <button
+                                type="button"
+                                onClick={() => setIsExportModalOpen(true)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-sm font-bold shadow-sm active:scale-95 shrink-0"
+                            >
+                                <Upload size={16} className="text-green-500 shrink-0" />
+                                <span className="whitespace-nowrap hidden sm:inline">내보내기</span>
                             </button>
                         </PremiumTooltip>
 
@@ -1409,6 +1512,14 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         </div>
                     </div>,
                     document.body
+                )}
+                {isExportModalOpen && (
+                    <ScreenExportModal
+                        screens={processFlowExportScreens}
+                        sections={[]}
+                        onExport={handleProcessFlowExport}
+                        onClose={() => setIsExportModalOpen(false)}
+                    />
                 )}
             </div>
         </div>
