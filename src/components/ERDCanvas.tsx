@@ -53,23 +53,8 @@ const usePreventBrowserZoom = (containerRef: React.RefObject<HTMLElement | null>
 
 // Figma 수준의 즉각적인 줌 컨트롤
 const FigmaStyleZoomControls: React.FC = () => {
-    const { getViewport, setViewport } = useReactFlow();
-
-    const instantZoom = useCallback((direction: 'in' | 'out') => {
-        const currentZoom = getViewport().zoom;
-        const targetZoom = direction === 'in' 
-            ? Math.min(currentZoom * 1.25, 4)
-            : Math.max(currentZoom * 0.8, 0.05);
-
-        // Figma 수준의 즉시 반응 (0ms)
-        setViewport({
-            x: getViewport().x,
-            y: getViewport().y,
-            zoom: targetZoom
-        }, { duration: 0 });
-    }, [getViewport, setViewport]);
-
-return null;};
+    return null;
+};
 
 import EntityNode, { EntityNodePlaceholder } from './EntityNode';
 import ERDEdge from './ERDEdge';
