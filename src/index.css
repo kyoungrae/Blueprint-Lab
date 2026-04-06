@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
 /* React Flow Edge Updater Styles */
 .react-flow__edgeupdater {
@@ -13,6 +13,30 @@
 
 .react-flow__edge-path {
   transition: stroke-width 0.2s;
+}
+
+/* 프로세스 플로우: 마커(화살표) 끝이 SVG/g 경계에서 잘리지 않도록 */
+.process-flow-canvas-rf .react-flow__edges {
+  overflow: visible !important;
+}
+.process-flow-canvas-rf .react-flow__edge {
+  overflow: visible;
+}
+.process-flow-canvas-rf .react-flow__edge path {
+  overflow: visible;
+}
+
+/*
+  섹션 반투명 레이어가 viewport 안에서 DOM 순서상 엣지 SVG 뒤에 붙으면 같은 z-index에서 위에 그려져 점선·화살표가 잘린 것처럼 보임.
+  엣지 → 섹션 배경보다 위, 노드(핸들)보다 아래로 고정한다.
+*/
+.process-flow-canvas-rf .react-flow__viewport > svg.react-flow__edges {
+  position: relative;
+  z-index: 5 !important;
+}
+.process-flow-canvas-rf .react-flow__viewport > .react-flow__nodes {
+  position: relative;
+  z-index: 10 !important;
 }
 
 /* ERD: prevent edge/connector clipping at viewport boundaries */

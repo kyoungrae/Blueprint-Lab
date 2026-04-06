@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import ReactFlow, {
+import {
+    ReactFlow,
     Background,
     BackgroundVariant,
-    ConnectionMode,
     MiniMap,
+    ConnectionMode,
     ReactFlowProvider,
     useEdgesState,
     useNodesState,
@@ -16,6 +17,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useYjsStore } from '../../store/yjsStore';
 import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 import type { ProcessFlowNode, ProcessFlowEdge } from '../../types/processFlow';
 import ProcessFlowSidebar from './ProcessFlowSidebar';
@@ -24,7 +26,6 @@ import { ProcessFlowEdge as ProcessFlowEdgeComponent } from './edges/ProcessFlow
 import type { Connection, Node, Edge } from 'reactflow';
 import { copyToClipboard } from '../../utils/clipboard';
 import PremiumTooltip from '../screenNode/PremiumTooltip';
-import { createPortal } from 'react-dom';
 
 const nodeTypes = {
     processFlow: ProcessFlowNodeComponent,
@@ -86,6 +87,9 @@ const ProcessFlowCanvasInner: React.FC = () => {
     } | null>(null);
     const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
     const [userTypePanelOpen, setUserTypePanelOpen] = useState(false);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [isShiftPressed, setIsShiftPressed] = useState(false);
+    const [selectionBox, setSelectionBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
 
     const {
         joinProject: yjsJoin,
@@ -102,19 +106,35 @@ const ProcessFlowCanvasInner: React.FC = () => {
         pfAddNode,
         pfUpdateNode,
         pfAddEdge,
+        pfUpdateEdge,
         pfUpdateSection,
         pfAddSection,
         pfDeleteSection,
+        pfDeleteNode,
     } = useYjsStore();
 
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const { getViewport, screenToFlowPosition, fitView } = useReactFlow();
+    const selectedNodes = nodes.filter(n => n.selected);
+
+    // 커스텀 노드 변경 핸들러 - 선택 동작 제어
+    const handleNodesChange = useCallback((changes: any[]) => {
+        const selectionChanges = changes.filter(change => change.type === 'select');
+        
+        if (selectionChanges.length > 0) {
+            // 선택 변경만 있는 경우 - 기본 동작 유지
+            onNodesChange(changes);
+        } else {
+            // 다른 변경사항이 있는 경우
+            onNodesChange(changes);
+        }
+    }, [onNodesChange]);
 
     const currentProject = projects.find(p => p.id === currentProjectId);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const layerRef = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
-    const { fitView, screenToFlowPosition, getNodes, getViewport } = useReactFlow();
 
     // 🚀 ReactFlow의 진짜 도화지(줌/팬 엔진) DOM을 찾아냅니다.
     useEffect(() => {
@@ -213,9 +233,9 @@ const ProcessFlowCanvasInner: React.FC = () => {
             });
             
             // 드래그 영역 안에 있는 프로세스 노드는 "가장 안쪽(가장 작은) 섹션"에 포함되도록 sectionId 재계산
-            const nodes = getNodes();
+            const currentNodes = nodes;
             const sectionsWithNew = [...(pfSections as any[]), newSection];
-            nodes.forEach((node: Node) => {
+            currentNodes.forEach((node: Node) => {
                 if (node.type !== 'processFlow') return;
                 const nw = node.width || 240;
                 const nh = node.height || 120;
@@ -233,7 +253,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 pfUpdateNode(node.id, { sectionId: deepest?.id ?? null });
             });
         },
-        [sectionDrag, pfSections, pfAddSection, getNodes, pfUpdateNode]
+        [sectionDrag, pfSections, pfAddSection, nodes, pfUpdateNode]
     );
     const onSectionOverlayMouseLeave = useCallback(() => {
         setSectionDrag(null);
@@ -353,9 +373,25 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 const cx = movedSection.position.x + movedSection.size.width / 2;
                 const cy = movedSection.position.y + movedSection.size.height / 2;
                 
-                // 중첩된 섹션 중 가장 작은(안쪽) 섹션을 새로운 부모로 찾기
+                // 🚀 자신의 모든 하위 섹션 ID들을 찾아서 제외해야 함
+                const getDescendantIds = (parentId: string, visited: Set<string>): string[] => {
+                    if (visited.has(parentId)) return [];
+                    visited.add(parentId);
+                    const children = (pfSections as any[]).filter((s) => s.parentId === parentId).map((s) => s.id);
+                    let descendants: string[] = [];
+                    children.forEach((childId) => {
+                        descendants.push(childId);
+                        descendants = [...descendants, ...getDescendantIds(childId, visited)];
+                    });
+                    return descendants;
+                };
+                
+                const descendantIds = getDescendantIds(sectionId, new Set<string>());
+                const excludeIds = new Set([sectionId, ...descendantIds]);
+                
+                // 중첩된 섹션 중 가장 작은(안쪽) 섹션을 새로운 부모로 찾기 (자기 자신과 자손 제외)
                 const newParent = (pfSections as any[])
-                    .filter((s) => s.id !== sectionId && // 자기 자신 제외
+                    .filter((s) => !excludeIds.has(s.id) && // 자기 자신과 자손 제외
                         cx >= s.position.x &&
                         cx <= s.position.x + s.size.width &&
                         cy >= s.position.y &&
@@ -366,6 +402,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 // 부모가 변경되었으면 업데이트
                 const newParentId = newParent ? newParent.id : null;
                 if (newParentId !== movedSection.parentId) {
+                    console.log('[DEBUG] Moving section', sectionId, 'from parent', movedSection.parentId, 'to new parent', newParentId);
                     pfUpdateSection(sectionId, { parentId: newParentId });
                 }
             }
@@ -516,6 +553,9 @@ const ProcessFlowCanvasInner: React.FC = () => {
             sourceHandle: e.sourceHandle,
             targetHandle: e.targetHandle,
             animated: e.animated ?? true,
+            label: '연결방향 설정',
+            type: 'processFlow',
+            data: e,
             style: {
                 stroke: e.style?.stroke ?? '#2563eb',
                 strokeWidth: e.style?.strokeWidth ?? 2,
@@ -542,6 +582,19 @@ const ProcessFlowCanvasInner: React.FC = () => {
         [pfAddEdge]
     );
 
+    const onReconnect = useCallback(
+        (oldEdge: Edge, connection: Connection) => {
+            if (!connection.source || !connection.target) return;
+            pfUpdateEdge(oldEdge.id, {
+                source: connection.source,
+                target: connection.target,
+                sourceHandle: connection.sourceHandle ?? undefined,
+                targetHandle: connection.targetHandle ?? undefined,
+            } as Partial<ProcessFlowEdge>);
+        },
+        [pfUpdateEdge]
+    );
+
     const createNodeAtCenter = useCallback(
         (type: ProcessFlowNode['type'], options?: { text?: string; userRole?: 'user' | 'admin' }) => {
             const el = flowWrapper.current;
@@ -550,14 +603,21 @@ const ProcessFlowCanvasInner: React.FC = () => {
             const center = screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
 
             const id = `pf_node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            const nodeWidth = type === 'USER' ? 120 : (DEFAULT_NODE_STYLE.width ?? 240);
+            const nodeHeight = type === 'USER' ? 120 : (DEFAULT_NODE_STYLE.height ?? 120);
+            
             pfAddNode({
                 id,
                 type,
-                position: { x: center.x - (DEFAULT_NODE_STYLE.width ?? 240) / 2, y: center.y - (DEFAULT_NODE_STYLE.height ?? 120) / 2 },
+                position: { x: center.x - nodeWidth / 2, y: center.y - nodeHeight / 2 },
                 text: options?.text || (type === 'USER' ? 'User' : 'Process'),
                 userRole: options?.userRole,
                 textStyle: { ...DEFAULT_TEXT_STYLE },
-                style: { ...DEFAULT_NODE_STYLE },
+                style: { 
+                    ...DEFAULT_NODE_STYLE,
+                    width: nodeWidth,
+                    height: nodeHeight,
+                },
             });
         },
         [pfAddNode, screenToFlowPosition]
@@ -598,6 +658,60 @@ const ProcessFlowCanvasInner: React.FC = () => {
             }
         }
     }, [currentProjectId, currentProject?.id, yjsIsSynced]);
+
+    // Shift 키 상태 추적
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Shift') {
+                setIsShiftPressed(true);
+            }
+            
+            // 텍스트 입력 중이거나 인풋 요소가 포커스된 경우 삭제 로직 무시
+            const activeElement = document.activeElement;
+            const isInputFocused = activeElement && (
+                activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.getAttribute('contenteditable') === 'true'
+            );
+            
+            if (e.key === 'Backspace' && selectedNodes.length > 0 && !isInputFocused) {
+                e.preventDefault();
+                setDeleteConfirmOpen(true);
+            }
+            
+            // 삭제 확인 팝업에서 Enter 키로 삭제
+            if (e.key === 'Enter' && deleteConfirmOpen) {
+                e.preventDefault();
+                handleDeleteSelectedNodes();
+            }
+            
+            // 삭제 확인 팝업에서 Escape 키로 취소
+            if (e.key === 'Escape' && deleteConfirmOpen) {
+                e.preventDefault();
+                setDeleteConfirmOpen(false);
+            }
+        };
+
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.key === 'Shift') {
+                setIsShiftPressed(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [selectedNodes, deleteConfirmOpen]);
+
+    const handleDeleteSelectedNodes = () => {
+        selectedNodes.forEach((node: any) => {
+            pfDeleteNode(node.id);
+        });
+        setDeleteConfirmOpen(false);
+    };
 
     return (
         <div className="flex w-full h-screen overflow-hidden bg-gray-50">
@@ -795,11 +909,89 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 </div>
 
                 <ReactFlow
+                    className="process-flow-canvas-rf"
                     nodes={nodes}
                     edges={edges}
-                    onNodesChange={onNodesChange}
+                    onNodesChange={handleNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onReconnect={onReconnect}
+                    onNodeClick={(_, node) => {
+                        // Shift+클릭: 다중 선택 토글
+                        if (isShiftPressed) {
+                            setNodes((currentNodes) =>
+                                currentNodes.map((n) => ({
+                                    ...n,
+                                    selected: n.id === node.id ? !n.selected : n.selected,
+                                }))
+                            );
+                        } else {
+                            // 일반 클릭: 단일 선택
+                            setNodes((currentNodes) =>
+                                currentNodes.map((n) => ({
+                                    ...n,
+                                    selected: n.id === node.id,
+                                }))
+                            );
+                        }
+                    }}
+                    onPaneClick={() => {
+                        // 배경 클릭 시 선택 해제
+                        setNodes((currentNodes) =>
+                            currentNodes.map((n) => ({
+                                ...n,
+                                selected: false,
+                            }))
+                        );
+                        setSelectionBox(null);
+                    }}
+                    onSelectionStart={(e: any) => {
+                        if (isShiftPressed) {
+                            const { x, y } = getViewport();
+                            setSelectionBox({
+                                start: { x: e.x - x, y: e.y - y },
+                                end: { x: e.x - x, y: e.y - y },
+                            });
+                        }
+                    }}
+                    onSelectionDrag={(e: any) => {
+                        if (isShiftPressed && selectionBox) {
+                            const { x, y } = getViewport();
+                            setSelectionBox({
+                                ...selectionBox,
+                                end: { x: e.x - x, y: e.y - y },
+                            });
+                        }
+                    }}
+                    onSelectionEnd={() => {
+                        if (isShiftPressed && selectionBox) {
+                            // 선택 박스 안의 노드들을 찾아서 선택
+                            const box = {
+                                x: Math.min(selectionBox.start.x, selectionBox.end.x),
+                                y: Math.min(selectionBox.start.y, selectionBox.end.y),
+                                width: Math.abs(selectionBox.end.x - selectionBox.start.x),
+                                height: Math.abs(selectionBox.end.y - selectionBox.start.y),
+                            };
+                            
+                            setNodes((currentNodes) =>
+                                currentNodes.map((n: any) => {
+                                    const nodeWidth = Number(n.style?.width || 240);
+                                    const nodeHeight = Number(n.style?.height || 120);
+                                    const nodeInBox = (
+                                        n.position.x >= box.x &&
+                                        n.position.x + nodeWidth <= box.x + box.width &&
+                                        n.position.y >= box.y &&
+                                        n.position.y + nodeHeight <= box.y + box.height
+                                    );
+                                    return {
+                                        ...n,
+                                        selected: nodeInBox || n.selected,
+                                    };
+                                })
+                            );
+                            setSelectionBox(null);
+                        }
+                    }}
                     onNodeDragStop={(_evt, node) => {
                         // 🚀 1. 노드 위치 업데이트
                         pfUpdateNode(node.id, { position: node.position });
@@ -822,18 +1014,21 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         
                         pfUpdateNode(node.id, { sectionId: containingSection?.id || null });
                     }}
-                    connectionMode={ConnectionMode.Loose}
+                    connectionMode={ConnectionMode.Strict}
+                    connectionRadius={28}
                     fitView
                     panOnScroll
+                    zoomOnDoubleClick={false}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
+                    deleteKeyCode={null}
                 >
                     <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="#84878bff" />
                     <MiniMap className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg" />
                     
                     {/* 섹션 렌더링 레이어 */}
                     {portalTarget && pfSections.length > 0 && createPortal(
-                        <div className="absolute inset-0 pointer-events-none z-[3]">
+                        <div className="pf-process-flow-section-fill absolute inset-0 pointer-events-none z-[1]">
                             {pfSections.map((s: any) => (
                                 <div
                                     key={s.id}
@@ -853,7 +1048,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     {portalTarget && pfSections.length > 0 && createPortal(
                         <div
                             ref={layerRef}
-                            className="absolute inset-0 pointer-events-none z-[3]"
+                            className="pf-process-flow-section-chrome absolute inset-0 pointer-events-none z-[12]"
                             style={{ '--zoom': '1' } as React.CSSProperties}
                         >
                             {/* 섹션 헤더 및 리사이즈 핸들: 마우스로 클릭하고 끌 수 있도록 설정합니다 */}
@@ -1075,6 +1270,52 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         </div>
                     )}
                 </ReactFlow>
+                
+                {/* Shift+drag 선택 박스 */}
+                {selectionBox && createPortal(
+                    <div
+                        className="absolute border-2 border-emerald-500 bg-emerald-500/20 pointer-events-none z-[100]"
+                        style={{
+                            left: Math.min(selectionBox.start.x, selectionBox.end.x),
+                            top: Math.min(selectionBox.start.y, selectionBox.end.y),
+                            width: Math.abs(selectionBox.end.x - selectionBox.start.x),
+                            height: Math.abs(selectionBox.end.y - selectionBox.start.y),
+                        }}
+                    />,
+                    portalTarget || document.body
+                )}
+                
+                {/* 삭제 확인 팝업 */}
+                {deleteConfirmOpen && createPortal(
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
+                        <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                                선택된 노드 삭제
+                            </h3>
+                            <p className="text-sm text-gray-600 mb-6">
+                                {selectedNodes.length > 1 
+                                    ? `${selectedNodes.length}개의 선택된 노드를 삭제하시겠습니까?`
+                                    : '선택된 노드를 삭제하시겠습니까?'
+                                }
+                            </p>
+                            <div className="flex gap-3 justify-end">
+                                <button
+                                    onClick={() => setDeleteConfirmOpen(false)}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                >
+                                    취소
+                                </button>
+                                <button
+                                    onClick={handleDeleteSelectedNodes}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                                >
+                                    삭제
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
             </div>
         </div>
     );

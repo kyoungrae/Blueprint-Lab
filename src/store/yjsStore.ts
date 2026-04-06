@@ -11,6 +11,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { create } from 'zustand';
 import type { Screen, ScreenFlow, ScreenSection } from '../types/screenDesign';
 import type { ProcessFlowNode, ProcessFlowEdge, ProcessFlowSection } from '../types/processFlow';
+import { normalizeProcessFlowEdge } from '../utils/normalizeProcessFlowEdge';
 import { useScreenDesignStore } from './screenDesignStore';
 import { useComponentStore } from './componentStore';
 import { useAuthStore } from './authStore';
@@ -246,7 +247,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const buildPfEdges = () =>
             Array.from(yPfEdges.entries()).map(([id, yMap]) => {
                 pfEdgeIdByMap.set(yMap, id);
-                return yMap.toJSON() as ProcessFlowEdge;
+                return normalizeProcessFlowEdge(yMap.toJSON() as ProcessFlowEdge);
             });
 
         const buildPfSections = () =>
@@ -451,7 +452,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
                 const yMap = yPfEdges.get(id);
                 if (!yMap) return;
                 pfEdgeIdByMap.set(yMap, id);
-                nextById.set(id, yMap.toJSON() as ProcessFlowEdge);
+                nextById.set(id, normalizeProcessFlowEdge(yMap.toJSON() as ProcessFlowEdge));
             });
 
             const nextEdges = Array.from(yPfEdges.entries())
@@ -645,8 +646,26 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const { ydoc, isSynced } = get();
         if (!ydoc || !isSynced) return;
         const root = ydoc.getMap<Y.Map<any>>('pf_edges');
-        if (root.get(edge.id)) return;
+        const src = edge.source;
+        const tgt = edge.target;
         ydoc.transact(() => {
+            // 동일 노드 쌍(A↔B)에 이미 선이 있으면 제거 후 새 방향·핸들로 한 줄만 유지
+            const toDelete: string[] = [];
+            root.forEach((yMap, edgeId) => {
+                if (!(yMap instanceof Y.Map)) return;
+                const s = yMap.get('source') as string | undefined;
+                const t = yMap.get('target') as string | undefined;
+                if (
+                    s != null &&
+                    t != null &&
+                    ((s === src && t === tgt) || (s === tgt && t === src))
+                ) {
+                    toDelete.push(edgeId);
+                }
+            });
+            toDelete.forEach((id) => root.delete(id));
+
+            if (root.get(edge.id)) return;
             const yMap = new Y.Map<any>();
             Object.entries(edge).forEach(([k, v]) => yMap.set(k, v));
             root.set(edge.id, yMap);
@@ -743,8 +762,9 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
             if (data.pfEdges) {
                 yPfEdges.clear();
                 data.pfEdges.forEach((edge) => {
+                    const normalized = normalizeProcessFlowEdge(edge);
                     const yMap = new Y.Map();
-                    Object.entries(edge).forEach(([k, v]) => yMap.set(k, v));
+                    Object.entries(normalized).forEach(([k, v]) => yMap.set(k, v));
                     yPfEdges.set(edge.id, yMap);
                 });
             }

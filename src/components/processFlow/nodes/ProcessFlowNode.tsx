@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useState } from 'react';
+import React, { memo, useCallback, useState, useRef, useEffect } from 'react';
 import { Handle, Position } from 'reactflow';
 import { useYjsStore } from '../../../store/yjsStore';
 import type { ProcessFlowNode as ProcessFlowNodeType } from '../../../types/processFlow';
@@ -13,11 +13,21 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     const yjsUpdateNode = useYjsStore((s: any) => s.pfUpdateNode);
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(data.text ?? '');
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const handleDoubleClick = useCallback(() => {
         setIsEditing(true);
         setEditText(data.text ?? '');
     }, [data.text]);
+
+    // Auto-resize textarea based on content
+    useEffect(() => {
+        if (isEditing && textareaRef.current) {
+            const textarea = textareaRef.current;
+            textarea.style.height = 'auto';
+            textarea.style.height = `${Math.min(textarea.scrollHeight, 80)}px`;
+        }
+    }, [editText, isEditing]);
 
     const handleSave = useCallback(() => {
         const trimmed = editText.trim();
@@ -28,7 +38,8 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     }, [data.text, editText, yjsUpdateNode, data.id]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            // Enter만 누르면 저장
             e.preventDefault();
             handleSave();
         }
@@ -36,6 +47,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
             setIsEditing(false);
             setEditText(data.text ?? '');
         }
+        // Shift+Enter는 기본 동작(줄바꿈) 유지
     }, [handleSave, data.text]);
 
     const nodeStyle = {
@@ -53,24 +65,33 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
 
     const isUserNode = data.type === 'USER';
 
+    /** 시각적으로는 한 점. target을 먼저 그리고 source를 위에 두면, RF getClosestHandle이 연결 끝에서 같은 좌표면 target을 우선함 */
+    const connDot: React.CSSProperties = {
+        width: 10,
+        height: 10,
+        minWidth: 10,
+        minHeight: 10,
+        background: '#10b981',
+        border: '2px solid #fff',
+        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.2)',
+    };
+
+    const handlesFourWay = (
+        <>
+            <Handle type="target" position={Position.Top} id="in-top" style={{ ...connDot, left: '50%', top: -4, transform: 'translateX(-50%)' }} />
+            <Handle type="source" position={Position.Top} id="top" style={{ ...connDot, left: '50%', top: -4, transform: 'translateX(-50%)' }} />
+            <Handle type="target" position={Position.Right} id="in-right" style={{ ...connDot, top: '50%', right: -4, transform: 'translateY(-50%)' }} />
+            <Handle type="source" position={Position.Right} id="right" style={{ ...connDot, top: '50%', right: -4, transform: 'translateY(-50%)' }} />
+            <Handle type="target" position={Position.Bottom} id="in-bottom" style={{ ...connDot, left: '50%', bottom: -4, transform: 'translateX(-50%)' }} />
+            <Handle type="source" position={Position.Bottom} id="bottom" style={{ ...connDot, left: '50%', bottom: -4, transform: 'translateX(-50%)' }} />
+            <Handle type="target" position={Position.Left} id="in-left" style={{ ...connDot, top: '50%', left: -4, transform: 'translateY(-50%)' }} />
+            <Handle type="source" position={Position.Left} id="left" style={{ ...connDot, top: '50%', left: -4, transform: 'translateY(-50%)' }} />
+        </>
+    );
+
     return (
         <>
-            {/* Handles for 4-way connections */}
-            {isUserNode ? (
-                <>
-                    <Handle type="target" position={Position.Top} style={{ background: '#10b981', top: 5 }} />
-                    <Handle type="source" position={Position.Right} style={{ background: '#10b981', left: 'auto', right: 62 }} />
-                    <Handle type="source" position={Position.Bottom} style={{ background: '#10b981', top: 'auto', bottom: 5 }} />
-                    <Handle type="target" position={Position.Left} style={{ background: '#10b981', left: 62 }} />
-                </>
-            ) : (
-                <>
-                    <Handle type="target" position={Position.Top} id="top" style={{ background: '#10b981' }} />
-                    <Handle type="source" position={Position.Right} id="right" style={{ background: '#10b981' }} />
-                    <Handle type="source" position={Position.Bottom} id="bottom" style={{ background: '#10b981' }} />
-                    <Handle type="target" position={Position.Left} id="left" style={{ background: '#10b981' }} />
-                </>
-            )}
+            {handlesFourWay}
 
             {isUserNode ? (
                 <div
@@ -106,20 +127,23 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                     </div>
 
                     {isEditing ? (
-                        <input
-                            type="text"
+                        <textarea
+                            ref={textareaRef}
                             value={editText}
                             onChange={(e) => setEditText(e.target.value)}
                             onBlur={handleSave}
                             onKeyDown={handleKeyDown}
-                            className="w-full bg-transparent border-b border-gray-200 outline-none text-center px-2"
+                            className="w-full bg-transparent border-b border-gray-200 outline-none text-center px-2 resize-none overflow-hidden"
                             style={{
                                 fontSize: nodeStyle.fontSize,
                                 color: nodeStyle.color,
                                 fontWeight: nodeStyle.fontWeight,
                                 fontStyle: nodeStyle.fontStyle,
+                                minHeight: '20px',
+                                maxHeight: '80px',
                             }}
                             autoFocus
+                            rows={1}
                         />
                     ) : (
                         <div
