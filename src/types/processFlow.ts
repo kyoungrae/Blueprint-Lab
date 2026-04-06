@@ -21,6 +21,7 @@ export interface ProcessFlowNode {
     type: ProcessFlowNodeType;
     position: { x: number; y: number };
     text?: string;
+    userRole?: 'user' | 'admin';
     textStyle?: ProcessFlowTextStyle;
     style?: ProcessFlowNodeStyle;
     sectionId?: string | null;

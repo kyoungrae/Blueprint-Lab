@@ -938,7 +938,7 @@ const ProjectListPage: React.FC = () => {
                                 </button>
                                 <PremiumTooltip
                                     label={(user?.tier === 'PRO' || user?.tier === 'MASTER')
-                                        ? ''
+                                        ? '컴포넌트 프로젝트 생성'
                                         : 'Pro tier 이상부터 사용 가능합니다. 관리자에게 문의해 주세요.'}
                                     dotColor={(user?.tier === 'PRO' || user?.tier === 'MASTER') ? '#14b8a6' : undefined}
                                 >

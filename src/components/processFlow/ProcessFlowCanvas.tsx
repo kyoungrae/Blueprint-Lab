@@ -15,7 +15,7 @@ import 'reactflow/dist/style.css';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useYjsStore } from '../../store/yjsStore';
-import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, Users, UserCog } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog } from 'lucide-react';
 
 import type { ProcessFlowNode, ProcessFlowEdge } from '../../types/processFlow';
 import ProcessFlowSidebar from './ProcessFlowSidebar';
@@ -543,7 +543,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     );
 
     const createNodeAtCenter = useCallback(
-        (type: ProcessFlowNode['type'], customText?: string) => {
+        (type: ProcessFlowNode['type'], options?: { text?: string; userRole?: 'user' | 'admin' }) => {
             const el = flowWrapper.current;
             if (!el) return;
             const rect = el.getBoundingClientRect();
@@ -554,7 +554,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 id,
                 type,
                 position: { x: center.x - (DEFAULT_NODE_STYLE.width ?? 240) / 2, y: center.y - (DEFAULT_NODE_STYLE.height ?? 120) / 2 },
-                text: customText || (type === 'USER' ? 'User' : 'Process'),
+                text: options?.text || (type === 'USER' ? 'User' : 'Process'),
+                userRole: options?.userRole,
                 textStyle: { ...DEFAULT_TEXT_STYLE },
                 style: { ...DEFAULT_NODE_STYLE },
             });
@@ -715,24 +716,23 @@ const ProcessFlowCanvasInner: React.FC = () => {
                                     const btn = document.getElementById('user-type-button-container')?.getBoundingClientRect();
                                     return btn ? {
                                         left: btn.left,
-                                        top: btn.top - 8,
-                                        transform: 'translateY(-100%)'
+                                        top: btn.bottom + 8,
                                     } : {};
                                 })()}
                             >
                                 <button
                                     onClick={() => {
-                                        createNodeAtCenter('USER', '사용자');
+                                        createNodeAtCenter('USER', { text: '사용자', userRole: 'user' });
                                         setUserTypePanelOpen(false);
                                     }}
                                     className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-700 rounded-md transition-colors flex items-center gap-2"
                                 >
-                                    <Users size={14} className="text-amber-600" />
+                                    <UserIcon size={14} className="text-amber-600" />
                                     사용자
                                 </button>
                                 <button
                                     onClick={() => {
-                                        createNodeAtCenter('USER', '관리자');
+                                        createNodeAtCenter('USER', { text: '관리자', userRole: 'admin' });
                                         setUserTypePanelOpen(false);
                                     }}
                                     className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-700 rounded-md transition-colors flex items-center gap-2"
