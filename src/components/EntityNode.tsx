@@ -350,17 +350,29 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
     );
 });
 
-/** 줌아웃 임계값 — 이 줌 레벨 이하에서는 무거운 편집 UI 대신 경량 Placeholder를 렌더링한다.
- *  100개 노드 기준 Zustand 구독 500개 → 0으로 줄여 패닝/줌 시 프레임 드랍 완전 제거. */
-const ZOOM_THRESHOLD = 0.35;
+/** 줌아웃 시 단순화 모드 전환 임계값. */
+const ZOOM_OUT_TO_LITE = 0.3;
+/** Lite에서 Full로 복귀할 때의 임계값(경계 깜빡임 방지). */
+const ZOOM_IN_TO_FULL = 0.38;
 const zoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
 
 const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: nodeId }) => {
     const zoom = useStore(zoomSelector);
     const entityId = data.entityId ?? (data as { entity?: Entity }).entity?.id ?? nodeId;
+    const modeRef = React.useRef<'lite' | 'full' | null>(null);
+    if (modeRef.current === null) {
+        modeRef.current = zoom < ZOOM_OUT_TO_LITE ? 'lite' : 'full';
+    }
+    let mode = modeRef.current;
+    if (mode === 'full' && zoom < ZOOM_OUT_TO_LITE) {
+        mode = 'lite';
+    } else if (mode === 'lite' && zoom > ZOOM_IN_TO_FULL) {
+        mode = 'full';
+    }
+    modeRef.current = mode;
 
     // ── 줌아웃 시 경량 렌더링 (store 구독·이벤트 핸들러 0개) ──
-    if (zoom < ZOOM_THRESHOLD) {
+    if (mode === 'lite') {
         return <EntityNodeLite entityId={entityId} selected={selected} />;
     }
 
@@ -368,16 +380,15 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
     return <EntityNodeFull entityId={entityId} selected={selected} nodeId={nodeId} />;
 };
 
-/** 줌아웃 시 사용되는 초경량 노드. Zustand 구독 1개(entity 데이터), useEffect 0개. */
+/** 줌아웃 시 사용되는 초경량 노드. 화면 디자인처럼 헤더 + 이름만 노출한다. */
 const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(({ entityId, selected }) => {
     const entity = useERDStore((s) => s.entitiesById[entityId]);
     if (!entity) return null;
     const isLocked = entity.isLocked ?? true;
 
-    // 이 노드는 EntityNodeFull의 isLocked 상태(또는 렌더링 구조)와 레이아웃(높이)이 완전히 동일해야 덜컹거리지 않습니다.
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] group relative overflow-visible ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] relative overflow-visible ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
@@ -389,98 +400,36 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
 
             <div className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${isLocked ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
                 <Database size={16} className="flex-shrink-0" />
-                {/* Full의 input과 동일한 구조/크기 */}
-                <span className={`${!isLocked ? 'nodrag bg-blue-400/20' : 'bg-transparent'} border-none font-bold text-lg w-full p-0 block truncate`}>
+                <span className="font-bold text-lg w-full block truncate">
                     {entity.name}
                 </span>
-                <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0' : ''}`}>
-                    <div className="nodrag p-1 rounded-md text-white pointer-events-none">
-                        {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
-                    </div>
-                </div>
             </div>
 
             {(!isLocked || entity.comment) && (
-                <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                    <MessageSquare size={12} className="text-gray-400 shrink-0" />
-                    <span className={`text-[11px] w-full bg-transparent p-0 italic block truncate ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
-                        {entity.comment}
+                <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100">
+                    <span className="invisible text-[11px] block truncate">{entity.comment || 'comment'}</span>
+                </div>
+            )}
+
+            <div className="relative bg-gray-50 rounded-b-[calc(0.5rem-2px)]">
+                <div className="absolute inset-0 z-[1] flex items-center justify-center pointer-events-none">
+                    <span className="px-3 py-1.5 rounded-lg bg-white/90 border border-gray-200 text-gray-600 text-xl font-semibold max-w-[85%] truncate shadow-sm">
+                        {entity.name || '새 테이블'}
                     </span>
                 </div>
-            )}
-
-            <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
-                {entity.attributes.map((attr) => (
-                    <div key={attr.id} className={`flex items-center gap-1 py-1 px-2 rounded group/attr relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'}`}>
-                        {/* PK Icon/Toggle */}
-                        <div className="w-8 flex-shrink-0 flex justify-center">
-                            <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
-                                <Key size={14} />
-                            </span>
+                <div className="p-2 space-y-1">
+                    {entity.attributes.map((attr) => (
+                        <div key={attr.id} className="h-[30px] px-2 rounded">
+                            <span className="invisible text-sm">{attr.name || 'column'}</span>
                         </div>
-
-                        {/* Name Input equivalent */}
-                        <div className="flex-1 min-w-0 mx-1">
-                            <span className={`w-full text-sm px-1.5 py-0.5 rounded block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
-                                {attr.name}
-                            </span>
-                        </div>
-
-                        <div className="flex flex-nowrap items-center gap-2 flex-shrink-0">
-                            {/* Type Column equivalent */}
-                            <div className="w-16 flex-shrink-0 flex items-center h-4">
-                                <span className={`text-[10px] w-full block truncate ${!isLocked ? 'text-blue-600' : 'text-gray-400'}`}>
-                                    {attr.type.split('(')[0]}
-                                </span>
-                            </div>
-
-                            {/* Length Column equivalent (렌더링은 input과 동일한 높이/크기로 빈공간 유지) */}
-                            <div className="w-10 flex-shrink-0">
-                                <span className={`block w-full text-[9px] px-1 py-0.5 border border-transparent truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
-                                    {attr.length || ''}
-                                </span>
-                            </div>
-
-                            {/* NN Toggle equivalent */}
-                            <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
-                                <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
-                                    <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
-                                </div>
-                                <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
-                            </div>
-
-                            {/* Comment Column equivalent */}
-                            <div className="w-24 flex-shrink-0 flex items-center gap-1 bg-gray-50/30 px-1 rounded h-[18px]">
-                                <MessageSquare size={11} className={`shrink-0 ${attr.comment ? 'text-blue-400' : 'text-gray-200'}`} />
-                                <span className={`text-[9px] p-0 italic w-full truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
-                                    {attr.comment}
-                                </span>
-                            </div>
-
-                            {/* FK Toggle equivalent */}
-                            <div className="w-8 flex-shrink-0 flex justify-center">
-                                <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
-                                    <Link size={14} />
-                                </span>
-                            </div>
-
-                            {/* Delete Column padding equivalent to maintain layout */}
-                            {!isLocked && (
-                                <div className="w-[20px]" />
-                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {!isLocked && (
-                <div className="px-2 pb-2">
-                    <div className="w-full flex items-center justify-center gap-2 py-1.5 border-2 border-dashed border-gray-200 rounded text-gray-400 text-xs font-medium">
-                        <Plus size={14} />
-                        컬럼 추가
-                    </div>
+                    ))}
                 </div>
-            )}
+                {!isLocked && (
+                    <div className="px-2 pb-2">
+                        <div className="h-[34px] w-full rounded border-2 border-dashed border-gray-200" />
+                    </div>
+                )}
+            </div>
 
             <PrivHandles />
         </div>

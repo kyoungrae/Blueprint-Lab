@@ -1897,7 +1897,7 @@ const ERDCanvasContent: React.FC = () => {
                 {/* Toolbar (반응형: 화면 설계와 동일) */}
                 <div
                     ref={erdToolbarRef}
-                    className="absolute top-4 left-1/2 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] transition-all duration-300"
+                    className="w-full absolute top-4 left-1/2 z-[10001] bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-wrap items-center gap-2 max-w-[calc(100%-2rem)] transition-all duration-300"
                     style={{
                         transform: `translateX(-50%) scale(${ERD_UI_COMPACT_SCALE})`,
                         transformOrigin: 'top center',
