@@ -124,8 +124,11 @@ const ProjectListPage: React.FC = () => {
     const projectConnections = useMemo(() => {
         const connections: { fromId: string; toId: string }[] = [];
         projects.forEach((p) => {
-            if (p.projectType === 'SCREEN_DESIGN') {
+            if (p.projectType === 'SCREEN_DESIGN' || p.projectType === 'PROCESS_FLOW') {
                 getLinkedErdIds(p).forEach((erdId) => connections.push({ fromId: p.id, toId: erdId }));
+            }
+
+            if (p.projectType === 'SCREEN_DESIGN') {
                 if (p.linkedComponentProjectId) connections.push({ fromId: p.id, toId: p.linkedComponentProjectId });
             }
         });
@@ -625,43 +628,44 @@ const ProjectListPage: React.FC = () => {
 
                                         <div className="mt-auto pt-6 border-t border-gray-50 flex items-center justify-between" style={{display:'flex',flexDirection:'column',alignItems:'baseline'}}>
                                         <div className="flex items-center gap-2">
+                                            {(project.projectType === 'SCREEN_DESIGN' || project.projectType === 'PROCESS_FLOW') && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setLinkingProjectId(project.id);
+                                                        setLinkingMode('erd');
+                                                    }}
+                                                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${getLinkedErdIds(project).length > 0
+                                                        ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
+                                                        }`}
+                                                    title="ERD 프로젝트 연결"
+                                                >
+                                                    <Database size={10} />
+                                                    {getLinkedErdIds(project).length > 0
+                                                        ? `ERD 연결 (${getLinkedErdIds(project).length}개)`
+                                                        : 'ERD 연결'}
+                                                </button>
+                                            )}
+
                                             {project.projectType === 'SCREEN_DESIGN' && (
-                                                <>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setLinkingProjectId(project.id);
-                                                            setLinkingMode('erd');
-                                                        }}
-                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${getLinkedErdIds(project).length > 0
-                                                            ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                                                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
-                                                            }`}
-                                                        title="ERD 프로젝트 연결"
-                                                    >
-                                                        <Database size={10} />
-                                                        {getLinkedErdIds(project).length > 0
-                                                            ? `ERD 연결 (${getLinkedErdIds(project).length}개)`
-                                                            : 'ERD 연결'}
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setLinkingProjectId(project.id);
-                                                            setLinkingMode('component');
-                                                        }}
-                                                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${hasLinkedComponent
-                                                            ? 'bg-teal-50 text-teal-600 hover:bg-teal-100'
-                                                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
-                                                            }`}
-                                                        title="컴포넌트 프로젝트 연결"
-                                                    >
-                                                        <Box size={10} />
-                                                        {hasLinkedComponent
-                                                            ? (linkedComponentProject?.name || '컴포넌트 연결됨')
-                                                            : '컴포넌트 연결하기'}
-                                                    </button>
-                                                </>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setLinkingProjectId(project.id);
+                                                        setLinkingMode('component');
+                                                    }}
+                                                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-all ${hasLinkedComponent
+                                                        ? 'bg-teal-50 text-teal-600 hover:bg-teal-100'
+                                                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
+                                                        }`}
+                                                    title="컴포넌트 프로젝트 연결"
+                                                >
+                                                    <Box size={10} />
+                                                    {hasLinkedComponent
+                                                        ? (linkedComponentProject?.name || '컴포넌트 연결됨')
+                                                        : '컴포넌트 연결하기'}
+                                                </button>
                                             )}
                                         </div>
 

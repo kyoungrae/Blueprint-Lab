@@ -9,6 +9,8 @@ import { useScreenCanvasStore } from '../contexts/ScreenCanvasStoreContext';
 
 import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, Table2, Settings2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
+import type { Project } from '../types/erd';
+import { collectErdTableNames, resolveLinkedErdProjects } from '../utils/linkedErdProjects';
 
 import { useScreenLockAndSync } from './screenNode/useScreenLockAndSync';
 import { useCanvasHistory } from './screenNode/useCanvasHistory';
@@ -312,20 +314,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
     const { projects, currentProjectId } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
-    const linkedErdProjects = React.useMemo(() => {
-        if (!currentProject) return [];
-        const ids = currentProject.linkedErdProjectIds?.length ? currentProject.linkedErdProjectIds : (currentProject.linkedErdProjectId ? [currentProject.linkedErdProjectId] : []);
-        return projects.filter(p => ids.includes(p.id));
-    }, [currentProject, projects]);
+    const linkedErdProjects = React.useMemo(
+        () => resolveLinkedErdProjects(projects as Project[], currentProject as Project | undefined),
+        [currentProject, projects],
+    );
     const linkedComponentProject = projects.find(p => p.id === currentProject?.linkedComponentProjectId);
-    const erdTables = React.useMemo(() => {
-        const names = new Set<string>();
-        linkedErdProjects.forEach((erdProj) => {
-            const data = erdProj?.data as { entities?: { name: string }[] } | undefined;
-            data?.entities?.forEach((e: { name: string }) => names.add(e.name));
-        });
-        return Array.from(names).sort();
-    }, [linkedErdProjects]);
+    const erdTables = React.useMemo(() => collectErdTableNames(linkedErdProjects), [linkedErdProjects]);
     const componentList = React.useMemo(() => {
         // 연결된 프로젝트가 COMPONENT 타입일 때만 컴포넌트 목록 사용 (화면 설계 프로젝트의 screens와 혼동 방지)
         if (linkedComponentProject?.projectType !== 'COMPONENT') return [];

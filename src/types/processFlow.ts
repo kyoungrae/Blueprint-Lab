@@ -24,6 +24,8 @@ export interface ProcessFlowNode {
     type: ProcessFlowNodeType;
     /** type이 RECT일 때만 사용. 생략 시 rectangle */
     shape?: ProcessFlowRectShape;
+    /** 데이터베이스 도형(shape: db)에서 연결된 ERD 테이블 물리명 */
+    linkedErdTableName?: string;
     position: { x: number; y: number };
     text?: string;
     userRole?: 'user' | 'admin';

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ReactFlow,
     Background,
@@ -16,16 +16,25 @@ import 'reactflow/dist/style.css';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useYjsStore } from '../../store/yjsStore';
-import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog, Database, Diamond } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog, Database, Diamond, Search, ClipboardList } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 import type { ProcessFlowNode, ProcessFlowEdge, ProcessFlowRectShape } from '../../types/processFlow';
+import type { Project } from '../../types/erd';
 import ProcessFlowSidebar from './ProcessFlowSidebar';
 import { ProcessFlowNode as ProcessFlowNodeComponent } from './nodes/ProcessFlowNode';
 import { ProcessFlowEdge as ProcessFlowEdgeComponent } from './edges/ProcessFlowEdge';
 import type { Connection, Node, Edge } from 'reactflow';
 import { copyToClipboard } from '../../utils/clipboard';
 import PremiumTooltip from '../screenNode/PremiumTooltip';
+import ErdTableSearchPanel from '../erd/ErdTableSearchPanel';
+import ErdTableDetailPanel from '../erd/ErdTableDetailPanel';
+import {
+    collectErdTableNames,
+    resolveLinkedErdProjects,
+    findErdEntityByPhysicalName,
+    getErdTableKoreanName,
+} from '../../utils/linkedErdProjects';
 
 const nodeTypes = {
     processFlow: ProcessFlowNodeComponent,
@@ -91,6 +100,10 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [selectionBox, setSelectionBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
+    const [pfErdTableSearchOpen, setPfErdTableSearchOpen] = useState(false);
+    const [pfErdTablePanelPos, setPfErdTablePanelPos] = useState<{ x: number; y: number } | null>(null);
+    const [pfErdDetailOpen, setPfErdDetailOpen] = useState(false);
+    const pfErdSearchAnchorRef = useRef<HTMLDivElement>(null);
 
     const {
         joinProject: yjsJoin,
@@ -133,6 +146,49 @@ const ProcessFlowCanvasInner: React.FC = () => {
     }, [onNodesChange]);
 
     const currentProject = projects.find(p => p.id === currentProjectId);
+
+    const linkedErdProjects = useMemo(
+        () => resolveLinkedErdProjects(projects as Project[], currentProject as Project | undefined),
+        [projects, currentProject],
+    );
+    const erdTableNames = useMemo(() => collectErdTableNames(linkedErdProjects), [linkedErdProjects]);
+    const hasDbShapeOnCanvas = useMemo(
+        () => (pfNodes ?? []).some((n) => n.type === 'RECT' && n.shape === 'db'),
+        [pfNodes],
+    );
+    const selectedDbProcessNode = useMemo((): ProcessFlowNode | null => {
+        if (selectedNodes.length !== 1) return null;
+        const n = selectedNodes[0];
+        const d = n.data as ProcessFlowNode;
+        if (d?.type !== 'RECT' || d?.shape !== 'db') return null;
+        return d;
+    }, [selectedNodes]);
+
+    const erdDetailColumnRows = useMemo(() => {
+        const nameEn = selectedDbProcessNode?.linkedErdTableName;
+        if (!nameEn) return [];
+        const found = findErdEntityByPhysicalName(linkedErdProjects, nameEn);
+        if (!found) return [];
+        return found.entity.attributes.map((a) => ({
+            nameEn: a.name,
+            nameKr: (a.comment ?? '').trim(),
+            dataType: a.type ?? '',
+            length: a.length ?? '',
+        }));
+    }, [selectedDbProcessNode?.linkedErdTableName, linkedErdProjects]);
+
+    const erdDetailTableKr = useMemo(() => {
+        const en = selectedDbProcessNode?.linkedErdTableName;
+        if (!en) return '';
+        return getErdTableKoreanName(linkedErdProjects, en);
+    }, [selectedDbProcessNode?.linkedErdTableName, linkedErdProjects]);
+
+    useEffect(() => {
+        if (pfErdTableSearchOpen && !selectedDbProcessNode) {
+            setPfErdTableSearchOpen(false);
+        }
+    }, [pfErdTableSearchOpen, selectedDbProcessNode]);
+
     const flowWrapper = useRef<HTMLDivElement>(null);
     const layerRef = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
@@ -623,7 +679,9 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 type,
                 ...(type === 'RECT' && options?.shape ? { shape: options.shape } : {}),
                 position: { x: center.x - nodeWidth / 2, y: center.y - nodeHeight / 2 },
-                text: options?.text || (type === 'USER' ? 'User' : 'Process'),
+                text:
+                    options?.text ||
+                    (type === 'USER' ? 'User' : options?.shape === 'db' ? '데이터베이스' : 'Process'),
                 userRole: options?.userRole,
                 textStyle: { ...DEFAULT_TEXT_STYLE },
                 style: {
@@ -703,6 +761,17 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 e.preventDefault();
                 setDeleteConfirmOpen(false);
             }
+
+            if (e.key === 'Escape' && pfErdDetailOpen) {
+                e.preventDefault();
+                setPfErdDetailOpen(false);
+                return;
+            }
+            if (e.key === 'Escape' && pfErdTableSearchOpen) {
+                e.preventDefault();
+                setPfErdTableSearchOpen(false);
+                return;
+            }
         };
 
         const handleKeyUp = (e: KeyboardEvent) => {
@@ -717,7 +786,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [selectedNodes, deleteConfirmOpen]);
+    }, [selectedNodes, deleteConfirmOpen, pfErdDetailOpen, pfErdTableSearchOpen]);
 
     const handleDeleteSelectedNodes = () => {
         selectedNodes.forEach((node: any) => {
@@ -764,6 +833,52 @@ const ProcessFlowCanvasInner: React.FC = () => {
             </div>
 
             <div className="flex-1 min-w-0 h-full relative" ref={flowWrapper}>
+                {hasDbShapeOnCanvas && linkedErdProjects.length > 0 && (
+                    <div
+                        className="absolute top-4 right-4 z-[10004] flex flex-col items-end gap-1 pointer-events-none"
+                        style={{ transform: `scale(${PROCESS_FLOW_UI_COMPACT_SCALE})`, transformOrigin: 'top right' }}
+                    >
+                        <div ref={pfErdSearchAnchorRef} className="flex flex-wrap justify-end gap-2 pointer-events-auto">
+                            <PremiumTooltip placement="bottom" offsetBottom={8} label="연결 ERD에서 테이블을 검색해 도형에 반영합니다">
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!selectedDbProcessNode) {
+                                            alert('데이터베이스 도형을 하나 선택한 뒤 테이블 검색을 눌러 주세요.');
+                                            return;
+                                        }
+                                        if (!pfErdTableSearchOpen && pfErdSearchAnchorRef.current) {
+                                            const r = pfErdSearchAnchorRef.current.getBoundingClientRect();
+                                            setPfErdTablePanelPos(screenToFlowPosition({ x: r.left, y: r.bottom }));
+                                        }
+                                        setPfErdTableSearchOpen((o) => !o);
+                                    }}
+                                    className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white/95 px-3 py-1.5 text-xs font-bold text-amber-900 shadow-md hover:bg-amber-50"
+                                >
+                                    <Search size={14} className="shrink-0 text-amber-600" />
+                                    테이블 검색
+                                </button>
+                            </PremiumTooltip>
+                            {selectedDbProcessNode?.linkedErdTableName ? (
+                                <PremiumTooltip placement="bottom" offsetBottom={8} label="선택한 테이블의 컬럼(영·한·타입·길이)을 봅니다">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPfErdDetailOpen(true);
+                                        }}
+                                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-800 shadow-md hover:bg-slate-50"
+                                    >
+                                        <ClipboardList size={14} className="shrink-0 text-slate-600" />
+                                        상세
+                                    </button>
+                                </PremiumTooltip>
+                            ) : null}
+                        </div>
+                    </div>
+                )}
+
                 <div
                     className="absolute top-4 left-1/2 z-[10001] transition-all duration-300"
                     style={{
@@ -1027,6 +1142,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         }
                     }}
                     onPaneClick={() => {
+                        setPfErdTableSearchOpen(false);
                         // 배경 클릭 시 선택 해제
                         setNodes((currentNodes) =>
                             currentNodes.map((n) => ({
@@ -1361,6 +1477,35 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         </div>
                     )}
                 </ReactFlow>
+
+                <ErdTableSearchPanel
+                    open={pfErdTableSearchOpen}
+                    onClose={() => setPfErdTableSearchOpen(false)}
+                    anchorRef={pfErdSearchAnchorRef}
+                    panelPos={pfErdTablePanelPos}
+                    onPanelPosChange={setPfErdTablePanelPos}
+                    linkedErdProjects={linkedErdProjects}
+                    erdTables={erdTableNames}
+                    dataContextId={currentProjectId ?? undefined}
+                    portalTitle="테이블 검색"
+                    onPickTable={(physicalName) => {
+                        if (!selectedDbProcessNode) return;
+                        const ko = getErdTableKoreanName(linkedErdProjects, physicalName);
+                        const text = ko ? `${ko}\n${physicalName}` : physicalName;
+                        pfUpdateNode(selectedDbProcessNode.id, {
+                            linkedErdTableName: physicalName,
+                            text,
+                        });
+                    }}
+                />
+
+                <ErdTableDetailPanel
+                    open={pfErdDetailOpen && Boolean(selectedDbProcessNode?.linkedErdTableName)}
+                    onClose={() => setPfErdDetailOpen(false)}
+                    tableNameEn={selectedDbProcessNode?.linkedErdTableName ?? ''}
+                    tableNameKr={erdDetailTableKr}
+                    columns={erdDetailColumnRows}
+                />
                 
                 {/* Shift+drag 선택 박스 */}
                 {selectionBox && createPortal(

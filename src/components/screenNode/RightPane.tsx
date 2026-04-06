@@ -1,10 +1,12 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore as useRFStore, useReactFlow } from 'reactflow';
-import { Trash2, Database, GripHorizontal, GripVertical, Edit3, Search, X } from 'lucide-react';
+import { Trash2, Database, GripHorizontal, Edit3, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
 import type { Project } from '../../types/erd';
 import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
+import ErdTableSearchPanel from '../erd/ErdTableSearchPanel';
+import { getErdTableKoreanName } from '../../utils/linkedErdProjects';
 
 const DEFAULT_RATIOS: [number, number, number] = [40, 35, 25];
 const MIN_PANEL_PCT = 10;
@@ -165,24 +167,7 @@ const RightPane: React.FC<RightPaneProps> = ({
     const [showDirectInputPanel, setShowDirectInputPanel] = useState(false);
     const [directInputValue, setDirectInputValue] = useState('');
     const [tableListPanelPos, setTableListPanelPos] = useState<{ x: number; y: number } | null>(null);
-    const [tableListSearch, setTableListSearch] = useState('');
-    const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
-
-    const getTableKoreanName = useCallback((tableName: string) => {
-        const trimmed = tableName.trim();
-        if (!trimmed) return '';
-        const upper = trimmed.toUpperCase();
-        for (const erdProj of linkedErdProjects) {
-            const entities = (erdProj?.data as { entities?: { name: string; comment?: string }[] } | undefined)?.entities;
-            if (!entities?.length) continue;
-            const entity = entities.find(
-                (e) => e.name === trimmed || (e.name && e.name.toUpperCase() === upper)
-            );
-            const ko = entity?.comment?.trim();
-            if (ko) return ko;
-        }
-        return '';
-    }, [linkedErdProjects]);
+    const { screenToFlowPosition } = useReactFlow();
 
     const handleChange = (field: 'initialSettings' | 'functionDetails', value: string, e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setLocalValue({ field, value });
@@ -338,29 +323,6 @@ const RightPane: React.FC<RightPaneProps> = ({
         window.addEventListener('mouseup', onUp);
     }, [isLocked, ratios, rightPaneRef, screen.id, syncUpdate, updateScreen]);
 
-    const handleTableListHeaderMouseDown = useCallback((e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!tableListPanelPos) return;
-
-        const panelScreenPos = flowToScreenPosition(tableListPanelPos);
-        const offsetX = e.clientX - panelScreenPos.x;
-        const offsetY = e.clientY - panelScreenPos.y;
-
-        const onMove = (me: MouseEvent) => {
-            const nextScreenX = Math.max(8, me.clientX - offsetX);
-            const nextScreenY = Math.max(8, me.clientY - offsetY);
-            const nextFlowPos = screenToFlowPosition({ x: nextScreenX, y: nextScreenY });
-            setTableListPanelPos(nextFlowPos);
-        };
-        const onUp = () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    }, [tableListPanelPos, flowToScreenPosition, screenToFlowPosition]);
-
     return (
         <div 
             ref={rightPaneRef} 
@@ -504,7 +466,6 @@ const RightPane: React.FC<RightPaneProps> = ({
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             if (!isTableListOpen) {
-                                                setTableListSearch('');
                                                 if (tableListRef.current) {
                                                     const rect = tableListRef.current.getBoundingClientRect();
                                                     setTableListPanelPos(screenToFlowPosition({ x: rect.left, y: rect.bottom }));
@@ -518,141 +479,27 @@ const RightPane: React.FC<RightPaneProps> = ({
                                         <Database size={10} />
                                         <span>추가</span>
                                     </button>
-                                    {/* 버튼(anchor) 기준으로 매 렌더 좌표를 재계산해 패널이 화면 이동을 안정적으로 추적 */}
-                                    {isTableListOpen && tableListRef.current && createPortal(
-                                        (() => {
-                                            const rect = tableListRef.current.getBoundingClientRect();
-                                            const panelFlowPos = tableListPanelPos ?? screenToFlowPosition({ x: rect.left, y: rect.bottom });
-                                            const panelScreenPos = flowToScreenPosition(panelFlowPos);
-                                            const panelLeft = panelScreenPos.x;
-                                            const panelTop = panelScreenPos.y;
-
-                                            const searchQ = tableListSearch.trim().toLowerCase();
-                                            const filteredErdTables =
-                                                !searchQ
-                                                    ? erdTables
-                                                    : erdTables.filter((table) => {
-                                                          const en = table.toLowerCase();
-                                                          const ko = getTableKoreanName(table).toLowerCase();
-                                                          return en.includes(searchQ) || (ko.length > 0 && ko.includes(searchQ));
-                                                      });
-
-                                            return (
-                                                <div
-                                                    data-table-list-portal
-                                                    data-screen-id={screenId}
-                                                    className="nodrag nopan nowheel floating-panel fixed min-w-[220px] max-w-[min(100vw-16px,360px)] max-h-[280px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-[9000] animate-in fade-in zoom-in origin-top-left scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
-                                                    style={{
-                                                        width: 'auto',
-                                                        left: panelLeft,
-                                                        top: panelTop,
-                                                        maxHeight: Math.max(100, Math.min(280, window.innerHeight - panelTop - 8, window.innerHeight * 0.7)),
-                                                    }}
-                                                    onWheel={(e) => {
-                                                        // 브라우저 줌 방지 (ctrl+wheel) - 항상 막아서 캔버스 줌이 동작하게 함
-                                                        if (e.ctrlKey || e.metaKey) {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            return false;
-                                                        }
-                                                        // 일반 휠도 이벤트 전파를 막아서 캔버스가 처리하게 함
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        return false;
-                                                    }}
-                                                    onWheelCapture={(e) => {
-                                                        // 브라우저 줌 방지 (ctrl+wheel) - capture 단계에서도 막아야 확실
-                                                        if (e.ctrlKey || e.metaKey) {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            return false;
-                                                        }
-                                                        // 일반 휠도 capture 단계에서 막아서 패널 스크롤이 아닌 캔버스 줌이 동작하게 함
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        return false;
-                                                    }}
-                                                    onPointerDown={(e) => e.stopPropagation()}
-                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                >
-                                                    <div
-                                                        className="flex items-center justify-between border-b border-gray-100 px-2 py-1.5 cursor-grab active:cursor-grabbing group/header"
-                                                        onMouseDown={handleTableListHeaderMouseDown}
-                                                        title="드래그하여 이동"
-                                                    >
-                                                        <div className="flex items-center gap-1.5">
-                                                            <GripVertical size={12} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
-                                                            <Database size={12} className="text-[#2c3e7c]" />
-                                                            <span className="text-[10px] font-bold text-gray-600">테이블 추가</span>
-                                                        </div>
-                                                    </div>
-                                                    <div
-                                                        className="px-2 py-1.5 border-b border-gray-100"
-                                                        onMouseDown={(e) => e.stopPropagation()}
-                                                    >
-                                                        <div className="relative">
-                                                            <Search
-                                                                size={12}
-                                                                className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                                                            />
-                                                            <input
-                                                                type="text"
-                                                                value={tableListSearch}
-                                                                onChange={(e) => setTableListSearch(e.target.value)}
-                                                                placeholder="영문명·한글명 검색"
-                                                                className="nodrag w-full pl-7 pr-2 py-1 text-[10px] border border-gray-200 rounded-lg outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
-                                                                onMouseDown={(e) => e.stopPropagation()}
-                                                                autoComplete="off"
-                                                                spellCheck={false}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-1">
-                                                        {erdTables.length > 0 ? (
-                                                            filteredErdTables.length > 0 ? (
-                                                                filteredErdTables.map((table) => {
-                                                            const koreanName = getTableKoreanName(table);
-                                                            return (
-                                                            <button
-                                                                key={table}
-                                                                className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[12px] text-gray-700 rounded block"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (isLocked) return; // 잠금 상태에서는 업데이트 방지
-                                                                    const current = screen.relatedTables || '';
-                                                                    const toAdd = `• ${table}`;
-                                                                    if (!relatedTablesContainsName(current, table)) {
-                                                                        const newValue = current ? `${current}\n${toAdd}` : toAdd;
-                                                                        update({ relatedTables: newValue });
-                                                                        syncUpdate({ relatedTables: newValue });
-                                                                    }
-                                                                    setIsTableListOpen(false);
-                                                                }}
-                                                                onMouseDown={(e) => e.stopPropagation()}
-                                                            >
-                                                                <div className="flex items-center justify-between gap-2 min-w-0">
-                                                                    <span className="truncate">{table}</span>
-                                                                    {koreanName && (
-                                                                        <span className="text-gray-400 font-normal truncate">{koreanName}</span>
-                                                                    )}
-                                                                </div>
-                                                            </button>
-                                                            );
-                                                                })
-                                                            ) : (
-                                                                <div className="px-2 py-2 text-[10px] text-gray-400 text-center">
-                                                                    검색 결과가 없습니다
-                                                                </div>
-                                                            )
-                                                        ) : (
-                                                            <div className="px-2 py-2 text-[10px] text-gray-400 text-center">테이블이 없습니다</div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })(),
-                                        getPanelPortalRoot()
-                                    )}
+                                    <ErdTableSearchPanel
+                                        open={isTableListOpen}
+                                        onClose={() => setIsTableListOpen(false)}
+                                        anchorRef={tableListRef}
+                                        panelPos={tableListPanelPos}
+                                        onPanelPosChange={setTableListPanelPos}
+                                        linkedErdProjects={linkedErdProjects}
+                                        erdTables={erdTables}
+                                        disabled={isLocked}
+                                        screenId={screenId}
+                                        onPickTable={(table) => {
+                                            if (isLocked) return;
+                                            const current = screen.relatedTables || '';
+                                            const toAdd = `• ${table}`;
+                                            if (!relatedTablesContainsName(current, table)) {
+                                                const newValue = current ? `${current}\n${toAdd}` : toAdd;
+                                                update({ relatedTables: newValue });
+                                                syncUpdate({ relatedTables: newValue });
+                                            }
+                                        }}
+                                    />
                                 </div>
                             )}
                         </div>
@@ -752,7 +599,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                             <div className="space-y-0.5">
                                 {relatedTableEntries.map(({ line, originalIndex }) => {
                                     const displayLine = line.trim().startsWith('•') ? line.trim().substring(1).trim() : line.trim();
-                                    const koreanName = !isLocked ? getTableKoreanName(displayLine) : '';
+                                    const koreanName = !isLocked ? getErdTableKoreanName(linkedErdProjects, displayLine) : '';
                                     return (
                                         <div key={originalIndex} className="flex items-center justify-between group/table px-1.5 py-1 hover:bg-blue-50/50 rounded transition-colors text-[10px] font-mono min-w-0">
                                             <div className="flex items-center gap-1.5 flex-1 min-w-0">

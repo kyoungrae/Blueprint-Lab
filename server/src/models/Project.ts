@@ -188,6 +188,8 @@ export interface IProcessFlowNode {
         italic?: boolean;
     };
     sectionId?: string | null;
+    /** DB 도형에서 연결된 ERD 테이블 물리명 */
+    linkedErdTableName?: string;
 }
 
 // Process Flow Edge Interface
@@ -448,7 +450,8 @@ const ProcessFlowNodeSchema = new Schema<IProcessFlowNode>({
         bold: { type: Boolean },
         italic: { type: Boolean }
     },
-    sectionId: { type: String }
+    sectionId: { type: String },
+    linkedErdTableName: { type: String },
 }, { _id: false });
 
 const ProcessFlowEdgeSchema = new Schema<IProcessFlowEdge>({
