@@ -13,6 +13,21 @@ const getPanelPortalRoot = () => document.getElementById('panel-portal-root') ||
 const RESIZE_HANDLE_HEIGHT = 6;
 const TOTAL_HANDLE_HEIGHT = RESIZE_HANDLE_HEIGHT * 2;
 
+function parseRelatedTableLineName(line: string): string {
+    let t = line.trim();
+    if (t.startsWith('•')) t = t.substring(1).trim();
+    return t;
+}
+
+/** 줄 단위로 테이블명이 일치하는지만 본다. `includes`로 인한 부분 문자열 오인 방지. */
+function relatedTablesContainsName(relatedTables: string, tableName: string): boolean {
+    const target = tableName.trim();
+    if (!target) return false;
+    return (relatedTables || '')
+        .split('\n')
+        .some((line) => parseRelatedTableLineName(line) === target);
+}
+
 interface RightPaneProps {
     screen: Screen;
     isLocked: boolean;
@@ -606,7 +621,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                                                     if (isLocked) return; // 잠금 상태에서는 업데이트 방지
                                                                     const current = screen.relatedTables || '';
                                                                     const toAdd = `• ${table}`;
-                                                                    if (!current.includes(table)) {
+                                                                    if (!relatedTablesContainsName(current, table)) {
                                                                         const newValue = current ? `${current}\n${toAdd}` : toAdd;
                                                                         update({ relatedTables: newValue });
                                                                         syncUpdate({ relatedTables: newValue });
@@ -680,6 +695,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                             const val = directInputValue.trim();
                                             if (val) {
                                                 const current = screen.relatedTables || '';
+                                                if (relatedTablesContainsName(current, val)) return;
                                                 const toAdd = `• ${val}`;
                                                 const newValue = current ? `${current}\n${toAdd}` : toAdd;
                                                 update({ relatedTables: newValue });
@@ -703,15 +719,15 @@ const RightPane: React.FC<RightPaneProps> = ({
                                         onClick={() => {
                                             if (isLocked) return; // 잠금 상태에서는 업데이트 방지
                                             const val = directInputValue.trim();
-                                            if (val) {
-                                                const current = screen.relatedTables || '';
-                                                const toAdd = `• ${val}`;
-                                                const newValue = current ? `${current}\n${toAdd}` : toAdd;
-                                                update({ relatedTables: newValue });
-                                                syncUpdate({ relatedTables: newValue });
-                                                setDirectInputValue('');
-                                                setShowDirectInputPanel(false);
-                                            }
+                                            if (!val) return;
+                                            const current = screen.relatedTables || '';
+                                            if (relatedTablesContainsName(current, val)) return;
+                                            const toAdd = `• ${val}`;
+                                            const newValue = current ? `${current}\n${toAdd}` : toAdd;
+                                            update({ relatedTables: newValue });
+                                            syncUpdate({ relatedTables: newValue });
+                                            setDirectInputValue('');
+                                            setShowDirectInputPanel(false);
                                         }}
                                         className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
                                     >
