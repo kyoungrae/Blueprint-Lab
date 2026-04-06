@@ -164,9 +164,13 @@ export interface IComponentSnapshot {
 }
 
 // Process Flow Node Interface
+export type IProcessFlowRectShape = 'rectangle' | 'diamond' | 'trapezoid' | 'db';
+
 export interface IProcessFlowNode {
     id: string;
     type: 'USER' | 'RECT';
+    /** RECT 노드 시각적 도형 (클라이언트 ProcessFlowRectShape와 동일) */
+    shape?: IProcessFlowRectShape;
     position: { x: number; y: number };
     text?: string;
     style?: {
@@ -421,6 +425,10 @@ const ERDSnapshotSchema = new Schema<IERDSnapshot>({
 const ProcessFlowNodeSchema = new Schema<IProcessFlowNode>({
     id: { type: String, required: true },
     type: { type: String, enum: ['USER', 'RECT'], required: true },
+    shape: {
+        type: String,
+        enum: ['rectangle', 'diamond', 'trapezoid', 'db'],
+    },
     position: {
         x: { type: Number, required: true },
         y: { type: Number, required: true }
