@@ -14,8 +14,9 @@ interface ProcessFlowEdgeProps extends EdgeProps {
 /** 패널 닫힌 직후 포인터가 핸들 위에 남아 툴팁·확장이 한 번 깜빡이는 현상 방지 */
 const HANDLE_HOVER_SUPPRESS_MS = 420;
 
-/** 중앙 핸들·패널: body 고정 좌표 (EdgeLabelRenderer 플로우 좌표 오류 방지) */
-const PF_EDGE_HANDLE_Z = 120015;
+/** 중앙 핸들·패널: body 포탈. 앱 사이드바·상단 툴바(z~10001)보다 낮게 유지 */
+const PF_EDGE_HANDLE_Z = 9990;
+const PF_EDGE_PANEL_Z = 9995;
 
 /** 핸들(HTML)이 노드 레이어에서 SVG 위에 그려져 마커 끝이 가려지지 않도록, 화살표가 있을 때만 끝점을 핸들 바깥(연결선 쪽)으로 당김 */
 const outwardFromHandle: Record<Position, { x: number; y: number }> = {
@@ -24,6 +25,14 @@ const outwardFromHandle: Record<Position, { x: number; y: number }> = {
     [Position.Left]: { x: -1, y: 0 },
     [Position.Right]: { x: 1, y: 0 },
 };
+
+/** 연결선 의미별 프리셋 (조회 파랑 = 신규 연결 기본 #2563eb) */
+const LINE_COLOR_PRESETS = [
+    { label: '조회', hint: 'Select', color: '#2563eb' },
+    { label: '수정', hint: 'Update', color: '#ea580c' },
+    { label: '등록', hint: 'Insert', color: '#16a34a' },
+    { label: '삭제', hint: 'Delete', color: '#dc2626' },
+] as const;
 
 const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     id,
@@ -37,7 +46,13 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     label = '연결방향 설정',
 }) => {
     const { flowToScreenPosition } = useReactFlow();
-    useStore((s) => s.transform);
+    /**
+     * transform 전체를 구독해야 함. zoom(transform[2])만 구독하면 팬(translate) 시 리렌더가 안 나서
+     * flowToScreenPosition 결과가 갱신되지 않고, body 포탈 점이 화면에 붙어 다니는 것처럼 보임.
+     */
+    const transform = useStore((s) => s.transform);
+    const viewportZoom = transform[2];
+    const handleUiScale = Math.max(0.22, viewportZoom);
 
     const yjsUpdateEdge = useYjsStore((s: any) => s.pfUpdateEdge);
     const yjsDeleteEdge = useYjsStore((s: any) => s.pfDeleteEdge);
@@ -148,7 +163,8 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                     position: 'fixed',
                     left: anchorScreen.x,
                     top: anchorScreen.y,
-                    transform: 'translate(-50%, -50%)',
+                    transform: `translate(-50%, -50%) scale(${handleUiScale})`,
+                    transformOrigin: 'center center',
                     zIndex: PF_EDGE_HANDLE_Z,
                     pointerEvents: 'none',
                 }}
@@ -159,6 +175,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                         dotColor={edgeColor}
                         placement="top"
                         forceBodyPortal
+                        bodyZIndexExact
                         zIndex={PF_EDGE_HANDLE_Z + 1}
                     >
                         <button
@@ -204,8 +221,9 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                 position: 'fixed',
                 left: anchorScreen.x,
                 top: anchorScreen.y,
-                transform: 'translate(-50%, calc(-100% - 10px))',
-                zIndex: 120020,
+                transform: `translate(-50%, calc(-100% - 10px)) scale(${handleUiScale})`,
+                transformOrigin: 'center bottom',
+                zIndex: PF_EDGE_PANEL_Z,
             }}
             onPointerDown={(e) => e.stopPropagation()}
         >
@@ -270,7 +288,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                             <div className="flex items-center gap-2">
                                 <input
                                     type="color"
-                                    value={edgeColor}
+                                    value={/^#[0-9A-Fa-f]{6}$/.test(edgeColor) ? edgeColor : '#2563eb'}
                                     onChange={(e) => handleColorChange(e.target.value)}
                                     className="h-8 w-8 cursor-pointer rounded-lg border border-gray-200"
                                 />
@@ -280,6 +298,31 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                     onChange={(e) => handleColorChange(e.target.value)}
                                     className="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="mb-1.5 block text-xs font-medium text-gray-600">의미별 색</label>
+                            <div className="flex flex-nowrap gap-1">
+                                {LINE_COLOR_PRESETS.map((p) => {
+                                    const active = edgeColor.toLowerCase() === p.color.toLowerCase();
+                                    return (
+                                        <button
+                                            key={p.hint}
+                                            type="button"
+                                            onClick={() => handleColorChange(p.color)}
+                                            className="nodrag nopan min-w-0 flex-1 rounded-md border-2 bg-white px-1 py-1.5 text-[10px] font-bold leading-tight tracking-tight transition-colors hover:bg-gray-50/90 active:scale-[0.97]"
+                                            style={{
+                                                borderColor: p.color,
+                                                color: p.color,
+                                                backgroundColor: active ? `${p.color}1a` : '#ffffff',
+                                            }}
+                                            title={`${p.label} (${p.hint})`}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>

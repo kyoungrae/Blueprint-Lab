@@ -30,10 +30,26 @@ interface PremiumTooltipProps {
     wrapperClassName?: string;
     /** true면 항상 document.body에 툴팁 렌더 (overflow로 잘림 방지) */
     forceBodyPortal?: boolean;
+    /**
+     * true면 body 포탈 툴팁 z-index를 zIndex 그대로 씀 (기본은 max(zIndex, 99999)로 앱 크롬보다 위).
+     * 캔버스 보조 UI처럼 사이드바·툴바 아래에 두려면 forceBodyPortal과 함께 켜기.
+     */
+    bodyZIndexExact?: boolean;
     screenId?: string;
 }
 
-const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotColor, placement = 'bottom', offsetBottom, zIndex = DEFAULT_TOOLTIP_Z_INDEX, wrapperClassName, forceBodyPortal: forceBodyPortalProp, screenId }) => {
+const PremiumTooltip: React.FC<PremiumTooltipProps> = ({
+    label,
+    children,
+    dotColor,
+    placement = 'bottom',
+    offsetBottom,
+    zIndex = DEFAULT_TOOLTIP_Z_INDEX,
+    wrapperClassName,
+    forceBodyPortal: forceBodyPortalProp,
+    bodyZIndexExact = false,
+    screenId,
+}) => {
     const [visible, setVisible] = useState(false);
     const [portalPos, setPortalPos] = useState({ left: 0, top: 0 });
     const [viewportPos, setViewportPos] = useState({ left: 0, top: 0 });
@@ -114,7 +130,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({ label, children, dotCol
             ? { position: 'absolute' as const, left: portalPos.left, top: portalPos.top, transform: 'translate(-50%, -100%)', zIndex }
             : { position: 'absolute' as const, left: portalPos.left, top: portalPos.top, transform: 'translate(-50%, 0)', zIndex };
 
-    const bodyZ = Math.max(zIndex, BODY_PORTAL_Z_INDEX);
+    const bodyZ = bodyZIndexExact ? zIndex : Math.max(zIndex, BODY_PORTAL_Z_INDEX);
     const bodyPortalStyle: React.CSSProperties =
         placement === 'top'
             ? { position: 'fixed' as const, left: viewportPos.left, top: viewportPos.top, transform: 'translate(-50%, -100%)', zIndex: bodyZ }

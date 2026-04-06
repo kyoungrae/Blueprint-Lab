@@ -11,6 +11,33 @@
   cursor: pointer !important;
 }
 
+/* 프로세스 플로우: 연결점 호버 (transform은 위치별 유지 + scale) */
+.process-flow-canvas-rf .pf-process-flow-conn-handle {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+.process-flow-canvas-rf .pf-process-flow-conn-handle:hover {
+  filter: brightness(1.12);
+  box-shadow:
+    0 0 0 3px rgba(16, 185, 129, 0.35),
+    0 2px 10px rgba(15, 23, 42, 0.25) !important;
+  z-index: 2;
+}
+.process-flow-canvas-rf .react-flow__handle-top.pf-process-flow-conn-handle:hover {
+  transform: translateX(-50%) scale(1.25) !important;
+}
+.process-flow-canvas-rf .react-flow__handle-bottom.pf-process-flow-conn-handle:hover {
+  transform: translateX(-50%) scale(1.25) !important;
+}
+.process-flow-canvas-rf .react-flow__handle-right.pf-process-flow-conn-handle:hover {
+  transform: translateY(-50%) scale(1.25) !important;
+}
+.process-flow-canvas-rf .react-flow__handle-left.pf-process-flow-conn-handle:hover {
+  transform: translateY(-50%) scale(1.25) !important;
+}
+
 .react-flow__edge-path {
   transition: stroke-width 0.2s;
 }
@@ -30,10 +57,19 @@
   섹션 반투명 레이어가 viewport 안에서 DOM 순서상 엣지 SVG 뒤에 붙으면 같은 z-index에서 위에 그려져 점선·화살표가 잘린 것처럼 보임.
   엣지 → 섹션 배경보다 위, 노드(핸들)보다 아래로 고정한다.
 */
-.process-flow-canvas-rf .react-flow__viewport > svg.react-flow__edges {
-  position: relative;
+/*
+  엣지 vs 노드 vs 섹션 포탈 쌓임 순서만 조정.
+  position:relative 금지: .react-flow__container는 absolute+inset0으로 뷰포트와 좌표를 맞추는데,
+  relative로 바꾸면 SVG가 문서 흐름으로 밀려 가이드 선·엣지가 화면 아래로 내려가 보임.
+*/
+.process-flow-canvas-rf .react-flow__viewport > svg.react-flow__edges:not(.react-flow__connectionline) {
   z-index: 5 !important;
 }
+.process-flow-canvas-rf .react-flow__viewport > svg.react-flow__connectionline {
+  z-index: 25 !important;
+  pointer-events: none;
+}
+/* 노드·핸들은 엣지(z:5)보다 위, 가이드 선(z:25)보다 아래로 두고 싶다면 z-index가 필요 → relative는 노드 래퍼만 (자식 노드는 absolute) */
 .process-flow-canvas-rf .react-flow__viewport > .react-flow__nodes {
   position: relative;
   z-index: 10 !important;

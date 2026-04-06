@@ -76,16 +76,18 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
         boxShadow: '0 1px 3px rgba(15, 23, 42, 0.2)',
     };
 
+    const connHandleClass = 'pf-process-flow-conn-handle';
+
     const handlesFourWay = (
         <>
-            <Handle type="target" position={Position.Top} id="in-top" style={{ ...connDot, left: '50%', top: -4, transform: 'translateX(-50%)' }} />
-            <Handle type="source" position={Position.Top} id="top" style={{ ...connDot, left: '50%', top: -4, transform: 'translateX(-50%)' }} />
-            <Handle type="target" position={Position.Right} id="in-right" style={{ ...connDot, top: '50%', right: -4, transform: 'translateY(-50%)' }} />
-            <Handle type="source" position={Position.Right} id="right" style={{ ...connDot, top: '50%', right: -4, transform: 'translateY(-50%)' }} />
-            <Handle type="target" position={Position.Bottom} id="in-bottom" style={{ ...connDot, left: '50%', bottom: -4, transform: 'translateX(-50%)' }} />
-            <Handle type="source" position={Position.Bottom} id="bottom" style={{ ...connDot, left: '50%', bottom: -4, transform: 'translateX(-50%)' }} />
-            <Handle type="target" position={Position.Left} id="in-left" style={{ ...connDot, top: '50%', left: -4, transform: 'translateY(-50%)' }} />
-            <Handle type="source" position={Position.Left} id="left" style={{ ...connDot, top: '50%', left: -4, transform: 'translateY(-50%)' }} />
+            <Handle type="target" position={Position.Top} id="in-top" className={connHandleClass} style={{ ...connDot, left: '50%', top: -4, transform: 'translateX(-50%)' }} />
+            <Handle type="source" position={Position.Top} id="top" className={connHandleClass} style={{ ...connDot, left: '50%', top: -4, transform: 'translateX(-50%)' }} />
+            <Handle type="target" position={Position.Right} id="in-right" className={connHandleClass} style={{ ...connDot, top: '50%', right: -4, transform: 'translateY(-50%)' }} />
+            <Handle type="source" position={Position.Right} id="right" className={connHandleClass} style={{ ...connDot, top: '50%', right: -4, transform: 'translateY(-50%)' }} />
+            <Handle type="target" position={Position.Bottom} id="in-bottom" className={connHandleClass} style={{ ...connDot, left: '50%', bottom: -4, transform: 'translateX(-50%)' }} />
+            <Handle type="source" position={Position.Bottom} id="bottom" className={connHandleClass} style={{ ...connDot, left: '50%', bottom: -4, transform: 'translateX(-50%)' }} />
+            <Handle type="target" position={Position.Left} id="in-left" className={connHandleClass} style={{ ...connDot, top: '50%', left: -4, transform: 'translateY(-50%)' }} />
+            <Handle type="source" position={Position.Left} id="left" className={connHandleClass} style={{ ...connDot, top: '50%', left: -4, transform: 'translateY(-50%)' }} />
         </>
     );
 

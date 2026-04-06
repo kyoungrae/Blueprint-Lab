@@ -564,9 +564,15 @@ const ProcessFlowCanvasInner: React.FC = () => {
         setEdges(nextEdges);
     }, [pfEdges, setEdges]);
 
+    const isValidConnection = useCallback((connection: Connection) => {
+        if (!connection.source || !connection.target) return false;
+        return connection.source !== connection.target;
+    }, []);
+
     const onConnect = useCallback(
         (connection: Connection) => {
             if (!connection.source || !connection.target) return;
+            if (connection.source === connection.target) return;
             const id = `pf_edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             pfAddEdge({
                 id,
@@ -585,6 +591,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const onReconnect = useCallback(
         (oldEdge: Edge, connection: Connection) => {
             if (!connection.source || !connection.target) return;
+            if (connection.source === connection.target) return;
             pfUpdateEdge(oldEdge.id, {
                 source: connection.source,
                 target: connection.target,
@@ -743,7 +750,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
                 <button
                     onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    className={`absolute top-1/2 -translate-y-1/2 z-30 w-4 h-10 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-amber-500 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-4' : 'left-0'}`}
+                    className={`absolute top-1/2 -translate-y-1/2 z-[10003] w-4 h-10 bg-white rounded-r-lg shadow-md border border-l-0 border-gray-200 text-gray-400 hover:text-amber-500 transition-all active:scale-95 flex items-center justify-center ${isSidebarOpen ? '-right-4' : 'left-0'}`}
                     title={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
                 >
                     {isSidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
@@ -916,6 +923,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
                     onReconnect={onReconnect}
+                    isValidConnection={isValidConnection}
                     onNodeClick={(_, node) => {
                         // Shift+클릭: 다중 선택 토글
                         if (isShiftPressed) {
