@@ -229,57 +229,77 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                 );
             }
             case 'db': {
-                const capH = Math.max(10, H * 0.14);
-                const capTop = H * 0.06;
-                const bodyTop = capTop + capH * 0.45;
-                const bodyH = H - bodyTop - (capH * 0.55);
-                const capRx = W * 0.38;
-                const capRy = capH * 0.42;
+                const pad = Math.max(2, bw);
                 const cx = W / 2;
+                const rx = Math.min((W - 2 * pad) * 0.4, W / 2 - pad - 1);
+                const ry = Math.min(H * 0.085, 11);
+                const ty = pad + ry + 2;
+                const gapBetweenTiers = Math.max(4, bw * 1.5);
+                /** 윗타원 좌·우 끝점 (cx±rx, ty)에서 세로가 이어지도록 몸통 시작 = 타원 중심 높이 */
+                const bodyStart = ty;
+                const bottomArcCenterY = H - pad - ry - 2;
+                const usable = Math.max(0, bottomArcCenterY - bodyStart - 2 * gapBetweenTiers);
+                const tierV = usable > 0 ? usable / 3 : Math.max(8, (H - bodyStart - 2 * gapBetweenTiers) / 3);
+                const c0 = bodyStart + tierV;
+                const c1 = c0 + gapBetweenTiers + tierV;
+                const c2 = c1 + gapBetweenTiers + tierV;
+                const y0 = bodyStart;
+                const y1 = c0 + gapBetweenTiers;
+                const y2 = c1 + gapBetweenTiers;
+                const arcSweepDown = 0;
+                /** 본체 채움: (cx±rx,ty)에서 내려가 맨 아래 호로 닫고, 윗면은 타원 아래쪽 반원으로 상단 경계 연결 */
+                const bodyFill = [
+                    `M ${cx - rx} ${ty}`,
+                    `L ${cx - rx} ${c2}`,
+                    `A ${rx} ${ry} 0 0 ${arcSweepDown} ${cx + rx} ${c2}`,
+                    `L ${cx + rx} ${ty}`,
+                    `A ${rx} ${ry} 0 0 0 ${cx - rx} ${ty}`,
+                    'Z',
+                ].join(' ');
+                const bulletR = Math.max(2, Math.min(3.5, bw + 1.2));
+                const bulletX = cx - rx + bulletR + Math.max(3, bw);
+                const tiers = [
+                    { yTop: y0, c: c0 },
+                    { yTop: y1, c: c1 },
+                    { yTop: y2, c: c2 },
+                ] as const;
                 return (
                     <div
                         className={`relative cursor-pointer transition-all duration-200 hover:shadow-lg ${ringClass}`}
                         style={{ width: W, height: H }}
                         onDoubleClick={handleDoubleClick}
                     >
-                        <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
-                            <ellipse
-                                cx={cx}
-                                cy={capTop + capRy}
-                                rx={capRx}
-                                ry={capRy}
-                                fill={nodeStyle.background}
+                        <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden>
+                            <ellipse cx={cx} cy={ty} rx={rx} ry={ry} fill={nodeStyle.background} />
+                            <path d={bodyFill} fill={nodeStyle.background} />
+                            <g
+                                fill="none"
                                 stroke={nodeStyle.borderColor}
                                 strokeWidth={bw}
-                            />
-                            <rect
-                                x={bw / 2}
-                                y={bodyTop}
-                                width={W - bw}
-                                height={bodyH}
-                                fill={nodeStyle.background}
-                                stroke={nodeStyle.borderColor}
-                                strokeWidth={bw}
-                            />
-                            <ellipse
-                                cx={cx}
-                                cy={bodyTop + bodyH}
-                                rx={capRx}
-                                ry={capRy}
-                                fill={nodeStyle.background}
-                                stroke={nodeStyle.borderColor}
-                                strokeWidth={bw}
-                            />
-                            <line
-                                x1={bw}
-                                y1={bodyTop}
-                                x2={W - bw}
-                                y2={bodyTop}
-                                stroke={nodeStyle.borderColor}
-                                strokeWidth={bw}
-                            />
+                                strokeLinejoin="round"
+                                strokeLinecap="round"
+                            >
+                                <ellipse cx={cx} cy={ty} rx={rx} ry={ry} />
+                                {tiers.map(({ yTop, c }) => (
+                                    <React.Fragment key={`${yTop}-${c}`}>
+                                        <line x1={cx - rx} y1={yTop} x2={cx - rx} y2={c} />
+                                        <line x1={cx + rx} y1={yTop} x2={cx + rx} y2={c} />
+                                        <path d={`M ${cx - rx} ${c} A ${rx} ${ry} 0 0 ${arcSweepDown} ${cx + rx} ${c}`} />
+                                    </React.Fragment>
+                                ))}
+                            </g>
+                            <g fill={nodeStyle.borderColor}>
+                                {tiers.map(({ yTop, c }) => (
+                                    <circle
+                                        key={`b-${yTop}`}
+                                        cx={bulletX}
+                                        cy={(yTop + c) / 2}
+                                        r={bulletR}
+                                    />
+                                ))}
+                            </g>
                         </svg>
-                        <div className="relative z-10 flex h-full w-full items-center justify-center px-3 py-6">{rectBody}</div>
+                        <div className="relative z-10 flex h-full w-full items-center justify-center px-3 py-5">{rectBody}</div>
                     </div>
                 );
             }
