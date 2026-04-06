@@ -17,6 +17,9 @@ const HANDLE_HOVER_SUPPRESS_MS = 420;
 const PF_EDGE_HANDLE_Z = 9990;
 const PF_EDGE_PANEL_Z = 9995;
 
+/** 호버 전·후 레이아웃 점프 방지(깜빡임) + 앵커 Y 계산에 사용 */
+const PF_EDGE_HANDLE_HIT_PX = 18;
+
 /** 핸들(HTML)이 노드 레이어에서 SVG 위에 그려져 마커 끝이 가려지지 않도록, 화살표가 있을 때만 끝점을 핸들 바깥(연결선 쪽)으로 당김 */
 const outwardFromHandle: Record<Position, { x: number; y: number }> = {
     [Position.Top]: { x: 0, y: -1 },
@@ -32,7 +35,7 @@ const LINE_COLOR_PRESETS = [
     { label: '등록', hint: 'Insert', color: '#16a34a' },
     { label: '삭제', hint: 'Delete', color: '#dc2626' },
     { label: 'true', hint: 'True', color: '#ffd04b' },
-    { label: 'false', hint: 'False', color: '#dc55d8' },
+    { label: 'false', hint: 'False', color: '#9ca4a1' },
 ] as const;
 
 function edgeKindLabelFromStroke(color: string): string {
@@ -76,12 +79,37 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
         setIsHovered(next);
     }, []);
 
+    const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearHoverLeaveTimer = useCallback(() => {
+        if (hoverLeaveTimerRef.current != null) {
+            clearTimeout(hoverLeaveTimerRef.current);
+            hoverLeaveTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => () => clearHoverLeaveTimer(), [clearHoverLeaveTimer]);
+
+    const onEdgeControlEnter = useCallback(() => {
+        clearHoverLeaveTimer();
+        trySetHandleHovered(true);
+    }, [clearHoverLeaveTimer, trySetHandleHovered]);
+
+    const onEdgeControlLeave = useCallback(() => {
+        clearHoverLeaveTimer();
+        hoverLeaveTimerRef.current = setTimeout(() => {
+            hoverLeaveTimerRef.current = null;
+            trySetHandleHovered(false);
+        }, 90);
+    }, [clearHoverLeaveTimer, trySetHandleHovered]);
+
     const handleOpenEdgePanel = useCallback((e?: React.MouseEvent) => {
         e?.stopPropagation();
         e?.preventDefault();
+        clearHoverLeaveTimer();
         setIsHovered(false);
         setIsEditing(true);
-    }, []);
+    }, [clearHoverLeaveTimer]);
 
     const handleArrowChange = useCallback(
         (start: string, end: string) => {
@@ -153,12 +181,13 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
 
     const mkId = (suffix: string) => `pf-arrow-${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}-${suffix}`;
 
-    const handleSize = isHovered ? 28 : 12;
-    /** 점(핸들) 중심이 정확히 선 위에 오도록 Y 기준 보정 */
+    /** 버튼 중심을 (labelX, labelY)에 고정. 높이를 PF_EDGE_HANDLE_HIT_PX로 통일해 호버 시에도 앵커가 흔들리지 않음 */
     const edgeUiBaseStyle = {
         position: 'absolute' as const,
-        transform: `translate(${labelX}px, ${labelY}px) translate(-50%, -${handleSize / 2}px)`,
-        transformOrigin: 'center center' as const,
+        left: 0,
+        top: 0,
+        transform: `translate(${labelX}px, ${labelY - PF_EDGE_HANDLE_HIT_PX / 2}px) translate(-50%, 0)`,
+        transformOrigin: 'top center' as const,
         zIndex: PF_EDGE_HANDLE_Z,
         pointerEvents: 'none' as const,
     };
@@ -167,7 +196,11 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
         !isEditing ? (
             <EdgeLabelRenderer>
                 <div className="nodrag nopan" style={edgeUiBaseStyle}>
-                    <div className="pointer-events-auto relative flex items-center justify-center">
+                    <div
+                        className="nodrag nopan pointer-events-auto flex flex-col items-center justify-center"
+                        onMouseEnter={onEdgeControlEnter}
+                        onMouseLeave={onEdgeControlLeave}
+                    >
                         <PremiumTooltip
                             label="더블클릭 — 연결 방향·색상 설정"
                             dotColor={edgeColor}
@@ -180,10 +213,8 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                 type="button"
                                 title="연결 설정 (더블 클릭)"
                                 aria-label="연결선 설정 열기"
-                                className={`nodrag nopan flex items-center justify-center border-0 backdrop-blur-sm bg-white/95 transition-all duration-200 ease-out select-none outline-none focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-blue-400/60 ${
-                                    isHovered
-                                        ? 'px-3 py-1.5 rounded-lg min-h-[28px]'
-                                        : 'h-3 w-3 min-h-3 min-w-3 rounded-full p-0'
+                                className={`nodrag nopan flex items-center justify-center border-0 backdrop-blur-sm bg-white/95 transition-[box-shadow,background-color] duration-200 ease-out select-none outline-none focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-blue-400/60 min-h-2 h-4 ${
+                                    isHovered ? 'px-3 rounded-lg w-auto min-w-0' : 'w-2 min-w-4 rounded-full p-0'
                                 }`}
                                 style={{
                                     boxShadow: isHovered
@@ -192,8 +223,6 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                     color: edgeColor,
                                     backgroundColor: isHovered ? `${edgeColor}12` : 'rgba(255, 255, 255, 0.98)',
                                 }}
-                                onMouseEnter={() => trySetHandleHovered(true)}
-                                onMouseLeave={() => trySetHandleHovered(false)}
                                 onDoubleClick={handleOpenEdgePanel}
                                 onPointerDown={(e) => e.stopPropagation()}
                             >
@@ -211,7 +240,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                             </button>
                         </PremiumTooltip>
                         <div
-                            className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 flex items-center gap-1 rounded-md border-0 px-2 py-1 backdrop-blur-sm bg-white/95"
+                            className="mt-1.5 flex shrink-0 items-center gap-1 rounded-md border-0 px-2 py-1 backdrop-blur-sm bg-white/95"
                             style={{
                                 color: edgeColor,
                                 boxShadow: `0 0 0 1px ${edgeColor}, 0 1px 3px rgba(15,23,42,0.08)`,
