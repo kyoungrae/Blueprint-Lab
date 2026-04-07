@@ -170,8 +170,14 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     useEffect(() => {
         if (!memoOpen) {
             setMemoEditMode(false);
+            return;
         }
-    }, [memoOpen]);
+        const hasSavedText = (data.memo ?? '').trim().length > 0;
+        if (!hasSavedText) {
+            setMemoEditMode(true);
+            window.setTimeout(() => memoTextareaRef.current?.focus(), 0);
+        }
+    }, [memoOpen, data.memo]);
 
     const flushMemoSave = useCallback(() => {
         if (!isYjsSynced) {
@@ -952,26 +958,19 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                     <div className="shrink-0 border-t border-amber-100 bg-amber-50/30 px-3 py-2 flex items-center justify-end gap-2">
                         <button
                             type="button"
-                            className="px-2.5 py-1 text-xs rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                            className={`px-2.5 py-1 text-xs rounded-md ${memoEditMode ? 'bg-amber-600 text-white hover:bg-amber-700' : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                setMemoEditMode(true);
-                                window.setTimeout(() => memoTextareaRef.current?.focus(), 0);
-                            }}
-                        >
-                            수정
-                        </button>
-                        <button
-                            type="button"
-                            className="px-2.5 py-1 text-xs rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
-                            disabled={!memoEditMode}
-                            onClick={(e) => {
-                                e.stopPropagation();
+                                if (!memoEditMode) {
+                                    setMemoEditMode(true);
+                                    window.setTimeout(() => memoTextareaRef.current?.focus(), 0);
+                                    return;
+                                }
                                 flushMemoSave();
                                 setMemoEditMode(false);
                             }}
                         >
-                            저장
+                            {memoEditMode ? '저장' : '수정'}
                         </button>
                     </div>
                     {/* 리사이즈 핸들 */}
