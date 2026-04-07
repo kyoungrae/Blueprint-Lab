@@ -1859,13 +1859,14 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     {portalTarget && pfSections.length > 0 && createPortal(
                         <div
                             ref={layerRef}
-                            className="pf-process-flow-section-chrome absolute inset-0 pointer-events-none z-[12]"
+                            /* 노드(z≈10)·핸들보다 낮게: 섹션 좌우 레일이 연결점 클릭을 가로채지 않게 함 (엣지 z≈5보다는 위) */
+                            className="pf-process-flow-section-chrome absolute inset-0 pointer-events-none z-[7]"
                             style={{ '--zoom': '1' } as React.CSSProperties}
                         >
                             {/* 섹션 헤더 및 리사이즈 핸들: 마우스로 클릭하고 끌 수 있도록 설정합니다 */}
                             <div 
                                 ref={sectionHeadersContainerRef}
-                                className="absolute top-0 left-0 w-full h-full pointer-events-none z-[15]"
+                                className="absolute top-0 left-0 w-full h-full pointer-events-none z-[1]"
                             >
                                 {pfSections.map((s: any) => {
                     const isEditing = editingSectionId === s.id;
