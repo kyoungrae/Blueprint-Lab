@@ -45,6 +45,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     const [dbDetailOpen, setDbDetailOpen] = useState(false);
     const [memoOpen, setMemoOpen] = useState(false);
     const [memoText, setMemoText] = useState(data.memo ?? '');
+    const [memoEditMode, setMemoEditMode] = useState(false);
     const [tableSearch, setTableSearch] = useState('');
     
     // 메모 패널 상태
@@ -68,6 +69,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     const dbErdAnchorRef = useRef<HTMLDivElement>(null);
     const memoAnchorRef = useRef<HTMLButtonElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const memoTextareaRef = useRef<HTMLTextAreaElement>(null);
 
     const memoPanelElRef = useRef<HTMLDivElement>(null);
     const tablePanelElRef = useRef<HTMLDivElement>(null);
@@ -164,6 +166,19 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     useEffect(() => {
         setMemoText(data.memo ?? '');
     }, [data.memo]);
+
+    useEffect(() => {
+        if (!memoOpen) {
+            setMemoEditMode(false);
+        }
+    }, [memoOpen]);
+
+    const flushMemoSave = useCallback(() => {
+        const next = memoText.trim();
+        if (next !== (data.memo ?? '')) {
+            yjsUpdateNode(data.id, { memo: next || undefined });
+        }
+    }, [data.id, data.memo, memoText, yjsUpdateNode]);
 
     // 드래그 및 리사이즈 이벤트 핸들러
     useEffect(() => {
@@ -917,18 +932,42 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                     {/* 스크롤 가능한 콘텐츠 */}
                     <div className="flex-1 overflow-auto p-3">
                         <textarea
+                            ref={memoTextareaRef}
                             value={memoText}
-                            onChange={(e) => setMemoText(e.target.value)}
-                            onBlur={() => {
-                                if (memoText.trim() !== (data.memo ?? '')) {
-                                    yjsUpdateNode(data.id, { memo: memoText.trim() || undefined });
-                                }
+                            onChange={(e) => {
+                                const next = e.target.value;
+                                setMemoText(next);
                             }}
+                            readOnly={!memoEditMode}
                             onClick={(e) => e.stopPropagation()}
                             placeholder="메모를 입력하세요..."
-                            className="w-full h-full p-2 text-xs border border-gray-200 rounded-lg outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-100 resize-none"
-                            autoFocus
+                            className={`w-full h-full p-2 text-xs border border-gray-200 rounded-lg outline-none resize-none ${memoEditMode ? 'focus:border-amber-400 focus:ring-1 focus:ring-amber-100' : 'bg-gray-50 text-gray-700'}`}
                         />
+                    </div>
+                    <div className="shrink-0 border-t border-amber-100 bg-amber-50/30 px-3 py-2 flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            className="px-2.5 py-1 text-xs rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setMemoEditMode(true);
+                                window.setTimeout(() => memoTextareaRef.current?.focus(), 0);
+                            }}
+                        >
+                            수정
+                        </button>
+                        <button
+                            type="button"
+                            className="px-2.5 py-1 text-xs rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+                            disabled={!memoEditMode}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                flushMemoSave();
+                                setMemoEditMode(false);
+                            }}
+                        >
+                            저장
+                        </button>
                     </div>
                     {/* 리사이즈 핸들 */}
                     <div
