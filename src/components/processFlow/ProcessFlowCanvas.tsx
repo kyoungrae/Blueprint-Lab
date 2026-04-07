@@ -30,6 +30,7 @@ import type { Connection, Node, Edge } from 'reactflow';
 import { copyToClipboard } from '../../utils/clipboard';
 import PremiumTooltip from '../screenNode/PremiumTooltip';
 import ScreenExportModal, { type ExportFormat } from '../ScreenExportModal';
+import { getSmartGuidesAndSnap, type AlignmentGuides, type SnapState } from '../screenNode/smartGuides';
 
 const nodeTypes = {
     processFlow: ProcessFlowNodeComponent,
@@ -69,6 +70,38 @@ type ProcessFlowShiftSelectionApi = {
     onSelectionEnd: () => void;
     clear: () => void;
 };
+
+type ProcessFlowDragGuides = AlignmentGuides & {
+    spacingSegments?: Array<{ x1: number; y1: number; x2: number; y2: number }>;
+};
+
+function getNodeRect(node: Node): { left: number; top: number; right: number; bottom: number; centerX: number; centerY: number; width: number; height: number } {
+    const width = Number((node.style as React.CSSProperties)?.width ?? node.width ?? 240);
+    const height = Number((node.style as React.CSSProperties)?.height ?? node.height ?? 120);
+    const left = node.position.x;
+    const top = node.position.y;
+    const right = left + width;
+    const bottom = top + height;
+    return {
+        left,
+        top,
+        right,
+        bottom,
+        centerX: left + width / 2,
+        centerY: top + height / 2,
+        width,
+        height,
+    };
+}
+
+function minBoxDistance(
+    a: { left: number; right: number; top: number; bottom: number },
+    b: { left: number; right: number; top: number; bottom: number }
+): number {
+    const dx = Math.max(0, Math.max(a.left - b.right, b.left - a.right));
+    const dy = Math.max(0, Math.max(a.top - b.bottom, b.top - a.bottom));
+    return Math.sqrt(dx * dx + dy * dy);
+}
 
 function buildProcessFlowReactNodes(pfNodes: ProcessFlowNode[] | undefined, prev: Node[]): Node[] {
     const selectedById = new Map(prev.map((n) => [n.id, !!n.selected]));
@@ -432,6 +465,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [importError, setImportError] = useState<string | null>(null);
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [clipboardNodes, setClipboardNodes] = useState<any[]>([]);
+    const [dragGuides, setDragGuides] = useState<ProcessFlowDragGuides | null>(null);
 
     const yjsJoin = useYjsStore((s) => s.joinProject);
     const yjsLeave = useYjsStore((s) => s.leaveProject);
@@ -459,6 +493,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const clipboardRef = useRef(clipboardNodes);
     const deleteConfirmOpenRef = useRef(false);
     const shiftSelectionRef = useRef<ProcessFlowShiftSelectionApi>(null);
+    const dragSnapRef = useRef<SnapState>({});
     nodesRef.current = nodes;
     edgesRef.current = edges;
     pfNodesRef.current = pfNodes;
@@ -1073,6 +1108,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
             }))
         );
         shiftSelectionRef.current?.clear();
+        setDragGuides(null);
+        dragSnapRef.current = {};
     }, [setNodes]);
 
     const onFlowSelectionStart = useCallback(
@@ -1090,14 +1127,116 @@ const ProcessFlowCanvasInner: React.FC = () => {
         shiftSelectionRef.current?.onSelectionEnd();
     }, []);
 
+    const onFlowNodeDrag = useCallback(
+        (_evt: React.MouseEvent, draggingNode: Node) => {
+            const liveNodes = nodesRef.current;
+            const draggedRect = getNodeRect(draggingNode);
+            const others = liveNodes.filter((n) => n.id !== draggingNode.id && n.type === 'processFlow');
+            if (others.length === 0) {
+                setDragGuides(null);
+                dragSnapRef.current = {};
+                return;
+            }
+
+            let nearest: Node | null = null;
+            let nearestDist = Number.POSITIVE_INFINITY;
+            for (const candidate of others) {
+                const rect = getNodeRect(candidate);
+                const dist = minBoxDistance(draggedRect, rect);
+                if (dist < nearestDist) {
+                    nearestDist = dist;
+                    nearest = candidate;
+                }
+            }
+            if (!nearest) return;
+
+            const nearRect = getNodeRect(nearest);
+            const smart = getSmartGuidesAndSnap(
+                draggedRect,
+                [{ id: nearest.id, x: nearRect.left, y: nearRect.top, width: nearRect.width, height: nearRect.height }],
+                dragSnapRef.current
+            );
+            dragSnapRef.current = smart.nextSnap;
+
+            let extraDx = 0;
+            let extraDy = 0;
+            let spacingCandidate: { score: number; targetLeft: number; targetCenterY: number; leftRect: ReturnType<typeof getNodeRect>; rightRect: ReturnType<typeof getNodeRect> } | null = null;
+            const otherRects = others.map((n) => ({ node: n, rect: getNodeRect(n) }));
+            const SPACING_THRESHOLD = 10;
+            const LEVEL_THRESHOLD = 12;
+            for (let i = 0; i < otherRects.length; i++) {
+                for (let j = i + 1; j < otherRects.length; j++) {
+                    const a = otherRects[i].rect;
+                    const b = otherRects[j].rect;
+                    const leftRect = a.centerX <= b.centerX ? a : b;
+                    const rightRect = a.centerX <= b.centerX ? b : a;
+                    if (Math.abs(leftRect.centerY - rightRect.centerY) > LEVEL_THRESHOLD) continue;
+                    if (draggedRect.centerX <= leftRect.centerX || draggedRect.centerX >= rightRect.centerX) continue;
+                    const targetLeft = (leftRect.right + rightRect.left - draggedRect.width) / 2;
+                    const gapDist = Math.abs(draggedRect.left - targetLeft);
+                    if (gapDist > SPACING_THRESHOLD) continue;
+                    const targetCenterY = (leftRect.centerY + rightRect.centerY) / 2;
+                    const levelDist = Math.abs(draggedRect.centerY - targetCenterY);
+                    const score = gapDist + levelDist * 0.4;
+                    if (!spacingCandidate || score < spacingCandidate.score) {
+                        spacingCandidate = { score, targetLeft, targetCenterY, leftRect, rightRect };
+                    }
+                }
+            }
+
+            const nextGuides: ProcessFlowDragGuides = {
+                vertical: [...smart.guides.vertical],
+                horizontal: [...smart.guides.horizontal],
+            };
+            if (spacingCandidate) {
+                const targetTop = spacingCandidate.targetCenterY - draggedRect.height / 2;
+                const dxFromSpacing = spacingCandidate.targetLeft - draggedRect.left;
+                const dyFromSpacing = targetTop - draggedRect.top;
+                if (Math.abs(dxFromSpacing) <= SPACING_THRESHOLD) {
+                    extraDx = dxFromSpacing;
+                    nextGuides.vertical = Array.from(new Set([...nextGuides.vertical, draggedRect.width ? spacingCandidate.targetLeft + draggedRect.width / 2 : draggedRect.centerX])).sort(
+                        (a, b) => a - b
+                    );
+                    nextGuides.spacingSegments = [
+                        { x1: spacingCandidate.leftRect.right, y1: spacingCandidate.targetCenterY, x2: spacingCandidate.targetLeft, y2: spacingCandidate.targetCenterY },
+                        {
+                            x1: spacingCandidate.targetLeft + draggedRect.width,
+                            y1: spacingCandidate.targetCenterY,
+                            x2: spacingCandidate.rightRect.left,
+                            y2: spacingCandidate.targetCenterY,
+                        },
+                    ];
+                }
+                if (Math.abs(dyFromSpacing) <= LEVEL_THRESHOLD) {
+                    extraDy = dyFromSpacing;
+                    nextGuides.horizontal = Array.from(new Set([...nextGuides.horizontal, spacingCandidate.targetCenterY])).sort((a, b) => a - b);
+                }
+            }
+
+            const dx = smart.deltaX + extraDx;
+            const dy = smart.deltaY + extraDy;
+
+            if (dx !== 0 || dy !== 0) {
+                setNodes((currentNodes) =>
+                    currentNodes.map((n) => (n.id === draggingNode.id ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n))
+                );
+            }
+            setDragGuides(nextGuides.vertical.length > 0 || nextGuides.horizontal.length > 0 || (nextGuides.spacingSegments?.length ?? 0) > 0 ? nextGuides : null);
+        },
+        [setNodes]
+    );
+
     const onFlowNodeDragStop = useCallback(
         (_evt: React.MouseEvent, node: Node) => {
-            pfUpdateNode(node.id, { position: node.position });
+            const finalNode = nodesRef.current.find((n) => n.id === node.id) ?? node;
+            pfUpdateNode(finalNode.id, { position: finalNode.position });
+            setDragGuides(null);
+            dragSnapRef.current = {};
 
-            const nw = node.width || 240;
-            const nh = node.height || 120;
-            const cx = node.position.x + nw / 2;
-            const cy = node.position.y + nh / 2;
+            const nw = finalNode.width || 240;
+            const nh = finalNode.height || 120;
+            const cx = finalNode.position.x + nw / 2;
+            const cy = finalNode.position.y + nh / 2;
 
             const containingSection = (pfSections as any[])
                 .filter((s) =>
@@ -1108,7 +1247,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 )
                 .sort((a, b) => a.size.width * a.size.height - b.size.width * b.size.height)[0];
 
-            pfUpdateNode(node.id, { sectionId: containingSection?.id || null });
+            pfUpdateNode(finalNode.id, { sectionId: containingSection?.id || null });
         },
         [pfSections, pfUpdateNode]
     );
@@ -1612,6 +1751,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     onSelectionStart={onFlowSelectionStart as any}
                     onSelectionDrag={onFlowSelectionDrag as any}
                     onSelectionEnd={onFlowSelectionEnd}
+                    onNodeDrag={onFlowNodeDrag}
                     onNodeDragStop={onFlowNodeDragStop}
                     connectionMode={ConnectionMode.Strict}
                     connectionRadius={28}
@@ -1826,6 +1966,70 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     );
                 })}
                             </div>
+                        </div>,
+                        portalTarget
+                    )}
+                    {portalTarget && dragGuides && createPortal(
+                        <div className="absolute inset-0 pointer-events-none z-[30]">
+                            {(() => {
+                                const vp = getViewport();
+                                const wrapperRect = flowWrapper.current?.getBoundingClientRect();
+                                const visibleFlowWidth = wrapperRect ? wrapperRect.width / vp.zoom : 2000;
+                                const visibleFlowHeight = wrapperRect ? wrapperRect.height / vp.zoom : 1200;
+                                const visibleLeft = -vp.x / vp.zoom;
+                                const visibleTop = -vp.y / vp.zoom;
+                                const visibleRight = visibleLeft + visibleFlowWidth;
+                                const visibleBottom = visibleTop + visibleFlowHeight;
+                                return (
+                                    <>
+                                        {dragGuides.vertical.map((vx) => (
+                                            <div
+                                                key={`pf-guide-v-${vx}`}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: vx,
+                                                    top: visibleTop,
+                                                    width: 1,
+                                                    height: Math.max(1, visibleBottom - visibleTop),
+                                                    backgroundColor: '#facc15',
+                                                    opacity: 0.95,
+                                                    boxShadow: '0 0 0.5px #ca8a04, 0 0 8px rgba(250, 204, 21, 0.35)',
+                                                }}
+                                            />
+                                        ))}
+                                        {dragGuides.horizontal.map((vy) => (
+                                            <div
+                                                key={`pf-guide-h-${vy}`}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: visibleLeft,
+                                                    top: vy,
+                                                    width: Math.max(1, visibleRight - visibleLeft),
+                                                    height: 1,
+                                                    backgroundColor: '#facc15',
+                                                    opacity: 0.95,
+                                                    boxShadow: '0 0 0.5px #ca8a04, 0 0 8px rgba(250, 204, 21, 0.35)',
+                                                }}
+                                            />
+                                        ))}
+                                        {(dragGuides.spacingSegments ?? []).map((seg, idx) => (
+                                            <div
+                                                key={`pf-guide-spacing-${idx}`}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: Math.min(seg.x1, seg.x2),
+                                                    top: seg.y1 - 1,
+                                                    width: Math.max(1, Math.abs(seg.x2 - seg.x1)),
+                                                    height: 2,
+                                                    backgroundColor: '#facc15',
+                                                    opacity: 0.95,
+                                                    borderRadius: 9999,
+                                                }}
+                                            />
+                                        ))}
+                                    </>
+                                );
+                            })()}
                         </div>,
                         portalTarget
                     )}
