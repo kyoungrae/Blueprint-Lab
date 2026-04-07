@@ -5,9 +5,8 @@ import { useYjsStore } from '../../../store/yjsStore';
 import { useProjectStore } from '../../../store/projectStore';
 import type { ProcessFlowNode as ProcessFlowNodeType, ProcessFlowRectShape } from '../../../types/processFlow';
 import type { Project } from '../../../types/erd';
-import { User as UserIcon, UserCog, Search, ClipboardList, StickyNote, X } from 'lucide-react';
+import { User as UserIcon, UserCog, Search, ClipboardList, StickyNote, X, GripVertical } from 'lucide-react';
 import PremiumTooltip from '../../screenNode/PremiumTooltip';
-import ErdTableSearchPanel from '../../erd/ErdTableSearchPanel';
 import ErdTableDetailPanel from '../../erd/ErdTableDetailPanel';
 import {
     collectErdTableNames,
@@ -15,8 +14,6 @@ import {
     findErdEntityByPhysicalName,
     getErdTableKoreanName,
 } from '../../../utils/linkedErdProjects';
-
-const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 interface ProcessFlowNodeProps {
     data: ProcessFlowNodeType & { label?: string };
@@ -41,26 +38,79 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     const yjsUpdateNode = useYjsStore((s: any) => s.pfUpdateNode);
     const isYjsSynced = useYjsStore((s: any) => s.isSynced);
     const { projects, currentProjectId } = useProjectStore();
-    const { screenToFlowPosition } = useReactFlow();
+    const { getViewport } = useReactFlow();
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(data.text ?? '');
     const [dbTableSearchOpen, setDbTableSearchOpen] = useState(false);
-    const [dbTablePanelPos, setDbTablePanelPos] = useState<{ x: number; y: number } | null>(null);
     const [dbDetailOpen, setDbDetailOpen] = useState(false);
     const [memoOpen, setMemoOpen] = useState(false);
     const [memoText, setMemoText] = useState(data.memo ?? '');
-    const [memoPos, setMemoPos] = useState<{ x: number; y: number } | null>(null);
+    const [tableSearch, setTableSearch] = useState('');
+    
+    // 메모 패널 상태
+    const [memoPanelPos, setMemoPanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [memoPanelSize, setMemoPanelSize] = useState<{ w: number; h: number }>({ w: 240, h: 180 });
+    const [isDraggingMemo, setIsDraggingMemo] = useState(false);
+    const [isResizingMemo, setIsResizingMemo] = useState(false);
+    const memoDragStartRef = useRef<{ x: number; y: number } | null>(null);
+    const memoPanelStartRef = useRef<{ x: number; y: number } | null>(null);
+    const memoSizeStartRef = useRef<{ w: number; h: number } | null>(null);
+    
+    // 테이블 검색 패널 상태
+    const [tablePanelPos, setTablePanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [tablePanelSize, setTablePanelSize] = useState<{ w: number; h: number }>({ w: 260, h: 280 });
+    const [isDraggingTable, setIsDraggingTable] = useState(false);
+    const [isResizingTable, setIsResizingTable] = useState(false);
+    const tableDragStartRef = useRef<{ x: number; y: number } | null>(null);
+    const tablePanelStartRef = useRef<{ x: number; y: number } | null>(null);
+    const tableSizeStartRef = useRef<{ w: number; h: number } | null>(null);
+    
     const dbErdAnchorRef = useRef<HTMLDivElement>(null);
-    const memoAnchorRef = useRef<HTMLDivElement>(null);
+    const memoAnchorRef = useRef<HTMLButtonElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // 메모 패널 위치 업데이트
+    const memoPanelElRef = useRef<HTMLDivElement>(null);
+    const tablePanelElRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
-        if (memoOpen && memoAnchorRef.current) {
-            const rect = memoAnchorRef.current.getBoundingClientRect();
-            setMemoPos({ x: rect.left, y: rect.bottom + 4 });
-        }
-    }, [memoOpen]);
+        if (!memoOpen && !dbTableSearchOpen) return;
+        let raf = 0;
+
+        const tick = () => {
+            const { zoom } = getViewport();
+
+            if (memoOpen) {
+                const anchor = memoAnchorRef.current;
+                const panel = memoPanelElRef.current;
+                if (anchor && panel) {
+                    const rect = anchor.getBoundingClientRect();
+                    const left = rect.left + window.scrollX + memoPanelPos.x;
+                    const top = rect.bottom + window.scrollY + memoPanelPos.y;
+                    panel.style.left = `${left}px`;
+                    panel.style.top = `${top}px`;
+                    panel.style.transform = `scale(${zoom})`;
+                }
+            }
+
+            if (dbTableSearchOpen) {
+                const anchor = dbErdAnchorRef.current;
+                const panel = tablePanelElRef.current;
+                if (anchor && panel) {
+                    const rect = anchor.getBoundingClientRect();
+                    const left = rect.left + window.scrollX + tablePanelPos.x;
+                    const top = rect.bottom + window.scrollY + tablePanelPos.y;
+                    panel.style.left = `${left}px`;
+                    panel.style.top = `${top}px`;
+                    panel.style.transform = `scale(${zoom})`;
+                }
+            }
+
+            raf = window.requestAnimationFrame(tick);
+        };
+
+        raf = window.requestAnimationFrame(tick);
+        return () => window.cancelAnimationFrame(raf);
+    }, [memoOpen, dbTableSearchOpen, getViewport, memoPanelPos.x, memoPanelPos.y, tablePanelPos.x, tablePanelPos.y]);
 
     const currentProject = useMemo(
         () => projects.find((p) => p.id === currentProjectId),
@@ -114,6 +164,71 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     useEffect(() => {
         setMemoText(data.memo ?? '');
     }, [data.memo]);
+
+    // 드래그 및 리사이즈 이벤트 핸들러
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            // 메모 패널 드래그
+            if (isDraggingMemo && memoDragStartRef.current && memoPanelStartRef.current) {
+                const dx = e.clientX - memoDragStartRef.current.x;
+                const dy = e.clientY - memoDragStartRef.current.y;
+                setMemoPanelPos({
+                    x: memoPanelStartRef.current.x + dx,
+                    y: memoPanelStartRef.current.y + dy,
+                });
+            }
+            // 메모 패널 리사이즈
+            if (isResizingMemo && memoDragStartRef.current && memoSizeStartRef.current) {
+                const dx = e.clientX - memoDragStartRef.current.x;
+                const dy = e.clientY - memoDragStartRef.current.y;
+                setMemoPanelSize({
+                    w: Math.max(200, memoSizeStartRef.current.w + dx),
+                    h: Math.max(150, memoSizeStartRef.current.h + dy),
+                });
+            }
+            // 테이블 패널 드래그
+            if (isDraggingTable && tableDragStartRef.current && tablePanelStartRef.current) {
+                const dx = e.clientX - tableDragStartRef.current.x;
+                const dy = e.clientY - tableDragStartRef.current.y;
+                setTablePanelPos({
+                    x: tablePanelStartRef.current.x + dx,
+                    y: tablePanelStartRef.current.y + dy,
+                });
+            }
+            // 테이블 패널 리사이즈
+            if (isResizingTable && tableDragStartRef.current && tableSizeStartRef.current) {
+                const dx = e.clientX - tableDragStartRef.current.x;
+                const dy = e.clientY - tableDragStartRef.current.y;
+                setTablePanelSize({
+                    w: Math.max(220, tableSizeStartRef.current.w + dx),
+                    h: Math.max(200, tableSizeStartRef.current.h + dy),
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDraggingMemo(false);
+            setIsResizingMemo(false);
+            setIsDraggingTable(false);
+            setIsResizingTable(false);
+            memoDragStartRef.current = null;
+            memoPanelStartRef.current = null;
+            memoSizeStartRef.current = null;
+            tableDragStartRef.current = null;
+            tablePanelStartRef.current = null;
+            tableSizeStartRef.current = null;
+        };
+
+        if (isDraggingMemo || isResizingMemo || isDraggingTable || isResizingTable) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDraggingMemo, isResizingMemo, isDraggingTable, isResizingTable]);
 
     const handleDoubleClick = useCallback(() => {
         setIsEditing(true);
@@ -433,10 +548,6 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                                             className="rounded p-1 text-amber-800 transition-colors hover:bg-amber-50"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                if (!dbTableSearchOpen && dbErdAnchorRef.current) {
-                                                    const r = dbErdAnchorRef.current.getBoundingClientRect();
-                                                    setDbTablePanelPos(screenToFlowPosition({ x: r.left, y: r.bottom }));
-                                                }
                                                 setDbTableSearchOpen((o) => !o);
                                             }}
                                         >
@@ -459,41 +570,151 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                                         </PremiumTooltip>
                                     ) : null}
                                     {/* 메모 버튼 - DB 테이블 객체 */}
-                                    <div ref={memoAnchorRef}>
-                                        <PremiumTooltip placement="bottom" offsetBottom={8} label={data.memo ? '메모 보기/수정' : '메모 추가'}>
+                                    <PremiumTooltip placement="bottom" offsetBottom={8} label={data.memo ? '메모 보기/수정' : '메모 추가'}>
+                                        <button
+                                            ref={memoAnchorRef}
+                                            type="button"
+                                            title="메모"
+                                            className={`rounded p-1 transition-colors ${data.memo ? 'text-amber-600 bg-amber-50' : 'text-gray-500 hover:bg-amber-50 hover:text-amber-600'}`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setMemoOpen((o) => !o);
+                                            }}
+                                        >
+                                            <StickyNote size={13} strokeWidth={2.25} className="shrink-0" />
+                                        </button>
+                                    </PremiumTooltip>
+                                </div>
+                                {/* 테이블 검색 패널 - createPortal로 body에 렌더링 */}
+                                {dbTableSearchOpen && createPortal(
+                                    <div
+                                        ref={tablePanelElRef}
+                                        className="bg-white border border-amber-200 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+                                        style={{
+                                            position: 'fixed',
+                                            left: 0,
+                                            top: 0,
+                                            width: tablePanelSize.w,
+                                            height: tablePanelSize.h,
+                                            minWidth: 220,
+                                            minHeight: 200,
+                                            zIndex: 2147483647,
+                                            transformOrigin: 'left top',
+                                        }}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onWheel={(e) => e.stopPropagation()}
+                                    >
+                                        {/* 헤더 - 드래그 영역 */}
+                                        <div
+                                            className="flex items-center justify-between px-3 py-2 border-b border-amber-100 bg-amber-50/50 cursor-grab active:cursor-grabbing select-none"
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                setIsDraggingTable(true);
+                                                tableDragStartRef.current = { x: e.clientX, y: e.clientY };
+                                                tablePanelStartRef.current = { ...tablePanelPos };
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <GripVertical size={14} className="text-gray-400" />
+                                                <span className="text-xs font-semibold text-gray-700">테이블 검색</span>
+                                            </div>
                                             <button
                                                 type="button"
-                                                title="메모"
-                                                className={`rounded p-1 transition-colors ${data.memo ? 'text-amber-600 bg-amber-50' : 'text-gray-500 hover:bg-amber-50 hover:text-amber-600'}`}
+                                                className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setMemoOpen((o) => !o);
+                                                    setDbTableSearchOpen(false);
+                                                    setTableSearch('');
                                                 }}
                                             >
-                                                <StickyNote size={13} strokeWidth={2.25} className="shrink-0" />
+                                                <X size={14} />
                                             </button>
-                                        </PremiumTooltip>
-                                    </div>
-                                </div>
-                                <ErdTableSearchPanel
-                                    open={dbTableSearchOpen}
-                                    onClose={() => setDbTableSearchOpen(false)}
-                                    anchorRef={dbErdAnchorRef}
-                                    panelPos={dbTablePanelPos}
-                                    onPanelPosChange={setDbTablePanelPos}
-                                    linkedErdProjects={linkedErdProjects}
-                                    erdTables={erdTableNames}
-                                    dataContextId={data.id}
-                                    portalTitle="테이블 검색"
-                                    onPickTable={(physicalName) => {
-                                        const ko = getErdTableKoreanName(linkedErdProjects, physicalName);
-                                        const text = ko ? `${ko}\n${physicalName}` : physicalName;
-                                        yjsUpdateNode(data.id, {
-                                            linkedErdTableName: physicalName,
-                                            text,
-                                        });
-                                    }}
-                                />
+                                        </div>
+                                        {/* 검색 입력 */}
+                                        <div className="p-2 border-b border-gray-100 shrink-0">
+                                            <div className="relative">
+                                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                                <input
+                                                    type="text"
+                                                    value={tableSearch}
+                                                    onChange={(e) => setTableSearch(e.target.value)}
+                                                    placeholder="영문명·한글명 검색"
+                                                    className="nodrag w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-100"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    autoComplete="off"
+                                                    autoFocus
+                                                />
+                                            </div>
+                                        </div>
+                                        {/* 스크롤 가능한 리스트 */}
+                                        <div className="flex-1 overflow-y-auto p-1">
+                                            {erdTableNames.length > 0 ? (
+                                                (() => {
+                                                    const searchQ = tableSearch.trim().toLowerCase();
+                                                    const filtered = !searchQ
+                                                        ? erdTableNames
+                                                        : erdTableNames.filter((table) => {
+                                                              const en = table.toLowerCase();
+                                                              const ko = getErdTableKoreanName(linkedErdProjects, table).toLowerCase();
+                                                              return en.includes(searchQ) || (ko.length > 0 && ko.includes(searchQ));
+                                                          });
+                                                    return filtered.length > 0 ? (
+                                                        filtered.map((table) => {
+                                                            const koreanName = getErdTableKoreanName(linkedErdProjects, table);
+                                                            return (
+                                                                <button
+                                                                    key={table}
+                                                                    type="button"
+                                                                    className="w-full text-left px-2 py-1.5 hover:bg-amber-50 text-xs text-gray-700 rounded block"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const ko = getErdTableKoreanName(linkedErdProjects, table);
+                                                                        const text = ko ? `${ko}\n${table}` : table;
+                                                                        yjsUpdateNode(data.id, {
+                                                                            linkedErdTableName: table,
+                                                                            text,
+                                                                        });
+                                                                        setDbTableSearchOpen(false);
+                                                                        setTableSearch('');
+                                                                    }}
+                                                                >
+                                                                    <div className="flex items-center justify-between gap-2 min-w-0">
+                                                                        <span className="truncate font-medium">{table}</span>
+                                                                        {koreanName ? (
+                                                                            <span className="text-gray-400 text-[10px] truncate">{koreanName}</span>
+                                                                        ) : null}
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <div className="px-2 py-2 text-xs text-gray-400 text-center">검색 결과가 없습니다</div>
+                                                    );
+                                                })()
+                                            ) : (
+                                                <div className="px-2 py-2 text-xs text-gray-400 text-center">테이블이 없습니다</div>
+                                            )}
+                                        </div>
+                                        {/* 리사이즈 핸들 */}
+                                        <div
+                                            className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize bg-amber-200/50 hover:bg-amber-300/50"
+                                            style={{ 
+                                                clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
+                                                borderBottomRightRadius: '12px'
+                                            }}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                e.preventDefault();
+                                                setIsResizingTable(true);
+                                                tableDragStartRef.current = { x: e.clientX, y: e.clientY };
+                                                tableSizeStartRef.current = { ...tablePanelSize };
+                                            }}
+                                        />
+                                    </div>,
+                                    document.body
+                                )}
                                 <ErdTableDetailPanel
                                     open={dbDetailOpen && Boolean(data.linkedErdTableName)}
                                     onClose={() => setDbDetailOpen(false)}
@@ -596,7 +817,6 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                     )}
                     {/* 메모 버튼 - 사용자 노드 */}
                     <div
-                        ref={memoAnchorRef}
                         className="nodrag nopan absolute -right-3 -top-3 z-20 flex gap-0.5 rounded-md border border-amber-200/80 bg-white/95 p-0.5 shadow-sm pointer-events-auto"
                         onPointerDown={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
@@ -604,6 +824,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                     >
                         <PremiumTooltip placement="bottom" offsetBottom={8} label={data.memo ? '메모 보기/수정' : '메모 추가'}>
                             <button
+                                ref={memoAnchorRef}
                                 type="button"
                                 title="메모"
                                 className={`rounded p-1 transition-colors ${data.memo ? 'text-amber-600 bg-amber-50' : 'text-gray-500 hover:bg-amber-50 hover:text-amber-600'}`}
@@ -623,7 +844,6 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                     {/* 메모 버튼 - RECT 노드 (DB 제외) */}
                     {rectShape !== 'db' && (
                         <div
-                            ref={memoAnchorRef}
                             className="nodrag nopan absolute right-1 top-1 z-20 flex gap-0.5 rounded-md border border-amber-200/80 bg-white/95 p-0.5 shadow-sm pointer-events-auto"
                             onPointerDown={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
@@ -631,6 +851,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                         >
                             <PremiumTooltip placement="bottom" offsetBottom={8} label={data.memo ? '메모 보기/수정' : '메모 추가'}>
                                 <button
+                                    ref={memoAnchorRef}
                                     type="button"
                                     title="메모"
                                     className={`rounded p-1 transition-colors ${data.memo ? 'text-amber-600 bg-amber-50' : 'text-gray-500 hover:bg-amber-50 hover:text-amber-600'}`}
@@ -647,28 +868,54 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                 </>
             )}
             
-            {/* 메모 편집 패널 */}
-            {memoOpen && memoPos &&
-                createPortal(
+            {/* 메모 편집 패널 - createPortal로 body에 렌더링 */}
+            {memoOpen && createPortal(
+                <div
+                    ref={memoPanelElRef}
+                    className="bg-white border border-amber-200 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+                    style={{
+                        position: 'fixed',
+                        left: 0,
+                        top: 0,
+                        width: memoPanelSize.w,
+                        height: memoPanelSize.h,
+                        minWidth: 200,
+                        minHeight: 150,
+                        zIndex: 2147483647,
+                        transformOrigin: 'left top',
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onWheel={(e) => e.stopPropagation()}
+                >
+                    {/* 헤더 - 드래그 영역 */}
                     <div
-                        className="nodrag nopan fixed z-[9000] bg-white border border-amber-200 rounded-xl shadow-2xl p-3 min-w-[240px] max-w-[320px]"
-                        style={{
-                            left: memoPos.x,
-                            top: memoPos.y,
+                        className="flex items-center justify-between px-3 py-2 border-b border-amber-100 bg-amber-50/50 cursor-grab active:cursor-grabbing select-none"
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            setIsDraggingMemo(true);
+                            memoDragStartRef.current = { x: e.clientX, y: e.clientY };
+                            memoPanelStartRef.current = { ...memoPanelPos };
                         }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
                     >
-                        <div className="flex items-center justify-between border-b border-amber-100 pb-2 mb-2">
+                        <div className="flex items-center gap-2">
+                            <GripVertical size={14} className="text-gray-400" />
                             <span className="text-xs font-semibold text-gray-700">메모</span>
-                            <button
-                                type="button"
-                                className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                                onClick={() => setMemoOpen(false)}
-                            >
-                                <X size={14} />
-                            </button>
                         </div>
+                        <button
+                            type="button"
+                            className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setMemoOpen(false);
+                            }}
+                        >
+                            <X size={14} />
+                        </button>
+                    </div>
+                    {/* 스크롤 가능한 콘텐츠 */}
+                    <div className="flex-1 overflow-auto p-3">
                         <textarea
                             value={memoText}
                             onChange={(e) => setMemoText(e.target.value)}
@@ -676,15 +923,31 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                                 if (memoText.trim() !== (data.memo ?? '')) {
                                     yjsUpdateNode(data.id, { memo: memoText.trim() || undefined });
                                 }
-                                setMemoOpen(false);
                             }}
+                            onClick={(e) => e.stopPropagation()}
                             placeholder="메모를 입력하세요..."
-                            className="w-full h-24 p-2 text-xs border border-gray-200 rounded-lg outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-100 resize-none"
+                            className="w-full h-full p-2 text-xs border border-gray-200 rounded-lg outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-100 resize-none"
                             autoFocus
                         />
-                    </div>,
-                    getPanelPortalRoot()
-                )}
+                    </div>
+                    {/* 리사이즈 핸들 */}
+                    <div
+                        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize bg-amber-200/50 hover:bg-amber-300/50"
+                        style={{ 
+                            clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
+                            borderBottomRightRadius: '12px'
+                        }}
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setIsResizingMemo(true);
+                            memoDragStartRef.current = { x: e.clientX, y: e.clientY };
+                            memoSizeStartRef.current = { ...memoPanelSize };
+                        }}
+                    />
+                </div>,
+                document.body
+            )}
         </>
     );
 };

@@ -1227,7 +1227,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                                     className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-yellow-50 hover:text-yellow-800"
                                 >
                                     <Diamond size={14} className="shrink-0 text-yellow-700" />
-                                    마름모
+                                    마름모 (true,false)
                                 </button>
                                 <button
                                     type="button"
@@ -1246,7 +1246,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                                             strokeLinejoin="round"
                                         />
                                     </svg>
-                                    사다리꼴
+                                    사다리꼴 (입/출력)
                                 </button>
                             </div>,
                             document.body
