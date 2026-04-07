@@ -33,6 +33,7 @@ const LINE_COLOR_PRESETS = [
     { label: '조회', hint: 'Select', color: '#2563eb' },
     { label: '수정', hint: 'Update', color: '#ea580c' },
     { label: '등록', hint: 'Insert', color: '#16a34a' },
+    { label: '등록/수정', hint: 'Insert/Update', color: '#a33894' },
     { label: '삭제', hint: 'Delete', color: '#dc2626' },
     { label: 'true', hint: 'True', color: '#ffd04b' },
     { label: 'false', hint: 'False', color: '#9ca4a1' },
