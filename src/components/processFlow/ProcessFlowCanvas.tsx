@@ -1162,7 +1162,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
             let extraDy = 0;
             let spacingCandidate: { score: number; targetLeft: number; targetCenterY: number; leftRect: ReturnType<typeof getNodeRect>; rightRect: ReturnType<typeof getNodeRect> } | null = null;
             const otherRects = others.map((n) => ({ node: n, rect: getNodeRect(n) }));
-            const SPACING_THRESHOLD = 10;
+            const SPACING_THRESHOLD = 2;
             const LEVEL_THRESHOLD = 12;
             for (let i = 0; i < otherRects.length; i++) {
                 for (let j = i + 1; j < otherRects.length; j++) {
@@ -1215,6 +1215,78 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
             const dx = smart.deltaX + extraDx;
             const dy = smart.deltaY + extraDy;
+            const snappedRect = {
+                left: draggedRect.left + dx,
+                right: draggedRect.right + dx,
+                centerX: draggedRect.centerX + dx,
+                top: draggedRect.top + dy,
+                bottom: draggedRect.bottom + dy,
+                centerY: draggedRect.centerY + dy,
+            };
+            const EDGE_MATCH_EPS = 0.5;
+            const SIZE_MATCH_EPS = 0.5;
+            const nearXEdges = [nearRect.left, nearRect.centerX, nearRect.right];
+            const nearYEdges = [nearRect.top, nearRect.centerY, nearRect.bottom];
+            const snappedXEdges = [snappedRect.left, snappedRect.centerX, snappedRect.right];
+            const snappedYEdges = [snappedRect.top, snappedRect.centerY, snappedRect.bottom];
+            for (let i = 0; i < nearXEdges.length; i++) {
+                for (let j = 0; j < snappedXEdges.length; j++) {
+                    if (Math.abs(nearXEdges[i] - snappedXEdges[j]) <= EDGE_MATCH_EPS) {
+                        nextGuides.vertical.push(nearXEdges[i]);
+                    }
+                }
+            }
+            for (let i = 0; i < nearYEdges.length; i++) {
+                for (let j = 0; j < snappedYEdges.length; j++) {
+                    if (Math.abs(nearYEdges[i] - snappedYEdges[j]) <= EDGE_MATCH_EPS) {
+                        nextGuides.horizontal.push(nearYEdges[i]);
+                    }
+                }
+            }
+            // 가운데 정렬 + 동일 너비/높이일 때는 3축(left/center/right, top/center/bottom) 가이드를 모두 보여준다.
+            const sameWidth = Math.abs((nearRect.right - nearRect.left) - (snappedRect.right - snappedRect.left)) <= SIZE_MATCH_EPS;
+            const sameHeight = Math.abs((nearRect.bottom - nearRect.top) - (snappedRect.bottom - snappedRect.top)) <= SIZE_MATCH_EPS;
+            const centerXAligned = Math.abs(nearRect.centerX - snappedRect.centerX) <= EDGE_MATCH_EPS;
+            const centerYAligned = Math.abs(nearRect.centerY - snappedRect.centerY) <= EDGE_MATCH_EPS;
+            const xAlignedCount = nearXEdges.reduce(
+                (acc, target) => acc + (snappedXEdges.some((v) => Math.abs(v - target) <= EDGE_MATCH_EPS) ? 1 : 0),
+                0
+            );
+            const yAlignedCount = nearYEdges.reduce(
+                (acc, target) => acc + (snappedYEdges.some((v) => Math.abs(v - target) <= EDGE_MATCH_EPS) ? 1 : 0),
+                0
+            );
+            if (sameWidth && (centerXAligned || xAlignedCount >= 2)) {
+                nextGuides.vertical.push(nearRect.left, nearRect.centerX, nearRect.right);
+            }
+            if (sameHeight && (centerYAligned || yAlignedCount >= 2)) {
+                nextGuides.horizontal.push(nearRect.top, nearRect.centerY, nearRect.bottom);
+            }
+
+            // 폭/높이 추정이 흔들리더라도, 같은 축에서 2개가 이미 맞으면 3축 가이드를 완성해준다.
+            const hasVLeft = nextGuides.vertical.some((v) => Math.abs(v - nearRect.left) <= EDGE_MATCH_EPS);
+            const hasVCenter = nextGuides.vertical.some((v) => Math.abs(v - nearRect.centerX) <= EDGE_MATCH_EPS);
+            const hasVRight = nextGuides.vertical.some((v) => Math.abs(v - nearRect.right) <= EDGE_MATCH_EPS);
+            if ((hasVLeft && hasVCenter) || (hasVCenter && hasVRight) || (hasVLeft && hasVRight)) {
+                nextGuides.vertical.push(nearRect.left, nearRect.centerX, nearRect.right);
+            }
+
+            const hasHTop = nextGuides.horizontal.some((v) => Math.abs(v - nearRect.top) <= EDGE_MATCH_EPS);
+            const hasHCenter = nextGuides.horizontal.some((v) => Math.abs(v - nearRect.centerY) <= EDGE_MATCH_EPS);
+            const hasHBottom = nextGuides.horizontal.some((v) => Math.abs(v - nearRect.bottom) <= EDGE_MATCH_EPS);
+            if ((hasHTop && hasHCenter) || (hasHCenter && hasHBottom) || (hasHTop && hasHBottom)) {
+                nextGuides.horizontal.push(nearRect.top, nearRect.centerY, nearRect.bottom);
+            }
+
+            if (spacingCandidate) {
+                const spacingAlignedX = Math.abs(snappedRect.left - spacingCandidate.targetLeft) <= EDGE_MATCH_EPS;
+                const spacingAlignedY = Math.abs(snappedRect.centerY - spacingCandidate.targetCenterY) <= EDGE_MATCH_EPS;
+                if (!spacingAlignedX || !spacingAlignedY) {
+                    nextGuides.spacingSegments = [];
+                }
+            }
+            nextGuides.vertical = Array.from(new Set(nextGuides.vertical)).sort((a, b) => a - b);
+            nextGuides.horizontal = Array.from(new Set(nextGuides.horizontal)).sort((a, b) => a - b);
 
             if (dx !== 0 || dy !== 0) {
                 setNodes((currentNodes) =>
