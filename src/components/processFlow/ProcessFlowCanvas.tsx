@@ -1081,6 +1081,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
     const onFlowNodeClick = useCallback(
         (_: React.MouseEvent, node: Node) => {
+            setSelectedSectionId(null);
             if (isShiftPressed) {
                 setNodes((currentNodes) =>
                     currentNodes.map((n) => ({
@@ -1101,6 +1102,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     );
 
     const onFlowPaneClick = useCallback(() => {
+        setSelectedSectionId(null);
         setNodes((currentNodes) =>
             currentNodes.map((n) => ({
                 ...n,
