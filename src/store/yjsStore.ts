@@ -526,8 +526,15 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('screens').get(id);
         if (yMap) {
+            // memos 등 중첩 배열은 순수 JSON으로 넣어야 toJSON()/Mongo 저장 시 안정적으로 복원됨
+            const entries = Object.entries(patch).map(([k, v]) => {
+                if (k === 'memos' && v != null) {
+                    return [k, JSON.parse(JSON.stringify(v))] as const;
+                }
+                return [k, v] as const;
+            });
             ydoc.transact(() => {
-                Object.entries(patch).forEach(([k, v]) => yMap.set(k, v));
+                entries.forEach(([k, v]) => yMap.set(k, v));
             });
         }
     },

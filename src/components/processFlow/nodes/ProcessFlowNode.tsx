@@ -174,11 +174,15 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     }, [memoOpen]);
 
     const flushMemoSave = useCallback(() => {
+        if (!isYjsSynced) {
+            window.alert('동기화가 끝난 뒤에 메모를 저장할 수 있습니다.');
+            return;
+        }
         const next = memoText.trim();
         if (next !== (data.memo ?? '')) {
             yjsUpdateNode(data.id, { memo: next || undefined });
         }
-    }, [data.id, data.memo, memoText, yjsUpdateNode]);
+    }, [data.id, data.memo, memoText, isYjsSynced, yjsUpdateNode]);
 
     // 드래그 및 리사이즈 이벤트 핸들러
     useEffect(() => {

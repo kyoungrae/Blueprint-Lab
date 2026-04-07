@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useYjsStore } from '../../store/yjsStore';
-import { Users, Search, ChevronRight, FolderOpen, X } from 'lucide-react';
+import { Users, Search, ChevronRight, FolderOpen, X, User, Database, Square, Diamond, ArrowRightLeft } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import type { ProcessFlowNode, ProcessFlowSection } from '../../types/processFlow';
 
@@ -11,6 +11,26 @@ export interface ProcessFlowSidebarProps {
 }
 
 const ProcessFlowSidebar: React.FC<ProcessFlowSidebarProps> = (props) => {
+    const getNodeIcon = (node: ProcessFlowNode) => {
+        if (node.type === 'USER') {
+            return <User size={14} className="text-emerald-600 shrink-0" />;
+        }
+        if (node.type === 'RECT') {
+            switch (node.shape) {
+                case 'db':
+                    return <Database size={14} className="text-amber-600 shrink-0" />;
+                case 'diamond':
+                    return <Diamond size={14} className="text-blue-600 shrink-0" />;
+                case 'trapezoid':
+                    return <ArrowRightLeft size={14} className="text-purple-600 shrink-0" />;
+                case 'rectangle':
+                default:
+                    return <Square size={14} className="text-gray-600 shrink-0" />;
+            }
+        }
+        return <Square size={14} className="text-gray-600 shrink-0" />;
+    };
+
     // 🚀 Yjs 스토어에서 실시간 동기화 데이터 가져오기
     const yjsNodes = useYjsStore((s: any) => s.pfNodes);
     const yjsSections = useYjsStore((s: any) => s.pfSections);
@@ -171,7 +191,7 @@ const ProcessFlowSidebar: React.FC<ProcessFlowSidebarProps> = (props) => {
                                 onMouseDown={(e) => handleFocusNode(e, node.id)}
                                 className="flex items-center gap-2 px-2 py-2 rounded-md bg-white border border-gray-100 hover:bg-emerald-50 hover:border-emerald-200 transition-colors cursor-pointer group"
                             >
-                                <Users size={14} className="text-emerald-600 shrink-0" />
+                                {getNodeIcon(node)}
                                 <span className="text-xs text-gray-700 truncate flex-1 min-w-0">
                                     {node.text ?? (node.type === 'USER' ? 'User' : 'Node')}
                                 </span>
@@ -223,7 +243,7 @@ const ProcessFlowSidebar: React.FC<ProcessFlowSidebarProps> = (props) => {
                                 onMouseDown={(e) => handleFocusNode(e, node.id)}
                                 className="flex items-center gap-2 px-2 py-2 rounded-md bg-white border border-gray-100 hover:bg-emerald-50 hover:border-emerald-200 transition-colors cursor-pointer group"
                             >
-                                <Users size={14} className="text-emerald-600 shrink-0" />
+                                {getNodeIcon(node)}
                                 <span className="text-xs text-gray-700 truncate flex-1 min-w-0">
                                     {node.text ?? (node.type === 'USER' ? 'User' : 'Node')}
                                 </span>

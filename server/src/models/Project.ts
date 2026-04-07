@@ -173,6 +173,9 @@ export interface IProcessFlowNode {
     shape?: IProcessFlowRectShape;
     position: { x: number; y: number };
     text?: string;
+    /** 노드 메모 (클라이언트 ProcessFlowNode.memo) */
+    memo?: string;
+    userRole?: 'user' | 'admin';
     style?: {
         fill?: string;
         stroke?: string;
@@ -207,6 +210,8 @@ export interface IProcessFlowEdge {
         start: 'none' | 'arrow';
         end: 'none' | 'arrow';
     };
+    animated?: boolean;
+    kindText?: string;
 }
 
 // Process Flow Snapshot Interface
@@ -436,6 +441,8 @@ const ProcessFlowNodeSchema = new Schema<IProcessFlowNode>({
         y: { type: Number, required: true }
     },
     text: { type: String },
+    memo: { type: String },
+    userRole: { type: String, enum: ['user', 'admin'] },
     style: {
         fill: { type: String },
         stroke: { type: String },
@@ -467,7 +474,9 @@ const ProcessFlowEdgeSchema = new Schema<IProcessFlowEdge>({
     arrow: {
         start: { type: String, enum: ['none', 'arrow'], default: 'none' },
         end: { type: String, enum: ['none', 'arrow'], default: 'arrow' }
-    }
+    },
+    animated: { type: Boolean },
+    kindText: { type: String },
 }, { _id: false });
 
 const ProcessFlowSnapshotSchema = new Schema<IProcessFlowSnapshot>({

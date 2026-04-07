@@ -6,6 +6,12 @@ import { useAuthStore } from '../../store/authStore';
 import { useEntityLock } from '../collaboration';
 import { useYjsStore } from '../../store/yjsStore';
 
+/** Socket 히스토리용 등 Y.Doc에 넣으면 안 되는 필드 제거 */
+function screenPatchForYjs(updates: Partial<Screen>): Partial<Screen> {
+    const { historyLog: _, ...rest } = updates as Partial<Screen> & { historyLog?: unknown };
+    return rest;
+}
+
 export const useScreenLockAndSync = (screen: Screen) => {
     const {
         updateScreen,
@@ -34,8 +40,10 @@ export const useScreenLockAndSync = (screen: Screen) => {
     // 잠금 상태(isLocked/unlockedAt)는 즉시 협업 조율을 위해 Socket.IO도 병행
     const syncUpdate = useCallback(
         (updates: Partial<Screen>) => {
+            const yjsPatch = screenPatchForYjs(updates);
+            if (Object.keys(yjsPatch).length === 0) return;
             // Yjs: 데이터 영속성 + 실시간 브로드캐스트 (단일 채널)
-            yjsUpdate(screen.id, updates);
+            yjsUpdate(screen.id, yjsPatch);
             // Socket.IO: 잠금 상태 변경만 즉시 전파 (락 UI 실시간 반영)
             if ('isLocked' in updates || 'unlockedAt' in updates) {
                 sendOperation({
@@ -43,7 +51,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
                     targetId: screen.id,
                     userId: user?.id || 'anonymous',
                     userName: user?.name || 'Anonymous',
-                    payload: updates,
+                    payload: yjsPatch,
                 });
             }
         },
@@ -104,17 +112,18 @@ export const useScreenLockAndSync = (screen: Screen) => {
     const update = useCallback(
         (updates: Partial<Screen>) => {
             if (isLocked) return;
+            const yjsPatch = screenPatchForYjs(updates);
             // drawElements만 업데이트하는 경우 전체 screen 객체 대신 drawElements만 교체
             // 이를 통해 ScreenNodeFull로 전달되는 screen prop의 레퍼런스가 변하지 않아
             // drawElements 변경 시 ScreenNodeFull 전체 리렌더링을 회피함
-            if ('drawElements' in updates && Object.keys(updates).length === 1 && updates.drawElements) {
-                updateDrawElements(screen.id, updates.drawElements);
+            if ('drawElements' in yjsPatch && Object.keys(yjsPatch).length === 1 && yjsPatch.drawElements) {
+                updateDrawElements(screen.id, yjsPatch.drawElements);
                 // Yjs 단일 채널로 동기화 (Socket.IO SCREEN_DRAW_ELEMENTS_UPDATE 제거)
-                yjsUpdate(screen.id, { drawElements: updates.drawElements });
+                yjsUpdate(screen.id, { drawElements: yjsPatch.drawElements });
             } else {
-                updateScreen(screen.id, updates);
+                updateScreen(screen.id, yjsPatch);
                 // Yjs로 비-drawElements 업데이트도 동기화
-                yjsUpdate(screen.id, updates);
+                yjsUpdate(screen.id, yjsPatch);
             }
 
             // 업데이트 시 자동 잠금 타이머 리셋

@@ -3238,6 +3238,24 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                             update={update}
                             syncUpdate={syncUpdate}
                             user={user}
+                            isLocked={isLocked}
+                            isYjsSynced={yjsIsSynced}
+                            onMemoHistory={(nextMemos, meta) => {
+                                sendOperation({
+                                    type: 'SCREEN_UPDATE',
+                                    targetId: screen.id,
+                                    userId: user?.id || 'anonymous',
+                                    userName: user?.name || 'Anonymous',
+                                    payload: {
+                                        memos: nextMemos,
+                                        historyLog: {
+                                            details: meta.details,
+                                            targetName: meta.targetName,
+                                            targetType: 'SCREEN',
+                                        },
+                                    },
+                                });
+                            }}
                         />
 
                 {/* ── 1. Top Header Bar (ERD Style) ── */}

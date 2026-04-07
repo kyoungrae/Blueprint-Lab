@@ -60,19 +60,20 @@ function getOrCreateDoc(projectId: string): DocInfo {
         const info: DocInfo = { doc, awareness, conns: new Map(), snapshotTimer: null, editorsSinceLastSave: new Set(), immediateSaveTimer: null };
 
         doc.on('update', (_update: Uint8Array, origin: unknown) => {
-            if (!origin || typeof origin !== 'object') return;
-            const ws = origin as WebSocket & { yjsUserId?: string };
-            const uid = ws.yjsUserId;
-            if (uid && Types.ObjectId.isValid(uid)) {
-                info.editorsSinceLastSave.add(uid);
+            // 편집자 추적: WebSocket origin일 때만 (로컬 transact/시드는 origin 없을 수 있음)
+            if (origin && typeof origin === 'object') {
+                const ws = origin as WebSocket & { yjsUserId?: string };
+                const uid = ws.yjsUserId;
+                if (uid && Types.ObjectId.isValid(uid)) {
+                    info.editorsSinceLastSave.add(uid);
+                }
             }
 
-            // 🚀 ProcessFlow 타입은 변경 시 즉시 저장 (2초 디바운스)
+            // 모든 문서 변경마다 디바운스 저장 (origin 조건 제거 — 화면 memos 등이 누락되던 원인)
             if (info.immediateSaveTimer) {
                 clearTimeout(info.immediateSaveTimer);
             }
             info.immediateSaveTimer = setTimeout(() => {
-                // logger.info(`[DEBUG] Immediate save triggered for project ${projectId}`);
                 saveDocToMongo(projectId, doc).catch(() => {});
             }, IMMEDIATE_SAVE_DEBOUNCE_MS);
         });
@@ -115,29 +116,38 @@ function broadcastToDoc(projectId: string, message: Uint8Array): void {
     });
 }
 
-function closeConn(projectId: string, ws: WebSocket): void {
+/** 마지막 연결 종료 시 Mongo 저장이 끝난 뒤에만 doc을 제거 (새로고침 직후 시드가 옛 스냅샷을 읽는 레이스 방지) */
+async function closeConnAndPersist(projectId: string, ws: WebSocket): Promise<void> {
     const info = docs.get(projectId);
     if (!info) return;
 
     info.conns.delete(ws);
 
-    if (info.conns.size === 0) {
-        // 모든 유저가 나갔을 때 awareness 정리 + 최종 MongoDB 저장
-        awarenessProtocol.removeAwarenessStates(
-            info.awareness,
-            Array.from(info.awareness.getStates().keys()),
-            null
-        );
+    if (info.conns.size !== 0) return;
 
-        // 즉시 저장 타이머 정리
-        if (info.immediateSaveTimer) {
-            clearTimeout(info.immediateSaveTimer);
-            info.immediateSaveTimer = null;
+    awarenessProtocol.removeAwarenessStates(
+        info.awareness,
+        Array.from(info.awareness.getStates().keys()),
+        null
+    );
+
+    if (info.immediateSaveTimer) {
+        clearTimeout(info.immediateSaveTimer);
+        info.immediateSaveTimer = null;
+    }
+
+    try {
+        await saveDocToMongo(projectId, info.doc);
+    } catch (_e) {
+        /* logged inside saveDocToMongo */
+    }
+
+    const latest = docs.get(projectId);
+    if (latest && latest.conns.size === 0) {
+        if (latest.snapshotTimer) {
+            clearInterval(latest.snapshotTimer);
+            latest.snapshotTimer = null;
         }
-
-        saveDocToMongo(projectId, info.doc).catch(() => {});
-
-        if (info.snapshotTimer) clearInterval(info.snapshotTimer);
         docs.delete(projectId);
         logger.info(`🗑️  Yjs doc unloaded: project ${projectId}`);
     }
@@ -382,11 +392,16 @@ async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: st
             Array.from(info.conns.get(ws) || []),
             null
         );
-        closeConn(projectId, ws);
+        void closeConnAndPersist(projectId, ws);
     });
 
     ws.on('error', () => {
-        closeConn(projectId, ws);
+        awarenessProtocol.removeAwarenessStates(
+            info.awareness,
+            Array.from(info.conns.get(ws) || []),
+            null
+        );
+        void closeConnAndPersist(projectId, ws);
     });
 
     // 클라이언트에게 현재 문서 상태 + awareness 전송 (syncStep1)
