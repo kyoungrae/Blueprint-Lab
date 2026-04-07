@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import {
     ReactFlow,
     Background,
@@ -60,6 +60,262 @@ const PROCESS_FLOW_SIDEBAR_MIN_WIDTH = 200;
 const PROCESS_FLOW_SIDEBAR_MAX_WIDTH = 600;
 const PROCESS_FLOW_UI_COMPACT_SCALE = 0.85;
 const SECTION_HANDLE_SIZE = 8;
+
+type ProcessFlowSectionDragState = { start: { x: number; y: number }; current: { x: number; y: number } };
+
+type ProcessFlowShiftSelectionApi = {
+    onSelectionStart: (e: { x: number; y: number }) => void;
+    onSelectionDrag: (e: { x: number; y: number }) => void;
+    onSelectionEnd: () => void;
+    clear: () => void;
+};
+
+function buildProcessFlowReactNodes(pfNodes: ProcessFlowNode[] | undefined, prev: Node[]): Node[] {
+    const selectedById = new Map(prev.map((n) => [n.id, !!n.selected]));
+    return (pfNodes ?? []).map((n: ProcessFlowNode) => ({
+        id: n.id,
+        type: 'processFlow' as const,
+        position: n.position,
+        data: n,
+        zIndex: 100,
+        selected: selectedById.get(n.id) ?? false,
+        style: {
+            width: n.style?.width ?? DEFAULT_NODE_STYLE.width,
+            height: n.style?.height ?? DEFAULT_NODE_STYLE.height,
+            fontStyle: n.textStyle?.italic ? 'italic' : 'normal',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'visible',
+            textAlign: 'center',
+            whiteSpace: 'pre-wrap',
+        },
+    }));
+}
+
+function processFlowReactNodesUnchanged(prev: Node[], next: Node[]): boolean {
+    if (prev.length !== next.length) return false;
+    const prevById = new Map(prev.map((n) => [n.id, n]));
+    for (const n of next) {
+        const p = prevById.get(n.id);
+        if (!p) return false;
+        if (p.position.x !== n.position.x || p.position.y !== n.position.y) return false;
+        if (p.data !== n.data) return false;
+        if (!!p.selected !== !!n.selected) return false;
+        if (Number(p.style?.width ?? 240) !== Number(n.style?.width ?? 240)) return false;
+        if (Number(p.style?.height ?? 120) !== Number(n.style?.height ?? 120)) return false;
+        if (String((p.style as React.CSSProperties)?.fontStyle ?? 'normal') !== String((n.style as React.CSSProperties)?.fontStyle ?? 'normal'))
+            return false;
+    }
+    return true;
+}
+
+function buildProcessFlowReactEdges(pfEdges: ProcessFlowEdge[] | undefined): Edge[] {
+    return (pfEdges ?? []).map((e: ProcessFlowEdge) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle,
+        animated: e.animated ?? true,
+        label: '연결방향 설정',
+        type: 'processFlow' as const,
+        data: e,
+        style: {
+            stroke: e.style?.stroke ?? '#2563eb',
+            strokeWidth: e.style?.strokeWidth ?? 2,
+        },
+    }));
+}
+
+function processFlowReactEdgesUnchanged(prev: Edge[], next: Edge[]): boolean {
+    if (prev.length !== next.length) return false;
+    const prevById = new Map(prev.map((e) => [e.id, e]));
+    for (const n of next) {
+        const p = prevById.get(n.id);
+        if (!p) return false;
+        if (p.source !== n.source || p.target !== n.target) return false;
+        if (p.sourceHandle !== n.sourceHandle) return false;
+        if (p.targetHandle !== n.targetHandle) return false;
+        if (p.data !== n.data) return false;
+        if (!!p.animated !== !!n.animated) return false;
+        if (String((p.style as React.CSSProperties)?.stroke) !== String((n.style as React.CSSProperties)?.stroke)) return false;
+        if (Number((p.style as React.CSSProperties)?.strokeWidth ?? 2) !== Number((n.style as React.CSSProperties)?.strokeWidth ?? 2)) return false;
+    }
+    return true;
+}
+
+/** 섹션 영역 드래그는 로컬 state만 갱신해 부모(전체 캔버스) 리렌더를 줄입니다. */
+const ProcessFlowSectionDrawOverlay: React.FC<{
+    active: boolean;
+    screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number };
+    getViewport: () => { x: number; y: number; zoom: number };
+    onCommitted: (drag: ProcessFlowSectionDragState) => void;
+}> = ({ active, screenToFlowPosition, getViewport, onCommitted }) => {
+    const [drag, setDrag] = useState<ProcessFlowSectionDragState | null>(null);
+
+    useEffect(() => {
+        if (!active) setDrag(null);
+    }, [active]);
+
+    if (!active) return null;
+
+    return (
+        <div
+            className="absolute inset-0 z-[100] cursor-crosshair"
+            onMouseDown={(e) => {
+                if (e.button !== 0) return;
+                const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+                setDrag({ start: pos, current: pos });
+            }}
+            onMouseMove={(e) => {
+                setDrag((prev) => {
+                    if (!prev) return null;
+                    return { ...prev, current: screenToFlowPosition({ x: e.clientX, y: e.clientY }) };
+                });
+            }}
+            onMouseUp={(e) => {
+                if (e.button !== 0) return;
+                setDrag((d) => {
+                    if (!d) return null;
+                    const current = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+                    onCommitted({ start: d.start, current });
+                    return null;
+                });
+            }}
+            onMouseLeave={() => setDrag(null)}
+        >
+            {drag &&
+                (() => {
+                    const { x: vx, y: vy, zoom } = getViewport();
+                    const left = Math.min(drag.start.x * zoom + vx, drag.current.x * zoom + vx);
+                    const top = Math.min(drag.start.y * zoom + vy, drag.current.y * zoom + vy);
+                    const width = Math.max(1, Math.abs((drag.current.x - drag.start.x) * zoom));
+                    const height = Math.max(1, Math.abs((drag.current.y - drag.start.y) * zoom));
+                    return (
+                        <div
+                            className="absolute border-2 border-amber-500 bg-amber-500/10 pointer-events-none"
+                            style={{ left, top, width, height }}
+                        />
+                    );
+                })()}
+        </div>
+    );
+};
+
+/** Shift+드래그 선택 박스 preview만 이 컴포넌트에서 리렌더합니다. */
+const ProcessFlowShiftSelectionLayer = forwardRef<
+    ProcessFlowShiftSelectionApi,
+    {
+        portalTarget: Element | null;
+        getViewport: () => { x: number; y: number; zoom: number };
+        setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
+    }
+>(function ProcessFlowShiftSelectionLayer({ portalTarget, getViewport, setNodes }, ref) {
+    const [box, setBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
+
+    const clear = useCallback(() => setBox(null), []);
+
+    useImperativeHandle(
+        ref,
+        () => ({
+            onSelectionStart: (e) => {
+                const { x, y } = getViewport();
+                setBox({
+                    start: { x: e.x - x, y: e.y - y },
+                    end: { x: e.x - x, y: e.y - y },
+                });
+            },
+            onSelectionDrag: (e) => {
+                setBox((prev) => {
+                    if (!prev) return null;
+                    const { x, y } = getViewport();
+                    return { ...prev, end: { x: e.x - x, y: e.y - y } };
+                });
+            },
+            onSelectionEnd: () => {
+                setBox((sb) => {
+                    if (!sb) return null;
+                    const boxGeom = {
+                        x: Math.min(sb.start.x, sb.end.x),
+                        y: Math.min(sb.start.y, sb.end.y),
+                        width: Math.abs(sb.end.x - sb.start.x),
+                        height: Math.abs(sb.end.y - sb.start.y),
+                    };
+                    queueMicrotask(() => {
+                        setNodes((currentNodes) =>
+                            currentNodes.map((n) => {
+                                const nodeWidth = Number((n.style as React.CSSProperties)?.width ?? 240);
+                                const nodeHeight = Number((n.style as React.CSSProperties)?.height ?? 120);
+                                const nodeInBox =
+                                    n.position.x >= boxGeom.x &&
+                                    n.position.x + nodeWidth <= boxGeom.x + boxGeom.width &&
+                                    n.position.y >= boxGeom.y &&
+                                    n.position.y + nodeHeight <= boxGeom.y + boxGeom.height;
+                                return {
+                                    ...n,
+                                    selected: nodeInBox || n.selected,
+                                };
+                            })
+                        );
+                    });
+                    return null;
+                });
+            },
+            clear,
+        }),
+        [clear, getViewport, setNodes]
+    );
+
+    if (!portalTarget || !box) return null;
+
+    return createPortal(
+        <div
+            className="absolute border-2 border-emerald-500 bg-emerald-500/20 pointer-events-none z-[100]"
+            style={{
+                left: Math.min(box.start.x, box.end.x),
+                top: Math.min(box.start.y, box.end.y),
+                width: Math.abs(box.end.x - box.start.x),
+                height: Math.abs(box.end.y - box.start.y),
+            }}
+        />,
+        portalTarget
+    );
+});
+
+const ProcessFlowYjsDevSocketButton: React.FC<{ currentProjectId: string | null }> = ({ currentProjectId }) => {
+    const yjsJoin = useYjsStore((s) => s.joinProject);
+    const yjsIsSynced = useYjsStore((s) => s.isSynced);
+    const yjsIsConnected = useYjsStore((s) => s.isConnected);
+    const yjsWsUrl = useYjsStore((s) => s.wsUrl);
+    const yjsLastStatus = useYjsStore((s) => s.lastStatus);
+    const yjsLastError = useYjsStore((s) => s.lastError);
+    const yjsLastSyncAt = useYjsStore((s) => s.lastSyncAt);
+
+    return (
+        <button
+            type="button"
+            onClick={() => {
+                if (!currentProjectId) return;
+                yjsJoin(currentProjectId);
+                if (!yjsIsSynced) {
+                    const syncText = yjsLastSyncAt ? new Date(yjsLastSyncAt).toLocaleString() : '-';
+                    alert(
+                        `Yjs 재연결 시도\n\nurl: ${yjsWsUrl}\nstatus: ${yjsLastStatus ?? '-'}\nerror: ${yjsLastError ?? '-'}\nlastSync: ${syncText}`
+                    );
+                }
+            }}
+            className="flex items-center gap-1 px-2 py-1.5 bg-gray-50 rounded-lg border border-gray-100 shrink-0 hover:bg-gray-100 transition-colors"
+            title={`동기화가 멈춘 것 같으면 클릭해서 재연결을 시도하세요\n\nYjs url: ${yjsWsUrl}\nYjs status: ${yjsLastStatus ?? '-'}\nYjs error: ${yjsLastError ?? '-'}\nYjs lastSync: ${yjsLastSyncAt ? new Date(yjsLastSyncAt).toLocaleString() : '-'}`}
+        >
+            <span className={`text-[10px] font-black ${yjsIsConnected ? 'text-emerald-700' : 'text-rose-700'}`}>Socket</span>
+            <span className={`text-[10px] font-black ${yjsIsSynced ? 'text-emerald-700' : 'text-amber-700'}`}>{yjsIsSynced ? 'SYNC' : '...'}</span>
+            <span className="text-[10px] font-black text-gray-300">|</span>
+            <span className={`text-[10px] font-black ${yjsIsConnected ? 'text-emerald-700' : 'text-rose-700'}`}>Yjs</span>
+            <span className={`text-[10px] font-black ${yjsIsSynced ? 'text-emerald-700' : 'text-amber-700'}`}>{yjsIsSynced ? 'SYNC' : '...'}</span>
+        </button>
+    );
+};
 
 function mergeProcessFlowImport(
     existing: { pfNodes: ProcessFlowNode[]; pfEdges: ProcessFlowEdge[]; pfSections: ProcessFlowSection[] },
@@ -132,7 +388,6 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const sidebarResizingRef = useRef(false);
     const [sidebarListKey, setSidebarListKey] = useState(0);
     const [isSectionDrawMode, setIsSectionDrawMode] = useState(false);
-    const [sectionDrag, setSectionDrag] = useState<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
     const [portalTarget, setPortalTarget] = useState<Element | null>(null);
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
     const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -160,65 +415,65 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [importJsonText, setImportJsonText] = useState('');
     const [importError, setImportError] = useState<string | null>(null);
     const [isShiftPressed, setIsShiftPressed] = useState(false);
-    const [selectionBox, setSelectionBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
     const [clipboardNodes, setClipboardNodes] = useState<any[]>([]);
 
-    const {
-        joinProject: yjsJoin,
-        leaveProject: yjsLeave,
-        isSynced: yjsIsSynced,
-        isConnected: yjsIsConnected,
-        wsUrl: yjsWsUrl,
-        lastStatus: yjsLastStatus,
-        lastError: yjsLastError,
-        lastSyncAt: yjsLastSyncAt,
-        pfNodes,
-        pfEdges,
-        pfSections,
-        pfAddNode,
-        pfUpdateNode,
-        pfAddEdge,
-        pfUpdateEdge,
-        pfUpdateSection,
-        pfAddSection,
-        pfDeleteSection,
-        pfDeleteNode,
-    } = useYjsStore();
+    const yjsJoin = useYjsStore((s) => s.joinProject);
+    const yjsLeave = useYjsStore((s) => s.leaveProject);
+    const yjsIsSynced = useYjsStore((s) => s.isSynced);
+    const pfNodes = useYjsStore((s) => s.pfNodes);
+    const pfEdges = useYjsStore((s) => s.pfEdges);
+    const pfSections = useYjsStore((s) => s.pfSections);
+    const pfAddNode = useYjsStore((s) => s.pfAddNode);
+    const pfUpdateNode = useYjsStore((s) => s.pfUpdateNode);
+    const pfAddEdge = useYjsStore((s) => s.pfAddEdge);
+    const pfUpdateEdge = useYjsStore((s) => s.pfUpdateEdge);
+    const pfUpdateSection = useYjsStore((s) => s.pfUpdateSection);
+    const pfAddSection = useYjsStore((s) => s.pfAddSection);
+    const pfDeleteSection = useYjsStore((s) => s.pfDeleteSection);
+    const pfDeleteNode = useYjsStore((s) => s.pfDeleteNode);
 
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const { getViewport, screenToFlowPosition, fitView } = useReactFlow();
-    const selectedNodes = nodes.filter(n => n.selected);
-    
-    // 마름모 관련 edge가 제거되지 않도록 커스텀 핸들러
-    const handleEdgesChange = useCallback((changes: any) => {
-        // 제거(remove) 변경 사항만 필터링
-        const removeChanges = changes.filter((c: any) => c.type === 'remove');
-        const otherChanges = changes.filter((c: any) => c.type !== 'remove');
-        
-        // 제거하려는 edge가 마름모 관련인지 확인
-        const safeRemoveChanges = removeChanges.filter((c: any) => {
-            const edge = edges.find(e => e.id === c.id);
-            if (!edge) return true;
-            
-            const sourceNode = pfNodes.find(n => n.id === edge.source);
-            const targetNode = pfNodes.find(n => n.id === edge.target);
-            
-            const isDiamondEdge = 
-                (sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond') ||
-                (targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond');
-            
-            // 마름모 관련 edge는 제거하지 않음 (사용자가 직접 삭제한 경우 제외)
-            if (isDiamondEdge) {
-                console.log('Preventing auto-removal of diamond edge:', edge.id);
-                return false;
-            }
-            return true;
-        });
-        
-        // 안전한 변경 사항만 적용
-        onEdgesChange([...otherChanges, ...safeRemoveChanges]);
-    }, [edges, pfNodes, onEdgesChange]);
+    const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
+
+    const nodesRef = useRef(nodes);
+    const edgesRef = useRef(edges);
+    const pfNodesRef = useRef(pfNodes);
+    const clipboardRef = useRef(clipboardNodes);
+    const deleteConfirmOpenRef = useRef(false);
+    const shiftSelectionRef = useRef<ProcessFlowShiftSelectionApi>(null);
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+    pfNodesRef.current = pfNodes;
+    clipboardRef.current = clipboardNodes;
+    deleteConfirmOpenRef.current = deleteConfirmOpen;
+
+    // 마름모 관련 edge가 제거되지 않도록 커스텀 핸들러 (edges/pfNodes는 ref로 읽어 콜백 안정화)
+    const handleEdgesChange = useCallback(
+        (changes: any) => {
+            const removeChanges = changes.filter((c: any) => c.type === 'remove');
+            const otherChanges = changes.filter((c: any) => c.type !== 'remove');
+
+            const safeRemoveChanges = removeChanges.filter((c: any) => {
+                const edge = edgesRef.current.find((e) => e.id === c.id);
+                if (!edge) return true;
+
+                const sourceNode = pfNodesRef.current.find((n) => n.id === edge.source);
+                const targetNode = pfNodesRef.current.find((n) => n.id === edge.target);
+
+                const isDiamondEdge =
+                    (sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond') ||
+                    (targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond');
+
+                if (isDiamondEdge) return false;
+                return true;
+            });
+
+            onEdgesChange([...otherChanges, ...safeRemoveChanges]);
+        },
+        [onEdgesChange]
+    );
 
     // 커스텀 노드 변경 핸들러 - 선택 동작 제어
     const handleNodesChange = useCallback((changes: any[]) => {
@@ -277,26 +532,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
         },
     });
 
-    // 섹션 그리기: 마우스로 영역 지정
-    const onSectionOverlayMouseDown = useCallback(
-        (e: React.MouseEvent) => {
-            if (!isSectionDrawMode || e.button !== 0) return;
-            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-            setSectionDrag({ start: pos, current: pos });
-        },
-        [isSectionDrawMode, screenToFlowPosition]
-    );
-    const onSectionOverlayMouseMove = useCallback(
-        (e: React.MouseEvent) => {
-            if (!sectionDrag) return;
-            const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-            setSectionDrag((d) => (d ? { ...d, current: pos } : null));
-        },
-        [sectionDrag, screenToFlowPosition]
-    );
-    const onSectionOverlayMouseUp = useCallback(
-        (e: React.MouseEvent) => {
-            if (e.button !== 0 || !sectionDrag) return;
+    const handleSectionDrawCommitted = useCallback(
+        (sectionDrag: ProcessFlowSectionDragState) => {
             const { start, current } = sectionDrag;
             const x = Math.min(start.x, current.x);
             const y = Math.min(start.y, current.y);
@@ -339,8 +576,6 @@ const ProcessFlowCanvasInner: React.FC = () => {
             };
             // console.log('[DEBUG] Creating section:', newSection);
             pfAddSection(newSection);
-            // console.log('[DEBUG] pfAddSection called, yjs isSynced:', yjsIsSynced);
-            setSectionDrag(null);
             setIsSectionDrawMode(false);
             
             // 🚀 드래그 영역(새 섹션)이 "완전히 포함"하는 최상위 기존 섹션들만 새 섹션의 자식으로 설정
@@ -379,11 +614,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 pfUpdateNode(node.id, { sectionId: deepest?.id ?? null });
             });
         },
-        [sectionDrag, pfSections, pfAddSection, nodes, pfUpdateNode]
+        [pfSections, pfAddSection, pfUpdateSection, nodes, pfUpdateNode]
     );
-    const onSectionOverlayMouseLeave = useCallback(() => {
-        setSectionDrag(null);
-    }, []);
 
     // 섹션 이동 기능
     const onSectionBodyMouseDown = useCallback(
@@ -471,30 +703,43 @@ const ProcessFlowCanvasInner: React.FC = () => {
         setEditingSectionName(section.name || 'Section');
     }, []);
 
-    // 섹션 이동 useEffect
+    // 섹션 이동 useEffect (mousemove당 Yjs 갱신을 rAF로 묶어 리렌더 횟수를 줄임)
     useEffect(() => {
         if (!sectionMoveState) return;
         const { sectionId, startFlow, startSectionPositions, startNodePositions } = sectionMoveState;
-        
-        const onMove = (e: MouseEvent) => {
-            const cur = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-            const dx = cur.x - startFlow.x;
-            const dy = cur.y - startFlow.y;
-            
-            // 🚀 1. 모든 타겟 섹션들을 같은 이동 거리(dx, dy)만큼 함께 이동
+
+        let rafId = 0;
+        let latestDx = 0;
+        let latestDy = 0;
+
+        const flush = () => {
+            rafId = 0;
+            const dx = latestDx;
+            const dy = latestDy;
             Object.entries(startSectionPositions).forEach(([secId, pos]) => {
                 pfUpdateSection(secId, { position: { x: pos.x + dx, y: pos.y + dy } });
             });
-            
-            // 🚀 2. 하위 섹션들에 속한 모든 프로세스 노드들도 함께 이동
             Object.entries(startNodePositions).forEach(([nodeId, pos]) => {
                 pfUpdateNode(nodeId, { position: { x: pos.x + dx, y: pos.y + dy } });
             });
         };
-        
+
+        const onMove = (e: MouseEvent) => {
+            const cur = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            latestDx = cur.x - startFlow.x;
+            latestDy = cur.y - startFlow.y;
+            if (!rafId) rafId = requestAnimationFrame(flush);
+        };
+
         const onUp = () => {
-            // 🚀 3. 이동한 섹션의 새로운 위치에서 parentId 재계산
-            const movedSection = (pfSections as any[]).find((s) => s.id === sectionId);
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = 0;
+            }
+            flush();
+
+            const liveSections = useYjsStore.getState().pfSections as any[];
+            const movedSection = liveSections.find((s) => s.id === sectionId);
             if (movedSection) {
                 const cx = movedSection.position.x + movedSection.size.width / 2;
                 const cy = movedSection.position.y + movedSection.size.height / 2;
@@ -503,7 +748,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 const getDescendantIds = (parentId: string, visited: Set<string>): string[] => {
                     if (visited.has(parentId)) return [];
                     visited.add(parentId);
-                    const children = (pfSections as any[]).filter((s) => s.parentId === parentId).map((s) => s.id);
+                    const children = liveSections.filter((s) => s.parentId === parentId).map((s) => s.id);
                     let descendants: string[] = [];
                     children.forEach((childId) => {
                         descendants.push(childId);
@@ -516,7 +761,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 const excludeIds = new Set([sectionId, ...descendantIds]);
                 
                 // 중첩된 섹션 중 가장 작은(안쪽) 섹션을 새로운 부모로 찾기 (자기 자신과 자손 제외)
-                const newParent = (pfSections as any[])
+                const newParent = liveSections
                     .filter((s) => !excludeIds.has(s.id) && // 자기 자신과 자손 제외
                         cx >= s.position.x &&
                         cx <= s.position.x + s.size.width &&
@@ -539,10 +784,11 @@ const ProcessFlowCanvasInner: React.FC = () => {
         window.addEventListener('mouseup', onUp);
         
         return () => {
+            if (rafId) cancelAnimationFrame(rafId);
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [sectionMoveState, pfUpdateSection, pfUpdateNode, pfSections, screenToFlowPosition]);
+    }, [sectionMoveState, pfUpdateSection, pfUpdateNode, screenToFlowPosition]);
 
     // 섹션 리사이즈 useEffect
     useEffect(() => {
@@ -550,11 +796,17 @@ const ProcessFlowCanvasInner: React.FC = () => {
         const sec = (pfSections as any[]).find((s) => s.id === sectionResizeState.sectionId);
         if (!sec) return;
         const MIN_SECTION_SIZE = 50;
-        const onMove = (e: MouseEvent) => {
-            const cur = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-            const dx = cur.x - sectionResizeState.startFlow.x;
-            const dy = cur.y - sectionResizeState.startFlow.y;
-            const { handle, startPosition, startSize } = sectionResizeState;
+        const st = sectionResizeState;
+        let rafId = 0;
+        let hasMoved = false;
+        const lastClient = { x: 0, y: 0 };
+
+        const flush = () => {
+            rafId = 0;
+            const cur = screenToFlowPosition({ x: lastClient.x, y: lastClient.y });
+            const dx = cur.x - st.startFlow.x;
+            const dy = cur.y - st.startFlow.y;
+            const { handle, startPosition, startSize } = st;
             let x = startPosition.x;
             let y = startPosition.y;
             let w = startSize.width;
@@ -571,15 +823,35 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 y = startPosition.y + dh;
                 h = startSize.height - dh;
             }
-            pfUpdateSection(sectionResizeState.sectionId, { position: { x, y }, size: { width: w, height: h } });
+            pfUpdateSection(st.sectionId, { position: { x, y }, size: { width: w, height: h } });
+        };
+
+        const onMove = (e: MouseEvent) => {
+            hasMoved = true;
+            lastClient.x = e.clientX;
+            lastClient.y = e.clientY;
+            if (!rafId) rafId = requestAnimationFrame(flush);
         };
         const onUp = () => {
-            const x = sec.position.x;
-            const y = sec.position.y;
-            const width = sec.size.width;
-            const height = sec.size.height;
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = 0;
+            }
+            if (hasMoved) flush();
 
-            pfNodes.forEach((node) => {
+            const liveSections = useYjsStore.getState().pfSections as any[];
+            const liveNodes = useYjsStore.getState().pfNodes;
+            const resized = liveSections.find((s) => s.id === st.sectionId);
+            if (!resized) {
+                setSectionResizeState(null);
+                return;
+            }
+            const x = resized.position.x;
+            const y = resized.position.y;
+            const width = resized.size.width;
+            const height = resized.size.height;
+
+            liveNodes.forEach((node) => {
                 if (node.type !== 'RECT' && node.type !== 'USER') return;
                 const nw = node.style?.width || 240;
                 const nh = node.style?.height || 120;
@@ -587,7 +859,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 const cy = node.position.y + nh / 2;
                 // 리사이즈한 섹션 영역 안에 있는 노드만 소속을 다시 계산
                 if (cx >= x && cx <= x + width && cy >= y && cy <= y + height) {
-                    const containingSection = (pfSections as any[])
+                    const containingSection = liveSections
                         .filter(
                             (s) =>
                                 cx >= s.position.x &&
@@ -597,7 +869,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         )
                         .sort((a, b) => a.size.width * a.size.height - b.size.width * b.size.height)[0];
                     pfUpdateNode(node.id, { sectionId: containingSection?.id });
-                } else if (node.sectionId === sectionResizeState.sectionId) {
+                } else if (node.sectionId === st.sectionId) {
                     // 섹션 밖으로 나간 노드는 섹션 연결 해제
                     pfUpdateNode(node.id, { sectionId: null });
                 }
@@ -606,12 +878,13 @@ const ProcessFlowCanvasInner: React.FC = () => {
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
-        
+
         return () => {
+            if (rafId) cancelAnimationFrame(rafId);
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [sectionResizeState, pfSections, pfNodes, pfUpdateSection, pfUpdateNode]);
+    }, [sectionResizeState, pfSections, pfUpdateSection, pfUpdateNode, screenToFlowPosition]);
 
     // ── Sidebar Resize Logic ────────────────────────────────────
     const startSidebarResize = useCallback((e: React.MouseEvent) => {
@@ -650,45 +923,17 @@ const ProcessFlowCanvasInner: React.FC = () => {
     }, [currentProjectId, yjsJoin, yjsLeave]);
 
     useEffect(() => {
-        const nextNodes: Node[] = (pfNodes ?? []).map((n: ProcessFlowNode) => ({
-            id: n.id,
-            type: 'processFlow',
-            position: n.position,
-            data: n,
-            zIndex: 100, // 객체는 항상 섹션보다 위에 표시
-            style: {
-                width: n.style?.width ?? DEFAULT_NODE_STYLE.width,
-                height: n.style?.height ?? DEFAULT_NODE_STYLE.height,
-                fontStyle: n.textStyle?.italic ? 'italic' : 'normal',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                /* padding 없음: 도형(SVG)이 width×height 전체를 쓰는데 패딩이 있으면 잘림 */
-                overflow: 'visible',
-                textAlign: 'center',
-                whiteSpace: 'pre-wrap',
-            },
-        }));
-        setNodes(nextNodes);
+        setNodes((curr) => {
+            const next = buildProcessFlowReactNodes(pfNodes, curr);
+            return processFlowReactNodesUnchanged(curr, next) ? curr : next;
+        });
     }, [pfNodes, setNodes]);
 
     useEffect(() => {
-        const nextEdges: Edge[] = (pfEdges ?? []).map((e: ProcessFlowEdge) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            sourceHandle: e.sourceHandle,
-            targetHandle: e.targetHandle,
-            animated: e.animated ?? true,
-            label: '연결방향 설정',
-            type: 'processFlow',
-            data: e,
-            style: {
-                stroke: e.style?.stroke ?? '#2563eb',
-                strokeWidth: e.style?.strokeWidth ?? 2,
-            },
-        }));
-        setEdges(nextEdges);
+        setEdges((curr) => {
+            const next = buildProcessFlowReactEdges(pfEdges);
+            return processFlowReactEdgesUnchanged(curr, next) ? curr : next;
+        });
     }, [pfEdges, setEdges]);
 
     const isValidConnection = useCallback((connection: Connection) => {
@@ -701,57 +946,39 @@ const ProcessFlowCanvasInner: React.FC = () => {
         
         const isDiamondTarget = targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond';
         const isDiamondSource = sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond';
-        
-        console.log('isValidConnection:', {
-            source: connection.source,
-            target: connection.target,
-            isDiamondTarget,
-            isDiamondSource,
-            willAllow: isDiamondTarget || isDiamondSource
-        });
-        
+
         if (isDiamondTarget || isDiamondSource) {
             return true;
         }
-        
-        // 일반 도형은 기존 연결 확인
+
         const hasExistingConnection = pfEdges.some(
-            edge => edge.source === connection.source && edge.target === connection.target
+            (edge) => edge.source === connection.source && edge.target === connection.target
         );
-        
-        console.log('Existing connection check:', hasExistingConnection);
-        
+
         return !hasExistingConnection;
     }, [pfNodes, pfEdges]);
 
     const onConnect = useCallback(
         (connection: Connection) => {
-            console.log('onConnect called:', connection);
             if (!connection.source || !connection.target) return;
             if (connection.source === connection.target) return;
-            
-            // 마름모 도형이 관련된 연결인지 확인
-            const sourceNode = pfNodes.find(node => node.id === connection.source);
-            const targetNode = pfNodes.find(node => node.id === connection.target);
-            const isDiamondConnection = 
+
+            const sourceNode = pfNodes.find((node) => node.id === connection.source);
+            const targetNode = pfNodes.find((node) => node.id === connection.target);
+            const isDiamondConnection =
                 (sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond') ||
                 (targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond');
-            
-            console.log('isDiamondConnection:', isDiamondConnection, 'sourceNode:', sourceNode, 'targetNode:', targetNode);
-            
-            // 마름모 연결이 아니고 기존 연결이 있으면 추가하지 않음
+
             if (!isDiamondConnection) {
                 const existingConnection = pfEdges.some(
-                    edge => edge.source === connection.source && edge.target === connection.target
+                    (edge) => edge.source === connection.source && edge.target === connection.target
                 );
                 if (existingConnection) {
-                    console.log('Existing connection found, not adding');
                     return;
                 }
             }
-            
+
             const id = `pf_edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-            console.log('Adding new edge:', id);
             pfAddEdge({
                 id,
                 source: connection.source,
@@ -768,23 +995,17 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
     const onReconnect = useCallback(
         (oldEdge: Edge, connection: Connection) => {
-            console.log('onReconnect called:', { oldEdge, connection });
             if (!connection.source || !connection.target) return;
             if (connection.source === connection.target) return;
-            
-            // 마름모 도형이 관련된 연결인지 확인
-            const sourceNode = pfNodes.find(node => node.id === connection.source);
-            const targetNode = pfNodes.find(node => node.id === connection.target);
-            const isDiamondConnection = 
+
+            const sourceNode = pfNodes.find((node) => node.id === connection.source);
+            const targetNode = pfNodes.find((node) => node.id === connection.target);
+            const isDiamondConnection =
                 (sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond') ||
                 (targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond');
-            
-            console.log('onReconnect - isDiamondConnection:', isDiamondConnection);
-            
+
             if (isDiamondConnection) {
-                // 마름모 연결은 기존 엣지를 유지하고 새 엣지 추가
                 const id = `pf_edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-                console.log('onReconnect - Adding new edge instead of updating:', id);
                 pfAddEdge({
                     id,
                     source: connection.source,
@@ -796,8 +1017,6 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     arrow: { start: 'none', end: 'arrow' },
                 });
             } else {
-                // 일반 연결은 기존 엣지 업데이트
-                console.log('onReconnect - Updating existing edge:', oldEdge.id);
                 pfUpdateEdge(oldEdge.id, {
                     source: connection.source,
                     target: connection.target,
@@ -807,6 +1026,75 @@ const ProcessFlowCanvasInner: React.FC = () => {
             }
         },
         [pfUpdateEdge, pfAddEdge, pfNodes]
+    );
+
+    const onFlowNodeClick = useCallback(
+        (_: React.MouseEvent, node: Node) => {
+            if (isShiftPressed) {
+                setNodes((currentNodes) =>
+                    currentNodes.map((n) => ({
+                        ...n,
+                        selected: n.id === node.id ? !n.selected : n.selected,
+                    }))
+                );
+            } else {
+                setNodes((currentNodes) =>
+                    currentNodes.map((n) => ({
+                        ...n,
+                        selected: n.id === node.id,
+                    }))
+                );
+            }
+        },
+        [isShiftPressed, setNodes]
+    );
+
+    const onFlowPaneClick = useCallback(() => {
+        setNodes((currentNodes) =>
+            currentNodes.map((n) => ({
+                ...n,
+                selected: false,
+            }))
+        );
+        shiftSelectionRef.current?.clear();
+    }, [setNodes]);
+
+    const onFlowSelectionStart = useCallback(
+        (e: { x: number; y: number }) => {
+            if (isShiftPressed) shiftSelectionRef.current?.onSelectionStart(e);
+        },
+        [isShiftPressed]
+    );
+
+    const onFlowSelectionDrag = useCallback((e: { x: number; y: number }) => {
+        shiftSelectionRef.current?.onSelectionDrag(e);
+    }, []);
+
+    const onFlowSelectionEnd = useCallback(() => {
+        shiftSelectionRef.current?.onSelectionEnd();
+    }, []);
+
+    const onFlowNodeDragStop = useCallback(
+        (_evt: React.MouseEvent, node: Node) => {
+            pfUpdateNode(node.id, { position: node.position });
+
+            const nw = node.width || 240;
+            const nh = node.height || 120;
+            const cx = node.position.x + nw / 2;
+            const cy = node.position.y + nh / 2;
+
+            const containingSection = (pfSections as any[])
+                .filter((s) =>
+                    cx >= s.position.x &&
+                    cx <= s.position.x + s.size.width &&
+                    cy >= s.position.y &&
+                    cy <= s.position.y + s.size.height
+                )
+                .sort((a, b) => a.size.width * a.size.height - b.size.width * b.size.height)[0];
+
+            pfUpdateNode(node.id, { sectionId: containingSection?.id || null });
+        },
+        [pfSections, pfUpdateNode]
     );
 
     const createNodeAtCenter = useCallback(
@@ -879,33 +1167,37 @@ const ProcessFlowCanvasInner: React.FC = () => {
         }
     }, [currentProjectId, currentProject?.id, yjsIsSynced]);
 
-    // Shift 키 상태 추적
+    const handleDeleteSelectedNodes = useCallback(() => {
+        nodesRef.current.filter((n) => n.selected).forEach((n) => pfDeleteNode(n.id));
+        setDeleteConfirmOpen(false);
+    }, [pfDeleteNode]);
+
+    // Shift 키 + 단축키: nodes/clipboard/모달 상태는 ref로 읽어 effect가 불필요하게 재등록되지 않게 함
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Shift') {
                 setIsShiftPressed(true);
             }
-            
-            // 텍스트 입력 중이거나 인풋 요소가 포커스된 경우 삭제 로직 무시
+
             const activeElement = document.activeElement;
-            const isInputFocused = activeElement && (
-                activeElement.tagName === 'INPUT' ||
-                activeElement.tagName === 'TEXTAREA' ||
-                activeElement.getAttribute('contenteditable') === 'true'
-            );
-            
-            // Ctrl+C: 복사
-            if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedNodes.length > 0 && !isInputFocused) {
+            const isInputFocused =
+                activeElement &&
+                (activeElement.tagName === 'INPUT' ||
+                    activeElement.tagName === 'TEXTAREA' ||
+                    activeElement.getAttribute('contenteditable') === 'true');
+
+            const selected = nodesRef.current.filter((n) => n.selected);
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selected.length > 0 && !isInputFocused) {
                 e.preventDefault();
-                setClipboardNodes(selectedNodes.map(node => ({ ...node.data, position: node.position })));
-                console.log('Copied nodes:', selectedNodes.length);
+                setClipboardNodes(selected.map((node) => ({ ...node.data, position: node.position })));
             }
-            
-            // Ctrl+V: 붙여넣기
-            if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboardNodes.length > 0 && !isInputFocused) {
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboardRef.current.length > 0 && !isInputFocused) {
                 e.preventDefault();
-                const offset = 50; // 오프셋
-                clipboardNodes.forEach(nodeData => {
+                const offset = 50;
+                const toPaste = clipboardRef.current;
+                toPaste.forEach((nodeData) => {
                     const newId = `pf_node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
                     pfAddNode({
                         ...nodeData,
@@ -916,22 +1208,19 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         },
                     });
                 });
-                console.log('Pasted nodes:', clipboardNodes.length);
             }
-            
-            if (e.key === 'Backspace' && selectedNodes.length > 0 && !isInputFocused) {
+
+            if (e.key === 'Backspace' && selected.length > 0 && !isInputFocused) {
                 e.preventDefault();
                 setDeleteConfirmOpen(true);
             }
-            
-            // 삭제 확인 팝업에서 Enter 키로 삭제
-            if (e.key === 'Enter' && deleteConfirmOpen) {
+
+            if (e.key === 'Enter' && deleteConfirmOpenRef.current) {
                 e.preventDefault();
                 handleDeleteSelectedNodes();
             }
-            
-            // 삭제 확인 팝업에서 Escape 키로 취소
-            if (e.key === 'Escape' && deleteConfirmOpen) {
+
+            if (e.key === 'Escape' && deleteConfirmOpenRef.current) {
                 e.preventDefault();
                 setDeleteConfirmOpen(false);
             }
@@ -949,14 +1238,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [selectedNodes, deleteConfirmOpen, clipboardNodes]);
-
-    const handleDeleteSelectedNodes = () => {
-        selectedNodes.forEach((node: any) => {
-            pfDeleteNode(node.id);
-        });
-        setDeleteConfirmOpen(false);
-    };
+    }, [pfAddNode, handleDeleteSelectedNodes]);
 
     const handleProcessFlowExport = useCallback(
         async (_selectedIds: string[], format: ExportFormat) => {
@@ -1076,27 +1358,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         </button>
                         <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
-                        {import.meta.env.DEV && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (!currentProjectId) return;
-                                    yjsJoin(currentProjectId);
-                                    if (!yjsIsSynced) {
-                                        const syncText = yjsLastSyncAt ? new Date(yjsLastSyncAt).toLocaleString() : '-';
-                                        alert(`Yjs 재연결 시도\n\nurl: ${yjsWsUrl}\nstatus: ${yjsLastStatus ?? '-'}\nerror: ${yjsLastError ?? '-'}\nlastSync: ${syncText}`);
-                                    }
-                                }}
-                                className="flex items-center gap-1 px-2 py-1.5 bg-gray-50 rounded-lg border border-gray-100 shrink-0 hover:bg-gray-100 transition-colors"
-                                title={`동기화가 멈춘 것 같으면 클릭해서 재연결을 시도하세요\n\nYjs url: ${yjsWsUrl}\nYjs status: ${yjsLastStatus ?? '-'}\nYjs error: ${yjsLastError ?? '-'}\nYjs lastSync: ${yjsLastSyncAt ? new Date(yjsLastSyncAt).toLocaleString() : '-'}`}
-                            >
-                                <span className={`text-[10px] font-black ${yjsIsConnected ? 'text-emerald-700' : 'text-rose-700'}`}>Socket</span>
-                                <span className={`text-[10px] font-black ${yjsIsSynced ? 'text-emerald-700' : 'text-amber-700'}`}>{yjsIsSynced ? 'SYNC' : '...'}</span>
-                                <span className="text-[10px] font-black text-gray-300">|</span>
-                                <span className={`text-[10px] font-black ${yjsIsConnected ? 'text-emerald-700' : 'text-rose-700'}`}>Yjs</span>
-                                <span className={`text-[10px] font-black ${yjsIsSynced ? 'text-emerald-700' : 'text-amber-700'}`}>{yjsIsSynced ? 'SYNC' : '...'}</span>
-                            </button>
-                        )}
+                        {import.meta.env.DEV && <ProcessFlowYjsDevSocketButton currentProjectId={currentProjectId} />}
 
                         <div className="flex flex-col justify-center min-w-0 shrink" title="클릭하여 ID 복사">
                             <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-0.5">Project ID</span>
@@ -1329,104 +1591,12 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     onConnect={onConnect}
                     onReconnect={onReconnect}
                     isValidConnection={isValidConnection}
-                    onNodeClick={(_, node) => {
-                        // Shift+클릭: 다중 선택 토글
-                        if (isShiftPressed) {
-                            setNodes((currentNodes) =>
-                                currentNodes.map((n) => ({
-                                    ...n,
-                                    selected: n.id === node.id ? !n.selected : n.selected,
-                                }))
-                            );
-                        } else {
-                            // 일반 클릭: 단일 선택
-                            setNodes((currentNodes) =>
-                                currentNodes.map((n) => ({
-                                    ...n,
-                                    selected: n.id === node.id,
-                                }))
-                            );
-                        }
-                    }}
-                    onPaneClick={() => {
-                        // 배경 클릭 시 선택 해제
-                        setNodes((currentNodes) =>
-                            currentNodes.map((n) => ({
-                                ...n,
-                                selected: false,
-                            }))
-                        );
-                        setSelectionBox(null);
-                    }}
-                    onSelectionStart={(e: any) => {
-                        if (isShiftPressed) {
-                            const { x, y } = getViewport();
-                            setSelectionBox({
-                                start: { x: e.x - x, y: e.y - y },
-                                end: { x: e.x - x, y: e.y - y },
-                            });
-                        }
-                    }}
-                    onSelectionDrag={(e: any) => {
-                        if (isShiftPressed && selectionBox) {
-                            const { x, y } = getViewport();
-                            setSelectionBox({
-                                ...selectionBox,
-                                end: { x: e.x - x, y: e.y - y },
-                            });
-                        }
-                    }}
-                    onSelectionEnd={() => {
-                        if (isShiftPressed && selectionBox) {
-                            // 선택 박스 안의 노드들을 찾아서 선택
-                            const box = {
-                                x: Math.min(selectionBox.start.x, selectionBox.end.x),
-                                y: Math.min(selectionBox.start.y, selectionBox.end.y),
-                                width: Math.abs(selectionBox.end.x - selectionBox.start.x),
-                                height: Math.abs(selectionBox.end.y - selectionBox.start.y),
-                            };
-                            
-                            setNodes((currentNodes) =>
-                                currentNodes.map((n: any) => {
-                                    const nodeWidth = Number(n.style?.width || 240);
-                                    const nodeHeight = Number(n.style?.height || 120);
-                                    const nodeInBox = (
-                                        n.position.x >= box.x &&
-                                        n.position.x + nodeWidth <= box.x + box.width &&
-                                        n.position.y >= box.y &&
-                                        n.position.y + nodeHeight <= box.y + box.height
-                                    );
-                                    return {
-                                        ...n,
-                                        selected: nodeInBox || n.selected,
-                                    };
-                                })
-                            );
-                            setSelectionBox(null);
-                        }
-                    }}
-                    onNodeDragStop={(_evt, node) => {
-                        // 🚀 1. 노드 위치 업데이트
-                        pfUpdateNode(node.id, { position: node.position });
-                        
-                        // 🚀 2. 드롭한 위치의 섹션 재계산 (ScreenDesign과 동일)
-                        const nw = node.width || 240;
-                        const nh = node.height || 120;
-                        const cx = node.position.x + nw / 2;
-                        const cy = node.position.y + nh / 2;
-                        
-                        // 중첩된 섹션 중 가장 작은(안쪽) 섹션을 찾아 할당
-                        const containingSection = (pfSections as any[])
-                            .filter((s) =>
-                                cx >= s.position.x &&
-                                cx <= s.position.x + s.size.width &&
-                                cy >= s.position.y &&
-                                cy <= s.position.y + s.size.height
-                            )
-                            .sort((a, b) => a.size.width * a.size.height - b.size.width * b.size.height)[0];
-                        
-                        pfUpdateNode(node.id, { sectionId: containingSection?.id || null });
-                    }}
+                    onNodeClick={onFlowNodeClick}
+                    onPaneClick={onFlowPaneClick}
+                    onSelectionStart={onFlowSelectionStart as any}
+                    onSelectionDrag={onFlowSelectionDrag as any}
+                    onSelectionEnd={onFlowSelectionEnd}
+                    onNodeDragStop={onFlowNodeDragStop}
                     connectionMode={ConnectionMode.Strict}
                     connectionRadius={28}
                     fitView
@@ -1644,59 +1814,20 @@ const ProcessFlowCanvasInner: React.FC = () => {
                         portalTarget
                     )}
                     
-                    {/* 섹션 그리기 오버레이 */}
-                    {isSectionDrawMode && (
-                        <div
-                            className="absolute inset-0 z-[100] cursor-crosshair"
-                            onMouseDown={onSectionOverlayMouseDown}
-                            onMouseMove={onSectionOverlayMouseMove}
-                            onMouseUp={onSectionOverlayMouseUp}
-                            onMouseLeave={onSectionOverlayMouseLeave}
-                        >
-                            {sectionDrag && (() => {
-                                const { x: vx, y: vy, zoom } = getViewport();
-                                
-                                // 오버레이는 ReactFlow 내부에 absolute inset-0으로 위치하므로
-                                // getViewport() 기준 좌표를 그대로 사용 (추가 변환 불필요)
-                                const left = Math.min(
-                                    sectionDrag.start.x * zoom + vx,
-                                    sectionDrag.current.x * zoom + vx
-                                );
-                                const top = Math.min(
-                                    sectionDrag.start.y * zoom + vy,
-                                    sectionDrag.current.y * zoom + vy
-                                );
-                                const width = Math.max(1, Math.abs(
-                                    (sectionDrag.current.x - sectionDrag.start.x) * zoom
-                                ));
-                                const height = Math.max(1, Math.abs(
-                                    (sectionDrag.current.y - sectionDrag.start.y) * zoom
-                                ));
-                                
-                                return (
-                                    <div
-                                        className="absolute border-2 border-amber-500 bg-amber-500/10 pointer-events-none"
-                                        style={{ left, top, width, height }}
-                                    />
-                                );
-                            })()}
-                        </div>
-                    )}
+                    <ProcessFlowSectionDrawOverlay
+                        active={isSectionDrawMode}
+                        screenToFlowPosition={screenToFlowPosition}
+                        getViewport={getViewport}
+                        onCommitted={handleSectionDrawCommitted}
+                    />
                 </ReactFlow>
-                
-                {/* Shift+drag 선택 박스 */}
-                {selectionBox && createPortal(
-                    <div
-                        className="absolute border-2 border-emerald-500 bg-emerald-500/20 pointer-events-none z-[100]"
-                        style={{
-                            left: Math.min(selectionBox.start.x, selectionBox.end.x),
-                            top: Math.min(selectionBox.start.y, selectionBox.end.y),
-                            width: Math.abs(selectionBox.end.x - selectionBox.start.x),
-                            height: Math.abs(selectionBox.end.y - selectionBox.start.y),
-                        }}
-                    />,
-                    portalTarget || document.body
-                )}
+
+                <ProcessFlowShiftSelectionLayer
+                    ref={shiftSelectionRef}
+                    portalTarget={portalTarget}
+                    getViewport={getViewport}
+                    setNodes={setNodes}
+                />
                 
                 {/* 삭제 확인 팝업 */}
                 {deleteConfirmOpen && createPortal(
