@@ -161,6 +161,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [importError, setImportError] = useState<string | null>(null);
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [selectionBox, setSelectionBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
+    const [clipboardNodes, setClipboardNodes] = useState<any[]>([]);
 
     const {
         joinProject: yjsJoin,
@@ -893,6 +894,31 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 activeElement.getAttribute('contenteditable') === 'true'
             );
             
+            // Ctrl+C: 복사
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedNodes.length > 0 && !isInputFocused) {
+                e.preventDefault();
+                setClipboardNodes(selectedNodes.map(node => ({ ...node.data, position: node.position })));
+                console.log('Copied nodes:', selectedNodes.length);
+            }
+            
+            // Ctrl+V: 붙여넣기
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboardNodes.length > 0 && !isInputFocused) {
+                e.preventDefault();
+                const offset = 50; // 오프셋
+                clipboardNodes.forEach(nodeData => {
+                    const newId = `pf_node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                    pfAddNode({
+                        ...nodeData,
+                        id: newId,
+                        position: {
+                            x: nodeData.position.x + offset,
+                            y: nodeData.position.y + offset,
+                        },
+                    });
+                });
+                console.log('Pasted nodes:', clipboardNodes.length);
+            }
+            
             if (e.key === 'Backspace' && selectedNodes.length > 0 && !isInputFocused) {
                 e.preventDefault();
                 setDeleteConfirmOpen(true);
@@ -923,7 +949,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [selectedNodes, deleteConfirmOpen]);
+    }, [selectedNodes, deleteConfirmOpen, clipboardNodes]);
 
     const handleDeleteSelectedNodes = () => {
         selectedNodes.forEach((node: any) => {

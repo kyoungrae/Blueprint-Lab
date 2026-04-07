@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useReactFlow } from 'reactflow';
-import { Database, GripVertical, Search } from 'lucide-react';
+import { Database, GripVertical, Search, X } from 'lucide-react';
 import type { Project } from '../../types/erd';
 import { getErdTableKoreanName } from '../../utils/linkedErdProjects';
 
@@ -138,6 +138,17 @@ const ErdTableSearchPanel: React.FC<ErdTableSearchPanelProps> = ({
                     <Database size={12} className="text-[#2c3e7c]" />
                     <span className="text-[10px] font-bold text-gray-600">{portalTitle}</span>
                 </div>
+                <button
+                    type="button"
+                    className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onClose();
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <X size={14} />
+                </button>
             </div>
             <div className="px-2 py-1.5 border-b border-gray-100" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="relative">
