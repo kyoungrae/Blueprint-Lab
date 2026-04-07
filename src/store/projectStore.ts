@@ -146,7 +146,7 @@ export const useProjectStore = create<ProjectStore>()(
                                     projData = { screens: [], flows: [], sections: [] };
                                 }
                             } else {
-                                // ERD: always build from currentSnapshot so sections are never dropped (API returns currentSnapshot, not data)
+                                // ERD: 서버 currentSnapshot 사용
                                 const snap = p.currentSnapshot;
                                 projData = snap
                                     ? {
@@ -452,57 +452,82 @@ export const useProjectStore = create<ProjectStore>()(
         }),
         {
             name: 'project-storage',
-            version: 2,
+            version: 3, // 버전 업: 연결된 ERD 프로젝트 데이터 유지
             storage: createJSONStorage(() => safeStateStorage),
             // localStorage quota 초과 방지를 위해 ERD/SCREEN_DESIGN/COMPONENT의 큰 data를 저장하지 않는다.
-            partialize: (state) => ({
-                currentProjectId: state.currentProjectId,
-                projects: state.projects.map((p) => {
-                    const base = {
-                        id: p.id,
-                        name: p.name,
-                        projectType: p.projectType,
-                        dbType: p.dbType,
-                        description: p.description,
-                        author: p.author,
-                        updatedAt: p.updatedAt,
-                        linkedErdProjectIds: p.linkedErdProjectIds,
-                        linkedErdProjectId: p.linkedErdProjectId,
-                        linkedComponentProjectId: p.linkedComponentProjectId,
-                        members: p.members,
-                        // data/bugReports는 용량 폭증을 유발하므로 persist에서 비워둔다.
-                        data:
-                            p.projectType === 'ERD'
-                                ? { entities: [], relationships: [], sections: [] }
-                                : p.projectType === 'SCREEN_DESIGN'
-                                    ? { screens: [], flows: [], sections: [] }
-                                    : p.projectType === 'PROCESS_FLOW'
-                                        ? { nodes: [], edges: [], sections: [] }
-                                        : { components: [], flows: [] },
-                        bugReports: [],
-                    };
-                    return base as Project;
-                }),
-            }),
-            migrate: (persistedState: any, _version: number) => {
-                // 기존 version(1)의 과대 저장(localStorage에 data 포함)이 남아있을 수 있으므로
-                // rehydrate 시점에라도 data/bugReports를 제거해 용량을 줄인다.
+            // 단, 다른 프로젝트에 연결된(linked) ERD 프로젝트는 데이터를 유지한다.
+            partialize: (state) => {
+                // 현재 프로젝트와 모든 프로젝트의 linkedErdProjectIds 수집
+                const allLinkedErdIds = new Set<string>();
+                state.projects.forEach((p) => {
+                    const ids = p.linkedErdProjectIds || (p.linkedErdProjectId ? [p.linkedErdProjectId] : []);
+                    ids.forEach((id) => allLinkedErdIds.add(id));
+                });
+                
+                return {
+                    currentProjectId: state.currentProjectId,
+                    projects: state.projects.map((p) => {
+                        const isLinkedErd = p.projectType === 'ERD' && allLinkedErdIds.has(p.id);
+                        const base = {
+                            id: p.id,
+                            name: p.name,
+                            projectType: p.projectType,
+                            dbType: p.dbType,
+                            description: p.description,
+                            author: p.author,
+                            updatedAt: p.updatedAt,
+                            linkedErdProjectIds: p.linkedErdProjectIds,
+                            linkedErdProjectId: p.linkedErdProjectId,
+                            linkedComponentProjectId: p.linkedComponentProjectId,
+                            members: p.members,
+                            // 현재 프로젝트이거나 연결된 ERD 프로젝트면 데이터 유지, 아니면 비움
+                            data:
+                                p.id === state.currentProjectId || isLinkedErd
+                                    ? p.data
+                                    : p.projectType === 'ERD'
+                                        ? { entities: [], relationships: [], sections: [] }
+                                        : p.projectType === 'SCREEN_DESIGN'
+                                            ? { screens: [], flows: [], sections: [] }
+                                            : p.projectType === 'PROCESS_FLOW'
+                                                ? { nodes: [], edges: [], sections: [] }
+                                                : { components: [], flows: [] },
+                            bugReports: [],
+                        };
+                        return base as Project;
+                    }),
+                };
+            },
+            migrate: (persistedState: any, version: number) => {
+                // v2->v3: 연결된 ERD 프로젝트 데이터 유지를 위해 마이그레이션
                 const ps = persistedState as any;
                 if (!ps?.projects?.length) return ps;
+                
+                // 모든 프로젝트의 linkedErdProjectIds 수집
+                const allLinkedErdIds = new Set<string>();
+                ps.projects.forEach((p: any) => {
+                    const ids = p.linkedErdProjectIds || (p.linkedErdProjectId ? [p.linkedErdProjectId] : []);
+                    ids.forEach((id: string) => allLinkedErdIds.add(id));
+                });
+                
                 return {
                     ...ps,
-                    projects: ps.projects.map((p: any) => ({
-                        ...p,
-                        data:
-                            p.projectType === 'ERD'
-                                ? { entities: [], relationships: [], sections: [] }
-                                : p.projectType === 'SCREEN_DESIGN'
-                                    ? { screens: [], flows: [], sections: [] }
-                                    : p.projectType === 'PROCESS_FLOW'
-                                        ? { nodes: [], edges: [], sections: [] }
-                                        : { components: [], flows: [] },
-                        bugReports: [],
-                    })),
+                    projects: ps.projects.map((p: any) => {
+                        const isLinkedErd = p.projectType === 'ERD' && allLinkedErdIds.has(p.id);
+                        return {
+                            ...p,
+                            data:
+                                isLinkedErd && p.data?.entities?.length > 0
+                                    ? p.data // 연결된 ERD 프로젝트는 기존 데이터 유지
+                                    : p.projectType === 'ERD'
+                                        ? { entities: [], relationships: [], sections: [] }
+                                        : p.projectType === 'SCREEN_DESIGN'
+                                            ? { screens: [], flows: [], sections: [] }
+                                            : p.projectType === 'PROCESS_FLOW'
+                                                ? { nodes: [], edges: [], sections: [] }
+                                                : { components: [], flows: [] },
+                            bugReports: [],
+                        };
+                    }),
                 };
             },
         }

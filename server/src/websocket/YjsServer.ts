@@ -72,7 +72,7 @@ function getOrCreateDoc(projectId: string): DocInfo {
                 clearTimeout(info.immediateSaveTimer);
             }
             info.immediateSaveTimer = setTimeout(() => {
-                logger.info(`[DEBUG] Immediate save triggered for project ${projectId}`);
+                // logger.info(`[DEBUG] Immediate save triggered for project ${projectId}`);
                 saveDocToMongo(projectId, doc).catch(() => {});
             }, IMMEDIATE_SAVE_DEBOUNCE_MS);
         });
@@ -97,7 +97,7 @@ function getOrCreateDoc(projectId: string): DocInfo {
 
         // 30초마다 MongoDB에 스냅샷 저장
         info.snapshotTimer = setInterval(() => {
-            logger.info(`[DEBUG] Periodic save triggered for project ${projectId}`);
+            // logger.info(`[DEBUG] Periodic save triggered for project ${projectId}`);
             saveDocToMongo(projectId, doc).catch(() => {});
         }, MONGO_SNAPSHOT_INTERVAL_MS);
 
@@ -186,16 +186,16 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
                 const pfEdges   = p.processFlowSnapshot?.edges || [];
                 const pfSections = p.processFlowSnapshot?.sections || [];
                 
-                logger.info(`[DEBUG] Loading ProcessFlow data from MongoDB: ${pfNodes.length} nodes, ${pfEdges.length} edges, ${pfSections.length} sections`);
+                // logger.info(`[DEBUG] Loading ProcessFlow data from MongoDB: ${pfNodes.length} nodes, ${pfEdges.length} edges, ${pfSections.length} sections`);
                 
                 const pfNodesMap = doc.getMap<any>('pf_nodes');
                 const pfEdgesMap = doc.getMap<any>('pf_edges');
                 const pfSectionsMap = doc.getMap<any>('pf_sections');
                 
-                logger.info(`[DEBUG] Current Yjs map sizes - pf_nodes: ${pfNodesMap.size}, pf_edges: ${pfEdgesMap.size}, pf_sections: ${pfSectionsMap.size}`);
+                // logger.info(`[DEBUG] Current Yjs map sizes - pf_nodes: ${pfNodesMap.size}, pf_edges: ${pfEdgesMap.size}, pf_sections: ${pfSectionsMap.size}`);
                 
                 if (pfNodesMap.size === 0 && pfEdgesMap.size === 0 && pfSectionsMap.size === 0) {
-                    logger.info(`[DEBUG] Yjs maps are empty, seeding from MongoDB...`);
+                    // logger.info(`[DEBUG] Yjs maps are empty, seeding from MongoDB...`);
                     pfNodes.forEach((n: any) => {
                         if (n?.id) {
                             const yMap = new Y.Map();
@@ -217,7 +217,7 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
                             pfSectionsMap.set(s.id, yMap);
                         }
                     });
-                    logger.info(`[DEBUG] Seeded ProcessFlow data into Yjs - pf_nodes: ${pfNodesMap.size}, pf_edges: ${pfEdgesMap.size}, pf_sections: ${pfSectionsMap.size}`);
+                    // logger.info(`[DEBUG] Seeded ProcessFlow data into Yjs - pf_nodes: ${pfNodesMap.size}, pf_edges: ${pfEdgesMap.size}, pf_sections: ${pfSectionsMap.size}`);
                 } else {
                     logger.info(`[DEBUG] Yjs maps already have data, skipping seed`);
                 }
@@ -303,7 +303,7 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
             const pfEdgesArr    = extractJson(doc.getMap<any>('pf_edges').values());
             const pfSectionsArr = extractJson(doc.getMap<any>('pf_sections').values());
             
-            logger.info(`[DEBUG] Saving ProcessFlow data: ${pfNodesArr.length} nodes, ${pfEdgesArr.length} edges, ${pfSectionsArr.length} sections`);
+            // logger.info(`[DEBUG] Saving ProcessFlow data: ${pfNodesArr.length} nodes, ${pfEdgesArr.length} edges, ${pfSectionsArr.length} sections`);
             
             await Project.findByIdAndUpdate(projectId, {
                 processFlowSnapshot: {
@@ -315,7 +315,7 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
                 updatedAt: new Date(),
             });
             didPersist = true;
-            logger.info(`[DEBUG] ProcessFlow data saved successfully for project ${projectId}`);
+            // logger.info(`[DEBUG] ProcessFlow data saved successfully for project ${projectId}`);
         }
 
         if (didPersist) {

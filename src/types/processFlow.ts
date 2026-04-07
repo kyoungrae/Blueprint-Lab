@@ -28,6 +28,8 @@ export interface ProcessFlowNode {
     linkedErdTableName?: string;
     position: { x: number; y: number };
     text?: string;
+    /** 노드에 대한 메모/노트 */
+    memo?: string;
     userRole?: 'user' | 'admin';
     textStyle?: ProcessFlowTextStyle;
     style?: ProcessFlowNodeStyle;

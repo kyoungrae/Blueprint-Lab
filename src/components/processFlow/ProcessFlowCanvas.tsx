@@ -337,9 +337,9 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 color: '#fef3c7', // amber color theme
                 parentId: parentSection ? parentSection.id : null
             };
-            console.log('[DEBUG] Creating section:', newSection);
+            // console.log('[DEBUG] Creating section:', newSection);
             pfAddSection(newSection);
-            console.log('[DEBUG] pfAddSection called, yjs isSynced:', yjsIsSynced);
+            // console.log('[DEBUG] pfAddSection called, yjs isSynced:', yjsIsSynced);
             setSectionDrag(null);
             setIsSectionDrawMode(false);
             
@@ -528,7 +528,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 // 부모가 변경되었으면 업데이트
                 const newParentId = newParent ? newParent.id : null;
                 if (newParentId !== movedSection.parentId) {
-                    console.log('[DEBUG] Moving section', sectionId, 'from parent', movedSection.parentId, 'to new parent', newParentId);
+                    // console.log('[DEBUG] Moving section', sectionId, 'from parent', movedSection.parentId, 'to new parent', newParentId);
                     pfUpdateSection(sectionId, { parentId: newParentId });
                 }
             }

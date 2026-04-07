@@ -36,9 +36,9 @@ const ProcessFlowSidebar: React.FC<ProcessFlowSidebarProps> = (props) => {
     const rootSections = sections.filter((s: ProcessFlowSection) => !s.parentId);
     
     // Debug: 섹션 데이터 로깅
-    console.log('[DEBUG Sidebar] Total sections:', sections.length);
-    console.log('[DEBUG Sidebar] Root sections:', rootSections.length);
-    console.log('[DEBUG Sidebar] All sections:', sections.map((s: ProcessFlowSection) => ({ id: s.id, name: s.name, parentId: s.parentId })));
+    // console.log('[DEBUG Sidebar] Total sections:', sections.length);
+    // console.log('[DEBUG Sidebar] Root sections:', rootSections.length);
+    // console.log('[DEBUG Sidebar] All sections:', sections.map((s: ProcessFlowSection) => ({ id: s.id, name: s.name, parentId: s.parentId })));
     
     const sectionIds = new Set(sections.map((sec: ProcessFlowSection) => sec.id));
     // 섹션 없음: sectionId가 없거나, 해당 섹션이 sections 목록에 없는 노드 (데이터 있어도 목록에 항상 표시)

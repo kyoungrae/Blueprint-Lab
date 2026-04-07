@@ -17,6 +17,7 @@ export interface ErdTableDetailPanelProps {
     tableNameEn: string;
     tableNameKr: string;
     columns: ErdTableColumnRow[];
+    isLoading?: boolean;
 }
 
 /**
@@ -28,6 +29,7 @@ const ErdTableDetailPanel: React.FC<ErdTableDetailPanelProps> = ({
     tableNameEn,
     tableNameKr,
     columns,
+    isLoading = false,
 }) => {
     if (!open) return null;
 
@@ -60,7 +62,9 @@ const ErdTableDetailPanel: React.FC<ErdTableDetailPanelProps> = ({
                     </button>
                 </div>
                 <div className="flex-1 min-h-0 overflow-auto p-3">
-                    {columns.length === 0 ? (
+                    {isLoading ? (
+                        <p className="text-sm text-gray-500 text-center py-8">데이터를 불러오는 중...</p>
+                    ) : columns.length === 0 ? (
                         <p className="text-sm text-gray-500 text-center py-8">컬럼 정보가 없습니다.</p>
                     ) : (
                         <div className="overflow-x-auto rounded-lg border border-gray-200">

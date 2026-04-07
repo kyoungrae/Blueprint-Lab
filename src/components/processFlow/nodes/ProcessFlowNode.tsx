@@ -1,10 +1,11 @@
 import React, { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { useYjsStore } from '../../../store/yjsStore';
 import { useProjectStore } from '../../../store/projectStore';
 import type { ProcessFlowNode as ProcessFlowNodeType, ProcessFlowRectShape } from '../../../types/processFlow';
 import type { Project } from '../../../types/erd';
-import { User as UserIcon, UserCog, Search, ClipboardList } from 'lucide-react';
+import { User as UserIcon, UserCog, Search, ClipboardList, StickyNote, X } from 'lucide-react';
 import PremiumTooltip from '../../screenNode/PremiumTooltip';
 import ErdTableSearchPanel from '../../erd/ErdTableSearchPanel';
 import ErdTableDetailPanel from '../../erd/ErdTableDetailPanel';
@@ -14,6 +15,8 @@ import {
     findErdEntityByPhysicalName,
     getErdTableKoreanName,
 } from '../../../utils/linkedErdProjects';
+
+const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
 interface ProcessFlowNodeProps {
     data: ProcessFlowNodeType & { label?: string };
@@ -36,6 +39,7 @@ function parallelogramParams(W: number, H: number, bw: number) {
 
 const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, selected }) => {
     const yjsUpdateNode = useYjsStore((s: any) => s.pfUpdateNode);
+    const isYjsSynced = useYjsStore((s: any) => s.isSynced);
     const { projects, currentProjectId } = useProjectStore();
     const { screenToFlowPosition } = useReactFlow();
     const [isEditing, setIsEditing] = useState(false);
@@ -43,8 +47,20 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     const [dbTableSearchOpen, setDbTableSearchOpen] = useState(false);
     const [dbTablePanelPos, setDbTablePanelPos] = useState<{ x: number; y: number } | null>(null);
     const [dbDetailOpen, setDbDetailOpen] = useState(false);
+    const [memoOpen, setMemoOpen] = useState(false);
+    const [memoText, setMemoText] = useState(data.memo ?? '');
+    const [memoPos, setMemoPos] = useState<{ x: number; y: number } | null>(null);
     const dbErdAnchorRef = useRef<HTMLDivElement>(null);
+    const memoAnchorRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // 메모 패널 위치 업데이트
+    useEffect(() => {
+        if (memoOpen && memoAnchorRef.current) {
+            const rect = memoAnchorRef.current.getBoundingClientRect();
+            setMemoPos({ x: rect.left, y: rect.bottom + 4 });
+        }
+    }, [memoOpen]);
 
     const currentProject = useMemo(
         () => projects.find((p) => p.id === currentProjectId),
@@ -67,16 +83,16 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
             dataType: a.type ?? '',
             length: a.length ?? '',
         }));
-    }, [data.linkedErdTableName, linkedErdProjects]);
+    }, [data.linkedErdTableName, linkedErdProjects, isYjsSynced]);
 
     const erdDetailTableKr = useMemo(() => {
         const en = data.linkedErdTableName;
         if (!en) return '';
         return getErdTableKoreanName(linkedErdProjects, en);
-    }, [data.linkedErdTableName, linkedErdProjects]);
+    }, [data.linkedErdTableName, linkedErdProjects, isYjsSynced]);
 
     useEffect(() => {
-        if (!dbTableSearchOpen && !dbDetailOpen) return;
+        if (!dbTableSearchOpen && !dbDetailOpen && !memoOpen) return;
         const onKey = (e: KeyboardEvent) => {
             if (e.key !== 'Escape') return;
             if (dbDetailOpen) {
@@ -85,11 +101,19 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
             } else if (dbTableSearchOpen) {
                 e.preventDefault();
                 setDbTableSearchOpen(false);
+            } else if (memoOpen) {
+                e.preventDefault();
+                setMemoOpen(false);
             }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [dbTableSearchOpen, dbDetailOpen]);
+    }, [dbTableSearchOpen, dbDetailOpen, memoOpen]);
+
+    // 메모 데이터 동기화
+    useEffect(() => {
+        setMemoText(data.memo ?? '');
+    }, [data.memo]);
 
     const handleDoubleClick = useCallback(() => {
         setIsEditing(true);
@@ -282,7 +306,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
         </>
     );
 
-    const ringClass = selected ? 'ring-2 ring-emerald-400 ring-offset-2' : '';
+    const ringClass = selected ? 'ring-2 ring-amber-400 ring-offset-2' : '';
 
     const renderRectShell = () => {
         switch (rectShape) {
@@ -434,6 +458,22 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                                             </button>
                                         </PremiumTooltip>
                                     ) : null}
+                                    {/* 메모 버튼 - DB 테이블 객체 */}
+                                    <div ref={memoAnchorRef}>
+                                        <PremiumTooltip placement="bottom" offsetBottom={8} label={data.memo ? '메모 보기/수정' : '메모 추가'}>
+                                            <button
+                                                type="button"
+                                                title="메모"
+                                                className={`rounded p-1 transition-colors ${data.memo ? 'text-amber-600 bg-amber-50' : 'text-gray-500 hover:bg-amber-50 hover:text-amber-600'}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMemoOpen((o) => !o);
+                                                }}
+                                            >
+                                                <StickyNote size={13} strokeWidth={2.25} className="shrink-0" />
+                                            </button>
+                                        </PremiumTooltip>
+                                    </div>
                                 </div>
                                 <ErdTableSearchPanel
                                     open={dbTableSearchOpen}
@@ -460,6 +500,7 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                                     tableNameEn={data.linkedErdTableName ?? ''}
                                     tableNameKr={erdDetailTableKr}
                                     columns={erdDetailColumnRows}
+                                    isLoading={!isYjsSynced || projects.length === 0}
                                 />
                             </>
                         ) : null}
@@ -553,10 +594,97 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
                             {data.text ?? (data.userRole === 'admin' ? '관리자' : '사용자')}
                         </div>
                     )}
+                    {/* 메모 버튼 - 사용자 노드 */}
+                    <div
+                        ref={memoAnchorRef}
+                        className="nodrag nopan absolute -right-3 -top-3 z-20 flex gap-0.5 rounded-md border border-amber-200/80 bg-white/95 p-0.5 shadow-sm pointer-events-auto"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                    >
+                        <PremiumTooltip placement="bottom" offsetBottom={8} label={data.memo ? '메모 보기/수정' : '메모 추가'}>
+                            <button
+                                type="button"
+                                title="메모"
+                                className={`rounded p-1 transition-colors ${data.memo ? 'text-amber-600 bg-amber-50' : 'text-gray-500 hover:bg-amber-50 hover:text-amber-600'}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMemoOpen((o) => !o);
+                                }}
+                            >
+                                <StickyNote size={13} strokeWidth={2.25} className="shrink-0" />
+                            </button>
+                        </PremiumTooltip>
+                    </div>
                 </div>
             ) : (
-                renderRectShell()
+                <>
+                    {renderRectShell()}
+                    {/* 메모 버튼 - RECT 노드 (DB 제외) */}
+                    {rectShape !== 'db' && (
+                        <div
+                            ref={memoAnchorRef}
+                            className="nodrag nopan absolute right-1 top-1 z-20 flex gap-0.5 rounded-md border border-amber-200/80 bg-white/95 p-0.5 shadow-sm pointer-events-auto"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                        >
+                            <PremiumTooltip placement="bottom" offsetBottom={8} label={data.memo ? '메모 보기/수정' : '메모 추가'}>
+                                <button
+                                    type="button"
+                                    title="메모"
+                                    className={`rounded p-1 transition-colors ${data.memo ? 'text-amber-600 bg-amber-50' : 'text-gray-500 hover:bg-amber-50 hover:text-amber-600'}`}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setMemoOpen((o) => !o);
+                                    }}
+                                >
+                                    <StickyNote size={13} strokeWidth={2.25} className="shrink-0" />
+                                </button>
+                            </PremiumTooltip>
+                        </div>
+                    )}
+                </>
             )}
+            
+            {/* 메모 편집 패널 */}
+            {memoOpen && memoPos &&
+                createPortal(
+                    <div
+                        className="nodrag nopan fixed z-[9000] bg-white border border-amber-200 rounded-xl shadow-2xl p-3 min-w-[240px] max-w-[320px]"
+                        style={{
+                            left: memoPos.x,
+                            top: memoPos.y,
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-amber-100 pb-2 mb-2">
+                            <span className="text-xs font-semibold text-gray-700">메모</span>
+                            <button
+                                type="button"
+                                className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                                onClick={() => setMemoOpen(false)}
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                        <textarea
+                            value={memoText}
+                            onChange={(e) => setMemoText(e.target.value)}
+                            onBlur={() => {
+                                if (memoText.trim() !== (data.memo ?? '')) {
+                                    yjsUpdateNode(data.id, { memo: memoText.trim() || undefined });
+                                }
+                                setMemoOpen(false);
+                            }}
+                            placeholder="메모를 입력하세요..."
+                            className="w-full h-24 p-2 text-xs border border-gray-200 rounded-lg outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-100 resize-none"
+                            autoFocus
+                        />
+                    </div>,
+                    getPanelPortalRoot()
+                )}
         </>
     );
 };
