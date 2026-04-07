@@ -128,6 +128,22 @@ function buildProcessFlowReactEdges(pfEdges: ProcessFlowEdge[] | undefined): Edg
     }));
 }
 
+/** React Flow edge.data와 Yjs 동기화 시 참조만 같고 kindText 등만 바뀐 경우 setEdges 스킵되는 것 방지 */
+function pfEdgeDomainFingerprint(data: unknown): string {
+    if (data == null || typeof data !== 'object') return String(data ?? '');
+    const d = data as ProcessFlowEdge;
+    return JSON.stringify({
+        source: d.source,
+        target: d.target,
+        sourceHandle: d.sourceHandle,
+        targetHandle: d.targetHandle,
+        kindText: d.kindText ?? '',
+        style: d.style,
+        arrow: d.arrow,
+        animated: d.animated,
+    });
+}
+
 function processFlowReactEdgesUnchanged(prev: Edge[], next: Edge[]): boolean {
     if (prev.length !== next.length) return false;
     const prevById = new Map(prev.map((e) => [e.id, e]));
@@ -137,7 +153,7 @@ function processFlowReactEdgesUnchanged(prev: Edge[], next: Edge[]): boolean {
         if (p.source !== n.source || p.target !== n.target) return false;
         if (p.sourceHandle !== n.sourceHandle) return false;
         if (p.targetHandle !== n.targetHandle) return false;
-        if (p.data !== n.data) return false;
+        if (pfEdgeDomainFingerprint(p.data) !== pfEdgeDomainFingerprint(n.data)) return false;
         if (!!p.animated !== !!n.animated) return false;
         if (String((p.style as React.CSSProperties)?.stroke) !== String((n.style as React.CSSProperties)?.stroke)) return false;
         if (Number((p.style as React.CSSProperties)?.strokeWidth ?? 2) !== Number((n.style as React.CSSProperties)?.strokeWidth ?? 2)) return false;

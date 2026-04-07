@@ -643,8 +643,18 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('pf_edges').get(id);
         if (yMap) {
+            const entries = Object.entries(patch).map(([k, v]) => {
+                if (k === 'kindText') return [k, v == null || v === '' ? '' : String(v)] as const;
+                if (k === 'style' && v != null && typeof v === 'object') {
+                    return [k, JSON.parse(JSON.stringify(v))] as const;
+                }
+                if (k === 'arrow' && v != null && typeof v === 'object') {
+                    return [k, JSON.parse(JSON.stringify(v))] as const;
+                }
+                return [k, v] as const;
+            });
             ydoc.transact(() => {
-                Object.entries(patch).forEach(([k, v]) => yMap.set(k, v));
+                entries.forEach(([k, v]) => yMap.set(k, v));
             });
         }
     },
