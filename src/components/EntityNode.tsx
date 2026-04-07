@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect } from 'react';
 import { Handle, Position, type NodeProps, useStore } from 'reactflow';
 import type { Entity, Attribute } from '../types/erd';
-import { Database, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare } from 'lucide-react';
+import { Database, Eye, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare } from 'lucide-react';
 import { useERDStore } from '../store/erdStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -268,6 +268,7 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
     if (!entity) return null;
 
     const isLocked = entity.isLocked ?? true;
+    const isView = entity.entityKind === 'VIEW';
 
     return (
         <div
@@ -275,13 +276,24 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
-                    : 'border-blue-500 shadow-blue-100'
+                    : isView
+                        ? 'border-violet-400 shadow-violet-100'
+                        : 'border-blue-500 shadow-blue-100'
                 }`}
         >
             {/* ── 헤더 ── */}
-            <div className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${isLocked ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
-                <Database size={16} className="flex-shrink-0" />
+            <div
+                className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${
+                    isLocked ? 'bg-gray-400' : isView ? 'bg-gradient-to-r from-violet-500 to-purple-600' : 'bg-gradient-to-r from-blue-500 to-blue-600'
+                }`}
+            >
+                {isView ? <Eye size={16} className="flex-shrink-0" /> : <Database size={16} className="flex-shrink-0" />}
                 <span className="font-bold text-lg flex-1 truncate">{entity.name}</span>
+                {isView ? (
+                    <span className="text-[9px] font-black uppercase tracking-wider opacity-90 shrink-0">
+                        {entity.isMaterializedView ? 'MAT VIEW' : 'VIEW'}
+                    </span>
+                ) : null}
             </div>
 
             {/* ── 테이블 설명 (있을 때만) ── */}
@@ -385,6 +397,7 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
     const entity = useERDStore((s) => s.entitiesById[entityId]);
     if (!entity) return null;
     const isLocked = entity.isLocked ?? true;
+    const isView = entity.entityKind === 'VIEW';
 
     return (
         <div
@@ -392,14 +405,20 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
-                    : 'border-blue-500 shadow-blue-100'
+                    : isView
+                        ? 'border-violet-400 shadow-violet-100'
+                        : 'border-blue-500 shadow-blue-100'
                 }`}
             style={{ contain: 'layout style paint' }}
         >
             <EntityLockBadge entityId={entityId} />
 
-            <div className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${isLocked ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
-                <Database size={16} className="flex-shrink-0" />
+            <div
+                className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${
+                    isLocked ? 'bg-gray-400' : isView ? 'bg-gradient-to-r from-violet-500 to-purple-600' : 'bg-gradient-to-r from-blue-500 to-blue-600'
+                }`}
+            >
+                {isView ? <Eye size={16} className="flex-shrink-0" /> : <Database size={16} className="flex-shrink-0" />}
                 <span className="font-bold text-lg w-full block truncate">
                     {entity.name}
                 </span>
@@ -414,7 +433,7 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
             <div className="relative bg-gray-50 rounded-b-[calc(0.5rem-2px)]">
                 <div className="absolute inset-0 z-[1] flex items-center justify-center pointer-events-none">
                     <span className="px-3 py-1.5 rounded-lg bg-white/90 border border-gray-200 text-gray-600 text-xl font-semibold max-w-[85%] truncate shadow-sm">
-                        {entity.name || '새 테이블'}
+                        {entity.name || (isView ? '새 뷰' : '새 테이블')}
                     </span>
                 </div>
                 <div className="p-2 space-y-1">
@@ -456,6 +475,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
 
     const isLocalLocked = entity.isLocked ?? true; // Default to locked
     const isLocked = isLocalLocked || isLockedByOther;
+    const isView = entity.entityKind === 'VIEW';
 
     const handleNameChange = (newName: string) => {
         if (isLocked) return;
@@ -593,7 +613,9 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
-                    : 'border-blue-500 shadow-blue-100'
+                    : isView
+                        ? 'border-violet-400 shadow-violet-100'
+                        : 'border-blue-500 shadow-blue-100'
                 }`}
             style={{ contain: 'layout style' }}
         >
@@ -613,8 +635,17 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                 </div>
             )}
 
-            <div className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${isLocked ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
-                <Database size={16} className="flex-shrink-0" />
+            <div
+                className={`px-4 py-2 flex items-center gap-2 text-white rounded-t-[calc(0.5rem-2px)] ${
+                    isLocked ? 'bg-gray-400' : isView ? 'bg-gradient-to-r from-violet-500 to-purple-600' : 'bg-gradient-to-r from-blue-500 to-blue-600'
+                }`}
+            >
+                {isView ? <Eye size={16} className="flex-shrink-0" /> : <Database size={16} className="flex-shrink-0" />}
+                {isView ? (
+                    <span className="text-[9px] font-black uppercase tracking-wider opacity-90 shrink-0">
+                        {entity.isMaterializedView ? 'MAT VIEW' : 'VIEW'}
+                    </span>
+                ) : null}
                 <input
                     type="text"
                     value={entityNameComposing !== null ? entityNameComposing : entity.name}

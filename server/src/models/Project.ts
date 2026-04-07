@@ -21,6 +21,9 @@ export interface IEntity {
     attributes: IAttribute[];
     isLocked?: boolean;
     comment?: string;
+    entityKind?: 'TABLE' | 'VIEW';
+    viewSql?: string;
+    isMaterializedView?: boolean;
     /** 이 엔티티가 속한 섹션 id (없으면 루트) */
     sectionId?: string | null;
 }
@@ -295,6 +298,9 @@ const EntitySchema = new Schema<IEntity>({
     attributes: [AttributeSchema],
     isLocked: { type: Boolean, default: false },
     comment: { type: String },
+    entityKind: { type: String, enum: ['TABLE', 'VIEW'] },
+    viewSql: { type: String },
+    isMaterializedView: { type: Boolean },
     sectionId: { type: String, default: null },
 }, { _id: false });
 

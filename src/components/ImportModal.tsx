@@ -70,7 +70,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
         let overwrite = false;
 
         if (duplicateNames.length > 0) {
-            const message = `다음 테이블이 이미 존재합니다: ${duplicateNames.join(', ')}.\n\n기존 테이블을 덮어쓰시겠습니까?\n(확인을 누르면 덮어쓰고, 취소를 누르면 중복을 제외한 새 테이블만 추가합니다)`;
+            const message = `다음 이름의 엔티티(테이블/뷰)가 이미 존재합니다: ${duplicateNames.join(', ')}.\n\n기존 항목을 덮어쓰시겠습니까?\n(확인: 덮어쓰기, 취소: 중복 제외하고 나머지만 추가)`;
             overwrite = window.confirm(message);
             mergeData(data, overwrite);
         } else {
@@ -84,7 +84,15 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
             type: 'IMPORT' as const,
             targetType: 'PROJECT' as const,
             targetName: 'Project',
-            details: `${importType === 'SQL' ? 'SQL 스크립트' : 'JSON 파일'}에서 ${data.entities.length}개의 테이블을 가져왔습니다.`,
+            details: (() => {
+                const n = data.entities.length;
+                const views = data.entities.filter((e: any) => e.entityKind === 'VIEW').length;
+                const tables = n - views;
+                if (importType === 'SQL') {
+                    return `SQL 스크립트에서 테이블 ${tables}개, 뷰 ${views}개를 가져왔습니다. (총 ${n}개 엔티티)`;
+                }
+                return `JSON 파일에서 ${n}개의 엔티티를 가져왔습니다.`;
+            })(),
             payload: {
                 importedTables: data.entities.map((e: any) => e.name)
             }
@@ -137,7 +145,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
         try {
             const data = parseSQLToERD(sqlCode);
             if (data.entities.length === 0) {
-                setError('No valid CREATE TABLE statements found.');
+                setError('유효한 CREATE TABLE 또는 CREATE VIEW 문을 찾을 수 없습니다.');
                 return;
             }
             processImport(data, 'SQL');
@@ -223,7 +231,7 @@ const ImportModal: React.FC<ImportModalProps> = ({ onClose }) => {
                                         setSqlCode(v);
                                     }}
                                     className="w-full h-64 p-4 bg-gray-900 text-blue-100 font-mono text-sm rounded-xl outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                                    placeholder={`-- 예시 SQL DDL\nCREATE TABLE users (\n  id INT PRIMARY KEY,\n  username VARCHAR(255),\n  email VARCHAR(255) NOT NULL\n);`}
+                                    placeholder={`-- 예시: 테이블 + 뷰\nCREATE TABLE users (\n  id INT PRIMARY KEY,\n  username VARCHAR(255)\n);\nCREATE VIEW v_active_users AS\n  SELECT id, username FROM users WHERE active = 1;`}
                                 />
                                 <div className="absolute top-3 right-3 opacity-30 group-hover:opacity-100 transition-opacity">
                                     <div className="px-2 py-1 bg-gray-700 text-[10px] text-gray-300 rounded uppercase tracking-widest font-bold">SQL</div>

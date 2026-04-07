@@ -10,6 +10,9 @@ export interface Attribute {
     length?: string;
 }
 
+/** 미지정 시 테이블로 간주 (기존 프로젝트 호환) */
+export type EntityKind = 'TABLE' | 'VIEW';
+
 export interface Entity {
     id: string;
     name: string;
@@ -17,6 +20,12 @@ export interface Entity {
     attributes: Attribute[];
     isLocked?: boolean;
     comment?: string;
+    /** VIEW 등 — 생략 시 TABLE */
+    entityKind?: EntityKind;
+    /** 가져온 CREATE VIEW / MATERIALIZED VIEW 원문 (SQL보내기용) */
+    viewSql?: string;
+    /** PostgreSQL 등 MATERIALIZED VIEW 여부 */
+    isMaterializedView?: boolean;
     /** 이 엔티티가 속한 섹션 id (없으면 루트) */
     sectionId?: string | null;
 }

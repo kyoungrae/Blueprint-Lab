@@ -1,5 +1,203 @@
 import type { Entity, Attribute, Relationship } from '../types/erd';
 
+function splitTopLevelCommas(body: string): string[] {
+    let depth = 0;
+    let current = '';
+    const sections: string[] = [];
+    for (let i = 0; i < body.length; i++) {
+        const ch = body[i];
+        if (ch === '(') depth++;
+        if (ch === ')') depth--;
+        if (ch === ',' && depth === 0) {
+            sections.push(current.trim());
+            current = '';
+        } else {
+            current += ch;
+        }
+    }
+    if (current.trim()) sections.push(current.trim());
+    return sections;
+}
+
+function findClosingParen(s: string, openIdx: number): number {
+    let depth = 0;
+    for (let i = openIdx; i < s.length; i++) {
+        if (s[i] === '(') depth++;
+        else if (s[i] === ')') {
+            depth--;
+            if (depth === 0) return i;
+        }
+    }
+    return -1;
+}
+
+function isIdentifierChar(c: string): boolean {
+    return /[A-Za-z0-9_$#@]/.test(c);
+}
+
+/** depth 0에서의 첫 FROM 키워드 시작 인덱스 */
+function findTopLevelFromKeyword(sql: string, fromIndex: number): number {
+    let depth = 0;
+    const upper = sql.toUpperCase();
+    for (let i = fromIndex; i < sql.length; i++) {
+        const ch = sql[i];
+        if (ch === '(') depth++;
+        else if (ch === ')') depth--;
+        if (depth !== 0) continue;
+        if (i + 4 > sql.length) continue;
+        if (upper.slice(i, i + 4) !== 'FROM') continue;
+        const before = i === 0 ? ' ' : sql[i - 1];
+        const after = i + 4 >= sql.length ? ' ' : sql[i + 4];
+        if (isIdentifierChar(before)) continue;
+        if (isIdentifierChar(after)) continue;
+        return i;
+    }
+    return -1;
+}
+
+/** 메인 SELECT 목록 구간 [start, end) — 첫 depth-0 SELECT 이후 ~ 그 다음 depth-0 FROM 직전 */
+function findMainSelectListBounds(query: string): { start: number; end: number } | null {
+    let depth = 0;
+    const upper = query.toUpperCase();
+    let selectPos = -1;
+    for (let i = 0; i < query.length; i++) {
+        const ch = query[i];
+        if (ch === '(') depth++;
+        else if (ch === ')') depth--;
+        if (depth !== 0) continue;
+        if (i + 6 > query.length) continue;
+        if (upper.slice(i, i + 6) !== 'SELECT') continue;
+        const before = i === 0 ? ' ' : query[i - 1];
+        const after = i + 6 >= query.length ? ' ' : query[i + 6];
+        if (isIdentifierChar(before)) continue;
+        if (isIdentifierChar(after)) continue;
+        selectPos = i + 6;
+        break;
+    }
+    if (selectPos < 0) return null;
+    const fromPos = findTopLevelFromKeyword(query, selectPos);
+    if (fromPos < 0) return null;
+    return { start: selectPos, end: fromPos };
+}
+
+function parseSelectItemAlias(part: string): string {
+    const trimmed = part.trim();
+    if (!trimmed) return 'expr';
+    const asMatch = trimmed.match(/\s+AS\s+([`"[\w][`"\]\w.$]*|`[^`]+`|"[^"]+"|\[[^\]]+\])\s*$/i);
+    if (asMatch) {
+        return asMatch[1].replace(/[`"\[\]]/g, '').split('.').pop() || 'expr';
+    }
+    const lastTok = trimmed.split(/\s+/).pop() || trimmed;
+    const cleaned = lastTok.replace(/[`"\[\]]/g, '');
+    if (cleaned.includes('.')) return cleaned.split('.').pop() || 'expr';
+    return cleaned || 'expr';
+}
+
+function inferColumnsFromSelect(query: string): string[] {
+    const bounds = findMainSelectListBounds(query);
+    if (!bounds) return [];
+    const listStr = query.slice(bounds.start, bounds.end).trim();
+    if (!listStr) return [];
+    const parts = splitTopLevelCommas(listStr);
+    return parts.map(parseSelectItemAlias);
+}
+
+type ParsedView = {
+    name: string;
+    explicitColumns: string[] | null;
+    query: string;
+    viewSql: string;
+    materialized: boolean;
+};
+
+function tryParseCreateView(statement: string): ParsedView | null {
+    let s = statement.trim();
+    if (!/^CREATE\s+/i.test(s)) return null;
+
+    let rest = s.replace(/^CREATE\s+/i, '').trim();
+    if (/^OR\s+REPLACE\s+/i.test(rest)) {
+        rest = rest.replace(/^OR\s+REPLACE\s+/i, '').trim();
+    }
+    rest = rest.replace(/^(?:FORCE|NOFORCE)\s+/i, '').trim();
+    rest = rest.replace(
+        /^(?:ALGORITHM\s*=\s*\w+\s+|DEFINER\s*=\s*(?:`[^`]*`|'[^']*'|"[^"]*"|\S+)\s+|SQL\s+SECURITY\s+(?:DEFINER|INVOKER)\s+)*/i,
+        ''
+    );
+
+    let materialized = false;
+    if (/^MATERIALIZED\s+VIEW\s+/i.test(rest)) {
+        materialized = true;
+        rest = rest.replace(/^MATERIALIZED\s+VIEW\s+/i, '').trim();
+    } else if (/^VIEW\s+/i.test(rest)) {
+        rest = rest.replace(/^VIEW\s+/i, '').trim();
+    } else {
+        return null;
+    }
+
+    if (/^IF\s+NOT\s+EXISTS\s+/i.test(rest)) {
+        rest = rest.replace(/^IF\s+NOT\s+EXISTS\s+/i, '').trim();
+    }
+
+    const nameMatch = rest.match(/^(`[^`]+`|"[^"]+"|\[[^\]]+\]|[\w$.]+)\s*/);
+    if (!nameMatch) return null;
+    const viewName = nameMatch[1].replace(/[`"\[\]]/g, '');
+    rest = rest.slice(nameMatch[0].length).trim();
+
+    let explicitColumns: string[] | null = null;
+    if (rest.startsWith('(')) {
+        const close = findClosingParen(rest, 0);
+        if (close < 0) return null;
+        const inner = rest.slice(1, close);
+        explicitColumns = splitTopLevelCommas(inner)
+            .map((c) => c.trim().replace(/[`"\[\]]/g, ''))
+            .filter(Boolean);
+        rest = rest.slice(close + 1).trim();
+    }
+
+    if (!/^AS\s+/i.test(rest)) return null;
+    let query = rest.replace(/^AS\s+/i, '').trim();
+    query = query.replace(/;+\s*$/, '').trim();
+
+    return {
+        name: viewName,
+        explicitColumns,
+        query,
+        viewSql: s.replace(/;+\s*$/, ''),
+        materialized,
+    };
+}
+
+function buildViewAttributes(explicit: string[] | null, query: string): Attribute[] {
+    const ts = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    let colNames: string[];
+    if (explicit && explicit.length > 0) {
+        colNames = explicit;
+    } else {
+        colNames = inferColumnsFromSelect(query);
+    }
+    if (colNames.length === 0) {
+        return [
+            {
+                id: `attr_${ts()}`,
+                name: '_view',
+                type: 'VARCHAR',
+                isPK: false,
+                isFK: false,
+                isNullable: true,
+                comment: 'VIEW 컬럼을 스크립트에서 자동 추출하지 못했습니다. 필요 시 수동으로 추가하세요.',
+            },
+        ];
+    }
+    return colNames.map((name, idx) => ({
+        id: `attr_${ts()}_${idx}`,
+        name,
+        type: 'VARCHAR',
+        isPK: false,
+        isFK: false,
+        isNullable: true,
+    }));
+}
+
 export const parseSQLToERD = (sql: string): { entities: Entity[], relationships: Relationship[] } => {
     const entities: Entity[] = [];
     const relationships: Relationship[] = [];
@@ -158,6 +356,27 @@ export const parseSQLToERD = (sql: string): { entities: Entity[], relationships:
             // Actually, since CREATE TABLE might reference a table not yet created in the script, 
             // we should store these and process after all CREATE statements.
             (entities[entities.length - 1] as any)._pendingFKs = tableLevelFKs;
+        } else {
+            const viewParsed = tryParseCreateView(statement);
+            if (viewParsed) {
+                const idx = entities.length;
+                const newEntityId = `entity_${Date.now()}_${idx}`;
+                const attributes = buildViewAttributes(viewParsed.explicitColumns, viewParsed.query);
+                entities.push({
+                    id: newEntityId,
+                    name: viewParsed.name,
+                    position: {
+                        x: 100 + (idx * 350) % 1000,
+                        y: 100 + Math.floor(idx / 3) * 400 + 40,
+                    },
+                    attributes,
+                    isLocked: true,
+                    entityKind: 'VIEW',
+                    viewSql: viewParsed.viewSql,
+                    isMaterializedView: viewParsed.materialized,
+                    comment: viewParsed.materialized ? 'Materialized view' : undefined,
+                });
+            }
         }
 
         // Handle ALTER TABLE for Foreign Keys
@@ -233,6 +452,7 @@ export const parseSQLToERD = (sql: string): { entities: Entity[], relationships:
 
     // 3. Smart Detection: Guess relationships based on naming patterns (e.g. user_id)
     entities.forEach(source => {
+        if (source.entityKind === 'VIEW') return;
         source.attributes.forEach(attr => {
             if (attr.name.endsWith('_id') || attr.name.endsWith('_ID')) {
                 const targetName = attr.name.substring(0, attr.name.length - 3);

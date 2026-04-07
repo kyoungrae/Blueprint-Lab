@@ -5,8 +5,18 @@ export const generateSQLFromERD = (entities: Entity[], relationships: Relationsh
     sql += `-- Database Type: ${dbType}\n`;
     sql += `-- Generated at: ${new Date().toISOString()}\n\n`;
 
-    // 1. Generate CREATE TABLE statements
+    // 1. Generate CREATE TABLE / VIEW statements
     entities.forEach(entity => {
+        if (entity.entityKind === 'VIEW') {
+            sql += `-- View: ${entity.name}${entity.isMaterializedView ? ' (materialized)' : ''}\n`;
+            if (entity.viewSql?.trim()) {
+                sql += `${entity.viewSql.trim()};\n\n`;
+            } else {
+                sql += `-- (원본 CREATE VIEW 문이 없어 DDL을 생성하지 못했습니다. SQL 가져오기로 등록하거나 수동으로 보관하세요.)\n\n`;
+            }
+            return;
+        }
+
         sql += `-- Table: ${entity.name}\n`;
         if (entity.comment) {
             sql += `-- Comment: ${entity.comment}\n`;
