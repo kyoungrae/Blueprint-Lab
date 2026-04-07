@@ -53,7 +53,6 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     sourcePosition,
     targetPosition,
     data,
-    label = '연결방향 설정',
 }) => {
     const yjsUpdateEdge = useYjsStore((s: any) => s.pfUpdateEdge);
     const yjsDeleteEdge = useYjsStore((s: any) => s.pfDeleteEdge);
@@ -177,7 +176,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     const labelX = Number.isFinite(rawLabelX) ? rawLabelX : (sourceX + targetX) / 2;
     const labelY = Number.isFinite(rawLabelY) ? rawLabelY : (sourceY + targetY) / 2;
 
-    const edgeKindLabel = edgeKindLabelFromStroke(edgeColor);
+    const edgeKindLabel = (data?.kindText ?? '').trim() || edgeKindLabelFromStroke(edgeColor);
 
     const mkId = (suffix: string) => `pf-arrow-${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}-${suffix}`;
 
@@ -213,9 +212,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                 type="button"
                                 title="연결 설정 (더블 클릭)"
                                 aria-label="연결선 설정 열기"
-                                className={`nodrag nopan flex items-center justify-center border-0 backdrop-blur-sm bg-white/95 transition-[box-shadow,background-color] duration-200 ease-out select-none outline-none focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-blue-400/60 min-h-2 h-4 ${
-                                    isHovered ? 'px-3 rounded-lg w-auto min-w-0' : 'w-2 min-w-4 rounded-full p-0'
-                                }`}
+                                className="nodrag nopan flex items-center justify-center gap-1.5 rounded-md border-0 px-2 py-1 backdrop-blur-sm bg-white/95 transition-[box-shadow,background-color] duration-200 ease-out select-none outline-none focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-blue-400/60"
                                 style={{
                                     boxShadow: isHovered
                                         ? `0 0 0 1px ${edgeColor}aa, 0 1px 2px rgba(15,23,42,0.05)`
@@ -226,31 +223,10 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                 onDoubleClick={handleOpenEdgePanel}
                                 onPointerDown={(e) => e.stopPropagation()}
                             >
-                                {isHovered ? (
-                                    <span className="text-[11px] font-semibold whitespace-nowrap leading-tight text-center tracking-tight">
-                                        {label}
-                                    </span>
-                                ) : (
-                                    <span
-                                        className="pointer-events-none h-[5px] w-[5px] shrink-0 rounded-full"
-                                        style={{ backgroundColor: edgeColor }}
-                                        aria-hidden
-                                    />
-                                )}
+                                <span className="h-[5px] w-[5px] shrink-0 rounded-full" style={{ backgroundColor: edgeColor }} aria-hidden />
+                                <span className="text-[11px] font-semibold leading-none whitespace-nowrap tracking-tight">{edgeKindLabel}</span>
                             </button>
                         </PremiumTooltip>
-                        <div
-                            className="mt-1.5 flex shrink-0 items-center gap-1 rounded-md border-0 px-2 py-1 backdrop-blur-sm bg-white/95"
-                            style={{
-                                color: edgeColor,
-                                boxShadow: `0 0 0 1px ${edgeColor}, 0 1px 3px rgba(15,23,42,0.08)`,
-                            }}
-                            role="note"
-                            aria-label={`연결 구분: ${edgeKindLabel}`}
-                        >
-                            <span className="h-[5px] w-[5px] shrink-0 rounded-full" style={{ backgroundColor: edgeColor }} aria-hidden />
-                            <span className="text-[11px] font-semibold leading-none whitespace-nowrap tracking-tight">{edgeKindLabel}</span>
-                        </div>
                     </div>
                 </div>
             </EdgeLabelRenderer>
@@ -365,6 +341,19 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                     );
                                 })}
                             </div>
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">선 종류</label>
+                            <input
+                                type="text"
+                                value={(data?.kindText ?? '').toString()}
+                                onChange={(e) => {
+                                    yjsUpdateEdge(id, { kindText: e.target.value });
+                                }}
+                                placeholder="예: 조회, 수정, 등록..."
+                                className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                            />
                         </div>
                     </div>
 

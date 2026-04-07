@@ -51,6 +51,8 @@ export interface ProcessFlowEdge {
     animated?: boolean;
     style?: ProcessFlowEdgeStyle;
     arrow?: { start?: ProcessFlowArrowType; end?: ProcessFlowArrowType };
+    /** 연결선 종류(라벨) - 사용자가 직접 입력. 없으면 색상 프리셋 기반 라벨 사용 */
+    kindText?: string;
 }
 
 export interface ProcessFlowSection {

@@ -163,7 +163,37 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     const handleInset = -5;
     const handleCenterStyle = { transform: 'translate(-50%, -50%)' as const };
 
-    const handlesInParentBox = (
+    const handlesInParentBox = rectShape === 'diamond' ? (
+        <>
+            {/* 마름모 도형을 위한 다중 연결 핸들 - 상단 (같은 위치에 겹쳐서 배치) */}
+            <Handle type="target" position={Position.Top} id="in-top-1" className={connHandleClass} style={{ ...connDot, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Top} id="in-top-2" className={connHandleClass} style={{ ...connDot, left: '50%', top: handleInset, ...handleCenterStyle, opacity: 0 }} />
+            <Handle type="target" position={Position.Top} id="in-top-3" className={connHandleClass} style={{ ...connDot, left: '50%', top: handleInset, ...handleCenterStyle, opacity: 0 }} />
+            <Handle type="source" position={Position.Top} id="top-1" className={connHandleClass} style={{ ...connDot, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Top} id="top-2" className={connHandleClass} style={{ ...connDot, left: '50%', top: handleInset, ...handleCenterStyle, opacity: 0 }} />
+            <Handle type="source" position={Position.Top} id="top-3" className={connHandleClass} style={{ ...connDot, left: '50%', top: handleInset, ...handleCenterStyle, opacity: 0 }} />
+            
+            {/* 마름모 도형을 위한 다중 연결 핸들 - 하단 (같은 위치에 겹쳐서 배치) */}
+            <Handle type="target" position={Position.Bottom} id="in-bottom-1" className={connHandleClass} style={{ ...connDot, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Bottom} id="in-bottom-2" className={connHandleClass} style={{ ...connDot, left: '50%', top: H - handleInset, ...handleCenterStyle, opacity: 0 }} />
+            <Handle type="target" position={Position.Bottom} id="in-bottom-3" className={connHandleClass} style={{ ...connDot, left: '50%', top: H - handleInset, ...handleCenterStyle, opacity: 0 }} />
+            <Handle type="source" position={Position.Bottom} id="bottom-1" className={connHandleClass} style={{ ...connDot, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Bottom} id="bottom-2" className={connHandleClass} style={{ ...connDot, left: '50%', top: H - handleInset, ...handleCenterStyle, opacity: 0 }} />
+            <Handle type="source" position={Position.Bottom} id="bottom-3" className={connHandleClass} style={{ ...connDot, left: '50%', top: H - handleInset, ...handleCenterStyle, opacity: 0 }} />
+            
+            {/* 마름모 도형을 위한 다중 연결 핸들 - 좌측 (같은 위치에 겹쳐서 배치) */}
+            <Handle type="target" position={Position.Left} id="in-left-1" className={connHandleClass} style={{ ...connDot, left: handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Left} id="in-left-2" className={connHandleClass} style={{ ...connDot, left: handleInset, top: '50%', ...handleCenterStyle, opacity: 0 }} />
+            <Handle type="source" position={Position.Left} id="left-1" className={connHandleClass} style={{ ...connDot, left: handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Left} id="left-2" className={connHandleClass} style={{ ...connDot, left: handleInset, top: '50%', ...handleCenterStyle, opacity: 0 }} />
+            
+            {/* 마름모 도형을 위한 다중 연결 핸들 - 우측 (같은 위치에 겹쳐서 배치) */}
+            <Handle type="target" position={Position.Right} id="in-right-1" className={connHandleClass} style={{ ...connDot, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Right} id="in-right-2" className={connHandleClass} style={{ ...connDot, left: W - handleInset, top: '50%', ...handleCenterStyle, opacity: 0 }} />
+            <Handle type="source" position={Position.Right} id="right-1" className={connHandleClass} style={{ ...connDot, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Right} id="right-2" className={connHandleClass} style={{ ...connDot, left: W - handleInset, top: '50%', ...handleCenterStyle, opacity: 0 }} />
+        </>
+    ) : (
         <>
             <Handle
                 type="target"

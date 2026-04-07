@@ -188,6 +188,36 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const { getViewport, screenToFlowPosition, fitView } = useReactFlow();
     const selectedNodes = nodes.filter(n => n.selected);
+    
+    // 마름모 관련 edge가 제거되지 않도록 커스텀 핸들러
+    const handleEdgesChange = useCallback((changes: any) => {
+        // 제거(remove) 변경 사항만 필터링
+        const removeChanges = changes.filter((c: any) => c.type === 'remove');
+        const otherChanges = changes.filter((c: any) => c.type !== 'remove');
+        
+        // 제거하려는 edge가 마름모 관련인지 확인
+        const safeRemoveChanges = removeChanges.filter((c: any) => {
+            const edge = edges.find(e => e.id === c.id);
+            if (!edge) return true;
+            
+            const sourceNode = pfNodes.find(n => n.id === edge.source);
+            const targetNode = pfNodes.find(n => n.id === edge.target);
+            
+            const isDiamondEdge = 
+                (sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond') ||
+                (targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond');
+            
+            // 마름모 관련 edge는 제거하지 않음 (사용자가 직접 삭제한 경우 제외)
+            if (isDiamondEdge) {
+                console.log('Preventing auto-removal of diamond edge:', edge.id);
+                return false;
+            }
+            return true;
+        });
+        
+        // 안전한 변경 사항만 적용
+        onEdgesChange([...otherChanges, ...safeRemoveChanges]);
+    }, [edges, pfNodes, onEdgesChange]);
 
     // 커스텀 노드 변경 핸들러 - 선택 동작 제어
     const handleNodesChange = useCallback((changes: any[]) => {
@@ -662,14 +692,65 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
     const isValidConnection = useCallback((connection: Connection) => {
         if (!connection.source || !connection.target) return false;
-        return connection.source !== connection.target;
-    }, []);
+        if (connection.source === connection.target) return false;
+        
+        // 마름모 도형은 항상 연결 허용
+        const targetNode = pfNodes.find(node => node.id === connection.target);
+        const sourceNode = pfNodes.find(node => node.id === connection.source);
+        
+        const isDiamondTarget = targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond';
+        const isDiamondSource = sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond';
+        
+        console.log('isValidConnection:', {
+            source: connection.source,
+            target: connection.target,
+            isDiamondTarget,
+            isDiamondSource,
+            willAllow: isDiamondTarget || isDiamondSource
+        });
+        
+        if (isDiamondTarget || isDiamondSource) {
+            return true;
+        }
+        
+        // 일반 도형은 기존 연결 확인
+        const hasExistingConnection = pfEdges.some(
+            edge => edge.source === connection.source && edge.target === connection.target
+        );
+        
+        console.log('Existing connection check:', hasExistingConnection);
+        
+        return !hasExistingConnection;
+    }, [pfNodes, pfEdges]);
 
     const onConnect = useCallback(
         (connection: Connection) => {
+            console.log('onConnect called:', connection);
             if (!connection.source || !connection.target) return;
             if (connection.source === connection.target) return;
+            
+            // 마름모 도형이 관련된 연결인지 확인
+            const sourceNode = pfNodes.find(node => node.id === connection.source);
+            const targetNode = pfNodes.find(node => node.id === connection.target);
+            const isDiamondConnection = 
+                (sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond') ||
+                (targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond');
+            
+            console.log('isDiamondConnection:', isDiamondConnection, 'sourceNode:', sourceNode, 'targetNode:', targetNode);
+            
+            // 마름모 연결이 아니고 기존 연결이 있으면 추가하지 않음
+            if (!isDiamondConnection) {
+                const existingConnection = pfEdges.some(
+                    edge => edge.source === connection.source && edge.target === connection.target
+                );
+                if (existingConnection) {
+                    console.log('Existing connection found, not adding');
+                    return;
+                }
+            }
+            
             const id = `pf_edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            console.log('Adding new edge:', id);
             pfAddEdge({
                 id,
                 source: connection.source,
@@ -681,21 +762,50 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 arrow: { start: 'none', end: 'arrow' },
             });
         },
-        [pfAddEdge]
+        [pfAddEdge, pfNodes, pfEdges]
     );
 
     const onReconnect = useCallback(
         (oldEdge: Edge, connection: Connection) => {
+            console.log('onReconnect called:', { oldEdge, connection });
             if (!connection.source || !connection.target) return;
             if (connection.source === connection.target) return;
-            pfUpdateEdge(oldEdge.id, {
-                source: connection.source,
-                target: connection.target,
-                sourceHandle: connection.sourceHandle ?? undefined,
-                targetHandle: connection.targetHandle ?? undefined,
-            } as Partial<ProcessFlowEdge>);
+            
+            // 마름모 도형이 관련된 연결인지 확인
+            const sourceNode = pfNodes.find(node => node.id === connection.source);
+            const targetNode = pfNodes.find(node => node.id === connection.target);
+            const isDiamondConnection = 
+                (sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond') ||
+                (targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond');
+            
+            console.log('onReconnect - isDiamondConnection:', isDiamondConnection);
+            
+            if (isDiamondConnection) {
+                // 마름모 연결은 기존 엣지를 유지하고 새 엣지 추가
+                const id = `pf_edge_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                console.log('onReconnect - Adding new edge instead of updating:', id);
+                pfAddEdge({
+                    id,
+                    source: connection.source,
+                    target: connection.target,
+                    sourceHandle: connection.sourceHandle ?? undefined,
+                    targetHandle: connection.targetHandle ?? undefined,
+                    animated: true,
+                    style: { stroke: '#2563eb', strokeWidth: 2 },
+                    arrow: { start: 'none', end: 'arrow' },
+                });
+            } else {
+                // 일반 연결은 기존 엣지 업데이트
+                console.log('onReconnect - Updating existing edge:', oldEdge.id);
+                pfUpdateEdge(oldEdge.id, {
+                    source: connection.source,
+                    target: connection.target,
+                    sourceHandle: connection.sourceHandle ?? undefined,
+                    targetHandle: connection.targetHandle ?? undefined,
+                } as Partial<ProcessFlowEdge>);
+            }
         },
-        [pfUpdateEdge]
+        [pfUpdateEdge, pfAddEdge, pfNodes]
     );
 
     const createNodeAtCenter = useCallback(
@@ -1189,7 +1299,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     nodes={nodes}
                     edges={edges}
                     onNodesChange={handleNodesChange}
-                    onEdgesChange={onEdgesChange}
+                    onEdgesChange={handleEdgesChange}
                     onConnect={onConnect}
                     onReconnect={onReconnect}
                     isValidConnection={isValidConnection}

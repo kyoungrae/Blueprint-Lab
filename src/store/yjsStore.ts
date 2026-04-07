@@ -643,27 +643,37 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     },
 
     pfAddEdge: (edge) => {
-        const { ydoc, isSynced } = get();
+        const { ydoc, isSynced, pfNodes } = get();
         if (!ydoc || !isSynced) return;
         const root = ydoc.getMap<Y.Map<any>>('pf_edges');
         const src = edge.source;
         const tgt = edge.target;
+        
+        // 마름모 도형이 관련된 연결인지 확인
+        const sourceNode = pfNodes.find(n => n.id === src);
+        const targetNode = pfNodes.find(n => n.id === tgt);
+        const isDiamondConnection = 
+            (sourceNode && sourceNode.type === 'RECT' && sourceNode.shape === 'diamond') ||
+            (targetNode && targetNode.type === 'RECT' && targetNode.shape === 'diamond');
+        
         ydoc.transact(() => {
-            // 동일 노드 쌍(A↔B)에 이미 선이 있으면 제거 후 새 방향·핸들로 한 줄만 유지
-            const toDelete: string[] = [];
-            root.forEach((yMap, edgeId) => {
-                if (!(yMap instanceof Y.Map)) return;
-                const s = yMap.get('source') as string | undefined;
-                const t = yMap.get('target') as string | undefined;
-                if (
-                    s != null &&
-                    t != null &&
-                    ((s === src && t === tgt) || (s === tgt && t === src))
-                ) {
-                    toDelete.push(edgeId);
-                }
-            });
-            toDelete.forEach((id) => root.delete(id));
+            // 마름모 연결이 아닌 경우에만 동일 노드 쌍 기존 선 제거
+            if (!isDiamondConnection) {
+                const toDelete: string[] = [];
+                root.forEach((yMap, edgeId) => {
+                    if (!(yMap instanceof Y.Map)) return;
+                    const s = yMap.get('source') as string | undefined;
+                    const t = yMap.get('target') as string | undefined;
+                    if (
+                        s != null &&
+                        t != null &&
+                        ((s === src && t === tgt) || (s === tgt && t === src))
+                    ) {
+                        toDelete.push(edgeId);
+                    }
+                });
+                toDelete.forEach((id) => root.delete(id));
+            }
 
             if (root.get(edge.id)) return;
             const yMap = new Y.Map<any>();
