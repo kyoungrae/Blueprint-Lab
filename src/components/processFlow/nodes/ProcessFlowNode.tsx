@@ -422,15 +422,16 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
     const rectBody = (
         <>
             {isEditing ? (
-                <input
-                    type="text"
+                <textarea
+                    ref={textareaRef}
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
                     onBlur={handleSave}
                     onKeyDown={handleKeyDown}
-                    className="w-full max-w-[90%] bg-transparent border-none outline-none text-center"
-                    style={textStyleProps}
+                    className="w-full max-w-[90%] bg-transparent border-none outline-none text-center resize-none overflow-hidden"
+                    style={{ ...textStyleProps, minHeight: '22px', maxHeight: '80px' }}
                     autoFocus
+                    rows={1}
                 />
             ) : (
                 <span className="px-1 text-center" style={{ ...textStyleProps, whiteSpace: 'pre-wrap', wordBreak: 'break-word' ,backgroundColor: '#ffffff'}}>
