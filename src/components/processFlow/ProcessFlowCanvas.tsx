@@ -122,6 +122,35 @@ function pickNearestProcessFlowPeer(draggedRect: PfRect, others: Node[]): { rect
     return { rect: r, refId: nearest.id };
 }
 
+/** 세로 가이드용: 같은 열(중심 X 근접) 후보 중 세로로 가장 가까운 노드. 행 가이드용: 같은 행(중심 Y 근접) 후보 중 가로로 가장 가까운 노드(L자 배치 등). */
+const PF_COL_CENTER_X_EPS = 40;
+const PF_ROW_CENTER_Y_EPS = 40;
+
+function pickAxisPeersForSmartGuides(draggedRect: PfRect, others: Node[]): { xPeer: { rect: PfRect; refId: string }; yPeer: { rect: PfRect; refId: string } } | null {
+    const nearest = pickNearestProcessFlowPeer(draggedRect, others);
+    if (!nearest) return null;
+
+    let bestCol: { rect: PfRect; refId: string; dy: number } | null = null;
+    let bestRow: { rect: PfRect; refId: string; dx: number } | null = null;
+    for (const n of others) {
+        const r = getNodeRect(n);
+        const dcx = Math.abs(draggedRect.centerX - r.centerX);
+        if (dcx <= PF_COL_CENTER_X_EPS) {
+            const dy = Math.abs(draggedRect.centerY - r.centerY);
+            if (!bestCol || dy < bestCol.dy) bestCol = { rect: r, refId: n.id, dy };
+        }
+        const dcy = Math.abs(draggedRect.centerY - r.centerY);
+        if (dcy <= PF_ROW_CENTER_Y_EPS) {
+            const dx = Math.abs(draggedRect.centerX - r.centerX);
+            if (!bestRow || dx < bestRow.dx) bestRow = { rect: r, refId: n.id, dx };
+        }
+    }
+
+    const xPeer = bestCol ? { rect: bestCol.rect, refId: bestCol.refId } : nearest;
+    const yPeer = bestRow ? { rect: bestRow.rect, refId: bestRow.refId } : nearest;
+    return { xPeer, yPeer };
+}
+
 /**
  * 동일 너비 + 중앙 정렬 시 세로 가이드 3개(좌·중·우) 강제.
  * 왼쪽/오른쪽 단일 정렬 시 해당 축 1개만 표시해 "2개만 나오는" 중앙 정렬 버그 방지.
@@ -1191,18 +1220,38 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 return;
             }
 
-            const peer = pickNearestProcessFlowPeer(draggedRect, others);
-            if (!peer) return;
+            const axisPeers = pickAxisPeersForSmartGuides(draggedRect, others);
+            if (!axisPeers) return;
 
-            const nearRect = peer.rect;
-            const smart = getSmartGuidesAndSnap(
+            const { xPeer, yPeer } = axisPeers;
+            const nearRectX = xPeer.rect;
+            const nearRectY = yPeer.rect;
+
+            const prevSnap = dragSnapRef.current;
+            const smartX = getSmartGuidesAndSnap(
                 draggedRect,
-                [{ id: peer.refId, x: nearRect.left, y: nearRect.top, width: nearRect.width, height: nearRect.height }],
-                dragSnapRef.current,
+                [{ id: xPeer.refId, x: nearRectX.left, y: nearRectX.top, width: nearRectX.width, height: nearRectX.height }],
+                { x: prevSnap.x },
                 undefined,
-                { skipProximityFilter: true }
+                { skipProximityFilter: true, allowedYEdges: [] }
             );
-            dragSnapRef.current = smart.nextSnap;
+            const smartY = getSmartGuidesAndSnap(
+                draggedRect,
+                [{ id: yPeer.refId, x: nearRectY.left, y: nearRectY.top, width: nearRectY.width, height: nearRectY.height }],
+                { y: prevSnap.y },
+                undefined,
+                { skipProximityFilter: true, allowedXEdges: [] }
+            );
+            dragSnapRef.current = { x: smartX.nextSnap.x, y: smartY.nextSnap.y };
+
+            const smart = {
+                deltaX: smartX.deltaX,
+                deltaY: smartY.deltaY,
+                guides: {
+                    vertical: [...smartX.guides.vertical],
+                    horizontal: [...smartY.guides.horizontal],
+                } satisfies AlignmentGuides,
+            };
 
             let extraDx = 0;
             let extraDy = 0;
@@ -1210,9 +1259,10 @@ const ProcessFlowCanvasInner: React.FC = () => {
             const otherRects = others.map((n) => ({ node: n, rect: getNodeRect(n) }));
             const SPACING_THRESHOLD = 2;
             const LEVEL_THRESHOLD = 12;
+            const spacingPeerIds = new Set([xPeer.refId, yPeer.refId]);
             for (let i = 0; i < otherRects.length; i++) {
                 for (let j = i + 1; j < otherRects.length; j++) {
-                    if (otherRects[i].node.id !== peer.refId && otherRects[j].node.id !== peer.refId) continue;
+                    if (!spacingPeerIds.has(otherRects[i].node.id) && !spacingPeerIds.has(otherRects[j].node.id)) continue;
                     const a = otherRects[i].rect;
                     const b = otherRects[j].rect;
                     const leftRect = a.centerX <= b.centerX ? a : b;
@@ -1274,8 +1324,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
             };
             const EDGE_MATCH_EPS = 0.5;
             const SIZE_MATCH_EPS = 0.5;
-            const nearXEdges = [nearRect.left, nearRect.centerX, nearRect.right];
-            const nearYEdges = [nearRect.top, nearRect.centerY, nearRect.bottom];
+            const nearXEdges = [nearRectX.left, nearRectX.centerX, nearRectX.right];
+            const nearYEdgesM = [nearRectY.top, nearRectY.centerY, nearRectY.bottom];
             const snappedXEdges = [snappedRect.left, snappedRect.centerX, snappedRect.right];
             const snappedYEdges = [snappedRect.top, snappedRect.centerY, snappedRect.bottom];
             for (let i = 0; i < nearXEdges.length; i++) {
@@ -1285,32 +1335,32 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     }
                 }
             }
-            for (let i = 0; i < nearYEdges.length; i++) {
+            for (let i = 0; i < nearYEdgesM.length; i++) {
                 for (let j = 0; j < snappedYEdges.length; j++) {
-                    if (Math.abs(nearYEdges[i] - snappedYEdges[j]) <= EDGE_MATCH_EPS) {
-                        nextGuides.horizontal.push(nearYEdges[i]);
+                    if (Math.abs(nearYEdgesM[i] - snappedYEdges[j]) <= EDGE_MATCH_EPS) {
+                        nextGuides.horizontal.push(nearYEdgesM[i]);
                     }
                 }
             }
-            const sameHeight = Math.abs((nearRect.bottom - nearRect.top) - (snappedRect.bottom - snappedRect.top)) <= SIZE_MATCH_EPS;
-            const centerYAligned = Math.abs(nearRect.centerY - snappedRect.centerY) <= EDGE_MATCH_EPS;
-            const yAlignedCount = nearYEdges.reduce(
+            const sameHeight = Math.abs((nearRectY.bottom - nearRectY.top) - (snappedRect.bottom - snappedRect.top)) <= SIZE_MATCH_EPS;
+            const centerYAligned = Math.abs(nearRectY.centerY - snappedRect.centerY) <= EDGE_MATCH_EPS;
+            const yAlignedCount = nearYEdgesM.reduce(
                 (acc, target) => acc + (snappedYEdges.some((v) => Math.abs(v - target) <= EDGE_MATCH_EPS) ? 1 : 0),
                 0
             );
             if (sameHeight && (centerYAligned || yAlignedCount >= 2)) {
-                nextGuides.horizontal.push(nearRect.top, nearRect.centerY, nearRect.bottom);
+                nextGuides.horizontal.push(nearRectY.top, nearRectY.centerY, nearRectY.bottom);
             }
 
-            const hasHTop = nextGuides.horizontal.some((v) => Math.abs(v - nearRect.top) <= EDGE_MATCH_EPS);
-            const hasHCenter = nextGuides.horizontal.some((v) => Math.abs(v - nearRect.centerY) <= EDGE_MATCH_EPS);
-            const hasHBottom = nextGuides.horizontal.some((v) => Math.abs(v - nearRect.bottom) <= EDGE_MATCH_EPS);
+            const hasHTop = nextGuides.horizontal.some((v) => Math.abs(v - nearRectY.top) <= EDGE_MATCH_EPS);
+            const hasHCenter = nextGuides.horizontal.some((v) => Math.abs(v - nearRectY.centerY) <= EDGE_MATCH_EPS);
+            const hasHBottom = nextGuides.horizontal.some((v) => Math.abs(v - nearRectY.bottom) <= EDGE_MATCH_EPS);
             if ((hasHTop && hasHCenter) || (hasHCenter && hasHBottom) || (hasHTop && hasHBottom)) {
-                nextGuides.horizontal.push(nearRect.top, nearRect.centerY, nearRect.bottom);
+                nextGuides.horizontal.push(nearRectY.top, nearRectY.centerY, nearRectY.bottom);
             }
 
             nextGuides.vertical = resolveProcessFlowVerticalGuides(
-                nearRect,
+                nearRectX,
                 snappedRect,
                 nextGuides.vertical,
                 EDGE_MATCH_EPS,
