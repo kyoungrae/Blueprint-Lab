@@ -4,7 +4,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import { User } from '../models/User';
 import { Project } from '../models/Project';
 import { Invitation } from '../models/Invitation';
-import { History } from '../models';
+import { History, ProjectAccessLog } from '../models';
 import { Types } from 'mongoose';
 import { projectStateManager, presenceManager } from '../services/PresenceManager';
 import { lockManager } from '../services/LockManager';
@@ -138,6 +138,42 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         // console.error('Delete user error:', error);
         res.status(500).json({ message: '회원 삭제 중 오류가 발생했습니다.' });
+    }
+};
+
+/** `project_access_logs` 컬렉션 — 소켓 입장·Yjs 연결·저장 반영 시 기록 */
+export const getAdminAccessLogs = async (req: AuthRequest, res: Response) => {
+    try {
+        const limit = Math.min(10000, Math.max(1, parseInt(String(req.query.limit || '5000'), 10) || 5000));
+
+        const logs = await ProjectAccessLog.find()
+            .sort({ eventAt: -1 })
+            .limit(limit)
+            .populate('userId', 'name email')
+            .populate('projectId', 'name')
+            .lean();
+
+        const data = logs.map((doc: any) => {
+            const u = doc.userId;
+            const p = doc.projectId;
+            const uid = typeof u === 'object' && u?._id ? u._id.toString() : String(doc.userId ?? '');
+            const pid = typeof p === 'object' && p?._id ? p._id.toString() : String(doc.projectId ?? '');
+            return {
+                id: doc._id?.toString?.() ?? '',
+                userId: uid,
+                userName: typeof u === 'object' && u?.name ? u.name : '—',
+                userEmail: typeof u === 'object' && u?.email ? u.email : '—',
+                projectId: pid,
+                projectName: typeof p === 'object' && p?.name ? p.name : '—',
+                accessedAt: doc.eventAt ? new Date(doc.eventAt).toISOString() : null,
+                kind: doc.kind as string,
+            };
+        });
+
+        res.json(data);
+    } catch (error) {
+        // console.error('Get admin access logs error:', error);
+        res.status(500).json({ message: '접속 로그를 가져오는 중 오류가 발생했습니다.' });
     }
 };
 

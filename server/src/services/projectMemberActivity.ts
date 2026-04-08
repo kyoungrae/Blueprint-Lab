@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { Project } from '../models';
+import { recordProjectAccessLog } from './recordProjectAccessLog';
 
 /**
  * 멤버별 "이 사용자가 이 프로젝트를 마지막으로 편집해 DB에 반영된 시각".
@@ -16,11 +17,14 @@ export async function touchProjectMemberLastEditedAt(
     const uid = new Types.ObjectId(userId);
 
     try {
-        await Project.updateOne(
+        const result = await Project.updateOne(
             { _id: pid, 'members.userId': uid },
             { $set: { 'members.$[m].lastEditedAt': new Date() } },
             { arrayFilters: [{ 'm.userId': uid }] }
         );
+        if (result.matchedCount > 0) {
+            void recordProjectAccessLog(userId, projectId, 'MEMBER_SAVE');
+        }
     } catch {
         // 목록·협업 주 경로를 막지 않음
     }

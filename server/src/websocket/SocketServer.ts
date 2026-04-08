@@ -7,6 +7,7 @@ import { lockManager } from '../services/LockManager';
 import { presenceManager, projectStateManager } from '../services/PresenceManager';
 import { Project, History, User } from '../models';
 import { touchProjectMemberLastEditedAtMany } from '../services/projectMemberActivity';
+import { recordProjectAccessLog } from '../services/recordProjectAccessLog';
 
 interface UserInfo {
     id: string;
@@ -250,6 +251,8 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 user: socketData.user,
                 onlineUsers,
             });
+
+            void recordProjectAccessLog(socketData.user.id, projectId, 'SOCKET_JOIN');
 
             // console.log(`👤 ${socketData.user.name} joined project ${projectId} (clientId: ${socketData.clientId})`);
         });

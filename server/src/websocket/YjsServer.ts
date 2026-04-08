@@ -25,6 +25,7 @@ import { Project } from '../models';
 import { Types } from 'mongoose';
 import logger from '../utils/logger';
 import { touchProjectMemberLastEditedAtMany } from '../services/projectMemberActivity';
+import { recordProjectAccessLog } from '../services/recordProjectAccessLog';
 
 // ─── 상수 ───────────────────────────────────────────────────────────────────
 const YJS_PORT = parseInt(process.env.YJS_PORT || '4000', 10);
@@ -346,6 +347,10 @@ async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: st
     (ws as WebSocket & { yjsUserId?: string }).yjsUserId =
         yjsUserId && Types.ObjectId.isValid(yjsUserId) ? yjsUserId : undefined;
     info.conns.set(ws, new Set());
+
+    if (yjsUserId && Types.ObjectId.isValid(projectId)) {
+        void recordProjectAccessLog(yjsUserId, projectId, 'YJS_CONNECT');
+    }
 
     // MongoDB에서 초기 데이터 로드 (첫 연결 시)
     if (info.conns.size === 1) {

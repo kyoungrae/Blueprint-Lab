@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X } from 'lucide-react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
 import * as XLSX from 'xlsx';
@@ -223,7 +223,18 @@ interface AdminProject {
     memberCount: number;
 }
 
-type AdminTab = 'members' | 'projects' | 'rollback' | 'ddl';
+type AdminTab = 'members' | 'projects' | 'accessLogs' | 'rollback' | 'ddl';
+
+type AdminAccessLogRow = {
+    id: string;
+    userId: string;
+    userName: string;
+    userEmail: string;
+    projectId: string;
+    projectName: string;
+    accessedAt: string | null;
+    kind?: string;
+};
 
 interface AdminHistoryEntry {
     id: string;
@@ -268,6 +279,9 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [ddlError, setDdlError] = useState<string | null>(null);
     const [ddlDragOver, setDdlDragOver] = useState(false);
 
+    const [accessLogs, setAccessLogs] = useState<AdminAccessLogRow[]>([]);
+    const [accessLogsLoading, setAccessLogsLoading] = useState(false);
+
     useEffect(() => {
         fetchUsers();
     }, []);
@@ -287,6 +301,12 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             setRollbackProjects([]);
             setRollbackSelectedProjectId(null);
             setRollbackHistory([]);
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'accessLogs') {
+            void fetchAccessLogs();
         }
     }, [activeTab]);
 
@@ -318,6 +338,30 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             if (err.message?.includes('세션')) onBack();
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchAccessLogs = async () => {
+        setAccessLogsLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/access-logs?limit=5000`);
+            if (!res.ok) {
+                if (res.status === 403) {
+                    setError('관리자 권한이 없습니다.');
+                    return;
+                }
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '접속 로그를 불러오지 못했습니다.');
+            }
+            const data = await res.json();
+            setAccessLogs(Array.isArray(data) ? data : []);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+            setAccessLogs([]);
+            if (err.message?.includes('세션')) onBack();
+        } finally {
+            setAccessLogsLoading(false);
         }
     };
 
@@ -530,6 +574,19 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         });
     };
 
+    const accessLogKindLabel = (kind: string | undefined) => {
+        switch (kind) {
+            case 'SOCKET_JOIN':
+                return '협업 소켓 입장';
+            case 'YJS_CONNECT':
+                return 'Yjs 연결';
+            case 'MEMBER_SAVE':
+                return '저장·동기화';
+            default:
+                return kind || '—';
+        }
+    };
+
     const projectTypeIcon = (type: string) => {
         switch (type) {
             case 'SCREEN_DESIGN': return <Monitor size={16} className="text-purple-500" />;
@@ -573,6 +630,15 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         >
                             <FolderOpen size={16} className="inline-block mr-2 align-middle" />
                             회원 프로젝트 목록
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('accessLogs')}
+                            className={`px-4 py-2.5 rounded-t-lg font-bold text-sm transition-all ${activeTab === 'accessLogs'
+                                ? 'bg-white border border-b-0 border-gray-200 text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                        >
+                            <ScrollText size={16} className="inline-block mr-2 align-middle" />
+                            로그관리
                         </button>
                         <button
                             onClick={() => { setActiveTab('rollback'); setRollbackEntryToRollback(null); }}
@@ -802,6 +868,50 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 {activeTab === 'projects' && users.length === 0 && !loading && (
                     <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-amber-800 text-sm font-medium">
                         회원 프로젝트 목록을 보려면 먼저 회원관리 탭에서 회원 목록을 불러오세요.
+                    </div>
+                )}
+
+                {!loading && activeTab === 'accessLogs' && (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 font-bold text-sm text-gray-700">
+                            회원–프로젝트 활동 로그
+                        </div>
+                        <p className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 leading-relaxed">
+                            서버의 <code className="text-gray-600">project_access_logs</code> 컬렉션에 기록됩니다. 최신 순으로 표시합니다. 동일 사용자·프로젝트·유형은 짧은 간격(접속 2분·저장 10분) 내 중복 기록을 생략합니다.
+                        </p>
+                        {accessLogsLoading ? (
+                            <div className="flex items-center justify-center py-16">
+                                <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+                            </div>
+                        ) : (
+                            <>
+                                <table className="w-full text-left">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">이름</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">이메일</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">활동 일시</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">프로젝트명</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">유형</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {accessLogs.map((row) => (
+                                            <tr key={row.id || `${row.userId}-${row.projectId}-${row.accessedAt}`} className="border-b border-gray-100 hover:bg-gray-50">
+                                                <td className="px-4 py-3 font-medium text-gray-900">{row.userName}</td>
+                                                <td className="px-4 py-3 text-gray-600">{row.userEmail}</td>
+                                                <td className="px-4 py-3 text-gray-500 text-sm">{formatDate(row.accessedAt ?? '')}</td>
+                                                <td className="px-4 py-3 text-gray-900">{row.projectName || '—'}</td>
+                                                <td className="px-4 py-3 text-gray-600 text-sm">{accessLogKindLabel(row.kind)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {accessLogs.length === 0 && (
+                                    <div className="py-12 text-center text-gray-500 font-medium">표시할 로그가 없습니다.</div>
+                                )}
+                            </>
+                        )}
                     </div>
                 )}
 
