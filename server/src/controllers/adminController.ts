@@ -141,19 +141,28 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     }
 };
 
-/** `project_access_logs` 컬렉션 — 소켓 입장·Yjs 연결·저장 반영 시 기록 */
+/** `project_access_logs` — 7일 TTL(모델 인덱스)로 오래된 행은 MongoDB가 삭제 */
 export const getAdminAccessLogs = async (req: AuthRequest, res: Response) => {
     try {
-        const limit = Math.min(10000, Math.max(1, parseInt(String(req.query.limit || '5000'), 10) || 5000));
+        const allowedSizes = new Set([10, 50, 100]);
+        let pageSize = parseInt(String(req.query.pageSize || '50'), 10) || 50;
+        if (!allowedSizes.has(pageSize)) pageSize = 50;
+        let page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+
+        const total = await ProjectAccessLog.countDocuments({});
+        const totalPages = total === 0 ? 1 : Math.ceil(total / pageSize);
+        page = Math.min(page, totalPages);
+        const skip = (page - 1) * pageSize;
 
         const logs = await ProjectAccessLog.find()
             .sort({ eventAt: -1 })
-            .limit(limit)
+            .skip(skip)
+            .limit(pageSize)
             .populate('userId', 'name email')
             .populate('projectId', 'name')
             .lean();
 
-        const data = logs.map((doc: any) => {
+        const items = logs.map((doc: any) => {
             const u = doc.userId;
             const p = doc.projectId;
             const uid = typeof u === 'object' && u?._id ? u._id.toString() : String(doc.userId ?? '');
@@ -170,7 +179,13 @@ export const getAdminAccessLogs = async (req: AuthRequest, res: Response) => {
             };
         });
 
-        res.json(data);
+        res.json({
+            items,
+            total,
+            page,
+            pageSize,
+            totalPages,
+        });
     } catch (error) {
         // console.error('Get admin access logs error:', error);
         res.status(500).json({ message: '접속 로그를 가져오는 중 오류가 발생했습니다.' });

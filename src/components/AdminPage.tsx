@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
 import * as XLSX from 'xlsx';
@@ -236,6 +236,9 @@ type AdminAccessLogRow = {
     kind?: string;
 };
 
+const ACCESS_LOG_PAGE_SIZES = [10, 50, 100] as const;
+type AccessLogPageSize = (typeof ACCESS_LOG_PAGE_SIZES)[number];
+
 interface AdminHistoryEntry {
     id: string;
     projectId: string;
@@ -281,6 +284,10 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     const [accessLogs, setAccessLogs] = useState<AdminAccessLogRow[]>([]);
     const [accessLogsLoading, setAccessLogsLoading] = useState(false);
+    const [accessLogsPage, setAccessLogsPage] = useState(1);
+    const [accessLogsPageSize, setAccessLogsPageSize] = useState<AccessLogPageSize>(50);
+    const [accessLogsTotal, setAccessLogsTotal] = useState(0);
+    const [accessLogsTotalPages, setAccessLogsTotalPages] = useState(1);
 
     useEffect(() => {
         fetchUsers();
@@ -304,11 +311,46 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         }
     }, [activeTab]);
 
+    const fetchAccessLogs = useCallback(async (page: number, pageSize: AccessLogPageSize) => {
+        setAccessLogsLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/access-logs?page=${page}&pageSize=${pageSize}`);
+            if (!res.ok) {
+                if (res.status === 403) {
+                    setError('관리자 권한이 없습니다.');
+                    return;
+                }
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '접속 로그를 불러오지 못했습니다.');
+            }
+            const data = await res.json();
+            if (data.items && Array.isArray(data.items)) {
+                setAccessLogs(data.items);
+                setAccessLogsTotal(typeof data.total === 'number' ? data.total : 0);
+                setAccessLogsTotalPages(typeof data.totalPages === 'number' ? Math.max(1, data.totalPages) : 1);
+                if (typeof data.page === 'number') setAccessLogsPage(data.page);
+            } else {
+                setAccessLogs([]);
+                setAccessLogsTotal(0);
+                setAccessLogsTotalPages(1);
+            }
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+            setAccessLogs([]);
+            setAccessLogsTotal(0);
+            setAccessLogsTotalPages(1);
+            if (err.message?.includes('세션')) onBack();
+        } finally {
+            setAccessLogsLoading(false);
+        }
+    }, [onBack]);
+
     useEffect(() => {
         if (activeTab === 'accessLogs') {
-            void fetchAccessLogs();
+            void fetchAccessLogs(accessLogsPage, accessLogsPageSize);
         }
-    }, [activeTab]);
+    }, [activeTab, accessLogsPage, accessLogsPageSize, fetchAccessLogs]);
 
     useEffect(() => {
         if (activeTab === 'rollback' && rollbackSelectedProjectId) {
@@ -338,30 +380,6 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             if (err.message?.includes('세션')) onBack();
         } finally {
             setLoading(false);
-        }
-    };
-
-    const fetchAccessLogs = async () => {
-        setAccessLogsLoading(true);
-        setError(null);
-        try {
-            const res = await fetchWithAuth(`${API_BASE}/admin/access-logs?limit=5000`);
-            if (!res.ok) {
-                if (res.status === 403) {
-                    setError('관리자 권한이 없습니다.');
-                    return;
-                }
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.message || '접속 로그를 불러오지 못했습니다.');
-            }
-            const data = await res.json();
-            setAccessLogs(Array.isArray(data) ? data : []);
-        } catch (err: any) {
-            setError(err.message || '오류가 발생했습니다.');
-            setAccessLogs([]);
-            if (err.message?.includes('세션')) onBack();
-        } finally {
-            setAccessLogsLoading(false);
         }
     };
 
@@ -632,7 +650,10 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             회원 프로젝트 목록
                         </button>
                         <button
-                            onClick={() => setActiveTab('accessLogs')}
+                            onClick={() => {
+                                setActiveTab('accessLogs');
+                                setAccessLogsPage(1);
+                            }}
                             className={`px-4 py-2.5 rounded-t-lg font-bold text-sm transition-all ${activeTab === 'accessLogs'
                                 ? 'bg-white border border-b-0 border-gray-200 text-gray-900 shadow-sm'
                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
@@ -877,8 +898,53 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             회원–프로젝트 활동 로그
                         </div>
                         <p className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 leading-relaxed">
-                            서버의 <code className="text-gray-600">project_access_logs</code> 컬렉션에 기록됩니다. 최신 순으로 표시합니다. 동일 사용자·프로젝트·유형은 짧은 간격(접속 2분·저장 10분) 내 중복 기록을 생략합니다.
+                            서버의 <code className="text-gray-600">project_access_logs</code>에 기록되며, <strong className="text-gray-600">약 7일 보관</strong> 후 MongoDB TTL로 자동 삭제됩니다. 최신 순입니다. 동일 사용자·프로젝트·유형은 짧은 간격(접속 2분·저장 10분) 내 중복 기록을 생략합니다.
                         </p>
+                        <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/80">
+                            <span className="text-sm text-gray-600 font-medium">
+                                총 <span className="text-gray-900 font-bold">{accessLogsTotal}</span>건
+                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <label className="text-xs text-gray-500 font-medium whitespace-nowrap">페이지당</label>
+                                <select
+                                    value={accessLogsPageSize}
+                                    onChange={(e) => {
+                                        const v = Number(e.target.value) as AccessLogPageSize;
+                                        const next = ACCESS_LOG_PAGE_SIZES.includes(v as AccessLogPageSize) ? (v as AccessLogPageSize) : 50;
+                                        setAccessLogsPageSize(next);
+                                        setAccessLogsPage(1);
+                                    }}
+                                    className="text-sm font-medium px-2 py-1.5 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+                                >
+                                    {ACCESS_LOG_PAGE_SIZES.map((n) => (
+                                        <option key={n} value={n}>{n}개</option>
+                                    ))}
+                                </select>
+                                <div className="flex items-center gap-1 ml-1">
+                                    <button
+                                        type="button"
+                                        disabled={accessLogsPage <= 1 || accessLogsLoading}
+                                        onClick={() => setAccessLogsPage((p) => Math.max(1, p - 1))}
+                                        className="p-2 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        aria-label="이전 페이지"
+                                    >
+                                        <ChevronLeft size={18} />
+                                    </button>
+                                    <span className="text-sm text-gray-700 font-bold tabular-nums px-2 min-w-[5.5rem] text-center">
+                                        {accessLogsPage} / {accessLogsTotalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        disabled={accessLogsPage >= accessLogsTotalPages || accessLogsLoading}
+                                        onClick={() => setAccessLogsPage((p) => Math.min(accessLogsTotalPages, p + 1))}
+                                        className="p-2 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        aria-label="다음 페이지"
+                                    >
+                                        <ChevronRight size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         {accessLogsLoading ? (
                             <div className="flex items-center justify-center py-16">
                                 <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
