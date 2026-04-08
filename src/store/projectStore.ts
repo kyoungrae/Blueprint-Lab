@@ -497,8 +497,8 @@ export const useProjectStore = create<ProjectStore>()(
                     }),
                 };
             },
-            migrate: (persistedState: any, version: number) => {
-                // v2->v3: 연결된 ERD 프로젝트 데이터 유지를 위해 마이그레이션
+            migrate: (persistedState: any, _version: number) => {
+                // v2->v3: 연결된 ERD 프로젝트 데이터 유지를 위해 마이그레이션 (_version: persist 스키마 버전, 필요 시 분기)
                 const ps = persistedState as any;
                 if (!ps?.projects?.length) return ps;
                 
