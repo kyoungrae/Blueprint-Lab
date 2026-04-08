@@ -103,6 +103,91 @@ function minBoxDistance(
     return Math.sqrt(dx * dx + dy * dy);
 }
 
+type PfRect = ReturnType<typeof getNodeRect>;
+
+/** 같은 세로열(왼쪽·너비 일치)로 쌓인 객체 쌍 → 드래그 중인 노드와 X로 가장 가까운 열을 참조로 선택 */
+function pickProcessFlowColumnReference(draggedRect: PfRect, others: Node[]): { rect: PfRect; refId: string } | null {
+    const SIZE_MATCH = 0.5;
+    const COL_LEFT_EPS = 2;
+    const MAX_VERTICAL_OVERLAP = 24;
+
+    const items = others.map((n) => ({ n, r: getNodeRect(n) }));
+    let bestPair: { rect: PfRect; refId: string; distX: number; sepY: number } | null = null;
+
+    for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+            const A = items[i].r;
+            const B = items[j].r;
+            if (Math.abs(A.width - B.width) > SIZE_MATCH) continue;
+            if (Math.abs(A.left - B.left) > COL_LEFT_EPS) continue;
+            const overlapY = Math.min(A.bottom, B.bottom) - Math.max(A.top, B.top);
+            if (overlapY > MAX_VERTICAL_OVERLAP) continue;
+
+            const ref = A;
+            const distX = Math.abs(draggedRect.centerX - ref.centerX);
+            const sepY = Math.abs(A.centerY - B.centerY);
+            const id = items[i].n.id;
+            if (
+                !bestPair ||
+                distX < bestPair.distX - 1e-6 ||
+                (Math.abs(distX - bestPair.distX) < 1e-6 && sepY > bestPair.sepY)
+            ) {
+                bestPair = { rect: ref, refId: id, distX, sepY };
+            }
+        }
+    }
+
+    if (bestPair) {
+        return { rect: bestPair.rect, refId: bestPair.refId };
+    }
+
+    let nearest: Node | null = null;
+    let nearestDist = Number.POSITIVE_INFINITY;
+    for (const candidate of others) {
+        const rect = getNodeRect(candidate);
+        const dist = minBoxDistance(draggedRect, rect);
+        if (dist < nearestDist) {
+            nearestDist = dist;
+            nearest = candidate;
+        }
+    }
+    if (!nearest) return null;
+    const r = getNodeRect(nearest);
+    return { rect: r, refId: nearest.id };
+}
+
+/**
+ * 동일 너비 + 중앙 정렬 시 세로 가이드 3개(좌·중·우) 강제.
+ * 왼쪽/오른쪽 단일 정렬 시 해당 축 1개만 표시해 "2개만 나오는" 중앙 정렬 버그 방지.
+ */
+function resolveProcessFlowVerticalGuides(ref: PfRect, snapped: PfRect, mergedVertical: number[], EDGE: number, SIZE_MATCH: number): number[] {
+    const sameW = Math.abs(snapped.width - ref.width) <= SIZE_MATCH;
+    const leftOn = Math.abs(snapped.left - ref.left) <= EDGE;
+    const centerOn = Math.abs(snapped.centerX - ref.centerX) <= EDGE;
+    const rightOn = Math.abs(snapped.right - ref.right) <= EDGE;
+
+    const count = [leftOn, centerOn, rightOn].filter(Boolean).length;
+
+    if (sameW && centerOn) {
+        return [ref.left, ref.centerX, ref.right].sort((a, b) => a - b);
+    }
+    if (count === 1) {
+        if (leftOn) return [ref.left];
+        if (centerOn) return [ref.centerX];
+        if (rightOn) return [ref.right];
+    }
+    if (count >= 2 && sameW) {
+        return [ref.left, ref.centerX, ref.right].sort((a, b) => a - b);
+    }
+    if (count >= 2 && !sameW) {
+        if (leftOn && centerOn) return [ref.left, ref.centerX].sort((a, b) => a - b);
+        if (centerOn && rightOn) return [ref.centerX, ref.right].sort((a, b) => a - b);
+        if (leftOn && rightOn) return [ref.left, ref.right].sort((a, b) => a - b);
+    }
+
+    return mergedVertical;
+}
+
 function buildProcessFlowReactNodes(pfNodes: ProcessFlowNode[] | undefined, prev: Node[]): Node[] {
     const selectedById = new Map(prev.map((n) => [n.id, !!n.selected]));
     return (pfNodes ?? []).map((n: ProcessFlowNode) => ({
@@ -1140,22 +1225,13 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 return;
             }
 
-            let nearest: Node | null = null;
-            let nearestDist = Number.POSITIVE_INFINITY;
-            for (const candidate of others) {
-                const rect = getNodeRect(candidate);
-                const dist = minBoxDistance(draggedRect, rect);
-                if (dist < nearestDist) {
-                    nearestDist = dist;
-                    nearest = candidate;
-                }
-            }
-            if (!nearest) return;
+            const colRef = pickProcessFlowColumnReference(draggedRect, others);
+            if (!colRef) return;
 
-            const nearRect = getNodeRect(nearest);
+            const nearRect = colRef.rect;
             const smart = getSmartGuidesAndSnap(
                 draggedRect,
-                [{ id: nearest.id, x: nearRect.left, y: nearRect.top, width: nearRect.width, height: nearRect.height }],
+                [{ id: colRef.refId, x: nearRect.left, y: nearRect.top, width: nearRect.width, height: nearRect.height }],
                 dragSnapRef.current
             );
             dragSnapRef.current = smart.nextSnap;
@@ -1217,13 +1293,15 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
             const dx = smart.deltaX + extraDx;
             const dy = smart.deltaY + extraDy;
-            const snappedRect = {
+            const snappedRect: PfRect = {
                 left: draggedRect.left + dx,
                 right: draggedRect.right + dx,
                 centerX: draggedRect.centerX + dx,
                 top: draggedRect.top + dy,
                 bottom: draggedRect.bottom + dy,
                 centerY: draggedRect.centerY + dy,
+                width: draggedRect.width,
+                height: draggedRect.height,
             };
             const EDGE_MATCH_EPS = 0.5;
             const SIZE_MATCH_EPS = 0.5;
@@ -1245,32 +1323,14 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     }
                 }
             }
-            // 가운데 정렬 + 동일 너비/높이일 때는 3축(left/center/right, top/center/bottom) 가이드를 모두 보여준다.
-            const sameWidth = Math.abs((nearRect.right - nearRect.left) - (snappedRect.right - snappedRect.left)) <= SIZE_MATCH_EPS;
             const sameHeight = Math.abs((nearRect.bottom - nearRect.top) - (snappedRect.bottom - snappedRect.top)) <= SIZE_MATCH_EPS;
-            const centerXAligned = Math.abs(nearRect.centerX - snappedRect.centerX) <= EDGE_MATCH_EPS;
             const centerYAligned = Math.abs(nearRect.centerY - snappedRect.centerY) <= EDGE_MATCH_EPS;
-            const xAlignedCount = nearXEdges.reduce(
-                (acc, target) => acc + (snappedXEdges.some((v) => Math.abs(v - target) <= EDGE_MATCH_EPS) ? 1 : 0),
-                0
-            );
             const yAlignedCount = nearYEdges.reduce(
                 (acc, target) => acc + (snappedYEdges.some((v) => Math.abs(v - target) <= EDGE_MATCH_EPS) ? 1 : 0),
                 0
             );
-            if (sameWidth && (centerXAligned || xAlignedCount >= 2)) {
-                nextGuides.vertical.push(nearRect.left, nearRect.centerX, nearRect.right);
-            }
             if (sameHeight && (centerYAligned || yAlignedCount >= 2)) {
                 nextGuides.horizontal.push(nearRect.top, nearRect.centerY, nearRect.bottom);
-            }
-
-            // 폭/높이 추정이 흔들리더라도, 같은 축에서 2개가 이미 맞으면 3축 가이드를 완성해준다.
-            const hasVLeft = nextGuides.vertical.some((v) => Math.abs(v - nearRect.left) <= EDGE_MATCH_EPS);
-            const hasVCenter = nextGuides.vertical.some((v) => Math.abs(v - nearRect.centerX) <= EDGE_MATCH_EPS);
-            const hasVRight = nextGuides.vertical.some((v) => Math.abs(v - nearRect.right) <= EDGE_MATCH_EPS);
-            if ((hasVLeft && hasVCenter) || (hasVCenter && hasVRight) || (hasVLeft && hasVRight)) {
-                nextGuides.vertical.push(nearRect.left, nearRect.centerX, nearRect.right);
             }
 
             const hasHTop = nextGuides.horizontal.some((v) => Math.abs(v - nearRect.top) <= EDGE_MATCH_EPS);
@@ -1279,6 +1339,14 @@ const ProcessFlowCanvasInner: React.FC = () => {
             if ((hasHTop && hasHCenter) || (hasHCenter && hasHBottom) || (hasHTop && hasHBottom)) {
                 nextGuides.horizontal.push(nearRect.top, nearRect.centerY, nearRect.bottom);
             }
+
+            nextGuides.vertical = resolveProcessFlowVerticalGuides(
+                nearRect,
+                snappedRect,
+                nextGuides.vertical,
+                EDGE_MATCH_EPS,
+                SIZE_MATCH_EPS
+            );
 
             if (spacingCandidate) {
                 const spacingAlignedX = Math.abs(snappedRect.left - spacingCandidate.targetLeft) <= EDGE_MATCH_EPS;
