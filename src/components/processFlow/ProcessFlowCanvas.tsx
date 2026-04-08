@@ -105,42 +105,8 @@ function minBoxDistance(
 
 type PfRect = ReturnType<typeof getNodeRect>;
 
-/** 같은 세로열(왼쪽·너비 일치)로 쌓인 객체 쌍 → 드래그 중인 노드와 X로 가장 가까운 열을 참조로 선택 */
-function pickProcessFlowColumnReference(draggedRect: PfRect, others: Node[]): { rect: PfRect; refId: string } | null {
-    const SIZE_MATCH = 0.5;
-    const COL_LEFT_EPS = 2;
-    const MAX_VERTICAL_OVERLAP = 24;
-
-    const items = others.map((n) => ({ n, r: getNodeRect(n) }));
-    let bestPair: { rect: PfRect; refId: string; distX: number; sepY: number } | null = null;
-
-    for (let i = 0; i < items.length; i++) {
-        for (let j = i + 1; j < items.length; j++) {
-            const A = items[i].r;
-            const B = items[j].r;
-            if (Math.abs(A.width - B.width) > SIZE_MATCH) continue;
-            if (Math.abs(A.left - B.left) > COL_LEFT_EPS) continue;
-            const overlapY = Math.min(A.bottom, B.bottom) - Math.max(A.top, B.top);
-            if (overlapY > MAX_VERTICAL_OVERLAP) continue;
-
-            const ref = A;
-            const distX = Math.abs(draggedRect.centerX - ref.centerX);
-            const sepY = Math.abs(A.centerY - B.centerY);
-            const id = items[i].n.id;
-            if (
-                !bestPair ||
-                distX < bestPair.distX - 1e-6 ||
-                (Math.abs(distX - bestPair.distX) < 1e-6 && sepY > bestPair.sepY)
-            ) {
-                bestPair = { rect: ref, refId: id, distX, sepY };
-            }
-        }
-    }
-
-    if (bestPair) {
-        return { rect: bestPair.rect, refId: bestPair.refId };
-    }
-
+/** 바운딩 박스 최소 거리 기준으로 가장 가까운 peer — 스마트 가이드·세로 3선 해석의 단일 참조 */
+function pickNearestProcessFlowPeer(draggedRect: PfRect, others: Node[]): { rect: PfRect; refId: string } | null {
     let nearest: Node | null = null;
     let nearestDist = Number.POSITIVE_INFINITY;
     for (const candidate of others) {
@@ -1225,14 +1191,16 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 return;
             }
 
-            const colRef = pickProcessFlowColumnReference(draggedRect, others);
-            if (!colRef) return;
+            const peer = pickNearestProcessFlowPeer(draggedRect, others);
+            if (!peer) return;
 
-            const nearRect = colRef.rect;
+            const nearRect = peer.rect;
             const smart = getSmartGuidesAndSnap(
                 draggedRect,
-                [{ id: colRef.refId, x: nearRect.left, y: nearRect.top, width: nearRect.width, height: nearRect.height }],
-                dragSnapRef.current
+                [{ id: peer.refId, x: nearRect.left, y: nearRect.top, width: nearRect.width, height: nearRect.height }],
+                dragSnapRef.current,
+                undefined,
+                { skipProximityFilter: true }
             );
             dragSnapRef.current = smart.nextSnap;
 
@@ -1244,6 +1212,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
             const LEVEL_THRESHOLD = 12;
             for (let i = 0; i < otherRects.length; i++) {
                 for (let j = i + 1; j < otherRects.length; j++) {
+                    if (otherRects[i].node.id !== peer.refId && otherRects[j].node.id !== peer.refId) continue;
                     const a = otherRects[i].rect;
                     const b = otherRects[j].rect;
                     const leftRect = a.centerX <= b.centerX ? a : b;
