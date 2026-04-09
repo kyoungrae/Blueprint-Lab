@@ -33,10 +33,11 @@ const LINE_COLOR_PRESETS = [
     { label: '조회', hint: 'Select', color: '#2563eb' },
     { label: '수정', hint: 'Update', color: '#ea580c' },
     { label: '등록', hint: 'Insert', color: '#16a34a' },
-    { label: '등록/수정', hint: 'Insert/Update', color: '#a33894' },
     { label: '삭제', hint: 'Delete', color: '#dc2626' },
     { label: 'true', hint: 'True', color: '#ffd04b' },
     { label: 'false', hint: 'False', color: '#9ca4a1' },
+    { label: '등록/수정', hint: 'Insert/Update', color: '#a33894' },
+    { label: '조회/등록/수정', hint: 'Select/Insert/Update', color: '#eba2e0' },
 ] as const;
 
 function edgeKindLabelFromStroke(color: string): string {
@@ -318,10 +319,21 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                 />
                             </div>
                         </div>
-
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">선 종류</label>
+                            <input
+                                type="text"
+                                value={(data?.kindText ?? '').toString()}
+                                onChange={(e) => {
+                                    yjsUpdateEdge(id, { kindText: e.target.value });
+                                }}
+                                placeholder="예: 조회, 수정, 등록..."
+                                className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
                         <div>
                             <label className="mb-1.5 block text-xs font-medium text-gray-600">의미별 색</label>
-                            <div className="flex flex-nowrap gap-1">
+                            <div className="flex flex-wrap gap-1.5">
                                 {LINE_COLOR_PRESETS.map((p) => {
                                     const active = edgeColor.toLowerCase() === p.color.toLowerCase();
                                     return (
@@ -329,7 +341,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                             key={p.hint}
                                             type="button"
                                             onClick={() => handleColorChange(p.color)}
-                                            className="nodrag nopan min-w-0 flex-1 rounded-md border border-solid bg-white px-1 py-1 text-[9px] font-semibold leading-tight tracking-tight transition-colors hover:bg-gray-50/90 active:scale-[0.97]"
+                                            className="nodrag nopan inline-flex shrink-0 max-w-full items-center justify-center rounded-md border border-solid bg-white px-2 py-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap transition-colors hover:bg-gray-50/90 active:scale-[0.97]"
                                             style={{
                                                 borderColor: p.color,
                                                 color: p.color,
@@ -342,19 +354,6 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
                                     );
                                 })}
                             </div>
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-xs font-medium text-gray-600">선 종류</label>
-                            <input
-                                type="text"
-                                value={(data?.kindText ?? '').toString()}
-                                onChange={(e) => {
-                                    yjsUpdateEdge(id, { kindText: e.target.value });
-                                }}
-                                placeholder="예: 조회, 수정, 등록..."
-                                className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500"
-                            />
                         </div>
                     </div>
 
