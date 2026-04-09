@@ -38,6 +38,7 @@ const LINE_COLOR_PRESETS = [
     { label: 'false', hint: 'False', color: '#9ca4a1' },
     { label: '등록/수정', hint: 'Insert/Update', color: '#a33894' },
     { label: '조회/등록/수정', hint: 'Select/Insert/Update', color: '#eba2e0' },
+    { label: '등록/수정/삭제', hint: 'Insert/Update/Delete', color: '#872feb' },
 ] as const;
 
 function edgeKindLabelFromStroke(color: string): string {
