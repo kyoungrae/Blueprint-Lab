@@ -16,7 +16,30 @@ import 'reactflow/dist/style.css';
 import { useAuthStore } from '../../store/authStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useYjsStore } from '../../store/yjsStore';
-import { ChevronLeft, ChevronRight, Plus, Home, LogOut, User as UserIcon, Square, Palette, X, UserCog, Database, Diamond, Upload, Download } from 'lucide-react';
+import {
+    ChevronLeft,
+    ChevronRight,
+    Plus,
+    Home,
+    LogOut,
+    User as UserIcon,
+    Square,
+    Palette,
+    X,
+    UserCog,
+    Database,
+    Diamond,
+    Upload,
+    Download,
+    AlignHorizontalDistributeCenter,
+    AlignVerticalDistributeCenter,
+    AlignHorizontalJustifyStart,
+    AlignHorizontalJustifyCenter,
+    AlignHorizontalJustifyEnd,
+    AlignVerticalJustifyStart,
+    AlignVerticalJustifyCenter,
+    AlignVerticalJustifyEnd,
+} from 'lucide-react';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -74,6 +97,75 @@ type ProcessFlowShiftSelectionApi = {
 type ProcessFlowDragGuides = AlignmentGuides & {
     spacingSegments?: Array<{ x1: number; y1: number; x2: number; y2: number }>;
 };
+
+/** 선택 노드들의 외곽 간격을 동일하게 (가로: 왼→오 순, 세로: 위→아래 순). 선택 박스 span 유지. */
+function distributeProcessFlowNodesEvenGap(selected: Node[], axis: 'x' | 'y'): Array<{ id: string; position: { x: number; y: number } }> {
+    if (selected.length < 2) return [];
+    const items = selected.map((n) => {
+        const r = getNodeRect(n);
+        return { id: n.id, left: r.left, top: r.top, w: r.width, h: r.height, right: r.right, bottom: r.bottom };
+    });
+    if (axis === 'x') {
+        items.sort((a, b) => a.left - b.left);
+        const minLeft = Math.min(...items.map((i) => i.left));
+        const maxRight = Math.max(...items.map((i) => i.right));
+        const sumW = items.reduce((s, i) => s + i.w, 0);
+        const span = maxRight - minLeft;
+        let gap = (span - sumW) / (items.length - 1);
+        if (!Number.isFinite(gap) || gap < 0) gap = 0;
+        let x = minLeft;
+        return items.map((it) => {
+            const pos = { x, y: it.top };
+            x += it.w + gap;
+            return { id: it.id, position: pos };
+        });
+    }
+    items.sort((a, b) => a.top - b.top);
+    const minTop = Math.min(...items.map((i) => i.top));
+    const maxBottom = Math.max(...items.map((i) => i.bottom));
+    const sumH = items.reduce((s, i) => s + i.h, 0);
+    const span = maxBottom - minTop;
+    let gap = (span - sumH) / (items.length - 1);
+    if (!Number.isFinite(gap) || gap < 0) gap = 0;
+    let y = minTop;
+    return items.map((it) => {
+        const pos = { x: it.left, y };
+        y += it.h + gap;
+        return { id: it.id, position: pos };
+    });
+}
+
+/** 선택 박스 기준 가로 정렬: 왼쪽 / 가운데 / 오른쪽 (세로 위치 유지) */
+function alignProcessFlowNodesHorizontal(selected: Node[], mode: 'left' | 'center' | 'right'): Array<{ id: string; position: { x: number; y: number } }> {
+    if (selected.length < 2) return [];
+    const rects = selected.map((n) => ({ id: n.id, ...getNodeRect(n) }));
+    const minLeft = Math.min(...rects.map((r) => r.left));
+    const maxRight = Math.max(...rects.map((r) => r.right));
+    const bboxCenterX = (minLeft + maxRight) / 2;
+    return rects.map((r) => {
+        let x = r.left;
+        if (mode === 'left') x = minLeft;
+        else if (mode === 'right') x = maxRight - r.width;
+        else x = bboxCenterX - r.width / 2;
+        return { id: r.id, position: { x, y: r.top } };
+    });
+}
+
+/** 선택 박스 기준 세로 정렬: 위 / 가운데 / 아래 (가로 위치 유지) */
+function alignProcessFlowNodesVertical(selected: Node[], mode: 'top' | 'center' | 'bottom'): Array<{ id: string; position: { x: number; y: number } }> {
+    if (selected.length < 2) return [];
+    const rects = selected.map((n) => ({ id: n.id, ...getNodeRect(n) }));
+    const minTop = Math.min(...rects.map((r) => r.top));
+    const maxBottom = Math.max(...rects.map((r) => r.bottom));
+    const bboxCenterY = (minTop + maxBottom) / 2;
+    return rects.map((r) => {
+        let y = r.top;
+        if (mode === 'top') y = minTop;
+        else if (mode === 'bottom') y = maxBottom - r.height;
+        else y = bboxCenterY - r.height / 2;
+        return { id: r.id, position: { x: r.left, y } };
+    });
+}
 
 function getNodeRect(node: Node): { left: number; top: number; right: number; bottom: number; centerX: number; centerY: number; width: number; height: number } {
     const width = Number((node.style as React.CSSProperties)?.width ?? node.width ?? 240);
@@ -546,6 +638,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [clipboardNodes, setClipboardNodes] = useState<any[]>([]);
     const [dragGuides, setDragGuides] = useState<ProcessFlowDragGuides | null>(null);
+    /** 멀티 선택 툴바 위치: 팬/줌 시 다시 계산 */
+    const [multiSelectToolbarVp, setMultiSelectToolbarVp] = useState(0);
 
     const yjsJoin = useYjsStore((s) => s.joinProject);
     const yjsLeave = useYjsStore((s) => s.leaveProject);
@@ -564,8 +658,40 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-    const { getViewport, screenToFlowPosition, fitView } = useReactFlow();
+    const { getViewport, screenToFlowPosition, flowToScreenPosition, fitView } = useReactFlow();
     const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
+    const selectedPfNodes = useMemo(() => selectedNodes.filter((n) => n.type === 'processFlow'), [selectedNodes]);
+    const showMultiSelectToolbar = selectedPfNodes.length >= 2;
+
+    /** 화면 고정(px), 너비는 아이콘만큼만(w-max + translateX -50%) */
+    const MULTI_SELECT_TOOLBAR_APPROX_H = 36;
+    const multiSelectToolbarScreen = useMemo(() => {
+        if (!showMultiSelectToolbar) return null;
+        void multiSelectToolbarVp;
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (const n of selectedPfNodes) {
+            const r = getNodeRect(n);
+            minX = Math.min(minX, r.left);
+            minY = Math.min(minY, r.top);
+            maxX = Math.max(maxX, r.right);
+            maxY = Math.max(maxY, r.bottom);
+        }
+        const cx = (minX + maxX) / 2;
+        const edgeGap = 10;
+        const topMid = flowToScreenPosition({ x: cx, y: minY });
+        let top = topMid.y - MULTI_SELECT_TOOLBAR_APPROX_H - edgeGap;
+        if (top < 8) {
+            const botMid = flowToScreenPosition({ x: cx, y: maxY });
+            top = botMid.y + edgeGap;
+        }
+        const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
+        const approxHalf = 200;
+        const centerX = Math.max(approxHalf + 8, Math.min(topMid.x, vw - approxHalf - 8));
+        return { centerX, top };
+    }, [selectedPfNodes, showMultiSelectToolbar, multiSelectToolbarVp, flowToScreenPosition]);
 
     const nodesRef = useRef(nodes);
     const edgesRef = useRef(edges);
@@ -619,6 +745,46 @@ const ProcessFlowCanvasInner: React.FC = () => {
         }
     }, [onNodesChange]);
 
+    const applyDistributeSpacingX = useCallback(() => {
+        const sel = nodesRef.current.filter((n) => n.selected && n.type === 'processFlow');
+        distributeProcessFlowNodesEvenGap(sel, 'x').forEach((u) => pfUpdateNode(u.id, { position: u.position }));
+    }, [pfUpdateNode]);
+
+    const applyDistributeSpacingY = useCallback(() => {
+        const sel = nodesRef.current.filter((n) => n.selected && n.type === 'processFlow');
+        distributeProcessFlowNodesEvenGap(sel, 'y').forEach((u) => pfUpdateNode(u.id, { position: u.position }));
+    }, [pfUpdateNode]);
+
+    const applyAlignLeft = useCallback(() => {
+        const sel = nodesRef.current.filter((n) => n.selected && n.type === 'processFlow');
+        alignProcessFlowNodesHorizontal(sel, 'left').forEach((u) => pfUpdateNode(u.id, { position: u.position }));
+    }, [pfUpdateNode]);
+
+    const applyAlignCenterH = useCallback(() => {
+        const sel = nodesRef.current.filter((n) => n.selected && n.type === 'processFlow');
+        alignProcessFlowNodesHorizontal(sel, 'center').forEach((u) => pfUpdateNode(u.id, { position: u.position }));
+    }, [pfUpdateNode]);
+
+    const applyAlignRight = useCallback(() => {
+        const sel = nodesRef.current.filter((n) => n.selected && n.type === 'processFlow');
+        alignProcessFlowNodesHorizontal(sel, 'right').forEach((u) => pfUpdateNode(u.id, { position: u.position }));
+    }, [pfUpdateNode]);
+
+    const applyAlignTop = useCallback(() => {
+        const sel = nodesRef.current.filter((n) => n.selected && n.type === 'processFlow');
+        alignProcessFlowNodesVertical(sel, 'top').forEach((u) => pfUpdateNode(u.id, { position: u.position }));
+    }, [pfUpdateNode]);
+
+    const applyAlignCenterV = useCallback(() => {
+        const sel = nodesRef.current.filter((n) => n.selected && n.type === 'processFlow');
+        alignProcessFlowNodesVertical(sel, 'center').forEach((u) => pfUpdateNode(u.id, { position: u.position }));
+    }, [pfUpdateNode]);
+
+    const applyAlignBottom = useCallback(() => {
+        const sel = nodesRef.current.filter((n) => n.selected && n.type === 'processFlow');
+        alignProcessFlowNodesVertical(sel, 'bottom').forEach((u) => pfUpdateNode(u.id, { position: u.position }));
+    }, [pfUpdateNode]);
+
     const currentProject = projects.find(p => p.id === currentProjectId);
 
     const processFlowExportScreens = useMemo((): Screen[] => {
@@ -660,6 +826,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
             if (layerRef.current) {
                 layerRef.current.style.setProperty('--zoom', vp.zoom.toString());
             }
+            setMultiSelectToolbarVp((c) => c + 1);
         },
     });
 
@@ -1159,27 +1326,10 @@ const ProcessFlowCanvasInner: React.FC = () => {
         [pfUpdateEdge, pfAddEdge, pfNodes]
     );
 
-    const onFlowNodeClick = useCallback(
-        (_: React.MouseEvent, node: Node) => {
-            setSelectedSectionId(null);
-            if (isShiftPressed) {
-                setNodes((currentNodes) =>
-                    currentNodes.map((n) => ({
-                        ...n,
-                        selected: n.id === node.id ? !n.selected : n.selected,
-                    }))
-                );
-            } else {
-                setNodes((currentNodes) =>
-                    currentNodes.map((n) => ({
-                        ...n,
-                        selected: n.id === node.id,
-                    }))
-                );
-            }
-        },
-        [isShiftPressed, setNodes]
-    );
+    /** 섹션만 해제 — 노드 선택은 React Flow(+ multiSelectionKeyCode)에 맡김 */
+    const onFlowNodeClick = useCallback((_evt: React.MouseEvent, _node: Node) => {
+        setSelectedSectionId(null);
+    }, []);
 
     const onFlowPaneClick = useCallback(() => {
         setSelectedSectionId(null);
@@ -1924,9 +2074,110 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
                     deleteKeyCode={null}
+                    multiSelectionKeyCode="Shift"
+                    selectionKeyCode="Shift"
                 >
                     <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="#84878bff" />
                     <MiniMap className="!bg-white !border-2 !border-gray-100 !rounded-xl !shadow-lg" />
+
+                    {multiSelectToolbarScreen &&
+                        showMultiSelectToolbar &&
+                        typeof document !== 'undefined' &&
+                        createPortal(
+                            <div
+                                className="pointer-events-auto fixed z-[8500] inline-flex flex-row items-center gap-[7px] px-1.5 py-1 rounded-xl border border-gray-200 bg-white/95 shadow-xl backdrop-blur-sm w-max max-w-[calc(100vw-16px)] box-border"
+                                style={{
+                                    left: multiSelectToolbarScreen.centerX,
+                                    top: multiSelectToolbarScreen.top,
+                                    transform: 'translateX(-50%)',
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                            >
+                                <PremiumTooltip placement="top" offsetBottom={8} label="왼쪽 정렬" wrapperClassName="shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={applyAlignLeft}
+                                        className="shrink-0 flex size-8 items-center justify-center rounded-lg text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                        aria-label="왼쪽 정렬"
+                                    >
+                                        <AlignHorizontalJustifyStart size={16} strokeWidth={2} />
+                                    </button>
+                                </PremiumTooltip>
+                                <PremiumTooltip placement="top" offsetBottom={8} label="가로 가운데 정렬" wrapperClassName="shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={applyAlignCenterH}
+                                        className="shrink-0 flex size-8 items-center justify-center rounded-lg text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                        aria-label="가로 가운데 정렬"
+                                    >
+                                        <AlignHorizontalJustifyCenter size={16} strokeWidth={2} />
+                                    </button>
+                                </PremiumTooltip>
+                                <PremiumTooltip placement="top" offsetBottom={8} label="오른쪽 정렬" wrapperClassName="shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={applyAlignRight}
+                                        className="shrink-0 flex size-8 items-center justify-center rounded-lg text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                        aria-label="오른쪽 정렬"
+                                    >
+                                        <AlignHorizontalJustifyEnd size={16} strokeWidth={2} />
+                                    </button>
+                                </PremiumTooltip>
+                                <PremiumTooltip placement="top" offsetBottom={8} label="위쪽 정렬" wrapperClassName="shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={applyAlignTop}
+                                        className="shrink-0 flex size-8 items-center justify-center rounded-lg text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                        aria-label="위쪽 정렬"
+                                    >
+                                        <AlignVerticalJustifyStart size={16} strokeWidth={2} />
+                                    </button>
+                                </PremiumTooltip>
+                                <PremiumTooltip placement="top" offsetBottom={8} label="세로 가운데 정렬" wrapperClassName="shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={applyAlignCenterV}
+                                        className="shrink-0 flex size-8 items-center justify-center rounded-lg text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                        aria-label="세로 가운데 정렬"
+                                    >
+                                        <AlignVerticalJustifyCenter size={16} strokeWidth={2} />
+                                    </button>
+                                </PremiumTooltip>
+                                <PremiumTooltip placement="top" offsetBottom={8} label="아래쪽 정렬" wrapperClassName="shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={applyAlignBottom}
+                                        className="shrink-0 flex size-8 items-center justify-center rounded-lg text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                        aria-label="아래쪽 정렬"
+                                    >
+                                        <AlignVerticalJustifyEnd size={16} strokeWidth={2} />
+                                    </button>
+                                </PremiumTooltip>
+                                <div className="w-px h-5 shrink-0 self-center bg-gray-200" aria-hidden />
+                                <PremiumTooltip placement="top" offsetBottom={8} label="가로 간격 동일하게" wrapperClassName="shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={applyDistributeSpacingX}
+                                        className="shrink-0 flex size-8 items-center justify-center rounded-lg text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                        aria-label="가로 간격 맞추기"
+                                    >
+                                        <AlignHorizontalDistributeCenter size={16} strokeWidth={2} />
+                                    </button>
+                                </PremiumTooltip>
+                                <PremiumTooltip placement="top" offsetBottom={8} label="세로 간격 동일하게" wrapperClassName="shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={applyDistributeSpacingY}
+                                        className="shrink-0 flex size-8 items-center justify-center rounded-lg text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                        aria-label="세로 간격 맞추기"
+                                    >
+                                        <AlignVerticalDistributeCenter size={16} strokeWidth={2} />
+                                    </button>
+                                </PremiumTooltip>
+                            </div>,
+                            document.body
+                        )}
                     
                     {/* 섹션 렌더링 레이어 */}
                     {portalTarget && pfSections.length > 0 && createPortal(
