@@ -15,6 +15,7 @@ import imageRoutes from './routes/imageRoutes';
 import fontRoutes from './routes/fontRoutes';
 import adminRoutes from './routes/adminRoutes';
 import logger from './utils/logger';
+import { isAllowedCorsOrigin } from './utils/corsOrigins';
 
 const app = express();
 const httpServer = createServer(app);
@@ -26,19 +27,7 @@ app.use(helmet({
 }));
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-
-        // Normalize URLs (remove trailing slashes) for comparison
-        const normalize = (url: string) => url.replace(/\/$/, '');
-        const normalizedOrigin = normalize(origin);
-
-        const allowed = [
-            normalize(config.frontendUrl),
-            'http://localhost:5173',
-            'http://127.0.0.1:5173',
-        ];
-
-        if (allowed.includes(normalizedOrigin) || normalizedOrigin.startsWith('http://192.168.')) {
+        if (isAllowedCorsOrigin(origin)) {
             callback(null, true);
         } else {
             // console.warn(`🛑 CORS Rejected: ${origin}`);

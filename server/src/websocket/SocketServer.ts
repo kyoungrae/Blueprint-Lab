@@ -1,13 +1,13 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { Types } from 'mongoose';
-import { config } from '../config';
 import { syncEngine, type CRDTOperation, type ERDState } from '../services/SyncEngine';
 import { lockManager } from '../services/LockManager';
 import { presenceManager, projectStateManager } from '../services/PresenceManager';
 import { Project, History, User } from '../models';
 import { touchProjectMemberLastEditedAtMany } from '../services/projectMemberActivity';
 import { recordProjectAccessLog } from '../services/recordProjectAccessLog';
+import { isAllowedCorsOrigin } from '../utils/corsOrigins';
 
 interface UserInfo {
     id: string;
@@ -38,15 +38,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
     const io = new SocketIOServer(httpServer, {
         cors: {
             origin: (origin, callback) => {
-                const normalize = (url: string) => url.replace(/\/$/, '');
-                const normalizedOrigin = origin ? normalize(origin) : null;
-
-                const allowed = [
-                    normalize(config.frontendUrl),
-                    'http://localhost:5173',
-                    'http://127.0.0.1:5173',
-                ];
-                if (!normalizedOrigin || allowed.includes(normalizedOrigin) || normalizedOrigin.startsWith('http://192.168.')) {
+                if (isAllowedCorsOrigin(origin)) {
                     callback(null, true);
                 } else {
                     // console.warn(`🛑 Socket CORS Rejected: ${origin}`);
