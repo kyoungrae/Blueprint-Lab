@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Handle, Position, useReactFlow, useStore as useRFStore } from 'reactflow';
+import { Handle, Position, useReactFlow } from 'reactflow';
 import { useYjsStore } from '../../../store/yjsStore';
 import { useProjectStore } from '../../../store/projectStore';
 import type { ProcessFlowNode as ProcessFlowNodeType, ProcessFlowRectShape } from '../../../types/processFlow';
@@ -16,14 +16,9 @@ import {
 } from '../../../utils/linkedErdProjects';
 
 interface ProcessFlowNodeProps {
-    data: ProcessFlowNodeType & { label?: string };
+    data: ProcessFlowNodeType & { label?: string; __viewportLite?: boolean };
     selected?: boolean;
 }
-
-/** 동일 LOD 방식 유지 + 프로세스 플로우 성능 기준 임계값 */
-const ZOOM_OUT_TO_LITE = 0.3;
-const ZOOM_IN_TO_FULL = 0.38;
-const rfZoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
 
 function resolveRectShape(data: ProcessFlowNodeType): ProcessFlowRectShape {
     if (data.type !== 'RECT') return 'rectangle';
@@ -1115,20 +1110,7 @@ const ProcessFlowNodeFull: React.FC<ProcessFlowNodeProps> = ({ data, selected })
 };
 
 const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, selected }) => {
-    const rfZoom = useRFStore(rfZoomSelector);
-    const modeRef = useRef<'lite' | 'full' | null>(null);
-
-    if (modeRef.current === null) {
-        modeRef.current = rfZoom < ZOOM_OUT_TO_LITE ? 'lite' : 'full';
-    }
-
-    let mode = modeRef.current;
-    if (mode === 'full' && rfZoom < ZOOM_OUT_TO_LITE) {
-        mode = 'lite';
-    } else if (mode === 'lite' && rfZoom > ZOOM_IN_TO_FULL) {
-        mode = 'full';
-    }
-    modeRef.current = mode;
+    const mode: 'lite' | 'full' = data.__viewportLite ? 'lite' : 'full';
 
     if (mode === 'lite') {
         return <ProcessFlowNodeLite data={data} selected={selected} />;

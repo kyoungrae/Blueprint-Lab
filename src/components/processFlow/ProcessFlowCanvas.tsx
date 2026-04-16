@@ -84,6 +84,8 @@ const PROCESS_FLOW_SIDEBAR_MIN_WIDTH = 200;
 const PROCESS_FLOW_SIDEBAR_MAX_WIDTH = 600;
 const PROCESS_FLOW_UI_COMPACT_SCALE = 0.85;
 const SECTION_HANDLE_SIZE = 8;
+const ZOOM_OUT_TO_LITE = 0.3;
+const ZOOM_IN_TO_FULL = 0.38;
 
 type ProcessFlowSectionDragState = { start: { x: number; y: number }; current: { x: number; y: number } };
 
@@ -275,13 +277,17 @@ function resolveProcessFlowVerticalGuides(ref: PfRect, snapped: PfRect, mergedVe
     return mergedVertical;
 }
 
-function buildProcessFlowReactNodes(pfNodes: ProcessFlowNode[] | undefined, prev: Node[]): Node[] {
+function buildProcessFlowReactNodes(
+    pfNodes: ProcessFlowNode[] | undefined,
+    prev: Node[],
+    viewportMode: 'lite' | 'full'
+): Node[] {
     const selectedById = new Map(prev.map((n) => [n.id, !!n.selected]));
     return (pfNodes ?? []).map((n: ProcessFlowNode) => ({
         id: n.id,
         type: 'processFlow' as const,
         position: n.position,
-        data: n,
+        data: { ...n, __viewportLite: viewportMode === 'lite' },
         zIndex: 100,
         selected: selectedById.get(n.id) ?? false,
         style: {
@@ -315,7 +321,10 @@ function processFlowReactNodesUnchanged(prev: Node[], next: Node[]): boolean {
     return true;
 }
 
-function buildProcessFlowReactEdges(pfEdges: ProcessFlowEdge[] | undefined): Edge[] {
+function buildProcessFlowReactEdges(
+    pfEdges: ProcessFlowEdge[] | undefined,
+    viewportMode: 'lite' | 'full'
+): Edge[] {
     return (pfEdges ?? []).map((e: ProcessFlowEdge) => ({
         id: e.id,
         source: e.source,
@@ -325,7 +334,7 @@ function buildProcessFlowReactEdges(pfEdges: ProcessFlowEdge[] | undefined): Edg
         animated: e.animated ?? true,
         label: '연결방향 설정',
         type: 'processFlow' as const,
-        data: e,
+        data: { ...e, __viewportLite: viewportMode === 'lite' },
         style: {
             stroke: e.style?.stroke ?? '#2563eb',
             strokeWidth: e.style?.strokeWidth ?? 2,
@@ -346,6 +355,7 @@ function pfEdgeDomainFingerprint(data: unknown): string {
         style: d.style,
         arrow: d.arrow,
         animated: d.animated,
+        viewportLite: (d as any).__viewportLite ?? false,
     });
 }
 
@@ -661,6 +671,9 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, fitView } = useReactFlow();
+    const [viewportMode, setViewportMode] = useState<'lite' | 'full'>(() =>
+        getViewport().zoom < ZOOM_OUT_TO_LITE ? 'lite' : 'full'
+    );
     const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
     const selectedPfNodes = useMemo(() => selectedNodes.filter((n) => n.type === 'processFlow'), [selectedNodes]);
     const showMultiSelectToolbar = selectedPfNodes.length >= 2;
@@ -903,6 +916,11 @@ const ProcessFlowCanvasInner: React.FC = () => {
             if (layerRef.current) {
                 layerRef.current.style.setProperty('--zoom', vp.zoom.toString());
             }
+            setViewportMode((prev) => {
+                if (prev === 'full' && vp.zoom < ZOOM_OUT_TO_LITE) return 'lite';
+                if (prev === 'lite' && vp.zoom > ZOOM_IN_TO_FULL) return 'full';
+                return prev;
+            });
             // 멀티 선택 툴바가 실제로 표시 중일 때만, 프레임당 1회로 갱신
             if (showMultiSelectToolbarRef.current) {
                 bumpMultiSelectToolbarVp();
@@ -1302,17 +1320,17 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
     useEffect(() => {
         setNodes((curr) => {
-            const next = buildProcessFlowReactNodes(pfNodes, curr);
+            const next = buildProcessFlowReactNodes(pfNodes, curr, viewportMode);
             return processFlowReactNodesUnchanged(curr, next) ? curr : next;
         });
-    }, [pfNodes, setNodes]);
+    }, [pfNodes, viewportMode, setNodes]);
 
     useEffect(() => {
         setEdges((curr) => {
-            const next = buildProcessFlowReactEdges(pfEdges);
+            const next = buildProcessFlowReactEdges(pfEdges, viewportMode);
             return processFlowReactEdgesUnchanged(curr, next) ? curr : next;
         });
-    }, [pfEdges, setEdges]);
+    }, [pfEdges, viewportMode, setEdges]);
 
     const isValidConnection = useCallback((connection: Connection) => {
         if (!connection.source || !connection.target) return false;
@@ -1413,12 +1431,17 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
     const onFlowPaneClick = useCallback(() => {
         setSelectedSectionId(null);
-        setNodes((currentNodes) =>
-            currentNodes.map((n) => ({
-                ...n,
-                selected: false,
-            }))
-        );
+        setNodes((currentNodes) => {
+            let hasSelected = false;
+            for (const n of currentNodes) {
+                if (n.selected) {
+                    hasSelected = true;
+                    break;
+                }
+            }
+            if (!hasSelected) return currentNodes;
+            return currentNodes.map((n) => (n.selected ? { ...n, selected: false } : n));
+        });
         shiftSelectionRef.current?.clear();
         setDragGuides(null);
         dragSnapRef.current = {};
