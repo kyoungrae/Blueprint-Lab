@@ -640,6 +640,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const [dragGuides, setDragGuides] = useState<ProcessFlowDragGuides | null>(null);
     /** 멀티 선택 툴바 위치: 팬/줌 시 다시 계산 */
     const [multiSelectToolbarVp, setMultiSelectToolbarVp] = useState(0);
+    const showMultiSelectToolbarRef = useRef(false);
+    const toolbarVpRafRef = useRef<number | null>(null);
 
     const yjsJoin = useYjsStore((s) => s.joinProject);
     const yjsLeave = useYjsStore((s) => s.leaveProject);
@@ -662,6 +664,9 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
     const selectedPfNodes = useMemo(() => selectedNodes.filter((n) => n.type === 'processFlow'), [selectedNodes]);
     const showMultiSelectToolbar = selectedPfNodes.length >= 2;
+    useEffect(() => {
+        showMultiSelectToolbarRef.current = showMultiSelectToolbar;
+    }, [showMultiSelectToolbar]);
 
     /** 화면 고정(px), 너비는 아이콘만큼만(w-max + translateX -50%) */
     const MULTI_SELECT_TOOLBAR_APPROX_H = 36;
@@ -813,11 +818,26 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const flowWrapper = useRef<HTMLDivElement>(null);
     const layerRef = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
+    const bumpMultiSelectToolbarVp = useCallback(() => {
+        if (toolbarVpRafRef.current != null) return;
+        toolbarVpRafRef.current = window.requestAnimationFrame(() => {
+            toolbarVpRafRef.current = null;
+            setMultiSelectToolbarVp((c) => c + 1);
+        });
+    }, []);
 
     // 🚀 ReactFlow의 진짜 도화지(줌/팬 엔진) DOM을 찾아냅니다.
     useEffect(() => {
         const target = document.querySelector('.react-flow__viewport');
         setPortalTarget(target);
+    }, []);
+    useEffect(() => {
+        return () => {
+            if (toolbarVpRafRef.current != null) {
+                window.cancelAnimationFrame(toolbarVpRafRef.current);
+                toolbarVpRafRef.current = null;
+            }
+        };
     }, []);
 
     // 🚀 React 상태 업데이트 대신, DOM의 CSS 변수(--zoom)만 조용히 바꿉니다. (리렌더링 0번!)
@@ -826,7 +846,10 @@ const ProcessFlowCanvasInner: React.FC = () => {
             if (layerRef.current) {
                 layerRef.current.style.setProperty('--zoom', vp.zoom.toString());
             }
-            setMultiSelectToolbarVp((c) => c + 1);
+            // 멀티 선택 툴바가 실제로 표시 중일 때만, 프레임당 1회로 갱신
+            if (showMultiSelectToolbarRef.current) {
+                bumpMultiSelectToolbarVp();
+            }
         },
     });
 

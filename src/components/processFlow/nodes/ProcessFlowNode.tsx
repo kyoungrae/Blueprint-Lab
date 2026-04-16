@@ -20,9 +20,9 @@ interface ProcessFlowNodeProps {
     selected?: boolean;
 }
 
-/** 화면 설계(ScreenNode)와 동일한 줌 기반 LOD 히스테리시스 값 */
-const ZOOM_OUT_TO_LITE = 0.09;
-const ZOOM_IN_TO_FULL = 0.12;
+/** 동일 LOD 방식 유지 + 프로세스 플로우 성능 기준 임계값 */
+const ZOOM_OUT_TO_LITE = 0.3;
+const ZOOM_IN_TO_FULL = 0.38;
 const rfZoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
 
 function resolveRectShape(data: ProcessFlowNodeType): ProcessFlowRectShape {

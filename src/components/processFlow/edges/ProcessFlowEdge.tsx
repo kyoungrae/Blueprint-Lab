@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, Position } from 'reactflow';
+import { useStore as useRFStore } from 'reactflow';
 import { useYjsStore } from '../../../store/yjsStore';
 import type { ProcessFlowEdge as ProcessFlowEdgeType } from '../../../types/processFlow';
 import type { EdgeProps } from 'reactflow';
@@ -19,6 +20,9 @@ const PF_EDGE_PANEL_Z = 9995;
 
 /** 호버 전·후 레이아웃 점프 방지(깜빡임) + 앵커 Y 계산에 사용 */
 const PF_EDGE_HANDLE_HIT_PX = 18;
+const ZOOM_OUT_TO_LITE = 0.3;
+const ZOOM_IN_TO_FULL = 0.38;
+const rfZoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
 
 /** 핸들(HTML)이 노드 레이어에서 SVG 위에 그려져 마커 끝이 가려지지 않도록, 화살표가 있을 때만 끝점을 핸들 바깥(연결선 쪽)으로 당김 */
 const outwardFromHandle: Record<Position, { x: number; y: number }> = {
@@ -57,6 +61,20 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     targetPosition,
     data,
 }) => {
+    const rfZoom = useRFStore(rfZoomSelector);
+    const modeRef = useRef<'lite' | 'full' | null>(null);
+    if (modeRef.current === null) {
+        modeRef.current = rfZoom < ZOOM_OUT_TO_LITE ? 'lite' : 'full';
+    }
+    let mode = modeRef.current;
+    if (mode === 'full' && rfZoom < ZOOM_OUT_TO_LITE) {
+        mode = 'lite';
+    } else if (mode === 'lite' && rfZoom > ZOOM_IN_TO_FULL) {
+        mode = 'full';
+    }
+    modeRef.current = mode;
+    const isLite = mode === 'lite';
+
     const yjsUpdateEdge = useYjsStore((s: any) => s.pfUpdateEdge);
     const yjsDeleteEdge = useYjsStore((s: any) => s.pfDeleteEdge);
     const [isEditing, setIsEditing] = useState(false);
@@ -75,6 +93,9 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     useEffect(() => {
         if (isEditing) setIsHovered(false);
     }, [isEditing]);
+    useEffect(() => {
+        if (isLite && isEditing) setIsEditing(false);
+    }, [isLite, isEditing]);
 
     const trySetHandleHovered = useCallback((next: boolean) => {
         if (next && Date.now() < handleHoverSuppressUntilRef.current) return;
@@ -195,7 +216,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
     };
 
     const edgeLabels =
-        !isEditing ? (
+        !isLite && !isEditing ? (
             <EdgeLabelRenderer>
                 <div className="nodrag nopan" style={edgeUiBaseStyle}>
                     <div
@@ -235,7 +256,7 @@ const ProcessFlowEdgeComponent: React.FC<ProcessFlowEdgeProps> = ({
             </EdgeLabelRenderer>
         ) : null;
 
-    const editPanel = isEditing ? (
+    const editPanel = !isLite && isEditing ? (
         <EdgeLabelRenderer>
             <div
                 className="nodrag nopan pointer-events-auto"
