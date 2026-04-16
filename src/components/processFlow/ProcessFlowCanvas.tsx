@@ -54,7 +54,6 @@ import { copyToClipboard } from '../../utils/clipboard';
 import PremiumTooltip from '../screenNode/PremiumTooltip';
 import ScreenExportModal, { type ExportFormat } from '../ScreenExportModal';
 import { getSmartGuidesAndSnap, type AlignmentGuides, type SnapState } from '../screenNode/smartGuides';
-
 const nodeTypes = {
     processFlow: ProcessFlowNodeComponent,
 };
@@ -283,11 +282,30 @@ function buildProcessFlowReactNodes(
     viewportMode: 'lite' | 'full'
 ): Node[] {
     const selectedById = new Map(prev.map((n) => [n.id, !!n.selected]));
+    const prevById = new Map(prev.map((n) => [n.id, n]));
+    const isLite = viewportMode === 'lite';
     return (pfNodes ?? []).map((n: ProcessFlowNode) => ({
+        ...(function () {
+            const prevNode = prevById.get(n.id);
+            const prevData = prevNode?.data as
+                | (ProcessFlowNode & { __viewportLite?: boolean; __baseRef?: ProcessFlowNode })
+                | undefined;
+            const reusable =
+                Boolean(prevData) &&
+                prevData?.__baseRef === n &&
+                Boolean(prevData?.__viewportLite) === isLite;
+            return {
+                data: reusable
+                    ? prevNode!.data
+                    : ({ ...n, __viewportLite: isLite, __baseRef: n } as ProcessFlowNode & {
+                          __viewportLite: boolean;
+                          __baseRef: ProcessFlowNode;
+                      }),
+            };
+        })(),
         id: n.id,
         type: 'processFlow' as const,
         position: n.position,
-        data: { ...n, __viewportLite: viewportMode === 'lite' },
         zIndex: 100,
         selected: selectedById.get(n.id) ?? false,
         style: {
@@ -323,9 +341,30 @@ function processFlowReactNodesUnchanged(prev: Node[], next: Node[]): boolean {
 
 function buildProcessFlowReactEdges(
     pfEdges: ProcessFlowEdge[] | undefined,
+    prev: Edge[],
     viewportMode: 'lite' | 'full'
 ): Edge[] {
+    const isLite = viewportMode === 'lite';
+    const prevById = new Map(prev.map((e) => [e.id, e]));
     return (pfEdges ?? []).map((e: ProcessFlowEdge) => ({
+        ...(function () {
+            const prevEdge = prevById.get(e.id);
+            const prevData = prevEdge?.data as
+                | (ProcessFlowEdge & { __viewportLite?: boolean; __baseRef?: ProcessFlowEdge })
+                | undefined;
+            const reusable =
+                Boolean(prevData) &&
+                prevData?.__baseRef === e &&
+                Boolean(prevData?.__viewportLite) === isLite;
+            return {
+                data: reusable
+                    ? prevEdge!.data
+                    : ({ ...e, __viewportLite: isLite, __baseRef: e } as ProcessFlowEdge & {
+                          __viewportLite: boolean;
+                          __baseRef: ProcessFlowEdge;
+                      }),
+            };
+        })(),
         id: e.id,
         source: e.source,
         target: e.target,
@@ -334,7 +373,6 @@ function buildProcessFlowReactEdges(
         animated: e.animated ?? true,
         label: '연결방향 설정',
         type: 'processFlow' as const,
-        data: { ...e, __viewportLite: viewportMode === 'lite' },
         style: {
             stroke: e.style?.stroke ?? '#2563eb',
             strokeWidth: e.style?.strokeWidth ?? 2,
@@ -1329,7 +1367,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
     useEffect(() => {
         setEdges((curr) => {
-            const next = buildProcessFlowReactEdges(pfEdges, viewportMode);
+            const next = buildProcessFlowReactEdges(pfEdges, curr, viewportMode);
             return processFlowReactEdgesUnchanged(curr, next) ? curr : next;
         });
     }, [pfEdges, viewportMode, setEdges]);
@@ -2177,6 +2215,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     minZoom={0.05}
                     maxZoom={4}
                     zoomOnDoubleClick={false}
+                    onlyRenderVisibleElements
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
                     deleteKeyCode={null}
