@@ -39,6 +39,60 @@ function parallelogramParams(W: number, H: number, bw: number) {
     return { pad, skew };
 }
 
+function renderLiteAnchorHandles(W: number, H: number) {
+    const hiddenHandle: React.CSSProperties = {
+        width: 1,
+        height: 1,
+        minWidth: 1,
+        minHeight: 1,
+        opacity: 0,
+        pointerEvents: 'none',
+        background: 'transparent',
+        border: 'none',
+    };
+    const handleInset = -5;
+    const handleCenterStyle = { transform: 'translate(-50%, -50%)' as const };
+
+    return (
+        <>
+            {/* 기본 RECT/USER 연결점 */}
+            <Handle type="target" position={Position.Top} id="in-top" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Top} id="top" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Right} id="in-right" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Right} id="right" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Bottom} id="in-bottom" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Bottom} id="bottom" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Left} id="in-left" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Left} id="left" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
+
+            {/* diamond 다중 연결점 */}
+            <Handle type="target" position={Position.Top} id="in-top-1" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Top} id="in-top-2" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Top} id="in-top-3" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Top} id="top-1" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Top} id="top-2" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Top} id="top-3" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+
+            <Handle type="target" position={Position.Bottom} id="in-bottom-1" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Bottom} id="in-bottom-2" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Bottom} id="in-bottom-3" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Bottom} id="bottom-1" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Bottom} id="bottom-2" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Bottom} id="bottom-3" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+
+            <Handle type="target" position={Position.Left} id="in-left-1" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Left} id="in-left-2" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Left} id="left-1" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Left} id="left-2" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
+
+            <Handle type="target" position={Position.Right} id="in-right-1" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="target" position={Position.Right} id="in-right-2" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Right} id="right-1" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+            <Handle type="source" position={Position.Right} id="right-2" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+        </>
+    );
+}
+
 const ProcessFlowNodeLite: React.FC<ProcessFlowNodeProps> = memo(({ data, selected }) => {
     const nodeStyle = {
         background: data.style?.fill ?? '#ffffff',
@@ -50,6 +104,8 @@ const ProcessFlowNodeLite: React.FC<ProcessFlowNodeProps> = memo(({ data, select
         color: data.textStyle?.color ?? '#0f172a',
     };
     const isUserNode = data.type === 'USER';
+    const W = isUserNode ? nodeStyle.width - 135 : nodeStyle.width;
+    const H = isUserNode ? nodeStyle.height - 20 : nodeStyle.height;
     const ringClass = selected
         ? isUserNode
             ? 'ring-2 ring-emerald-400 ring-offset-2'
@@ -60,8 +116,8 @@ const ProcessFlowNodeLite: React.FC<ProcessFlowNodeProps> = memo(({ data, select
         <div
             className={`relative overflow-hidden ${ringClass}`}
             style={{
-                width: isUserNode ? nodeStyle.width - 135 : nodeStyle.width,
-                height: isUserNode ? nodeStyle.height - 20 : nodeStyle.height,
+                width: W,
+                height: H,
                 borderRadius: isUserNode ? 16 : nodeStyle.borderRadius,
                 border: `${Math.max(1, Number(nodeStyle.borderWidth) || 1)}px solid ${nodeStyle.borderColor}`,
                 background: nodeStyle.background,
@@ -71,6 +127,7 @@ const ProcessFlowNodeLite: React.FC<ProcessFlowNodeProps> = memo(({ data, select
                 contain: 'layout style paint',
             }}
         >
+            {renderLiteAnchorHandles(W, H)}
             <div className="px-3 py-2 flex items-center justify-center gap-2 min-w-0">
                 {isUserNode ? (
                     data.userRole === 'admin' ? (
