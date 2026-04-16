@@ -660,7 +660,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
 
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-    const { getViewport, screenToFlowPosition, flowToScreenPosition, fitView } = useReactFlow();
+    const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, fitView } = useReactFlow();
     const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
     const selectedPfNodes = useMemo(() => selectedNodes.filter((n) => n.type === 'processFlow'), [selectedNodes]);
     const showMultiSelectToolbar = selectedPfNodes.length >= 2;
@@ -818,6 +818,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
     const flowWrapper = useRef<HTMLDivElement>(null);
     const layerRef = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
+    const zoomWheelRafRef = useRef<number | null>(null);
+    const pendingZoomWheelRef = useRef<{ deltaY: number; deltaMode: number; clientX: number; clientY: number } | null>(null);
     const bumpMultiSelectToolbarVp = useCallback(() => {
         if (toolbarVpRafRef.current != null) return;
         toolbarVpRafRef.current = window.requestAnimationFrame(() => {
@@ -837,8 +839,63 @@ const ProcessFlowCanvasInner: React.FC = () => {
                 window.cancelAnimationFrame(toolbarVpRafRef.current);
                 toolbarVpRafRef.current = null;
             }
+            if (zoomWheelRafRef.current != null) {
+                window.cancelAnimationFrame(zoomWheelRafRef.current);
+                zoomWheelRafRef.current = null;
+            }
         };
     }, []);
+
+    // Ctrl/Cmd + wheel(트랙패드 핀치 포함)를 캔버스에서 직접 처리:
+    // - 브라우저 페이지 줌 방지
+    // - 줌 업데이트를 rAF 1회로 묶어 버벅임 완화
+    useEffect(() => {
+        const el = flowWrapper.current;
+        if (!el) return;
+
+        const flushZoom = () => {
+            zoomWheelRafRef.current = null;
+            const wheel = pendingZoomWheelRef.current;
+            pendingZoomWheelRef.current = null;
+            if (!wheel) return;
+
+            const { x, y, zoom } = getViewport();
+            const wheelDelta = -wheel.deltaY * (wheel.deltaMode === 1 ? 0.05 : wheel.deltaMode ? 1 : 0.002) * 10;
+            const nextZoom = Math.max(0.05, Math.min(4, zoom * Math.pow(2, wheelDelta)));
+            if (nextZoom === zoom) return;
+
+            const rect = el.getBoundingClientRect();
+            const px = wheel.clientX - rect.left;
+            const py = wheel.clientY - rect.top;
+            const flowX = (px - x) / zoom;
+            const flowY = (py - y) / zoom;
+            setViewport({ x: px - flowX * nextZoom, y: py - flowY * nextZoom, zoom: nextZoom });
+        };
+
+        const onWheel = (e: WheelEvent) => {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            e.preventDefault();
+            pendingZoomWheelRef.current = {
+                deltaY: e.deltaY,
+                deltaMode: e.deltaMode,
+                clientX: e.clientX,
+                clientY: e.clientY,
+            };
+            if (zoomWheelRafRef.current == null) {
+                zoomWheelRafRef.current = window.requestAnimationFrame(flushZoom);
+            }
+        };
+
+        el.addEventListener('wheel', onWheel, { passive: false, capture: true });
+        return () => {
+            el.removeEventListener('wheel', onWheel, { capture: true } as AddEventListenerOptions);
+            if (zoomWheelRafRef.current != null) {
+                window.cancelAnimationFrame(zoomWheelRafRef.current);
+                zoomWheelRafRef.current = null;
+            }
+            pendingZoomWheelRef.current = null;
+        };
+    }, [getViewport, setViewport]);
 
     // 🚀 React 상태 업데이트 대신, DOM의 CSS 변수(--zoom)만 조용히 바꿉니다. (리렌더링 0번!)
     useOnViewportChange({
@@ -2091,6 +2148,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     connectionRadius={28}
                     fitView
                     panOnScroll
+                    zoomOnScroll={false}
                     minZoom={0.05}
                     maxZoom={4}
                     zoomOnDoubleClick={false}
