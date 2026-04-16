@@ -34,7 +34,7 @@ function parallelogramParams(W: number, H: number, bw: number) {
     return { pad, skew };
 }
 
-function renderLiteAnchorHandles(W: number, H: number) {
+function renderLiteAnchorHandles(W: number, H: number, isDiamond: boolean) {
     const hiddenHandle: React.CSSProperties = {
         width: 1,
         height: 1,
@@ -48,19 +48,23 @@ function renderLiteAnchorHandles(W: number, H: number) {
     const handleInset = -5;
     const handleCenterStyle = { transform: 'translate(-50%, -50%)' as const };
 
+    if (!isDiamond) {
+        return (
+            <>
+                <Handle type="target" position={Position.Top} id="in-top" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+                <Handle type="source" position={Position.Top} id="top" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
+                <Handle type="target" position={Position.Right} id="in-right" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+                <Handle type="source" position={Position.Right} id="right" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
+                <Handle type="target" position={Position.Bottom} id="in-bottom" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+                <Handle type="source" position={Position.Bottom} id="bottom" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
+                <Handle type="target" position={Position.Left} id="in-left" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
+                <Handle type="source" position={Position.Left} id="left" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
+            </>
+        );
+    }
+
     return (
         <>
-            {/* 기본 RECT/USER 연결점 */}
-            <Handle type="target" position={Position.Top} id="in-top" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
-            <Handle type="source" position={Position.Top} id="top" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
-            <Handle type="target" position={Position.Right} id="in-right" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
-            <Handle type="source" position={Position.Right} id="right" style={{ ...hiddenHandle, left: W - handleInset, top: '50%', ...handleCenterStyle }} />
-            <Handle type="target" position={Position.Bottom} id="in-bottom" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
-            <Handle type="source" position={Position.Bottom} id="bottom" style={{ ...hiddenHandle, left: '50%', top: H - handleInset, ...handleCenterStyle }} />
-            <Handle type="target" position={Position.Left} id="in-left" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
-            <Handle type="source" position={Position.Left} id="left" style={{ ...hiddenHandle, left: handleInset, top: '50%', ...handleCenterStyle }} />
-
-            {/* diamond 다중 연결점 */}
             <Handle type="target" position={Position.Top} id="in-top-1" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
             <Handle type="target" position={Position.Top} id="in-top-2" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
             <Handle type="target" position={Position.Top} id="in-top-3" style={{ ...hiddenHandle, left: '50%', top: handleInset, ...handleCenterStyle }} />
@@ -99,6 +103,8 @@ const ProcessFlowNodeLite: React.FC<ProcessFlowNodeProps> = memo(({ data, select
         color: data.textStyle?.color ?? '#0f172a',
     };
     const isUserNode = data.type === 'USER';
+    const rectShape = resolveRectShape(data);
+    const isDiamond = rectShape === 'diamond';
     const W = isUserNode ? nodeStyle.width - 135 : nodeStyle.width;
     const H = isUserNode ? nodeStyle.height - 20 : nodeStyle.height;
     const ringClass = selected
@@ -122,7 +128,7 @@ const ProcessFlowNodeLite: React.FC<ProcessFlowNodeProps> = memo(({ data, select
                 contain: 'layout style paint',
             }}
         >
-            {renderLiteAnchorHandles(W, H)}
+            {renderLiteAnchorHandles(W, H, isDiamond)}
             <div className="px-3 py-2 flex items-center justify-center gap-2 min-w-0">
                 {isUserNode ? (
                     data.userRole === 'admin' ? (
