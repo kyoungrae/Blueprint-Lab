@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import type { DrawElement } from '../../types/screenDesign';
 import ShapeElement from './ShapeElement';
 import DrawTextComponent from './DrawTextComponent';
@@ -132,9 +132,48 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
 }) => {
     // 드래그 미리보기 위치를 스토어에서 직접 구독 (자기 자신것만)
     const previewPos = useDragStore(state => state.previews?.[el.id]);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const rot = el.type === 'image' ? (el.imageRotation ?? 0) : (el.rotation ?? 0);
     const drawElements = getDrawElements();
+
+    const handleDeleteClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (el.type === 'func-no') {
+            setShowDeleteConfirm(true);
+        } else {
+            deleteElements([el.id]);
+        }
+    };
+
+    const handleDeleteConfirm = (renumber: boolean) => {
+        setShowDeleteConfirm(false);
+        const deletedNumber = parseInt(el.text || '0');
+
+        if (renumber) {
+            // 순서 초기화: 삭제 후 번호 재할당
+            // 삭제된 번호보다 큰 번호를 가진 func-no 요소들의 번호를 1씩 감소
+            const updatedElements = drawElements
+                .filter(e => e.id !== el.id)
+                .map(e => {
+                    if (e.type === 'func-no') {
+                        const currentNum = parseInt(e.text || '0');
+                        if (currentNum > deletedNumber) {
+                            return { ...e, text: (currentNum - 1).toString() };
+                        }
+                    }
+                    return e;
+                });
+
+            update({ drawElements: updatedElements });
+            syncUpdate({ drawElements: updatedElements });
+            saveHistory(updatedElements);
+            setSelectedElementIds([]);
+        } else {
+            // 그냥 삭제 (순서 유지)
+            deleteElements([el.id]);
+        }
+    };
 
     const commonStyle: React.CSSProperties = {
         position: 'absolute',
@@ -407,15 +446,47 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
 
             {isSelected && !isLocked && selectedElementIds.length === 1 && !isUnifiedGroupSelection && (
                 <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        deleteElements([el.id]);
-                    }}
+                    onClick={handleDeleteClick}
                     onMouseDown={e => e.stopPropagation()}
                     className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 border-2 border-white scale-0 group-canvas-element-hover:scale-100 transition-transform z-[110]"
                 >
                     <X size={12} />
                 </button>
+            )}
+
+            {/* 기능 상세 번호 삭제 확인 팝업 */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-80">
+                        <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                            기능 상세 번호 삭제
+                        </h3>
+                        <p className="text-xs text-gray-600 mb-4">
+                            [{el.text || '?'}]번 기능 상세 번호를 삭제합니다.<br />
+                            삭제 후 번호를 어떻게 처리할까요?
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => handleDeleteConfirm(false)}
+                                className="flex-1 px-3 py-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
+                            >
+                                그냥 삭제 (순서 유지)
+                            </button>
+                            <button
+                                onClick={() => handleDeleteConfirm(true)}
+                                className="flex-1 px-3 py-2 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+                            >
+                                순서 초기화
+                            </button>
+                        </div>
+                        <button
+                            onClick={() => setShowDeleteConfirm(false)}
+                            className="w-full mt-2 px-3 py-2 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                        >
+                            취소
+                        </button>
+                    </div>
+                </div>
             )}
 
             {isSelected && !isLocked && selectedElementIds.length === 1 && !isUnifiedGroupSelection && !(el.type === 'image' && imageCropMode) && (

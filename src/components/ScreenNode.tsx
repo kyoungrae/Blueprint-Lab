@@ -300,6 +300,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [isTableListOpen, setIsTableListOpen] = useState(false);
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = useState(false);
     const [showMemoPanel, setShowMemoPanel] = useState(false);
+    const [funcNoDeleteConfirm, setFuncNoDeleteConfirm] = useState<{ elementId: string; elementText: string } | null>(null);
 
     const tableListRef = useRef<HTMLDivElement>(null);
     const screenOptionsRef = useRef<HTMLDivElement>(null);
@@ -2595,7 +2596,15 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             // 객체만 선택된 상태(텍스트 편집 아님)에서만 객체 삭제 확인 후 삭제
             e.preventDefault();
             e.stopPropagation();
-            if (window.confirm(`선택한 ${selectedElementIds.length}개의 그리기 개체를 삭제하시겠습니까?`)) {
+
+            // 기능 상세 번호(func-no) 타입 확인
+            const selectedElements = drawElements.filter(el => selectedElementIds.includes(el.id));
+            const funcNoElement = selectedElements.find(el => el.type === 'func-no');
+
+            if (funcNoElement && selectedElementIds.length === 1) {
+                // 기능 상세 번호 삭제 시 팝업 띄우기
+                setFuncNoDeleteConfirm({ elementId: funcNoElement.id, elementText: funcNoElement.text || '?' });
+            } else if (window.confirm(`선택한 ${selectedElementIds.length}개의 그리기 개체를 삭제하시겠습니까?`)) {
                 deleteElements(selectedElementIds);
             }
             // 1단계(화면 엔티티 삭제)는 ScreenDesignCanvas에서 화면 노드 선택 시 처리
@@ -4633,6 +4642,68 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     <ScreenHandles />
                 </TooltipPortalContext.Provider >
             </div>
+
+            {/* 기능 상세 번호 삭제 확인 팝업 */}
+            {funcNoDeleteConfirm && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-80">
+                        <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                            기능 상세 번호 삭제
+                        </h3>
+                        <p className="text-xs text-gray-600 mb-4">
+                            [{funcNoDeleteConfirm.elementText}]번 기능 상세 번호를 삭제합니다.<br />
+                            삭제 후 번호를 어떻게 처리할까요?
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => {
+                                    setFuncNoDeleteConfirm(null);
+                                    deleteElements([funcNoDeleteConfirm.elementId]);
+                                }}
+                                className="flex-1 px-3 py-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
+                            >
+                                그냥 삭제 (순서 유지)
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const element = drawElements.find(el => el.id === funcNoDeleteConfirm.elementId);
+                                    if (!element) return;
+                                    const deletedNumber = parseInt(element.text || '0');
+
+                                    // 순서 초기화: 삭제 후 번호 재할당
+                                    const updatedElements = drawElements
+                                        .filter(e => e.id !== funcNoDeleteConfirm.elementId)
+                                        .map(e => {
+                                            if (e.type === 'func-no') {
+                                                const currentNum = parseInt(e.text || '0');
+                                                if (currentNum > deletedNumber) {
+                                                    return { ...e, text: (currentNum - 1).toString() };
+                                                }
+                                            }
+                                            return e;
+                                        });
+
+                                    update({ drawElements: updatedElements });
+                                    syncUpdate({ drawElements: updatedElements });
+                                    saveHistory(updatedElements);
+                                    setSelectedElementIds([]);
+                                    setFuncNoDeleteConfirm(null);
+                                }}
+                                className="flex-1 px-3 py-2 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+                            >
+                                순서 초기화
+                            </button>
+                        </div>
+                        <button
+                            onClick={() => setFuncNoDeleteConfirm(null)}
+                            className="w-full mt-2 px-3 py-2 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                        >
+                            취소
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
 
         </>
     );
