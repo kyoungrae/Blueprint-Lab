@@ -592,13 +592,15 @@ function mergeProcessFlowImport(
         mergedNodes.push({ ...node, id: newId, sectionId: sectionId ?? undefined });
     }
 
-    const mergedNodeIds = new Set(mergedNodes.map((n) => n.id));
+    const incomingMappedNodeIds = new Set(incomingNodes.map((node) => nodeIdMap.get(node.id) ?? node.id));
     const mergedEdges: ProcessFlowEdge[] = [...existing.pfEdges];
     const existingEdgeIds = new Set(existing.pfEdges.map((e) => e.id));
     for (const edge of incoming.edges ?? []) {
         const src = nodeIdMap.get(edge.source) ?? edge.source;
         const tgt = nodeIdMap.get(edge.target) ?? edge.target;
-        if (!mergedNodeIds.has(src) || !mergedNodeIds.has(tgt)) continue;
+        // 가져오기 데이터의 엣지는 "가져온 노드 집합 내부"에서만 연결되도록 제한한다.
+        // (기존 캔버스에 우연히 같은 ID가 있을 때 잘못 붙는 현상 방지)
+        if (!incomingMappedNodeIds.has(src) || !incomingMappedNodeIds.has(tgt)) continue;
         const newEdgeId =
             existingEdgeIds.has(edge.id) || mergedEdges.some((e) => e.id === edge.id)
                 ? `pf_edge_${ts()}`
