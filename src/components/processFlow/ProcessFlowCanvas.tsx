@@ -2068,8 +2068,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
                     connectionRadius={28}
                     fitView
                     panOnScroll
-                    minZoom={0.2}
-                    maxZoom={2}
+                    minZoom={0.05}
+                    maxZoom={4}
                     zoomOnDoubleClick={false}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}

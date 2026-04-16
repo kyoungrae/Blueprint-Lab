@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Handle, Position, useReactFlow } from 'reactflow';
+import { Handle, Position, useReactFlow, useStore as useRFStore } from 'reactflow';
 import { useYjsStore } from '../../../store/yjsStore';
 import { useProjectStore } from '../../../store/projectStore';
 import type { ProcessFlowNode as ProcessFlowNodeType, ProcessFlowRectShape } from '../../../types/processFlow';
@@ -20,6 +20,11 @@ interface ProcessFlowNodeProps {
     selected?: boolean;
 }
 
+/** 화면 설계(ScreenNode)와 동일한 줌 기반 LOD 히스테리시스 값 */
+const ZOOM_OUT_TO_LITE = 0.09;
+const ZOOM_IN_TO_FULL = 0.12;
+const rfZoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
+
 function resolveRectShape(data: ProcessFlowNodeType): ProcessFlowRectShape {
     if (data.type !== 'RECT') return 'rectangle';
     return data.shape ?? 'rectangle';
@@ -34,7 +39,64 @@ function parallelogramParams(W: number, H: number, bw: number) {
     return { pad, skew };
 }
 
-const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, selected }) => {
+const ProcessFlowNodeLite: React.FC<ProcessFlowNodeProps> = memo(({ data, selected }) => {
+    const nodeStyle = {
+        background: data.style?.fill ?? '#ffffff',
+        borderColor: data.style?.stroke ?? '#94a3b8',
+        borderWidth: data.style?.strokeWidth ?? 1,
+        borderRadius: data.style?.radius ?? 12,
+        width: data.style?.width ?? 240,
+        height: data.style?.height ?? 120,
+        color: data.textStyle?.color ?? '#0f172a',
+    };
+    const isUserNode = data.type === 'USER';
+    const ringClass = selected
+        ? isUserNode
+            ? 'ring-2 ring-emerald-400 ring-offset-2'
+            : 'ring-2 ring-amber-400 ring-offset-2'
+        : '';
+
+    return (
+        <div
+            className={`relative overflow-hidden ${ringClass}`}
+            style={{
+                width: isUserNode ? nodeStyle.width - 135 : nodeStyle.width,
+                height: isUserNode ? nodeStyle.height - 20 : nodeStyle.height,
+                borderRadius: isUserNode ? 16 : nodeStyle.borderRadius,
+                border: `${Math.max(1, Number(nodeStyle.borderWidth) || 1)}px solid ${nodeStyle.borderColor}`,
+                background: nodeStyle.background,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                contain: 'layout style paint',
+            }}
+        >
+            <div className="px-3 py-2 flex items-center justify-center gap-2 min-w-0">
+                {isUserNode ? (
+                    data.userRole === 'admin' ? (
+                        <UserCog size={14} className="shrink-0 text-slate-700" />
+                    ) : (
+                        <UserIcon size={14} className="shrink-0 text-slate-700" />
+                    )
+                ) : null}
+                <span
+                    className="truncate text-center"
+                    style={{
+                        color: nodeStyle.color,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        maxWidth: '100%',
+                    }}
+                    title={data.text ?? (isUserNode ? (data.userRole === 'admin' ? '관리자' : '사용자') : 'Process')}
+                >
+                    {data.text ?? (isUserNode ? (data.userRole === 'admin' ? '관리자' : '사용자') : 'Process')}
+                </span>
+            </div>
+        </div>
+    );
+});
+
+const ProcessFlowNodeFull: React.FC<ProcessFlowNodeProps> = ({ data, selected }) => {
     const yjsUpdateNode = useYjsStore((s: any) => s.pfUpdateNode);
     const isYjsSynced = useYjsStore((s: any) => s.isSynced);
     const { projects, currentProjectId } = useProjectStore();
@@ -993,6 +1055,29 @@ const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, select
             )}
         </>
     );
+};
+
+const ProcessFlowNodeComponent: React.FC<ProcessFlowNodeProps> = ({ data, selected }) => {
+    const rfZoom = useRFStore(rfZoomSelector);
+    const modeRef = useRef<'lite' | 'full' | null>(null);
+
+    if (modeRef.current === null) {
+        modeRef.current = rfZoom < ZOOM_OUT_TO_LITE ? 'lite' : 'full';
+    }
+
+    let mode = modeRef.current;
+    if (mode === 'full' && rfZoom < ZOOM_OUT_TO_LITE) {
+        mode = 'lite';
+    } else if (mode === 'lite' && rfZoom > ZOOM_IN_TO_FULL) {
+        mode = 'full';
+    }
+    modeRef.current = mode;
+
+    if (mode === 'lite') {
+        return <ProcessFlowNodeLite data={data} selected={selected} />;
+    }
+
+    return <ProcessFlowNodeFull data={data} selected={selected} />;
 };
 
 export const ProcessFlowNode = memo(ProcessFlowNodeComponent);
