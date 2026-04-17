@@ -461,19 +461,32 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             const cellDataV2 = (el.tableCellDataV2 || []) as any;
                             const cellStyles = ((el as any).tableCellStyles || []) as any;
                             const fallbackData = ((el as any).tableCellData || []) as any;
+                            const cellSpans = ((el as any).tableCellSpans || []) as any;
 
                             const TABLE_FONT_DAMPEN = 0.4;
                             const TABLE_CELL_INSET = 0;
 
                             let finalColWidths: number[] = [];
                             const rawColWidths = Array.isArray((el as any).tableColWidths) ? ((el as any).tableColWidths as number[]) : [];
+                            console.log('=== 표 너비 디버깅 ===');
+                            console.log('tCols:', tCols);
+                            console.log('rawColWidths:', rawColWidths);
+                            console.log('el.width:', el.width);
+                            console.log('scale:', scale);
+                            console.log('elW:', elW);
                             if (rawColWidths.length === tCols) {
                                 const sumRawW = rawColWidths.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
                                 const adjustFactor = ((el.width || 1) as number) / (sumRawW || 1);
+                                console.log('sumRawW:', sumRawW);
+                                console.log('adjustFactor:', adjustFactor);
                                 finalColWidths = rawColWidths.map((w) => (Number.isFinite(w) ? w : 0) * adjustFactor * scale);
                             } else {
                                 finalColWidths = Array.from({ length: tCols }, () => elW / tCols);
+                                console.log('균등 분배 - colW:', elW / tCols);
                             }
+                            console.log('finalColWidths:', finalColWidths);
+                            console.log('finalColWidths 합:', finalColWidths.reduce((a, b) => a + b, 0));
+                            console.log('elW:', elW);
 
                             let finalRowHeights: number[] = [];
                             const rawRowHeights = Array.isArray((el as any).tableRowHeights) ? ((el as any).tableRowHeights as number[]) : [];
@@ -488,35 +501,21 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             const tableRows: any[][] = [];
                             for (let r = 0; r < tRows; r++) {
                                 const row: any[] = [];
-                                for (let c = 0; c < tCols; c++) {
+                                let c = 0;
+                                while (c < tCols) {
                                     const index = r * tCols + c;
 
                                     const cellV2 = Array.isArray(cellDataV2) ? cellDataV2[index] : undefined;
                                     const cellStyle = Array.isArray(cellStyles) ? cellStyles[index] : undefined;
                                     const fallback = Array.isArray(fallbackData) ? fallbackData[index] : undefined;
+                                    const cellSpan = Array.isArray(cellSpans) ? cellSpans[index] : undefined;
 
                                     const rawContent = (cellV2 as any)?.content ?? (cellV2 as any)?.text ?? fallback ?? '';
-
-                                    // 🚀 디버깅: 실제 데이터 구조 확인
-                                    if (index === 0) { // 첫 번째 셀만 로그 출력
-                                        console.log('=== 셀 데이터 디버깅 ===');
-                                        console.log('cellV2:', cellV2);
-                                        console.log('cellStyle:', cellStyle);
-                                        console.log('rawContent:', rawContent);
-                                        console.log('rawContent type:', typeof rawContent);
-                                    }
 
                                     const { text, options: s } = parseStyles(String(rawContent));
 
                                     // 셀의 inline style에서 스타일 추출 (HTML이 포함된 경우)
                                     const cellInlineStyle = (cellV2 as any)?.style || {};
-
-                                    // 🚀 디버깅: 추출된 스타일 확인
-                                    if (index === 0) {
-                                        console.log('cellInlineStyle:', cellInlineStyle);
-                                        console.log('s.fontFace:', s.fontFace);
-                                        console.log('cellStyle?.fontFamily:', (cellStyle as any)?.fontFamily);
-                                    }
 
                                     const finalColor = s.color || cellInlineStyle.color || ((cellStyle as any)?.color
                                         ? String((cellStyle as any).color).replace('#', '')
@@ -529,46 +528,88 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     const isItalic = (cellStyle as any)?.fontStyle === 'italic' || s.italic;
                                     const isUnderline = (cellStyle as any)?.textDecoration === 'underline' || s.underline;
 
-                                    // 🚀 디버깅: 폰트 패밀리 저장 위치 전체 확인
-                                    if (index === 0) {
-                                        console.log('=== 폰트 패밀리 디버깅 ===');
-                                        console.log('el.fontFamily:', el.fontFamily);
-                                        console.log('el 전체 속성:', Object.keys(el));
-                                        console.log('cellStyle?.fontFamily:', (cellStyle as any)?.fontFamily);
-                                        console.log('cellStyle 전체:', cellStyle);
-                                        console.log('cellInlineStyle?.fontFamily:', cellInlineStyle?.fontFamily);
-                                        console.log('cellInlineStyle 전체:', cellInlineStyle);
-                                        console.log('cellV2?.style?.fontFamily:', (cellV2 as any)?.style?.fontFamily);
-                                        console.log('finalFontFace:', finalFontFace);
+                                    // colSpan/rowSpan 값 계산
+                                    const colspan = (cellSpan as any)?.colSpan || (cellV2 as any)?.colSpan || 1;
+                                    const rowspan = (cellSpan as any)?.rowSpan || (cellV2 as any)?.rowSpan || 1;
+
+                                    // 셀 추가 (isMerged가 true이면 빈 셀 대신 추가하지 않음)
+                                    const isMerged = (cellV2 as any)?.isMerged;
+                                    if (!isMerged) {
+                                        row.push({
+                                            text: text || '',
+                                            options: {
+                                                fill: { color: (cellV2 as any)?.style?.backgroundColor?.replace('#', '') || 'FFFFFF' },
+                                                color: finalColor,
+                                                align: (cellV2 as any)?.style?.textAlign || 'center',
+                                                valign: 'middle',
+                                                fontSize: Math.max(4, finalFontSizePx * scale * 72 * TABLE_FONT_DAMPEN),
+                                                inset: TABLE_CELL_INSET,
+                                                breakLine: false,
+                                                shrinkText: true,
+                                                autoFit: true,
+                                                border: { pt: 0.5, color: 'D1D5DB' },
+                                                bold: isBold,
+                                                italic: isItalic,
+                                                underline: (isUnderline ?? false) as any,
+                                                fontFace: finalFontFace,
+                                                rowspan: rowspan > 1 ? rowspan : undefined,
+                                                colspan: colspan > 1 ? colspan : undefined,
+                                            },
+                                        });
                                     }
 
-                                    row.push({
-                                        text: text || '',
-                                        options: {
-                                            fill: { color: (cellV2 as any)?.style?.backgroundColor?.replace('#', '') || 'FFFFFF' },
-                                            color: finalColor,
-                                            align: (cellV2 as any)?.style?.textAlign || 'center',
-                                            valign: 'middle',
-                                            fontSize: Math.max(4, finalFontSizePx * scale * 72 * TABLE_FONT_DAMPEN),
-                                            inset: TABLE_CELL_INSET,
-                                            breakLine: true,
-                                            border: { pt: 0.5, color: 'D1D5DB' },
-                                            bold: isBold,
-                                            italic: isItalic,
-                                            underline: (isUnderline ?? false) as any,
-                                            fontFace: finalFontFace,
-                                            rowspan: (cellV2 as any)?.rowSpan && (cellV2 as any).rowSpan > 1 ? (cellV2 as any).rowSpan : undefined,
-                                            colspan: (cellV2 as any)?.colSpan && (cellV2 as any).colSpan > 1 ? (cellV2 as any).colSpan : undefined,
-                                        },
-                                    });
+                                    // colSpan만큼 열 인덱스 증가
+                                    c += colspan;
                                 }
                                 if (row.length > 0) tableRows.push(row);
+                            }
+
+                            // 디버깅: 첫 번째 행의 열 수 확인
+                            if (tableRows.length > 0) {
+                                console.log('=== 표 구조 디버깅 ===');
+                                console.log('첫 번째 행 길이:', tableRows[0].length);
+                                console.log('colWidths 길이:', finalColWidths.length);
+                                console.log('tCols:', tCols);
+                            }
+
+                            // colSpan을 고려하여 colWidths 조정
+                            let adjustedColWidths = finalColWidths;
+                            if (tableRows.length > 0 && tableRows[0].length !== finalColWidths.length) {
+                                const firstRow = tableRows[0];
+                                adjustedColWidths = [];
+                                let rawColIdx = 0;
+                                console.log('=== colWidths 조정 디버깅 ===');
+                                console.log('firstRow 길이:', firstRow.length);
+                                console.log('finalColWidths:', finalColWidths);
+                                for (let c = 0; c < firstRow.length && rawColIdx < finalColWidths.length; c++) {
+                                    const cell = firstRow[c];
+                                    const colspan = cell?.options?.colspan || 1;
+                                    console.log(`셀 ${c}: colspan=${colspan}, text="${cell?.text}"`);
+                                    // colspan이 적용된 경우 해당 열들의 너비를 합산
+                                    let combinedWidth = 0;
+                                    for (let i = 0; i < colspan && rawColIdx < finalColWidths.length; i++) {
+                                        combinedWidth += finalColWidths[rawColIdx];
+                                        rawColIdx++;
+                                    }
+                                    console.log(`  combinedWidth=${combinedWidth}`);
+                                    adjustedColWidths.push(combinedWidth);
+                                }
+                                console.log('colSpan 조정 후 adjustedColWidths:', adjustedColWidths);
+
+                                // 모든 행에서 colspan 옵션 제거 (너비 일관성 유지)
+                                for (const row of tableRows) {
+                                    for (const cell of row) {
+                                        if (cell?.options?.colspan) {
+                                            delete cell.options.colspan;
+                                        }
+                                    }
+                                }
                             }
 
                             // @ts-ignore pptxgenjs table typing is loose
                             slide.addTable(tableRows, {
                                 x: elX, y: elY, w: elW, h: elH,
-                                colW: finalColWidths,
+                                colW: adjustedColWidths,
                                 rowH: finalRowHeights,
                                 border: { pt: 0.5, color: 'D1D5DB' },
                                 autoPage: false,
