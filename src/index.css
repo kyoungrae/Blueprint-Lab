@@ -2,7 +2,7 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
-/* Draw text: nested inline font-size (paste/component HTML) follows element fontSize */
+/* Draw text & table cells: nested inline font-size (paste/component HTML) follows cell/element fontSize */
 .draw-text-editable * {
   font-size: inherit !important;
 }

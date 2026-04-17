@@ -443,7 +443,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         }
                                         // Shift 키를 누른 경우에는 이벤트 전파를 허용하여 상위 객체의 선택 해제 로직이 동작하도록 함
                                     }}
-                                        className="w-full h-full bg-white border-none outline-none p-1 absolute inset-0 z-[20] nodrag nopan"
+                                        className="draw-text-editable w-full h-full bg-white border-none outline-none p-1 absolute inset-0 z-[20] nodrag nopan"
                                         style={{
                                             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                                             fontSize: (cellStyle.fontSize ?? el.fontSize ?? 14),
@@ -457,7 +457,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                 ) : (
                                     <div
                                         dir="ltr"
-                                        className="whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0 nodrag nopan"
+                                        className="draw-text-editable whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0 nodrag nopan"
                                         style={{
                                             alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
                                             justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
