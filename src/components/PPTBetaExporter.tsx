@@ -376,11 +376,18 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                     switch (el.type) {
                         case 'rect':
-                            slide.addShape(pptx.ShapeType.rect, {
+                            console.log('=== rect 디버깅 ===');
+                            console.log('el.borderRadius:', el.borderRadius);
+                            console.log('scale:', scale);
+                            const shapeType = el.borderRadius ? pptx.ShapeType.roundRect : pptx.ShapeType.rect;
+                            const rectRadius = el.borderRadius ? (el.borderRadius * scale * 1) : undefined;
+                            console.log('shapeType:', shapeType);
+                            console.log('rectRadius (scaled):', rectRadius);
+                            slide.addShape(shapeType, {
                                 x: elX, y: elY, w: elW, h: elH,
                                 fill: fillOptions,
                                 line: lineOptions,
-                                rectRadius: el.borderRadius ? (el.borderRadius * scale) : undefined,
+                                rectRadius: rectRadius,
                                 rotate: el.rotation || 0,
                             });
                             if (el.text) {
