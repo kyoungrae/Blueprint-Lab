@@ -14,7 +14,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     onComplete,
     onError
 }) => {
-    const { screens } = useScreenDesignStore();
+    const { screens, sections } = useScreenDesignStore();
 
     // 🚀 이미지 실제 크기를 가져오는 헬퍼 함수
     const getImageSize = (url: string): Promise<{ w: number; h: number }> => {
@@ -27,8 +27,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     };
     
     React.useEffect(() => {
-        const exportLayoutToPPT = async (selectedScreens: Screen[]) => {
-            const pptx = new pptxgen();
+        const exportLayoutToPPT = async (selectedScreens: Screen[], externalPptx?: pptxgen, sectionTitle?: string) => {
+            const pptx = externalPptx || new pptxgen();
             
             // PPT 텍스트 크기 비율 전역 상수 - 모든 요소에 동일하게 적용
             const PPT_FONT_SCALE_RATIO = (1.0)+70;
@@ -48,9 +48,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 const layoutName = `LAYOUT_${screen.id}`;
                 pptx.defineLayout({ name: layoutName, width: slideWidth, height: slideHeight });
-                
+
                 // @ts-ignore - pptxgenjs typing may not expose masterName, but runtime supports it
-                const slide = pptx.addSlide({ masterName: layoutName });
+                const slide = pptx.addSlide({ masterName: layoutName, sectionTitle: sectionTitle });
 
                 const hH = ADJUSTED_HEADER_H * scale; 
                 const rH = hH / 3;                    
@@ -728,11 +728,14 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 }
             }
 
-            await pptx.writeFile({ fileName: `Blueprint_BETA_FullData_${Date.now()}.pptx` });
+            // 외부에서 pptx 객체를 전달받은 경우 writeFile 호출하지 않음
+            if (!externalPptx) {
+                await pptx.writeFile({ fileName: `Blueprint_BETA_FullData_${Date.now()}.pptx` });
+            }
         };
 
-        const exportSpecLayoutToPPT = async (selectedScreens: Screen[]) => {
-            const pptx = new pptxgen();
+        const exportSpecLayoutToPPT = async (selectedScreens: Screen[], externalPptx?: pptxgen, sectionTitle?: string) => {
+            const pptx = externalPptx || new pptxgen();
             
             // PPT 텍스트 크기 비율 전역 상수 - 명세서용
             const PPT_FONT_SCALE_RATIO = 1.0;
@@ -752,8 +755,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 const layoutName = `LAYOUT_${screen.id}`;
                 pptx.defineLayout({ name: layoutName, width: slideWidth, height: slideHeight });
-                
-                const slide = pptx.addSlide({ masterName: layoutName });
+
+                const slide = pptx.addSlide({ masterName: layoutName, sectionTitle: sectionTitle });
 
                 const hH = ADJUSTED_HEADER_H * scale; 
                 const rH = hH / 3;                    
@@ -954,22 +957,80 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 });
             }
 
-            await pptx.writeFile({ fileName: `Blueprint_Spec_${Date.now()}.pptx` });
+            // 외부에서 pptx 객체를 전달받은 경우 writeFile 호출하지 않음
+            if (!externalPptx) {
+                await pptx.writeFile({ fileName: `Blueprint_Spec_${Date.now()}.pptx` });
+            }
         };
 
         const runExport = async () => {
             try {
                 const selectedScreens = screens.filter(screen => screenIds.includes(screen.id));
                 if (selectedScreens.length === 0) throw new Error('선택된 화면을 찾을 수 없습니다.');
-                
-                // 명세서인지 확인하여 다른 레이아웃 적용
-                const hasSpecScreens = selectedScreens.some(screen => screen.variant === 'SPEC');
-                if (hasSpecScreens) {
-                    await exportSpecLayoutToPPT(selectedScreens);
+
+                // 하나의 pptx 객체 생성
+                const pptx = new pptxgen();
+
+                // 섹션 ID 기준으로 그룹핑
+                const sectionIds = [...new Set(selectedScreens.filter(s => s.sectionId).map(s => s.sectionId))];
+                const hasSections = sectionIds.length > 0;
+
+                if (hasSections) {
+                    // 섹션이 있는 경우 섹션별로 슬라이드 생성
+                    for (const sectionId of sectionIds) {
+                        const sectionScreens = selectedScreens.filter(screen => screen.sectionId === sectionId);
+                        const section = sections.find((s: any) => s.id === sectionId);
+                        if (sectionScreens.length > 0) {
+                            const uiScreens = sectionScreens.filter(screen => screen.variant !== 'SPEC');
+                            const specScreens = sectionScreens.filter(screen => screen.variant === 'SPEC');
+
+                            // 섹션 생성 (pptxgenjs 섹션 기능)
+                            const sectionTitle = section?.name || `섹션 ${sectionId}`;
+                            pptx.addSection({ title: sectionTitle });
+
+                            // 화면 설계 슬라이드 추가
+                            if (uiScreens.length > 0) {
+                                await exportLayoutToPPT(uiScreens, pptx, sectionTitle);
+                            }
+
+                            // 명세서 슬라이드 추가
+                            if (specScreens.length > 0) {
+                                await exportSpecLayoutToPPT(specScreens, pptx, sectionTitle);
+                            }
+                        }
+                    }
+
+                    // 섹션에 속하지 않은 화면 처리
+                    const unsectionedScreens = selectedScreens.filter(screen => !screen.sectionId);
+                    if (unsectionedScreens.length > 0) {
+                        const uiScreens = unsectionedScreens.filter(screen => screen.variant !== 'SPEC');
+                        const specScreens = unsectionedScreens.filter(screen => screen.variant === 'SPEC');
+
+                        if (uiScreens.length > 0) {
+                            await exportLayoutToPPT(uiScreens, pptx, undefined);
+                        }
+
+                        if (specScreens.length > 0) {
+                            await exportSpecLayoutToPPT(specScreens, pptx, undefined);
+                        }
+                    }
                 } else {
-                    await exportLayoutToPPT(selectedScreens);
+                    // 섹션이 없는 경우 기존 로직 사용
+                    const uiScreens = selectedScreens.filter(screen => screen.variant !== 'SPEC');
+                    const specScreens = selectedScreens.filter(screen => screen.variant === 'SPEC');
+
+                    if (uiScreens.length > 0) {
+                        await exportLayoutToPPT(uiScreens, pptx, undefined);
+                    }
+
+                    if (specScreens.length > 0) {
+                        await exportSpecLayoutToPPT(specScreens, pptx, undefined);
+                    }
                 }
-                
+
+                // PPT 파일 저장
+                await pptx.writeFile({ fileName: `Blueprint_BETA_FullData_${Date.now()}.pptx` });
+
                 onComplete?.();
             } catch (error) {
                 onError?.(`PPT_BETA 내보내기 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
