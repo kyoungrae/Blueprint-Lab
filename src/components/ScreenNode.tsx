@@ -332,6 +332,16 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             .filter((c: Screen) => (c.drawElements?.length ?? 0) > 0); // drawElements가 있는 컴포넌트만 표시 (캔버스에 그린 내용이 없으면 제외)
     }, [linkedComponentProject]);
 
+    /** Paste: drop component link metadata when the component id is not in the linked COMPONENT project */
+    const linkedComponentScreenIdSet = React.useMemo(() => {
+        if (linkedComponentProject?.projectType !== 'COMPONENT') return new Set<string>();
+        const components =
+            (linkedComponentProject as any)?.componentSnapshot?.components ||
+            (linkedComponentProject.data as { components?: Screen[] })?.components ||
+            [];
+        return new Set((components as Screen[]).map((c) => c.id));
+    }, [linkedComponentProject]);
+
     // ── 4. Drawing Mode Logic ──
     const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle' | 'text' | 'image' | 'table' | 'func-no' | 'polygon' | 'line' | 'arrow'>('select');
     const [shapeSubPanelOpen, setShapeSubPanelOpen] = useState(false);
@@ -2633,13 +2643,23 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 const processed = scaleToFit ? scaleElementsToFitCanvas(toPaste, canvasW, canvasH) : toPaste;
                 const newElements = processed.map((el, idx) => {
                     const offset = scaleToFit ? 0 : (isSameScreen ? 20 : 0);
-                    return {
-                    ...el,
-                    id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+                    const base = {
+                        ...el,
+                        id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
                         x: el.x + offset,
                         y: el.y + offset,
-                        _sourceScreenId: screen.id // 여러 번 붙여넣기 시 다음 번에는 20px씩 이동하도록 화면 ID 갱신
-                    };
+                        _sourceScreenId: screen.id, // next paste on same screen shifts by 20px (see isSameScreen)
+                    } as DrawElement & { _sourceScreenId?: string };
+                    if (base.fromComponentId && !linkedComponentScreenIdSet.has(base.fromComponentId)) {
+                        return {
+                            ...base,
+                            fromComponentId: undefined,
+                            fromElementId: undefined,
+                            hasComponentText: undefined,
+                            tableCellLockedIndices: undefined,
+                        };
+                    }
+                    return base;
                 });
                 const current = getScreenById(screen.id);
                 const currentElements = current?.drawElements ?? drawElements;
@@ -2760,7 +2780,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
         document.addEventListener('paste', handlePaste, true);
         return () => document.removeEventListener('paste', handlePaste, true);
-    }, [drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, getPasteTargetScreenId, update, syncDrawElements, saveHistory, setSelectedElementIds, uploadImage]);
+    }, [drawElements, editingTextId, editingTableId, editingCellIndex, canvasClipboard, lastInteractedScreenId, screen.id, setCanvasClipboard, getScreenById, getPasteTargetScreenId, update, syncDrawElements, saveHistory, setSelectedElementIds, uploadImage, linkedComponentScreenIdSet]);
 
 
     // ── Table V2 Utilities (flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells, gcd imported from ./screenNode/types) ──────────────────────────────────

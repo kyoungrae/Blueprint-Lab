@@ -2,6 +2,11 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
+/* Draw text: nested inline font-size (paste/component HTML) follows element fontSize */
+.draw-text-editable * {
+  font-size: inherit !important;
+}
+
 /* React Flow Edge Updater Styles */
 .react-flow__edgeupdater {
   cursor: pointer !important;
