@@ -32,6 +32,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             
             // PPT 텍스트 크기 비율 전역 상수 - 모든 요소에 동일하게 적용
             const PPT_FONT_SCALE_RATIO = (1.0)+53;
+            const PPT_FONT_MIN_SIZE = 4; 
 
             for (const screen of selectedScreens) {
                 const canvasW = screen.imageWidth || 800;
@@ -180,7 +181,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 slide.addText(text, {
                                     x: c * cW, y: r * rH, w: cW * 5, h: rH,
                                     align: 'left', valign: 'middle',
-                                    fontSize: Math.max(7, 9), color: '94A3B8', 
+                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, 9), color: '94A3B8', 
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -204,7 +205,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addText(text, {
                                 x: c * cW, y: r * rH, w: cW, h: rH,
                                 align: 'center', valign: 'middle',
-                                fontSize: Math.max(7, isLabel ? 9 : 9.5),
+                                fontSize: Math.max(PPT_FONT_MIN_SIZE, isLabel ? 9 : 9.5),
                                 color: isLabel ? 'FFFFFF' : '1E293B',
                                 bold: styleOpts?.bold,
                                 italic: styleOpts?.italic,
@@ -394,7 +395,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -418,7 +419,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -436,7 +437,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'left') as 'left' | 'center' | 'right',
                                     valign: (el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
-                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || '000000',
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -455,7 +456,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addText(el.text || '', {
                                 x: elX, y: elY, w: elW, h: elH,
                                 align: 'center', valign: 'middle',
-                                fontSize: Math.max(7, (el.fontSize || 10) * scale * PPT_FONT_SCALE_RATIO),
+                                fontSize: Math.max(PPT_FONT_MIN_SIZE, (el.fontSize || 10) * scale * PPT_FONT_SCALE_RATIO),
                                 color: 'FFFFFF',
                                 bold: true,
                             });
@@ -554,7 +555,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                                 color: finalColor,
                                                 align: (cellV2 as any)?.style?.textAlign || 'center',
                                                 valign: 'middle',
-                                                fontSize: Math.max(4, finalFontSizePx * scale * PPT_FONT_SCALE_RATIO),
+                                                fontSize: Math.max(PPT_FONT_MIN_SIZE, finalFontSizePx * scale * PPT_FONT_SCALE_RATIO),
                                                 inset: TABLE_CELL_INSET,
                                                 breakLine: false,
                                                 shrinkText: true,
@@ -647,7 +648,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -677,7 +678,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
