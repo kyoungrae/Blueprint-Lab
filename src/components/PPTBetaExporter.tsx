@@ -95,8 +95,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     const isItalic = /<i[^>]*>|<em>|font-style:\s*italic/i.test(html);
                     const isUnderline = /<u[^>]*>|text-decoration:\s*underline/i.test(html);
 
-                    const fontFaceMatch = html.match(/face="([^"]+)"/i) || html.match(/font-family:\s*([^;"]+)/i);
-                    const fontFace = fontFaceMatch ? fontFaceMatch[1].split(',')[0].trim() : "맑은 고딕";
+                    const fontFaceMatch = html.match(/face="([^"]+)"/i) || html.match(/font-family:\s*([^;,]+)/i);
+                    const fontFace = fontFaceMatch ? fontFaceMatch[1].trim() : "맑은 고딕";
 
                     // 2. 🚀 줄바꿈 태그를 PPT용 개행 문자(\n)로 변환
                     let processedText = html.replace(/<br\s*\/?>/gi, "\n");
@@ -389,8 +389,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
-                                    color: cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * 72),
+                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -413,8 +413,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
-                                    color: cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * 72),
+                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -431,8 +431,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'left') as 'left' | 'center' | 'right',
                                     valign: (el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
-                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
-                                    color: cleanColor(el.color),
+                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * 72),
+                                    color: styleOpts?.color || cleanColor(el.color) || '000000',
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: (styleOpts?.underline ?? false) as any,
@@ -496,28 +496,67 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     const fallback = Array.isArray(fallbackData) ? fallbackData[index] : undefined;
 
                                     const rawContent = (cellV2 as any)?.content ?? (cellV2 as any)?.text ?? fallback ?? '';
+
+                                    // 🚀 디버깅: 실제 데이터 구조 확인
+                                    if (index === 0) { // 첫 번째 셀만 로그 출력
+                                        console.log('=== 셀 데이터 디버깅 ===');
+                                        console.log('cellV2:', cellV2);
+                                        console.log('cellStyle:', cellStyle);
+                                        console.log('rawContent:', rawContent);
+                                        console.log('rawContent type:', typeof rawContent);
+                                    }
+
                                     const { text, options: s } = parseStyles(String(rawContent));
 
-                                    const finalColor = (cellStyle as any)?.color
+                                    // 셀의 inline style에서 스타일 추출 (HTML이 포함된 경우)
+                                    const cellInlineStyle = (cellV2 as any)?.style || {};
+
+                                    // 🚀 디버깅: 추출된 스타일 확인
+                                    if (index === 0) {
+                                        console.log('cellInlineStyle:', cellInlineStyle);
+                                        console.log('s.fontFace:', s.fontFace);
+                                        console.log('cellStyle?.fontFamily:', (cellStyle as any)?.fontFamily);
+                                    }
+
+                                    const finalColor = s.color || cellInlineStyle.color || ((cellStyle as any)?.color
                                         ? String((cellStyle as any).color).replace('#', '')
-                                        : s.color;
-                                    const finalFontSizePx = (cellStyle as any)?.fontSize ?? s.fontSizePx ?? 12;
+                                        : '000000');
+                                    const finalFontSizePx = (s.fontSizePx ?? cellInlineStyle.fontSize ?? (cellStyle as any)?.fontSize) ?? 12;
+                                    const finalFontFace = cellInlineStyle.fontFamily || (cellStyle as any)?.fontFamily || el.fontFamily || 'Pretendard' || s.fontFace;
+
+                                    // cellStyle에서 bold/italic/underline 추출 (없으면 parseStyles 결과 사용)
+                                    const isBold = (cellStyle as any)?.fontWeight === 'bold' || s.bold;
+                                    const isItalic = (cellStyle as any)?.fontStyle === 'italic' || s.italic;
+                                    const isUnderline = (cellStyle as any)?.textDecoration === 'underline' || s.underline;
+
+                                    // 🚀 디버깅: 폰트 패밀리 저장 위치 전체 확인
+                                    if (index === 0) {
+                                        console.log('=== 폰트 패밀리 디버깅 ===');
+                                        console.log('el.fontFamily:', el.fontFamily);
+                                        console.log('el 전체 속성:', Object.keys(el));
+                                        console.log('cellStyle?.fontFamily:', (cellStyle as any)?.fontFamily);
+                                        console.log('cellStyle 전체:', cellStyle);
+                                        console.log('cellInlineStyle?.fontFamily:', cellInlineStyle?.fontFamily);
+                                        console.log('cellInlineStyle 전체:', cellInlineStyle);
+                                        console.log('cellV2?.style?.fontFamily:', (cellV2 as any)?.style?.fontFamily);
+                                        console.log('finalFontFace:', finalFontFace);
+                                    }
 
                                     row.push({
                                         text: text || '',
                                         options: {
                                             fill: { color: (cellV2 as any)?.style?.backgroundColor?.replace('#', '') || 'FFFFFF' },
-                                            color: finalColor || '000000',
+                                            color: finalColor,
                                             align: (cellV2 as any)?.style?.textAlign || 'center',
                                             valign: 'middle',
                                             fontSize: Math.max(4, finalFontSizePx * scale * 72 * TABLE_FONT_DAMPEN),
                                             inset: TABLE_CELL_INSET,
                                             breakLine: true,
                                             border: { pt: 0.5, color: 'D1D5DB' },
-                                            bold: s.bold,
-                                            italic: s.italic,
-                                            underline: (s.underline ?? false) as any,
-                                            fontFace: s.fontFace,
+                                            bold: isBold,
+                                            italic: isItalic,
+                                            underline: (isUnderline ?? false) as any,
+                                            fontFace: finalFontFace,
                                             rowspan: (cellV2 as any)?.rowSpan && (cellV2 as any).rowSpan > 1 ? (cellV2 as any).rowSpan : undefined,
                                             colspan: (cellV2 as any)?.colSpan && (cellV2 as any).colSpan > 1 ? (cellV2 as any).colSpan : undefined,
                                         },
@@ -565,8 +604,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
-                                    color: cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * 72),
+                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -595,8 +634,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(7, (el.fontSize || 12) * scale * 72),
-                                    color: cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    fontSize: Math.max(7, (styleOpts?.fontSizePx || el.fontSize || 12) * scale * 72),
+                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,

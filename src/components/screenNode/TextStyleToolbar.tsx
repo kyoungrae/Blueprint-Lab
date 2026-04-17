@@ -508,12 +508,23 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             return;
         }
 
+        console.log('=== applyFont 디버깅 ===');
+        console.log('fromTable:', fromTable);
+        console.log('textSelectionFromTable:', textSelectionFromTable);
+        console.log('editingTableId:', editingTableId);
+        console.log('el.id:', el.id);
+
         if (fromTable && textSelectionFromTable && editingTableId === el.id) {
             const cellIdx = textSelectionFromTable.cellIndex;
             const rows = el.tableRows || 1;
             const cols = el.tableCols || 1;
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
+
+            console.log('cellIdx:', cellIdx);
+            console.log('selectedCellIndices:', selectedCellIndices);
+            console.log('indices:', indices);
+            console.log('기존 tableCellStyles:', el.tableCellStyles);
 
             // 🔥 즉시 피드백
             window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontFamily: fontName } } }));
@@ -524,6 +535,8 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                     newStyles[idx] = { ...(newStyles[idx] || {}), fontFamily: fontName };
                 }
             });
+
+            console.log('새로운 newStyles:', newStyles);
 
             const nextElements = getDrawElements().map(it =>
                 it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
@@ -538,11 +551,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                     pendingTableStyleRef.current = null;
                     update({ drawElements: toApply });
                     syncUpdate({ drawElements: toApply });
+                    console.log('update 완료! 저장된 fontFamily:', fontName);
                 }
             }, 200);
         } else {
             window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontFamily: fontName } } }));
             updateElement(el.id, { fontFamily: fontName });
+            console.log('표 외 요소에 fontFamily 저장:', fontName);
         }
         setFontDropdownOpen(false);
     };
