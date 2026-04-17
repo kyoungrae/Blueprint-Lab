@@ -619,6 +619,13 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             const totalCells = rows * cols;
             const indices = selectedCellIndices.length > 0 ? selectedCellIndices : [cellIdx];
 
+            console.log('=== applyColor 디버깅 ===');
+            console.log('color:', color);
+            console.log('cellIdx:', cellIdx);
+            console.log('selectedCellIndices:', selectedCellIndices);
+            console.log('indices:', indices);
+            console.log('기존 tableCellStyles:', el.tableCellStyles);
+
             // 🔥 즉시 피드백
             window.dispatchEvent(new CustomEvent(COLOR_OVERRIDE_EVENT, { detail: { elementId: el.id, color } }));
 
@@ -628,6 +635,9 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                     newStyles[idx] = { ...(newStyles[idx] || {}), color };
                 }
             });
+
+            console.log('새로운 newStyles:', newStyles);
+            console.log('newStyles[indices[0]]:', newStyles[indices[0]]);
 
             const nextElements = getDrawElements().map(it =>
                 it.id === el.id ? { ...it, tableCellStyles: newStyles } : it
@@ -640,6 +650,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 const toApply = pendingTableStyleRef.current;
                 if (toApply) {
                     pendingTableStyleRef.current = null;
+                    console.log('=== tableCellStyles 저장 ===');
                     update({ drawElements: toApply });
                 }
             }, 200);

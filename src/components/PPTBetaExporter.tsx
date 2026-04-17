@@ -507,9 +507,17 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     // 셀의 inline style에서 스타일 추출 (HTML이 포함된 경우)
                                     const cellInlineStyle = (cellV2 as any)?.style || {};
 
-                                    const finalColor = s.color || cellInlineStyle.color || ((cellStyle as any)?.color
-                                        ? String((cellStyle as any).color).replace('#', '')
-                                        : '000000');
+                                    const finalColor = ((cellStyle as any)?.color || cellInlineStyle.color || s.color || '000000').replace('#', '');
+                                    // 🚀 디버깅: 텍스트 색상 확인
+                                    if (index === 37) {
+                                        console.log('=== 텍스트 색상 디버깅 (index=37) ===');
+                                        console.log('index:', index);
+                                        console.log('cellStyle:', cellStyle);
+                                        console.log('s.color:', s.color);
+                                        console.log('cellInlineStyle.color:', cellInlineStyle.color);
+                                        console.log('cellStyle?.color:', (cellStyle as any)?.color);
+                                        console.log('finalColor:', finalColor);
+                                    }
                                     const finalFontSizePx = (s.fontSizePx ?? cellInlineStyle.fontSize ?? (cellStyle as any)?.fontSize) ?? 12;
                                     const finalFontFace = cellInlineStyle.fontFamily || (cellStyle as any)?.fontFamily || el.fontFamily || 'Pretendard' || s.fontFace;
 
