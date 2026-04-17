@@ -731,11 +731,245 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             await pptx.writeFile({ fileName: `Blueprint_BETA_FullData_${Date.now()}.pptx` });
         };
 
+        const exportSpecLayoutToPPT = async (selectedScreens: Screen[]) => {
+            const pptx = new pptxgen();
+            
+            // PPT 텍스트 크기 비율 전역 상수 - 명세서용
+            const PPT_FONT_SCALE_RATIO = 1.0;
+            const PPT_FONT_MIN_SIZE = 4;
+
+            for (const screen of selectedScreens) {
+                const canvasW = screen.imageWidth || 800;
+                const canvasH = 770;
+                const ADJUSTED_HEADER_H = 130; 
+                
+                const totalEntityW = Math.ceil(canvasW / 0.7); 
+                const totalEntityH = canvasH + ADJUSTED_HEADER_H;
+
+                const slideWidth = 10; 
+                const scale = slideWidth / totalEntityW; 
+                const slideHeight = totalEntityH * scale;
+
+                const layoutName = `LAYOUT_${screen.id}`;
+                pptx.defineLayout({ name: layoutName, width: slideWidth, height: slideHeight });
+                
+                const slide = pptx.addSlide({ masterName: layoutName });
+
+                const hH = ADJUSTED_HEADER_H * scale; 
+                const rH = hH / 3;                    
+                const cW = slideWidth / 6;
+
+                const rgbToHex = (rgb: string): string => {
+                    const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+                    if (!match) return rgb.replace('#', '');
+                    return [match[1], match[2], match[3]]
+                        .map((x) => parseInt(x, 10).toString(16).padStart(2, '0'))
+                        .join('')
+                        .toUpperCase();
+                };
+
+                const parseStyles = (
+                    html: string
+                ): {
+                    text: string;
+                    options: {
+                        bold?: boolean;
+                        italic?: boolean;
+                        underline?: boolean;
+                        fontFace?: string;
+                        color?: string;
+                        fontSizePx?: number;
+                    };
+                } => {
+                    let text = html.replace(/<[^>]*>/g, '');
+                    text = text.replace(/&nbsp;/g, ' ');
+                    text = text.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+                    text = text.replace(/&amp;/g, '&');
+                    
+                    const bold = /<b>|<strong>/i.test(html);
+                    const italic = /<i>|<em>/i.test(html);
+                    const underline = /<u>/i.test(html);
+                    
+                    let fontFace = '맑은 고딕';
+                    const faceMatch = html.match(/face=["']([^"']+)["']/i);
+                    if (faceMatch) fontFace = faceMatch[1];
+                    const familyMatch = html.match(/font-family:\s*([^;]+)/i);
+                    if (familyMatch) fontFace = familyMatch[1].trim();
+                    
+                    let color: string | undefined;
+                    const colorMatch = html.match(/color=["']?([^"'\s>]+)/i);
+                    if (colorMatch && !colorMatch[1].startsWith('#')) {
+                        color = rgbToHex(colorMatch[1]);
+                    } else if (colorMatch) {
+                        color = colorMatch[1].replace('#', '');
+                    }
+                    
+                    let fontSizePx: number | undefined;
+                    const sizeMatch = html.match(/font-size:\s*(\d+(?:\.\d+)?)px/i);
+                    if (sizeMatch) fontSizePx = parseFloat(sizeMatch[1]);
+                    
+                    return { text, options: { bold, italic, underline, fontFace, color, fontSizePx } };
+                };
+
+                // 데이터 매핑용 맵 생성
+                const textMap: Record<string, string> = {
+                    "0,0": "시스템명",
+                    "0,1": screen.systemName || '',
+                    "0,2": "작성자",
+                    "0,3": screen.author || '',
+                    "0,4": "작성일자",
+                    "0,5": screen.createdDate || '',
+                    "1,0": "화면ID",
+                    "1,1": screen.screenId || '',
+                    "1,2": "화면유형",
+                    "1,3": screen.screenType || '',
+                    "1,4": "페이지",
+                    "1,5": screen.page || '',
+                    "2,0": "화면설명",
+                    "2,1": screen.screenDescription || '화면에 대한 구체적인 설명을 입력하세요'
+                };
+
+                // ─── 상단 헤더 영역 ───
+                slide.addShape(pptx.ShapeType.rect, {
+                    x: 0, y: 0, w: slideWidth, h: hH,
+                    fill: { color: "FFFFFF" },
+                    line: { color: "E2E8F0", width: 1 }
+                });
+
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 6; c++) {
+                        const isLabel = (r === 0 && (c === 0 || c === 2 || c === 4)) ||
+                                        (r === 1 && (c === 0 || c === 2 || c === 4)) ||
+                                        (r === 2 && c === 0);
+
+                        const textKey = `${r},${c}`;
+                        const content = textMap[textKey] || '';
+
+                        // '화면설명' 데이터 칸 (Row 2, Col 1~5) 병합
+                        if (r === 2 && c >= 1) {
+                            if (c === 1) {
+                                slide.addShape(pptx.ShapeType.rect, {
+                                    x: c * cW, y: r * rH, w: cW * 5, h: rH,
+                                    fill: { color: "FFFFFF" },
+                                    line: { color: "E2E8F0", width: 1 }
+                                });
+                                // 화면설명 내용 추가 (왼쪽 정렬)
+                                const { text, options: styleOpts } = parseStyles(textMap["2,1"]);
+                                slide.addText(text, {
+                                    x: c * cW, y: r * rH, w: cW * 5, h: rH,
+                                    align: 'left', valign: 'middle',
+                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, 9), color: '94A3B8', 
+                                    bold: styleOpts?.bold,
+                                    italic: styleOpts?.italic,
+                                    underline: styleOpts?.underline as any,
+                                    fontFace: styleOpts?.fontFace,
+                                    breakLine: true,
+                                });
+                            }
+                            continue;
+                        }
+
+                        // 일반 칸(도형) 생성
+                        slide.addShape(pptx.ShapeType.rect, {
+                            x: c * cW, y: r * rH, w: cW, h: rH,
+                            fill: { color: isLabel ? "2C3E7C" : "FFFFFF" },
+                            line: { color: "E2E8F0", width: 1 }
+                        });
+
+                        // 텍스트 추가
+                        if (content) {
+                            const { text, options: styleOpts } = parseStyles(content);
+                            slide.addText(text, {
+                                x: c * cW, y: r * rH, w: cW, h: rH,
+                                align: 'center', valign: 'middle',
+                                fontSize: Math.max(PPT_FONT_MIN_SIZE, isLabel ? 9 : 9.5),
+                                color: isLabel ? 'FFFFFF' : '1E293B',
+                                bold: styleOpts?.bold,
+                                italic: styleOpts?.italic,
+                                underline: styleOpts?.underline as any,
+                                fontFace: styleOpts?.fontFace,
+                                breakLine: true,
+                            });
+                        }
+                    }
+                }
+
+                // ─── 하단 본문 영역 ───
+                const bodyY = hH;
+                const bodyH = slideHeight - hH;
+
+                // 하단 본문 영역 배경 (흰색)
+                slide.addShape(pptx.ShapeType.rect, {
+                    x: 0, y: bodyY, w: slideWidth, h: bodyH,
+                    fill: { color: "FFFFFF" },
+                    line: { color: "E2E8F0", width: 0.5 }
+                });
+
+                // 명세서 항목 테이블
+                const specs = screen.specs || [];
+                const specColumnWidths = screen.specColumnWidths || [120, 120, 100, 120, 80, 80, 60, 80, 80, 100];
+                const specTableData = [
+                    // Header Row 1
+                    [
+                        { text: '테이블명(한글)', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: '테이블명(영문)', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: '항목명(한글)', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: '필드명(영문)', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: '항목타입', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: '항목정의', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'DBEAFE' }, colspan: 4, align: 'center' as any, valign: 'middle' as any } },
+                        { text: '비고', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                    ],
+                    // Header Row 2
+                    [
+                        { text: 'Format', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: '자릿수', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: '초기값', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: 'Validation', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                    ],
+                    // Data Rows
+                    ...specs.map(spec => [
+                        { text: spec.tableNameKr || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.tableNameEn || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.fieldName || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.controlName || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.dataType || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.format || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.length || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.defaultValue || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.validation || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: spec.memo || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                    ]),
+                ];
+
+                // 셀 너비 계산
+                const totalWidth = specColumnWidths.reduce((sum, w) => sum + w, 0);
+                const colWidths = specColumnWidths.map(w => (w / totalWidth) * (slideWidth - 0.6 * scale));
+
+                slide.addTable(specTableData, {
+                    x: 0.3 * scale,
+                    y: bodyY + 0.3 * scale,
+                    w: slideWidth - 0.6 * scale,
+                    colW: colWidths,
+                    border: { pt: 0.5, color: 'D1D5DB' },
+                });
+            }
+
+            await pptx.writeFile({ fileName: `Blueprint_Spec_${Date.now()}.pptx` });
+        };
+
         const runExport = async () => {
             try {
                 const selectedScreens = screens.filter(screen => screenIds.includes(screen.id));
                 if (selectedScreens.length === 0) throw new Error('선택된 화면을 찾을 수 없습니다.');
-                await exportLayoutToPPT(selectedScreens);
+                
+                // 명세서인지 확인하여 다른 레이아웃 적용
+                const hasSpecScreens = selectedScreens.some(screen => screen.variant === 'SPEC');
+                if (hasSpecScreens) {
+                    await exportSpecLayoutToPPT(selectedScreens);
+                } else {
+                    await exportLayoutToPPT(selectedScreens);
+                }
+                
                 onComplete?.();
             } catch (error) {
                 onError?.(`PPT_BETA 내보내기 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
