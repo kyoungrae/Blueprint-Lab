@@ -464,6 +464,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             const cellStyles = ((el as any).tableCellStyles || []) as any;
                             const fallbackData = ((el as any).tableCellData || []) as any;
                             const cellSpans = ((el as any).tableCellSpans || []) as any;
+                            const cellColors = ((el as any).tableCellColors || []) as any;
 
                             const TABLE_FONT_DAMPEN = 0.4;
                             const TABLE_CELL_INSET = 0;
@@ -499,6 +500,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     const cellStyle = Array.isArray(cellStyles) ? cellStyles[index] : undefined;
                                     const fallback = Array.isArray(fallbackData) ? fallbackData[index] : undefined;
                                     const cellSpan = Array.isArray(cellSpans) ? cellSpans[index] : undefined;
+                                    const cellColor = Array.isArray(cellColors) ? cellColors[index] : undefined;
 
                                     const rawContent = (cellV2 as any)?.content ?? (cellV2 as any)?.text ?? fallback ?? '';
 
@@ -533,10 +535,20 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     // 셀 추가 (isMerged가 true이면 빈 셀 대신 추가하지 않음)
                                     const isMerged = (cellV2 as any)?.isMerged;
                                     if (!isMerged) {
+                                        // 배경색 우선순위: cellColor > cellStyle.backgroundColor > cellV2.style.backgroundColor > FFFFFF
+                                        const bgColor = cellColor || (cellStyle as any)?.backgroundColor || (cellV2 as any)?.style?.backgroundColor || 'FFFFFF';
+                                        // 🚀 디버깅: 배경색 확인
+                                        if (index === 37) {
+                                            console.log('=== 배경색 디버깅 (index=37) ===');
+                                            console.log('cellColor:', cellColor);
+                                            console.log('cellStyle?.backgroundColor:', (cellStyle as any)?.backgroundColor);
+                                            console.log('cellV2?.style?.backgroundColor:', (cellV2 as any)?.style?.backgroundColor);
+                                            console.log('bgColor:', bgColor);
+                                        }
                                         row.push({
                                             text: text || '',
                                             options: {
-                                                fill: { color: (cellV2 as any)?.style?.backgroundColor?.replace('#', '') || 'FFFFFF' },
+                                                fill: { color: bgColor.replace('#', '') },
                                                 color: finalColor,
                                                 align: (cellV2 as any)?.style?.textAlign || 'center',
                                                 valign: 'middle',
