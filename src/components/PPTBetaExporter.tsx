@@ -376,13 +376,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                     switch (el.type) {
                         case 'rect':
-                            console.log('=== rect 디버깅 ===');
-                            console.log('el.borderRadius:', el.borderRadius);
-                            console.log('scale:', scale);
                             const shapeType = el.borderRadius ? pptx.ShapeType.roundRect : pptx.ShapeType.rect;
                             const rectRadius = el.borderRadius ? (el.borderRadius * scale * 1) : undefined;
-                            console.log('shapeType:', shapeType);
-                            console.log('rectRadius (scaled):', rectRadius);
                             slide.addShape(shapeType, {
                                 x: elX, y: elY, w: elW, h: elH,
                                 fill: fillOptions,
@@ -475,25 +470,13 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                             let finalColWidths: number[] = [];
                             const rawColWidths = Array.isArray((el as any).tableColWidths) ? ((el as any).tableColWidths as number[]) : [];
-                            console.log('=== 표 너비 디버깅 ===');
-                            console.log('tCols:', tCols);
-                            console.log('rawColWidths:', rawColWidths);
-                            console.log('el.width:', el.width);
-                            console.log('scale:', scale);
-                            console.log('elW:', elW);
                             if (rawColWidths.length === tCols) {
                                 const sumRawW = rawColWidths.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
                                 const adjustFactor = ((el.width || 1) as number) / (sumRawW || 1);
-                                console.log('sumRawW:', sumRawW);
-                                console.log('adjustFactor:', adjustFactor);
                                 finalColWidths = rawColWidths.map((w) => (Number.isFinite(w) ? w : 0) * adjustFactor * scale);
                             } else {
                                 finalColWidths = Array.from({ length: tCols }, () => elW / tCols);
-                                console.log('균등 분배 - colW:', elW / tCols);
                             }
-                            console.log('finalColWidths:', finalColWidths);
-                            console.log('finalColWidths 합:', finalColWidths.reduce((a, b) => a + b, 0));
-                            console.log('elW:', elW);
 
                             let finalRowHeights: number[] = [];
                             const rawRowHeights = Array.isArray((el as any).tableRowHeights) ? ((el as any).tableRowHeights as number[]) : [];
@@ -573,10 +556,6 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                             // 디버깅: 첫 번째 행의 열 수 확인
                             if (tableRows.length > 0) {
-                                console.log('=== 표 구조 디버깅 ===');
-                                console.log('첫 번째 행 길이:', tableRows[0].length);
-                                console.log('colWidths 길이:', finalColWidths.length);
-                                console.log('tCols:', tCols);
                             }
 
                             // colSpan을 고려하여 colWidths 조정
@@ -585,23 +564,17 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 const firstRow = tableRows[0];
                                 adjustedColWidths = [];
                                 let rawColIdx = 0;
-                                console.log('=== colWidths 조정 디버깅 ===');
-                                console.log('firstRow 길이:', firstRow.length);
-                                console.log('finalColWidths:', finalColWidths);
                                 for (let c = 0; c < firstRow.length && rawColIdx < finalColWidths.length; c++) {
                                     const cell = firstRow[c];
                                     const colspan = cell?.options?.colspan || 1;
-                                    console.log(`셀 ${c}: colspan=${colspan}, text="${cell?.text}"`);
                                     // colspan이 적용된 경우 해당 열들의 너비를 합산
                                     let combinedWidth = 0;
                                     for (let i = 0; i < colspan && rawColIdx < finalColWidths.length; i++) {
                                         combinedWidth += finalColWidths[rawColIdx];
                                         rawColIdx++;
                                     }
-                                    console.log(`  combinedWidth=${combinedWidth}`);
                                     adjustedColWidths.push(combinedWidth);
                                 }
-                                console.log('colSpan 조정 후 adjustedColWidths:', adjustedColWidths);
 
                                 // 모든 행에서 colspan 옵션 제거 (너비 일관성 유지)
                                 for (const row of tableRows) {
