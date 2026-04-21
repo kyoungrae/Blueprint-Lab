@@ -20,6 +20,12 @@ const getCanvasSize = (c: Screen): { w: number; h: number } => {
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
 
+/** 하위 컴포넌트 뱃지 위 플로팅 미리보기(패널 스크롤에 잘리지 않음) */
+const SUB_BADGE_FLOAT_GAP_PX = 5;
+const SUB_BADGE_FLOAT_WIDTH_PX = 176;
+const SUB_BADGE_FLOAT_PREVIEW_H = 96;
+const SUB_BADGE_FLOAT_PADDING_Y = 16;
+
 const useMeasure = () => {
     const ref = useRef<HTMLDivElement>(null);
     const [size, setSize] = useState({ width: 176, height: 96 });
@@ -59,6 +65,15 @@ interface ComponentCardProps {
 
 const ComponentCard: React.FC<ComponentCardProps> = ({ c, validSubs, hoveredSub, setHoveredSub, onInsert }) => {
     const [previewRef, previewSize] = useMeasure();
+    const [floatPreviewRef, floatPreviewSize] = useMeasure();
+    const badgeAnchorRef = useRef<HTMLButtonElement | null>(null);
+    const [subBadgeFloatRect, setSubBadgeFloatRect] = useState<{
+        top: number;
+        left: number;
+        width: number;
+        height: number;
+    } | null>(null);
+
     const isHoveringSub = hoveredSub?.componentId === c.id;
     const hoveredSubData = isHoveringSub && hoveredSub
         ? validSubs.find((s) => s.id === hoveredSub.subId)
@@ -68,8 +83,35 @@ const ComponentCard: React.FC<ComponentCardProps> = ({ c, validSubs, hoveredSub,
         : c.drawElements ?? [];
     const showSubPreview = hoveredSubData && previewElements.length > 0;
 
+    const syncSubBadgeFloatRect = useCallback(() => {
+        const el = badgeAnchorRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        setSubBadgeFloatRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+    }, []);
+
+    useEffect(() => {
+        if (!subBadgeFloatRect) return;
+        syncSubBadgeFloatRect();
+        const picker = document.querySelector('[data-component-picker-portal]');
+        const onScrollOrResize = () => syncSubBadgeFloatRect();
+        picker?.addEventListener('scroll', onScrollOrResize, true);
+        window.addEventListener('resize', onScrollOrResize);
+        return () => {
+            picker?.removeEventListener('scroll', onScrollOrResize, true);
+            window.removeEventListener('resize', onScrollOrResize);
+        };
+    }, [subBadgeFloatRect !== null, syncSubBadgeFloatRect]);
+
+    const clearSubBadgeFloat = useCallback(() => {
+        badgeAnchorRef.current = null;
+        setSubBadgeFloatRect(null);
+    }, []);
+
+    const floatPanelOuterH = SUB_BADGE_FLOAT_PREVIEW_H + SUB_BADGE_FLOAT_PADDING_Y;
+
     return (
-        <div className="flex-none w-44 flex flex-col gap-2">
+        <div className="min-w-0 w-full flex flex-col gap-2">
             <PremiumTooltip label="전체 추가" dotColor="#14b8a6">
                 <button
                     onClick={(e) => {
@@ -77,7 +119,10 @@ const ComponentCard: React.FC<ComponentCardProps> = ({ c, validSubs, hoveredSub,
                         onInsert(c);
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
-                    onMouseEnter={() => setHoveredSub(null)}
+                    onMouseEnter={() => {
+                        setHoveredSub(null);
+                        clearSubBadgeFloat();
+                    }}
                     className="w-full bg-white p-2 rounded-lg shadow-sm hover:shadow-md transition-colors text-left border border-gray-100"
                 >
                     <div
@@ -120,8 +165,22 @@ const ComponentCard: React.FC<ComponentCardProps> = ({ c, validSubs, hoveredSub,
                                         onInsert(c, sub.id);
                                     }}
                                     onMouseDown={(e) => e.stopPropagation()}
-                                    onMouseEnter={() => setHoveredSub({ componentId: c.id, subId: sub.id })}
-                                    onMouseLeave={() => setHoveredSub(null)}
+                                    onMouseEnter={(e) => {
+                                        const el = e.currentTarget;
+                                        badgeAnchorRef.current = el;
+                                        const r = el.getBoundingClientRect();
+                                        setSubBadgeFloatRect({
+                                            top: r.top,
+                                            left: r.left,
+                                            width: r.width,
+                                            height: r.height,
+                                        });
+                                        setHoveredSub({ componentId: c.id, subId: sub.id });
+                                    }}
+                                    onMouseLeave={() => {
+                                        setHoveredSub(null);
+                                        clearSubBadgeFloat();
+                                    }}
                                     className="px-2 py-1 bg-violet-50 text-violet-700 text-[10px] font-bold rounded-md hover:bg-violet-100 transition-colors truncate max-w-full"
                                 >
                                     {sub.name}
@@ -135,6 +194,49 @@ const ComponentCard: React.FC<ComponentCardProps> = ({ c, validSubs, hoveredSub,
                     </div>
                 )}
             </div>
+            {subBadgeFloatRect &&
+                hoveredSub?.componentId === c.id &&
+                createPortal(
+                    <div
+                        className="pointer-events-none fixed z-[10050] w-44 rounded-lg border border-gray-200 bg-white p-2 shadow-lg"
+                        style={{
+                            top: subBadgeFloatRect.top - SUB_BADGE_FLOAT_GAP_PX - floatPanelOuterH,
+                            left: Math.min(
+                                window.innerWidth - 8 - SUB_BADGE_FLOAT_WIDTH_PX,
+                                Math.max(
+                                    8,
+                                    subBadgeFloatRect.left +
+                                        subBadgeFloatRect.width / 2 -
+                                        SUB_BADGE_FLOAT_WIDTH_PX / 2
+                                )
+                            ),
+                            width: SUB_BADGE_FLOAT_WIDTH_PX,
+                        }}
+                        aria-hidden
+                    >
+                        <div
+                            ref={floatPreviewRef}
+                            className="w-full rounded-md overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center min-h-[96px]"
+                            style={{ height: SUB_BADGE_FLOAT_PREVIEW_H }}
+                        >
+                            {previewElements.length > 0 ? (
+                                <DrawElementsPreview
+                                    elements={previewElements}
+                                    width={floatPreviewSize.width}
+                                    height={floatPreviewSize.height}
+                                    className="rounded-md"
+                                    canvasWidth={undefined}
+                                    canvasHeight={undefined}
+                                />
+                            ) : (
+                                <div className="text-gray-300">
+                                    <Box size={28} />
+                                </div>
+                            )}
+                        </div>
+                    </div>,
+                    document.body
+                )}
         </div>
     );
 };
@@ -235,7 +337,7 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                     return createPortal(
                         <div
                             data-component-picker-portal
-                            className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in origin-top-left min-w-[200px] max-h-[320px] overflow-y-auto"
+                            className="nodrag nopan fixed bg-white border border-gray-200 rounded-xl shadow-2xl p-3 z-[9000] animate-in fade-in zoom-in origin-top-left min-w-[200px] max-w-[600px] max-h-[320px] overflow-y-auto overscroll-contain"
                             style={{
                                 // 1. 도화지를 움직이거나 줌을 해도 위치(X, Y)는 정확히 버튼을 따라갑니다.
                                 left: screenPos.x,
@@ -259,13 +361,13 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
                                     </div>
                                 </div>
                             </PremiumTooltip>
-                            <div className="flex gap-3 py-2 overflow-x-auto">
+                            <div className="grid grid-cols-3 gap-3 py-2 max-w-full">
                                 {!linkedComponentProject ? (
-                                    <div className="px-3 py-4 text-center text-[11px] text-gray-500 w-full">
+                                    <div className="col-span-3 px-3 py-4 text-center text-[11px] text-gray-500">
                                         컴포넌트 프로젝트를 연결해 주세요
                                     </div>
                                 ) : componentList.length === 0 ? (
-                                    <div className="px-3 py-4 text-center text-[11px] text-gray-500 w-full">
+                                    <div className="col-span-3 px-3 py-4 text-center text-[11px] text-gray-500">
                                         컴포넌트가 없습니다
                                     </div>
                                 ) : (

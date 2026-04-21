@@ -1,7 +1,10 @@
-/** Smart Guides: 스냅 거리(px) - 이 거리 이내면 정렬선에 맞춤 (작을수록 자성 약함) */
-export const SNAP_THRESHOLD = 2;
-/** 스냅 해제 거리(px) - 진입보다 크게 두어 경계에서 떨림 방지 */
-export const SNAP_RELEASE_THRESHOLD = 1;
+/**
+ * Smart Guides: 스냅·가이드 표시 거리(px).
+ * 2px였을 때 살짝 어긋나도 선이 떠서 혼동되므로, 같은 픽셀 열/행에 거의 붙었을 때만 동작하도록 0.5px로 제한한다.
+ */
+export const SNAP_THRESHOLD = 0.5;
+/** 이전 스냅 유지 구간(px) — 진입(0.5)과 같게 두면 경계 떨림은 적고, 허용 범위는 픽셀 단위에 가깝게 유지된다 */
+export const SNAP_RELEASE_THRESHOLD = 0.5;
 
 /** 인접 거리(px) - 이 거리 이내의 객체만 고려 (멀리 있는 객체는 정렬 대상에서 제외) */
 const PROXIMITY_THRESHOLD = 90;
