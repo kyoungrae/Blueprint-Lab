@@ -23,6 +23,17 @@ export async function recordProjectAccessLog(
         const uid = new Types.ObjectId(userId);
         const pid = new Types.ObjectId(projectId);
 
+        if (kind === 'SOCKET_JOIN') {
+            await ProjectAccessLog.deleteMany({ userId: uid, projectId: pid, kind: 'SOCKET_JOIN' });
+            await ProjectAccessLog.create({
+                userId: uid,
+                projectId: pid,
+                kind,
+                eventAt: new Date(),
+            });
+            return;
+        }
+
         const recent = await ProjectAccessLog.findOne({
             userId: uid,
             projectId: pid,

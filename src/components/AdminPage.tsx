@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
@@ -289,6 +289,9 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [accessLogsTotal, setAccessLogsTotal] = useState(0);
     const [accessLogsTotalPages, setAccessLogsTotalPages] = useState(1);
 
+    const onBackRef = useRef(onBack);
+    onBackRef.current = onBack;
+
     useEffect(() => {
         fetchUsers();
     }, []);
@@ -340,11 +343,11 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             setAccessLogs([]);
             setAccessLogsTotal(0);
             setAccessLogsTotalPages(1);
-            if (err.message?.includes('세션')) onBack();
+            if (err.message?.includes('세션')) onBackRef.current();
         } finally {
             setAccessLogsLoading(false);
         }
-    }, [onBack]);
+    }, []);
 
     useEffect(() => {
         if (activeTab === 'accessLogs') {
@@ -898,7 +901,7 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             회원–프로젝트 활동 로그
                         </div>
                         <p className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 leading-relaxed">
-                            서버의 <code className="text-gray-600">project_access_logs</code>에 기록되며, <strong className="text-gray-600">약 7일 보관</strong> 후 MongoDB TTL로 자동 삭제됩니다. 최신 순입니다. 동일 사용자·프로젝트·유형은 짧은 간격(접속 2분·저장 10분) 내 중복 기록을 생략합니다.
+                            서버의 <code className="text-gray-600">project_access_logs</code>에 기록되며, <strong className="text-gray-600">약 5일 보관</strong> 후 삭제됩니다(관리자 목록 조회 시에도 만료분 정리). 최신 순입니다. 협업 소켓 입장(SOCKET_JOIN)은 사용자·프로젝트당 최신 1건만 남깁니다. 그 외 유형은 짧은 간격(접속 2분·저장 10분) 내 중복 기록을 생략합니다.
                         </p>
                         <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/80">
                             <span className="text-sm text-gray-600 font-medium">

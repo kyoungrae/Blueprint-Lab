@@ -4,7 +4,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import { User } from '../models/User';
 import { Project } from '../models/Project';
 import { Invitation } from '../models/Invitation';
-import { History, ProjectAccessLog } from '../models';
+import { History, ProjectAccessLog, ACCESS_LOG_RETENTION_MS } from '../models';
 import { Types } from 'mongoose';
 import { projectStateManager, presenceManager } from '../services/PresenceManager';
 import { lockManager } from '../services/LockManager';
@@ -141,13 +141,16 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     }
 };
 
-/** `project_access_logs` — 7일 TTL(모델 인덱스)로 오래된 행은 MongoDB가 삭제 */
+/** `project_access_logs` — 5일 TTL(모델 인덱스) + 관리자 조회 시 보관 기간 초과분 즉시 삭제 */
 export const getAdminAccessLogs = async (req: AuthRequest, res: Response) => {
     try {
         const allowedSizes = new Set([10, 50, 100]);
         let pageSize = parseInt(String(req.query.pageSize || '50'), 10) || 50;
         if (!allowedSizes.has(pageSize)) pageSize = 50;
         let page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+
+        const cutoff = new Date(Date.now() - ACCESS_LOG_RETENTION_MS);
+        await ProjectAccessLog.deleteMany({ eventAt: { $lt: cutoff } });
 
         const total = await ProjectAccessLog.countDocuments({});
         const totalPages = total === 0 ? 1 : Math.ceil(total / pageSize);

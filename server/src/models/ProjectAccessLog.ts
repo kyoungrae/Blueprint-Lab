@@ -25,8 +25,9 @@ const ProjectAccessLogSchema = new Schema<IProjectAccessLog>(
     { collection: 'project_access_logs' }
 );
 
-/** 7일(604800초) 경과 문서는 MongoDB TTL 모니터가 자동 삭제 */
-const ACCESS_LOG_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+/** 5일 경과 문서는 MongoDB TTL 모니터가 자동 삭제 */
+export const ACCESS_LOG_RETENTION_SECONDS = 5 * 24 * 60 * 60;
+export const ACCESS_LOG_RETENTION_MS = ACCESS_LOG_RETENTION_SECONDS * 1000;
 ProjectAccessLogSchema.index({ eventAt: 1 }, { expireAfterSeconds: ACCESS_LOG_RETENTION_SECONDS });
 ProjectAccessLogSchema.index({ userId: 1, projectId: 1, eventAt: -1 });
 
