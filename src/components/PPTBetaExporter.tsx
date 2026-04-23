@@ -10,6 +10,8 @@ const API_ROOT = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/pro
 interface PPTBetaExporterProps {
     screenIds: string[];
     translateToMN?: boolean;
+    /** 몽골어 보내기 시 좌측 캔버스(엔티티) 텍스트에만 적용. 100 = 기본, 50~200 권장 */
+    mnPptFontScalePercent?: number;
     onComplete?: () => void;
     onError?: (error: string) => void;
 }
@@ -17,6 +19,7 @@ interface PPTBetaExporterProps {
 const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     screenIds,
     translateToMN = false,
+    mnPptFontScalePercent = 100,
     onComplete,
     onError
 }) => {
@@ -43,7 +46,12 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             
             // PPT 텍스트 크기 비율 전역 상수 - 모든 요소에 동일하게 적용
             const PPT_FONT_SCALE_RATIO = (1.0)+70;
-            const PPT_FONT_MIN_SIZE = 4; 
+            const PPT_FONT_MIN_SIZE = 4;
+            const baseFs = (pt: number, floor: number = PPT_FONT_MIN_SIZE) => Math.max(floor, pt);
+            const mnCanvasMul = translateToMN
+                ? Math.max(0.5, Math.min(3, (mnPptFontScalePercent ?? 100) / 100))
+                : 1;
+            const canvasFs = (pt: number, floor: number = PPT_FONT_MIN_SIZE) => Math.max(floor, pt * mnCanvasMul);
 
             for (const screen of selectedScreens) {
                 const canvasW = screen.imageWidth || 800;
@@ -192,7 +200,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 slide.addText(tr(text, translateToMN), {
                                     x: c * cW, y: r * rH, w: cW * 5, h: rH,
                                     align: 'left', valign: 'middle',
-                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, 9), color: '94A3B8', 
+                                    fontSize: baseFs(9), color: '94A3B8', 
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -216,7 +224,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addText(tr(text, translateToMN), {
                                 x: c * cW, y: r * rH, w: cW, h: rH,
                                 align: 'center', valign: 'middle',
-                                fontSize: Math.max(PPT_FONT_MIN_SIZE, isLabel ? 9 : 9.5),
+                                fontSize: baseFs(isLabel ? 9 : 9.5),
                                 color: isLabel ? 'FFFFFF' : '1E293B',
                                 bold: styleOpts?.bold,
                                 italic: styleOpts?.italic,
@@ -294,7 +302,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     slide.addText(titles[idx], {
                         x: leftW + 0.05, y: currentY, w: rightW - 0.1, h: titleH,
                         align: 'left', valign: 'middle',
-                        fontSize: 8, color: 'FFFFFF', bold: true,
+                        fontSize: baseFs(8), color: 'FFFFFF', bold: true,
                         inset: 0.05
                     });
 
@@ -322,13 +330,13 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addText(tr(String(el.text || '').trim(), translateToMN), {
                                 x: leftW + 0.1, y: itemY, w: 0.16, h: 0.16,
                                 align: 'center', valign: 'middle',
-                                fontSize: 6, color: 'FFFFFF', bold: true
+                                fontSize: baseFs(6), color: 'FFFFFF', bold: true
                             });
                             // 📝 상세 설명 텍스트 (아이콘 옆 배치)
                             slide.addText(tr(cleanDesc, translateToMN), {
                                 x: leftW + 0.32, y: itemY, w: rightW - 0.45, h: 0.16,
                                 align: 'left', valign: 'middle',
-                                fontSize: 5, color: '334155'
+                                fontSize: baseFs(5), color: '334155'
                             });
 
                             itemOffset += 0.22; // 다음 줄 간격
@@ -341,7 +349,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 x: leftW + 0.1, y: currentY + titleH + itemOffset, 
                                 w: rightW - 0.2, h: 0.2,
                                 align: 'left', valign: 'top',
-                                fontSize: 7.5, color: '334155'
+                                fontSize: baseFs(7.5), color: '334155'
                             });
                         }
                     } else {
@@ -355,7 +363,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 w: rightW - 0.2, 
                                 h: sectionH - titleH - 0.1,
                                 align: 'left', valign: 'top', 
-                                fontSize: 5.5, color: '334155', 
+                                fontSize: baseFs(5.5), color: '334155', 
                                 breakLine: true, inset: 0.05
                             });
                         }
@@ -410,7 +418,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -434,7 +442,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -452,7 +460,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'left') as 'left' | 'center' | 'right',
                                     valign: (el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
-                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || '000000',
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -471,7 +479,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addText(tr(String(el.text || '').trim(), translateToMN), {
                                 x: elX, y: elY, w: elW, h: elH,
                                 align: 'center', valign: 'middle',
-                                fontSize: Math.max(PPT_FONT_MIN_SIZE, (el.fontSize || 10) * scale * PPT_FONT_SCALE_RATIO),
+                                fontSize: canvasFs((el.fontSize || 10) * scale * PPT_FONT_SCALE_RATIO),
                                 color: 'FFFFFF',
                                 bold: true,
                             });
@@ -575,7 +583,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                                 color: finalColor,
                                                 align: (cellV2 as any)?.style?.textAlign || 'center',
                                                 valign: 'middle',
-                                                fontSize: Math.max(PPT_FONT_MIN_SIZE, finalFontSizePx * scale * PPT_FONT_SCALE_RATIO),
+                                                fontSize: canvasFs(finalFontSizePx * scale * PPT_FONT_SCALE_RATIO),
                                                 inset: TABLE_CELL_INSET,
                                                 breakLine: false,
                                                 shrinkText: true,
@@ -668,7 +676,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -698,7 +706,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
-                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, (el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
+                                    fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
@@ -755,6 +763,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             // PPT 텍스트 크기 비율 전역 상수 - 명세서용
             const PPT_FONT_SCALE_RATIO = 1.0;
             const PPT_FONT_MIN_SIZE = 4;
+            const baseFs = (pt: number, floor: number = PPT_FONT_MIN_SIZE) => Math.max(floor, pt);
 
             for (const screen of selectedScreens) {
                 const canvasW = screen.imageWidth || 800;
@@ -876,7 +885,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 slide.addText(tr(text, translateToMN), {
                                     x: c * cW, y: r * rH, w: cW * 5, h: rH,
                                     align: 'left', valign: 'middle',
-                                    fontSize: Math.max(PPT_FONT_MIN_SIZE, 9), color: '94A3B8', 
+                                    fontSize: baseFs(9), color: '94A3B8', 
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -900,7 +909,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addText(tr(text, translateToMN), {
                                 x: c * cW, y: r * rH, w: cW, h: rH,
                                 align: 'center', valign: 'middle',
-                                fontSize: Math.max(PPT_FONT_MIN_SIZE, isLabel ? 9 : 9.5),
+                                fontSize: baseFs(isLabel ? 9 : 9.5),
                                 color: isLabel ? 'FFFFFF' : '1E293B',
                                 bold: styleOpts?.bold,
                                 italic: styleOpts?.italic,
@@ -929,33 +938,33 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const specTableData = [
                     // Header Row 1
                     [
-                        { text: tr('테이블명(한글)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr('테이블명(영문)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr('항목명(한글)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr('필드명(영문)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr('항목타입', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr('항목정의', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'DBEAFE' }, colspan: 4, align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr('비고', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('테이블명(한글)', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('테이블명(영문)', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('항목명(한글)', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('필드명(영문)', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('항목타입', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('항목정의', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'DBEAFE' }, colspan: 4, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('비고', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
                     ],
                     // Header Row 2
                     [
-                        { text: 'Format', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr('자릿수', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr('초기값', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
-                        { text: 'Validation', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: 'Format', options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('자릿수', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('초기값', translateToMN), options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: 'Validation', options: { bold: true, fontSize: baseFs(9 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
                     ],
                     // Data Rows
                     ...specs.map(spec => [
-                        { text: tr(spec.tableNameKr || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.tableNameEn || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.fieldName || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.controlName || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.dataType || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.format || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.length || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.defaultValue || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.validation || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: tr(spec.memo || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.tableNameKr || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.tableNameEn || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.fieldName || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.controlName || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.dataType || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.format || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.length || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.defaultValue || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.validation || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.memo || '', translateToMN), options: { fontSize: baseFs(8 * scale * PPT_FONT_SCALE_RATIO, PPT_FONT_MIN_SIZE + 3.5), color: '334155', align: 'center' as any, valign: 'middle' as any } },
                     ]),
                 ];
 
@@ -1069,12 +1078,13 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
         };
 
         runExport();
-    }, [screenIds, screens, sections, translateToMN, onComplete, onError]);
+    }, [screenIds, screens, sections, translateToMN, mnPptFontScalePercent, onComplete, onError]);
 
     return (
         <div className="p-4">
             <h3 className="text-lg font-bold mb-2 text-purple-700">
-                PPT_BETA 데이터 매핑 중{translateToMN ? ' (몽골어 번역 적용)' : ''}
+                PPT_BETA 데이터 매핑 중
+                {translateToMN ? ` (몽골어 · 캔버스 ${mnPptFontScalePercent}%)` : ''}
             </h3>
             <p className="text-sm text-gray-600 mb-4">
                 레이아웃 위에 실시간 데이터를 입히고 있습니다.

@@ -6,6 +6,8 @@ export type ExportFormat = 'png' | 'pdf' | 'ppt_beta' | 'json';
 
 export interface ExportOptions {
     translateToMN?: boolean;
+    /** 몽골어 PPT 시 좌측 엔티티(캔버스) 객체 텍스트 배율(%). 기본 100. 헤더·우측 패널·명세에는 적용되지 않습니다. */
+    mnPptFontScalePercent?: number;
 }
 
 interface ScreenExportModalProps {
@@ -19,6 +21,7 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(screens.map(s => s.id)));
     const [format, setFormat] = useState<ExportFormat>('png');
     const [translateToMN, setTranslateToMN] = useState(false);
+    const [mnPptFontScalePercent, setMnPptFontScalePercent] = useState(40);
 
     const toggleItem = (id: string) => {
         const next = new Set(selectedIds);
@@ -74,7 +77,12 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
             alert('내보낼 화면을 선택해주세요.');
             return;
         }
-        onExport(Array.from(selectedIds), format, { translateToMN });
+        const clampPct = (n: number) => Math.min(200, Math.max(10, Number.isFinite(n) ? n : 100));
+        onExport(Array.from(selectedIds), format, {
+            translateToMN,
+            mnPptFontScalePercent:
+                format === 'ppt_beta' && translateToMN ? clampPct(mnPptFontScalePercent) : undefined,
+        });
     };
 
     // 🚀 재귀적으로 섹션과 그 하위 항목들을 그리는 함수
@@ -277,25 +285,58 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
                 </div>
 
                 {format === 'ppt_beta' && (
-                    <div className="px-6 py-3 border-t border-gray-100 bg-purple-50/50 flex items-center justify-between shrink-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                            <Globe size={18} className="text-purple-500 flex-shrink-0" />
-                            <div className="min-w-0">
-                                <span className="text-sm font-bold text-gray-800 block">몽골어로 번역해서 보내기</span>
-                                <span className="text-xs text-gray-500">라벨 및 헤더 텍스트를 몽골어로 변환합니다.</span>
+                    <div className="px-6 py-3 border-t border-gray-100 bg-purple-50/50 space-y-3 shrink-0">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <Globe size={18} className="text-purple-500 flex-shrink-0" />
+                                <div className="min-w-0">
+                                    <span className="text-sm font-bold text-gray-800 block">몽골어로 번역해서 보내기</span>
+                                    <span className="text-xs text-gray-500">라벨 및 본문을 몽골어 사전으로 치환합니다.</span>
+                                </div>
                             </div>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={translateToMN}
+                                onClick={() => setTranslateToMN((v) => !v)}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 ${translateToMN ? 'bg-purple-600' : 'bg-gray-300'}`}
+                            >
+                                <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${translateToMN ? 'translate-x-6' : 'translate-x-1'}`}
+                                />
+                            </button>
                         </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={translateToMN}
-                            onClick={() => setTranslateToMN((v) => !v)}
-                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 ${translateToMN ? 'bg-purple-600' : 'bg-gray-300'}`}
-                        >
-                            <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${translateToMN ? 'translate-x-6' : 'translate-x-1'}`}
-                            />
-                        </button>
+                        {translateToMN && (
+                            <div className="rounded-xl border border-purple-200/80 bg-white/80 px-3 py-2.5 space-y-1.5">
+                                <label htmlFor="mn-ppt-font-scale" className="text-xs font-bold text-gray-700 block">
+                                    캔버스(엔티티) 텍스트 배율 (%)
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        id="mn-ppt-font-scale"
+                                        type="number"
+                                        min={10}
+                                        max={200}
+                                        step={1}
+                                        value={mnPptFontScalePercent}
+                                        onChange={(e) => {
+                                            const v = parseInt(e.target.value, 10);
+                                            if (Number.isFinite(v)) setMnPptFontScalePercent(v);
+                                        }}
+                                        onBlur={() => {
+                                            setMnPptFontScalePercent((p) =>
+                                                Math.min(200, Math.max(10, Number.isFinite(p) ? p : 40))
+                                            );
+                                        }}
+                                        className="flex-1 min-w-0 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm font-mono text-gray-800 tabular-nums"
+                                    />
+                                    <span className="text-xs text-gray-500 shrink-0">%</span>
+                                </div>
+                                <p className="text-[10px] text-gray-500 leading-snug">
+                                    숫자만 입력합니다. 좌측 화면 설계 캔버스 안 도형·텍스트·테이블에만 적용되며, 상단 표·우측 패널·명세 PPT는 기본 크기를 유지합니다. 100은 변경 없음.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 )}
 

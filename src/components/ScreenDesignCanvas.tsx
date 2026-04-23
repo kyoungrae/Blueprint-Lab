@@ -443,6 +443,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [pptBetaExportOpen, setPptBetaExportOpen] = useState(false);
     const [selectedExportIds, setSelectedExportIds] = useState<string[]>([]);
     const [pptTranslateToMN, setPptTranslateToMN] = useState(false);
+    const [pptMnFontScalePercent, setPptMnFontScalePercent] = useState(100);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
     const lastSyncedComponentAtRef = useRef<string | null>(null);
@@ -1764,6 +1765,10 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 // PPT_BETA 컴포넌트를 사용하여 내보내기
                 setSelectedExportIds(selectedIds);
                 setPptTranslateToMN(Boolean(options?.translateToMN));
+                const pct = options?.mnPptFontScalePercent;
+                setPptMnFontScalePercent(
+                    typeof pct === 'number' && Number.isFinite(pct) ? Math.min(200, Math.max(50, pct)) : 100
+                );
                 setPptBetaExportOpen(true);
                 setIsExporting(false);
                 return;
@@ -2319,6 +2324,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                             <PPTBetaExporter
                                                 screenIds={selectedExportIds}
                                                 translateToMN={pptTranslateToMN}
+                                                mnPptFontScalePercent={pptMnFontScalePercent}
                                                 onComplete={() => {
                                                     setPptBetaExportOpen(false);
                                                     setSelectedExportIds([]);
