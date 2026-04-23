@@ -880,6 +880,15 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     // 다만 UI 렌더링(RightPane 등)에는 prop 데이터를 우선 사용하여 초기 로딩 버그를 방지함
     const drawElements = screen.drawElements || elementsRefForHandlers.current;
 
+    // 텍스트 선택이 없어도 "텍스트/도형 객체 선택"만으로 폰트 스타일 패널을 열 수 있는 대상
+    const fontStyleTargetIds = React.useMemo(() => {
+        const textCapableTypes = new Set<DrawElement['type']>(['text', 'rect', 'circle', 'polygon', 'arrow', 'func-no']);
+        return drawElements
+            .filter((el) => selectedElementIds.includes(el.id))
+            .filter((el) => textCapableTypes.has(el.type) && typeof el.text === 'string' && el.text.trim().length > 0)
+            .map((el) => el.id);
+    }, [drawElements, selectedElementIds]);
+
     const MIN_CANVAS_WIDTH = 794; // A4 너비 - 이하일 때만 스케일
     let { width: canvasW, height: canvasH } = getCanvasDimensions(screen);
     if (canvasW < MIN_CANVAS_WIDTH) {
@@ -4083,7 +4092,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                 );
                                             })()}
 
-                                                {(textSelectionRect || textSelectionFromTable) && (
+                                                {(textSelectionRect || textSelectionFromTable || fontStyleTargetIds.length > 0) && (
                                                     <div data-font-style-trigger className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1 animate-in fade-in duration-200">
                                                         <PremiumTooltip label="폰트 스타일" screenId={screen.id}>
                                                             <button
@@ -4096,7 +4105,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                     if (!showFontStylePanel) {
                                                                         // 패널 열기 전 텍스트 선택 저장
                                                                         const savedSelection = saveTextSelection();
-                                                                        if (savedSelection) {
+                                                                        if (savedSelection && (textSelectionRect || textSelectionFromTable)) {
                                                                             // 전역 상태에 저장 (TextStyleToolbar에서 사용)
                                                                             (window as any).__savedTextSelection = savedSelection;
                                                                         }
@@ -4166,9 +4175,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
                             {/* 폰트 스타일 패널 - 드롭다운 방식 (텍스트 선택 시 버튼 클릭으로 표시) */}
                             {
-                                showFontStylePanel && (textSelectionRect || textSelectionFromTable) && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
+                                showFontStylePanel && (textSelectionRect || textSelectionFromTable || fontStyleTargetIds.length > 0) && (selectedElementIds.length > 0 || textSelectionFromTable) && (() => {
                                         const fromTable = textSelectionFromTable != null;
-                                    const elId = fromTable ? textSelectionFromTable!.tableId : selectedElementIds[0];
+                                    const elId = fromTable ? textSelectionFromTable!.tableId : (fontStyleTargetIds[0] ?? selectedElementIds[0]);
                                     const el = drawElements.find(it => it.id === elId);
                                         if (!el) return null;
 
@@ -4224,6 +4233,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                 textSelectionFromTable={textSelectionFromTable}
                                                 selectedCellIndices={selectedCellIndices}
                                                 editingTableId={editingTableId}
+                                                targetElementIds={fromTable ? [el.id] : fontStyleTargetIds}
                                                 tableCellSelectionRestoreRef={tableCellSelectionRestoreRef}
                                                 screenId={screen.id}
                                             />

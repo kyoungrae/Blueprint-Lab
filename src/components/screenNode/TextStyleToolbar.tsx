@@ -31,6 +31,7 @@ interface TextStyleToolbarProps {
     textSelectionFromTable: { tableId: string; cellIndex: number } | null;
     selectedCellIndices: number[];
     editingTableId: string | null;
+    targetElementIds?: string[];
     tableCellSelectionRestoreRef?: React.MutableRefObject<{ tableId: string; cellIndex: number } | null>;
     screenId: string;
 }
@@ -62,6 +63,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     textSelectionFromTable,
     selectedCellIndices,
     editingTableId,
+    targetElementIds,
     tableCellSelectionRestoreRef,
     screenId,
 }) => {
@@ -143,6 +145,7 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     }, [el.id, fromTable, textSelectionFromTable, editingTableId]);
 
     const displayValue = fontSizeInputStr !== null ? fontSizeInputStr : String(optimisticFontSize ?? computedSelection.fontSize ?? displayFontSize);
+    const objectTargets = targetElementIds && targetElementIds.length > 0 ? targetElementIds : [el.id];
 
 
     // 패널이 마운트되면 현재 텍스트 스타일 즉시 계산
@@ -287,12 +290,16 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 syncUpdate({ drawElements: toApply });
             }, TABLE_FONT_SIZE_DEBOUNCE_MS);
         } else if (!fromTable) {
-            window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId: el.id, px: clamped } }));
+            objectTargets.forEach((targetId) => {
+                window.dispatchEvent(new CustomEvent(FONT_SIZE_OVERRIDE_EVENT, { detail: { elementId: targetId, px: clamped } }));
+            });
             setOptimisticFontSize(clamped);
             // 직접 updateElement 호출하여 전역 상태 저장
-            updateElement(el.id, { fontSize: clamped });
+            objectTargets.forEach((targetId) => {
+                updateElement(targetId, { fontSize: clamped });
+            });
         }
-    }, [el.id, el.tableRows, el.tableCols, el.tableCellStyles, fromTable, textSelectionFromTable, editingTableId, selectedCellIndices, getDrawElements, update, updateElement, applyFontSizePx, tableCellSelectionRestoreRef, setOptimisticFontSize, restoreSelectionIfAny]);
+    }, [el.id, el.tableRows, el.tableCols, el.tableCellStyles, fromTable, textSelectionFromTable, editingTableId, selectedCellIndices, getDrawElements, update, updateElement, applyFontSizePx, tableCellSelectionRestoreRef, setOptimisticFontSize, restoreSelectionIfAny, objectTargets]);
 
     useEffect(() => {
         fetch(`${API_BASE}/api/fonts`)
@@ -403,8 +410,10 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             }, 200);
         } else {
             const newVal = el.fontWeight === 'bold' ? 'normal' : 'bold';
-            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontWeight: newVal } } }));
-            updateElement(el.id, { fontWeight: newVal });
+            objectTargets.forEach((targetId) => {
+                window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: targetId, updates: { fontWeight: newVal } } }));
+                updateElement(targetId, { fontWeight: newVal });
+            });
         }
     };
 
@@ -447,8 +456,10 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             }, 200);
         } else {
             const newVal = el.fontStyle === 'italic' ? 'normal' : 'italic';
-            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontStyle: newVal } } }));
-            updateElement(el.id, { fontStyle: newVal });
+            objectTargets.forEach((targetId) => {
+                window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: targetId, updates: { fontStyle: newVal } } }));
+                updateElement(targetId, { fontStyle: newVal });
+            });
         }
     };
 
@@ -491,8 +502,10 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             }, 200);
         } else {
             const newVal = el.textDecoration === 'underline' ? 'none' : 'underline';
-            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { textDecoration: newVal } } }));
-            updateElement(el.id, { textDecoration: newVal });
+            objectTargets.forEach((targetId) => {
+                window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: targetId, updates: { textDecoration: newVal } } }));
+                updateElement(targetId, { textDecoration: newVal });
+            });
         }
     };
 
@@ -555,8 +568,10 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                 }
             }, 200);
         } else {
-            window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: el.id, updates: { fontFamily: fontName } } }));
-            updateElement(el.id, { fontFamily: fontName });
+            objectTargets.forEach((targetId) => {
+                window.dispatchEvent(new CustomEvent(TEXT_STYLE_OVERRIDE_EVENT, { detail: { elementId: targetId, updates: { fontFamily: fontName } } }));
+                updateElement(targetId, { fontFamily: fontName });
+            });
             console.log('표 외 요소에 fontFamily 저장:', fontName);
         }
         setFontDropdownOpen(false);
@@ -656,8 +671,10 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
             }, 200);
         } else {
             // 일반 텍스트 요소 색상 변경 - 즉시 피드백을 위해 이벤트 발생
-            window.dispatchEvent(new CustomEvent(COLOR_OVERRIDE_EVENT, { detail: { elementId: el.id, color } }));
-            updateElement(el.id, { color });
+            objectTargets.forEach((targetId) => {
+                window.dispatchEvent(new CustomEvent(COLOR_OVERRIDE_EVENT, { detail: { elementId: targetId, color } }));
+                updateElement(targetId, { color });
+            });
         }
 
         addRecentTextColor(color);
