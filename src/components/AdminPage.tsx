@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, Languages, Globe, Save, RefreshCw } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { getEffectiveMnDict, persistMnDictSession } from '../utils/translation';
 import { useAuthStore } from '../store/authStore';
 import * as XLSX from 'xlsx';
 
@@ -223,7 +224,7 @@ interface AdminProject {
     memberCount: number;
 }
 
-type AdminTab = 'members' | 'projects' | 'accessLogs' | 'rollback' | 'ddl';
+type AdminTab = 'members' | 'projects' | 'accessLogs' | 'rollback' | 'ddl' | 'translation';
 
 type AdminAccessLogRow = {
     id: string;
@@ -288,6 +289,45 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [accessLogsPageSize, setAccessLogsPageSize] = useState<AccessLogPageSize>(50);
     const [accessLogsTotal, setAccessLogsTotal] = useState(0);
     const [accessLogsTotalPages, setAccessLogsTotalPages] = useState(1);
+
+    type TranslationRow = { key: string; value: string; isEditing: boolean };
+    const [translations, setTranslations] = useState<TranslationRow[]>(() =>
+        Object.entries(getEffectiveMnDict()).map(([key, value]) => ({
+            key,
+            value: String(value ?? ''),
+            isEditing: false,
+        }))
+    );
+    const [transSearch, setTransSearch] = useState('');
+    const [isAutoTranslating, setIsAutoTranslating] = useState(false);
+
+    const handleEditTranslation = useCallback((key: string, newValue: string) => {
+        setTranslations((prev) => prev.map((row) => (row.key === key ? { ...row, value: newValue } : row)));
+    }, []);
+
+    const toggleEdit = useCallback((key: string) => {
+        setTranslations((prev) =>
+            prev.map((row) => (row.key === key ? { ...row, isEditing: !row.isEditing } : row))
+        );
+    }, []);
+
+    const filteredTranslations = useMemo(
+        () =>
+            translations.filter(
+                (row) =>
+                    row.key.toLowerCase().includes(transSearch.toLowerCase()) ||
+                    row.value.toLowerCase().includes(transSearch.toLowerCase())
+            ),
+        [translations, transSearch]
+    );
+
+    const handleSaveMnTranslations = useCallback(() => {
+        const dict = Object.fromEntries(translations.map((row) => [row.key, row.value]));
+        persistMnDictSession(dict);
+        alert(
+            '세션에 저장했습니다. PPT_BETA 몽골어 보내기에 바로 반영됩니다. (탭을 닫거나 브라우저를 종료하면 코드 기본 사전으로 돌아갑니다.)'
+        );
+    }, [translations]);
 
     const onBackRef = useRef(onBack);
     onBackRef.current = onBack;
@@ -682,6 +722,15 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             <FileSpreadsheet size={16} className="inline-block mr-2 align-middle" />
                             DDL추출
                         </button>
+                        <button
+                            onClick={() => setActiveTab('translation')}
+                            className={`px-4 py-2.5 rounded-t-lg font-bold text-sm transition-all ${activeTab === 'translation'
+                                ? 'bg-white border border-b-0 border-gray-200 text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                        >
+                            <Languages size={16} className="inline-block mr-2 align-middle" />
+                            번역관리
+                        </button>
                     </div>
                 </div>
             </header>
@@ -981,6 +1030,143 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 )}
                             </>
                         )}
+                    </div>
+                )}
+
+                {activeTab === 'translation' && (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4">
+                            <div className="flex items-center gap-2">
+                                <Languages size={20} className="text-violet-600" />
+                                <h3 className="font-bold text-gray-900">번역 메모리 관리</h3>
+                                <span className="ml-2 px-2 py-0.5 bg-violet-100 text-violet-700 rounded-full text-xs font-bold">
+                                    {translations.length}개 항목
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                                    <input
+                                        type="text"
+                                        value={transSearch}
+                                        onChange={(e) => setTransSearch(e.target.value)}
+                                        placeholder="한글 또는 번역어 검색..."
+                                        className="pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 outline-none w-64 transition-all"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsAutoTranslating(true);
+                                        setTimeout(() => {
+                                            alert('기계 번역 초안을 불러왔습니다. (시뮬레이션)');
+                                            setIsAutoTranslating(false);
+                                        }, 1000);
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    <RefreshCw size={16} className={isAutoTranslating ? 'animate-spin' : ''} />
+                                    일괄 자동 번역
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="bg-gray-50/50 sticky top-0 z-10 backdrop-blur-md">
+                                    <tr className="h-11 align-middle">
+                                        <th className="h-11 px-6 py-0 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider w-1/3">
+                                            한글 원문 (Key)
+                                        </th>
+                                        <th className="h-11 px-6 py-0 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider w-1/3">
+                                            몽골어 번역 (Translation)
+                                        </th>
+                                        <th className="h-11 px-6 py-0 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider w-24 text-center">
+                                            상태
+                                        </th>
+                                        <th className="h-11 px-6 py-0 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider w-24 text-center">
+                                            관리
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {filteredTranslations.map((row) => (
+                                        <tr key={row.key} className="h-11 align-middle hover:bg-gray-50/80 transition-colors">
+                                            <td className="h-11 px-6 py-0 align-middle">
+                                                <span className="text-sm font-medium text-gray-900 leading-none">{row.key}</span>
+                                            </td>
+                                            <td className="h-11 px-6 py-0 align-middle">
+                                                {row.isEditing ? (
+                                                    <input
+                                                        type="text"
+                                                        value={row.value}
+                                                        onChange={(e) => handleEditTranslation(row.key, e.target.value)}
+                                                        onKeyDown={(e) => e.key === 'Enter' && toggleEdit(row.key)}
+                                                        className="w-full h-8 px-2 py-0 text-sm border border-violet-300 rounded-md focus:ring-2 focus:ring-violet-500/20 outline-none"
+                                                        autoFocus
+                                                    />
+                                                ) : (
+                                                    <span
+                                                        className={`text-sm leading-none ${row.value ? 'text-gray-600' : 'text-red-400 italic'}`}
+                                                    >
+                                                        {row.value || '미번역 항목'}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="h-11 px-6 py-0 align-middle text-center">
+                                                {row.value ? (
+                                                    <span className="inline-flex items-center justify-center px-2 py-0.5 bg-green-50 text-green-600 rounded-md text-[10px] font-bold leading-none">
+                                                        완료
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center justify-center px-2 py-0.5 bg-red-50 text-red-600 rounded-md text-[10px] font-bold leading-none">
+                                                        미비
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="h-11 px-6 py-0 align-middle text-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleEdit(row.key)}
+                                                    className={`inline-flex items-center justify-center p-1.5 rounded-lg transition-all ${
+                                                        row.isEditing
+                                                            ? 'text-green-600 bg-green-50 hover:bg-green-100'
+                                                            : 'text-gray-400 hover:text-violet-600 hover:bg-violet-50'
+                                                    }`}
+                                                >
+                                                    {row.isEditing ? <Check size={18} /> : <Edit2 size={18} />}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+
+                            {filteredTranslations.length === 0 && (
+                                <div className="py-20 text-center flex flex-col items-center justify-center">
+                                    <Globe size={40} className="text-gray-200 mb-2" />
+                                    <p className="text-gray-500 text-sm">검색 결과와 일치하는 단어가 없습니다.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-[11px] text-gray-500 flex flex-wrap justify-between items-center gap-3">
+                            <span>
+                                * 기본 사전은 <code className="font-mono text-gray-700">src/utils/translation.ts</code>의{' '}
+                                <code className="font-mono text-gray-700">mnDict</code>입니다. [변경사항 일괄 저장] 시{' '}
+                                <code className="font-mono text-gray-700">sessionStorage</code>에 합쳐 저장되어 같은 탭에서 PPT
+                                몽골어 보내기에 반영됩니다.
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleSaveMnTranslations}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-lg font-bold hover:bg-violet-700 transition-all shadow-sm shrink-0"
+                            >
+                                <Save size={14} />
+                                변경사항 일괄 저장
+                            </button>
+                        </div>
                     </div>
                 )}
 
