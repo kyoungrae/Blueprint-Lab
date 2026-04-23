@@ -1,11 +1,24 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, Languages, Globe, Save, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, Languages, RefreshCw, Download, Upload } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
-import { getEffectiveMnDict, persistMnDictSession } from '../utils/translation';
 import { useAuthStore } from '../store/authStore';
 import * as XLSX from 'xlsx';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
+
+/** 엑셀 행에서 다운로드 템플릿과 동일한 헤더명으로 원문·번역 추출 */
+function parseTranslationExcelRow(row: Record<string, unknown>): { originalText: string; translatedText: string } | null {
+    const norm = (k: string) => String(k).replace(/^\uFEFF/, '').trim();
+    let originalText = '';
+    let translatedText = '';
+    for (const [k, v] of Object.entries(row)) {
+        const nk = norm(k);
+        if (nk === '한글 원문(Key)' || nk === '한글 원문') originalText = String(v ?? '').trim();
+        else if (nk === '몽골어 번역') translatedText = String(v ?? '');
+    }
+    if (!originalText) return null;
+    return { originalText, translatedText };
+}
 
 type SheetColIdx = { tableName: number; tableNameKr: number; columnName: number; columnNameKr: number; type: number; size: number; pk: number; fk: number; notNull: number; default: number };
 
@@ -290,44 +303,131 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [accessLogsTotal, setAccessLogsTotal] = useState(0);
     const [accessLogsTotalPages, setAccessLogsTotalPages] = useState(1);
 
-    type TranslationRow = { key: string; value: string; isEditing: boolean };
-    const [translations, setTranslations] = useState<TranslationRow[]>(() =>
-        Object.entries(getEffectiveMnDict()).map(([key, value]) => ({
-            key,
-            value: String(value ?? ''),
-            isEditing: false,
-        }))
-    );
+    type TranslationDoc = {
+        _id: string;
+        originalText: string;
+        translatedText: string;
+        status: string;
+        isEditing?: boolean;
+    };
+    const [translations, setTranslations] = useState<TranslationDoc[]>([]);
     const [transSearch, setTransSearch] = useState('');
-    const [isAutoTranslating, setIsAutoTranslating] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
 
-    const handleEditTranslation = useCallback((key: string, newValue: string) => {
-        setTranslations((prev) => prev.map((row) => (row.key === key ? { ...row, value: newValue } : row)));
+    const fetchTranslations = useCallback(async () => {
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/translations`);
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '번역 목록을 불러오지 못했습니다.');
+            }
+            const data = await res.json();
+            setTranslations(
+                Array.isArray(data) ? data.map((item: TranslationDoc) => ({ ...item, isEditing: false })) : []
+            );
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : '번역 목록을 불러오지 못했습니다.';
+            setError(msg);
+        }
     }, []);
 
-    const toggleEdit = useCallback((key: string) => {
-        setTranslations((prev) =>
-            prev.map((row) => (row.key === key ? { ...row, isEditing: !row.isEditing } : row))
-        );
-    }, []);
+    const handleSyncWords = useCallback(async () => {
+        if (!window.confirm('프로젝트 데이터를 스캔하여 새로운 한글 단어를 추출하시겠습니까?')) return;
+        setIsSyncing(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/translations/sync`, { method: 'POST' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '동기화에 실패했습니다.');
+            }
+            const data = await res.json();
+            alert(`동기화 완료! ${typeof data.newWordsCount === 'number' ? data.newWordsCount : 0}개의 새 단어가 추가되었습니다.`);
+            await fetchTranslations();
+        } catch {
+            alert('동기화 실패');
+        } finally {
+            setIsSyncing(false);
+        }
+    }, [fetchTranslations]);
 
-    const filteredTranslations = useMemo(
-        () =>
-            translations.filter(
-                (row) =>
-                    row.key.toLowerCase().includes(transSearch.toLowerCase()) ||
-                    row.value.toLowerCase().includes(transSearch.toLowerCase())
-            ),
-        [translations, transSearch]
+    const saveTranslation = useCallback(
+        async (id: string, translatedText: string) => {
+            try {
+                const res = await fetchWithAuth(`${API_BASE}/admin/translations/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ translatedText }),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.message || '저장에 실패했습니다.');
+                }
+                await fetchTranslations();
+            } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : '저장에 실패했습니다.';
+                alert(msg);
+            }
+        },
+        [fetchTranslations]
     );
 
-    const handleSaveMnTranslations = useCallback(() => {
-        const dict = Object.fromEntries(translations.map((row) => [row.key, row.value]));
-        persistMnDictSession(dict);
-        alert(
-            '세션에 저장했습니다. PPT_BETA 몽골어 보내기에 바로 반영됩니다. (탭을 닫거나 브라우저를 종료하면 코드 기본 사전으로 돌아갑니다.)'
-        );
+    const handleDownloadExcel = useCallback(() => {
+        const dataToExport = translations.map((t) => ({
+            '한글 원문(Key)': t.originalText,
+            '몽골어 번역': t.translatedText,
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Translations');
+        worksheet['!cols'] = [{ wch: 48 }, { wch: 40 }];
+        XLSX.writeFile(workbook, `Translation_Memory_${new Date().toISOString().split('T')[0]}.xlsx`);
     }, [translations]);
+
+    const handleUploadExcel = useCallback(
+        async (e: React.ChangeEvent<HTMLInputElement>) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setIsSyncing(true);
+            setError(null);
+            try {
+                const buf = await file.arrayBuffer();
+                const workbook = XLSX.read(buf, { type: 'array', cellDates: false });
+                const sheetName = workbook.SheetNames[0];
+                if (!sheetName) throw new Error('시트가 비어 있습니다.');
+                const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetName], {
+                    defval: '',
+                    raw: false,
+                });
+                const uploadData = rows
+                    .map((row) => parseTranslationExcelRow(row))
+                    .filter((x): x is { originalText: string; translatedText: string } => x !== null);
+                if (uploadData.length === 0) {
+                    throw new Error('유효한 행이 없습니다. "한글 원문(Key)" 열을 확인해 주세요.');
+                }
+                const res = await fetchWithAuth(`${API_BASE}/admin/translations/import`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ translations: uploadData }),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.message || '업로드 중 서버 오류가 발생했습니다.');
+                }
+                const result = await res.json();
+                alert(
+                    `업로드 완료! (반영 건수: ${typeof result.upsertedCount === 'number' ? result.upsertedCount : 0}건)`
+                );
+                await fetchTranslations();
+            } catch (err: unknown) {
+                alert(err instanceof Error ? err.message : '엑셀 파일 파싱 중 오류가 발생했습니다.');
+            } finally {
+                setIsSyncing(false);
+                e.target.value = '';
+            }
+        },
+        [fetchTranslations]
+    );
 
     const onBackRef = useRef(onBack);
     onBackRef.current = onBack;
@@ -353,6 +453,12 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             setRollbackHistory([]);
         }
     }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'translation') {
+            void fetchTranslations();
+        }
+    }, [activeTab, fetchTranslations]);
 
     const fetchAccessLogs = useCallback(async (page: number, pageSize: AccessLogPageSize) => {
         setAccessLogsLoading(true);
@@ -1044,128 +1150,153 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 </span>
                             </div>
 
-                            <div className="flex items-center gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
                                 <div className="relative">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                                     <input
                                         type="text"
                                         value={transSearch}
                                         onChange={(e) => setTransSearch(e.target.value)}
-                                        placeholder="한글 또는 번역어 검색..."
+                                        placeholder="검색어 입력..."
                                         className="pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 outline-none w-64 transition-all"
                                     />
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setIsAutoTranslating(true);
-                                        setTimeout(() => {
-                                            alert('기계 번역 초안을 불러왔습니다. (시뮬레이션)');
-                                            setIsAutoTranslating(false);
-                                        }, 1000);
-                                    }}
-                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 transition-all"
+                                    onClick={handleDownloadExcel}
+                                    disabled={translations.length === 0}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 disabled:opacity-50 transition-all"
                                 >
-                                    <RefreshCw size={16} className={isAutoTranslating ? 'animate-spin' : ''} />
-                                    일괄 자동 번역
+                                    <Download size={16} className="text-blue-500" />
+                                    엑셀 다운로드
+                                </button>
+                                <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50">
+                                    <Upload size={16} className="text-green-500" />
+                                    엑셀 업로드
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        className="sr-only"
+                                        onChange={(ev) => void handleUploadExcel(ev)}
+                                    />
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={handleSyncWords}
+                                    disabled={isSyncing}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 disabled:opacity-50 transition-all"
+                                >
+                                    <RefreshCw size={16} className={isSyncing ? 'animate-spin text-violet-500' : ''} />
+                                    {isSyncing ? '처리 중...' : 'DB 단어 수동 동기화'}
                                 </button>
                             </div>
                         </div>
 
-                        <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="bg-gray-50/50 sticky top-0 z-10 backdrop-blur-md">
+                        <div className="max-h-[600px] overflow-y-auto overflow-x-auto custom-scrollbar">
+                            <table className="w-full table-fixed border-collapse text-left">
+                                <thead className="bg-gray-50 sticky top-0 z-10">
                                     <tr className="h-11 align-middle">
-                                        <th className="h-11 px-6 py-0 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider w-1/3">
-                                            한글 원문 (Key)
+                                        <th className="h-11 w-[42%] min-w-0 px-4 py-2 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                                            한글 원문
                                         </th>
-                                        <th className="h-11 px-6 py-0 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider w-1/3">
-                                            몽골어 번역 (Translation)
+                                        <th className="h-11 min-w-0 px-4 py-2 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                                            몽골어 번역
                                         </th>
-                                        <th className="h-11 px-6 py-0 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider w-24 text-center">
-                                            상태
-                                        </th>
-                                        <th className="h-11 px-6 py-0 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider w-24 text-center">
+                                        <th className="h-11 w-24 shrink-0 px-3 py-2 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider text-center">
                                             관리
                                         </th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {filteredTranslations.map((row) => (
-                                        <tr key={row.key} className="h-11 align-middle hover:bg-gray-50/80 transition-colors">
-                                            <td className="h-11 px-6 py-0 align-middle">
-                                                <span className="text-sm font-medium text-gray-900 leading-none">{row.key}</span>
-                                            </td>
-                                            <td className="h-11 px-6 py-0 align-middle">
-                                                {row.isEditing ? (
-                                                    <input
-                                                        type="text"
-                                                        value={row.value}
-                                                        onChange={(e) => handleEditTranslation(row.key, e.target.value)}
-                                                        onKeyDown={(e) => e.key === 'Enter' && toggleEdit(row.key)}
-                                                        className="w-full h-8 px-2 py-0 text-sm border border-violet-300 rounded-md focus:ring-2 focus:ring-violet-500/20 outline-none"
-                                                        autoFocus
-                                                    />
-                                                ) : (
-                                                    <span
-                                                        className={`text-sm leading-none ${row.value ? 'text-gray-600' : 'text-red-400 italic'}`}
+                                    {translations
+                                        .filter((doc) => {
+                                            const q = transSearch.trim().toLowerCase();
+                                            if (!q) return true;
+                                            return (
+                                                doc.originalText.toLowerCase().includes(q) ||
+                                                doc.translatedText.toLowerCase().includes(q)
+                                            );
+                                        })
+                                        .map((doc) => (
+                                            <tr key={doc._id} className="align-top hover:bg-gray-50/80 transition-colors">
+                                                <td className="min-w-0 w-[42%] border-r border-gray-100 px-4 py-2 align-top">
+                                                    <div className="max-h-32 min-h-[2.75rem] overflow-y-auto overflow-x-hidden break-words text-sm font-medium leading-snug text-gray-900 custom-scrollbar">
+                                                        {doc.originalText}
+                                                    </div>
+                                                </td>
+                                                <td className="min-w-0 border-r border-gray-100 px-4 py-2 align-top">
+                                                    {doc.isEditing ? (
+                                                        <div className="max-h-32 min-h-[2.75rem] overflow-y-auto custom-scrollbar">
+                                                            <textarea
+                                                                key={`edit-${doc._id}`}
+                                                                defaultValue={doc.translatedText}
+                                                                rows={3}
+                                                                onBlur={(e) => {
+                                                                    void saveTranslation(doc._id, e.target.value);
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                                                        void saveTranslation(
+                                                                            doc._id,
+                                                                            (e.target as HTMLTextAreaElement).value
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                className="w-full min-h-[4.5rem] resize-y px-2 py-1.5 text-sm border border-violet-300 rounded-md focus:ring-2 focus:ring-violet-500/20 outline-none break-words"
+                                                                autoFocus
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="max-h-32 min-h-[2.75rem] overflow-y-auto overflow-x-hidden break-words text-sm leading-snug">
+                                                            <span
+                                                                className={
+                                                                    doc.translatedText ? 'text-gray-600' : 'text-red-400'
+                                                                }
+                                                            >
+                                                                {doc.translatedText || '미번역'}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="w-24 shrink-0 px-3 py-2 align-middle text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setTranslations((prev) =>
+                                                                prev.map((item) =>
+                                                                    item._id === doc._id
+                                                                        ? { ...item, isEditing: !item.isEditing }
+                                                                        : item
+                                                                )
+                                                            )
+                                                        }
+                                                        className="inline-flex items-center justify-center p-1.5 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
                                                     >
-                                                        {row.value || '미번역 항목'}
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="h-11 px-6 py-0 align-middle text-center">
-                                                {row.value ? (
-                                                    <span className="inline-flex items-center justify-center px-2 py-0.5 bg-green-50 text-green-600 rounded-md text-[10px] font-bold leading-none">
-                                                        완료
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center justify-center px-2 py-0.5 bg-red-50 text-red-600 rounded-md text-[10px] font-bold leading-none">
-                                                        미비
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="h-11 px-6 py-0 align-middle text-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => toggleEdit(row.key)}
-                                                    className={`inline-flex items-center justify-center p-1.5 rounded-lg transition-all ${
-                                                        row.isEditing
-                                                            ? 'text-green-600 bg-green-50 hover:bg-green-100'
-                                                            : 'text-gray-400 hover:text-violet-600 hover:bg-violet-50'
-                                                    }`}
-                                                >
-                                                    {row.isEditing ? <Check size={18} /> : <Edit2 size={18} />}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                        <Edit2 size={18} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
                                 </tbody>
                             </table>
-
-                            {filteredTranslations.length === 0 && (
-                                <div className="py-20 text-center flex flex-col items-center justify-center">
-                                    <Globe size={40} className="text-gray-200 mb-2" />
-                                    <p className="text-gray-500 text-sm">검색 결과와 일치하는 단어가 없습니다.</p>
-                                </div>
+                            {translations.filter((doc) => {
+                                const q = transSearch.trim().toLowerCase();
+                                if (!q) return true;
+                                return (
+                                    doc.originalText.toLowerCase().includes(q) ||
+                                    doc.translatedText.toLowerCase().includes(q)
+                                );
+                            }).length === 0 && (
+                                <div className="py-16 text-center text-gray-500 text-sm">검색 결과가 없습니다.</div>
                             )}
                         </div>
 
-                        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-[11px] text-gray-500 flex flex-wrap justify-between items-center gap-3">
-                            <span>
-                                * 기본 사전은 <code className="font-mono text-gray-700">src/utils/translation.ts</code>의{' '}
-                                <code className="font-mono text-gray-700">mnDict</code>입니다. [변경사항 일괄 저장] 시{' '}
-                                <code className="font-mono text-gray-700">sessionStorage</code>에 합쳐 저장되어 같은 탭에서 PPT
-                                몽골어 보내기에 반영됩니다.
-                            </span>
-                            <button
-                                type="button"
-                                onClick={handleSaveMnTranslations}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-lg font-bold hover:bg-violet-700 transition-all shadow-sm shrink-0"
-                            >
-                                <Save size={14} />
-                                변경사항 일괄 저장
-                            </button>
+                        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-[11px] text-gray-500">
+                            * 동기화로 단어 수집 → <strong className="text-gray-600">엑셀 다운로드</strong>로 편집 →{' '}
+                            <strong className="text-gray-600">엑셀 업로드</strong>로 일괄 반영. 업로드 시 헤더는{' '}
+                            <code className="font-mono text-gray-700">한글 원문(Key)</code>,{' '}
+                            <code className="font-mono text-gray-700">몽골어 번역</code>과 동일해야 합니다. PPT 몽골어는 로그인 후
+                            서버 사전과 정적 <code className="font-mono text-gray-700">mnDict</code>를 합쳐 적용합니다.
                         </div>
                     </div>
                 )}

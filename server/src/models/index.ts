@@ -3,3 +3,4 @@ export { Project, type IProject, type IEntity, type IRelationship, type IAttribu
 export { History, type IHistory, type OperationType } from './History';
 export { Invitation, type IInvitation } from './Invitation';
 export { ProjectAccessLog, ACCESS_LOG_RETENTION_SECONDS, ACCESS_LOG_RETENTION_MS, type IProjectAccessLog, type ProjectAccessLogKind } from './ProjectAccessLog';
+export { Translation, type ITranslation, type TranslationStatus } from './Translation';

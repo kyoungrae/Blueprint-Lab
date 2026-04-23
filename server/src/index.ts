@@ -14,6 +14,7 @@ import projectRoutes from './routes/projectRoutes';
 import imageRoutes from './routes/imageRoutes';
 import fontRoutes from './routes/fontRoutes';
 import adminRoutes from './routes/adminRoutes';
+import translationRoutes from './routes/translationRoutes';
 import logger from './utils/logger';
 import { isAllowedCorsOrigin } from './utils/corsOrigins';
 
@@ -53,6 +54,7 @@ app.get('/health', (req, res) => {
 // Routes (이미지 라우트를 먼저 등록 - /:id/images/:imageId가 /:id보다 먼저 매칭되도록)
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/translations', translationRoutes);
 app.use('/api/fonts', fontRoutes);
 app.use('/api/projects', imageRoutes);
 app.use('/api/projects', projectRoutes);

@@ -2,7 +2,10 @@ import React from 'react';
 import pptxgen from "pptxgenjs";
 import type { Screen } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
-import { t } from '../utils/translation';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { mnDict as staticMnDict } from '../utils/translation';
+
+const API_ROOT = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
 
 interface PPTBetaExporterProps {
     screenIds: string[];
@@ -28,8 +31,13 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             img.src = url;
         });
     };
-    
+
     React.useEffect(() => {
+        let tr = (text: string, isMn: boolean): string => {
+            if (!isMn || !text) return text;
+            return staticMnDict[text] ?? text;
+        };
+
         const exportLayoutToPPT = async (selectedScreens: Screen[], externalPptx?: pptxgen, sectionTitle?: string) => {
             const pptx = externalPptx || new pptxgen();
             
@@ -139,20 +147,20 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 // --- 데이터 매핑용 맵 생성 ---
                 const textMap: Record<string, string> = {
-                    "0,0": t('시스템명', translateToMN),
+                    "0,0": tr('시스템명', translateToMN),
                     "0,1": screen.systemName || '',
-                    "0,2": t('작성자', translateToMN),
+                    "0,2": tr('작성자', translateToMN),
                     "0,3": screen.author || '',
-                    "0,4": t('작성일자', translateToMN),
+                    "0,4": tr('작성일자', translateToMN),
                     "0,5": screen.createdDate || '',
-                    "1,0": t('화면ID', translateToMN),
+                    "1,0": tr('화면ID', translateToMN),
                     "1,1": screen.screenId || '',
-                    "1,2": t('화면유형', translateToMN),
+                    "1,2": tr('화면유형', translateToMN),
                     "1,3": screen.screenType || '',
-                    "1,4": t('페이지', translateToMN),
+                    "1,4": tr('페이지', translateToMN),
                     "1,5": screen.page || '',
-                    "2,0": t('화면설명', translateToMN),
-                    "2,1": screen.screenDescription || t('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
+                    "2,0": tr('화면설명', translateToMN),
+                    "2,1": screen.screenDescription || tr('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
                 };
 
                 // ─── 상단 헤더 영역 ───
@@ -181,7 +189,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 });
                                 // 화면설명 내용 추가 (왼쪽 정렬)
                                 const { text, options: styleOpts } = parseStyles(textMap["2,1"]);
-                                slide.addText(text, {
+                                slide.addText(tr(text, translateToMN), {
                                     x: c * cW, y: r * rH, w: cW * 5, h: rH,
                                     align: 'left', valign: 'middle',
                                     fontSize: Math.max(PPT_FONT_MIN_SIZE, 9), color: '94A3B8', 
@@ -205,7 +213,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         // 텍스트 추가
                         if (content) {
                             const { text, options: styleOpts } = parseStyles(content);
-                            slide.addText(text, {
+                            slide.addText(tr(text, translateToMN), {
                                 x: c * cW, y: r * rH, w: cW, h: rH,
                                 align: 'center', valign: 'middle',
                                 fontSize: Math.max(PPT_FONT_MIN_SIZE, isLabel ? 9 : 9.5),
@@ -241,9 +249,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const ratios = screen.rightPaneRatios || [40, 35, 25];
                 const titleH = 26 * scale; 
                 const titles = [
-                    t('초기화면설정', translateToMN),
-                    t('기능상세', translateToMN),
-                    t('관련테이블', translateToMN),
+                    tr('초기화면설정', translateToMN),
+                    tr('기능상세', translateToMN),
+                    tr('관련테이블', translateToMN),
                 ];
                 
                 // 🚀 섹션별 실제 데이터 매핑 수정
@@ -257,7 +265,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     .map(el => {
                         // 🚀 기능 설명에 포함된 HTML 태그를 제거하고 텍스트만 추출
                         const { text: cleanDesc } = parseStyles(el.description || (el as any).desc || '');
-                        return `[${el.text}] ${cleanDesc}`;
+                        return `[${tr(String(el.text || '').trim(), translateToMN)}] ${tr(cleanDesc, translateToMN)}`;
                     })
                     .join('\n');
 
@@ -311,13 +319,13 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 fill: { color: 'EF4444' }
                             });
                             // ⚪ 원 안의 숫자 텍스트
-                            slide.addText(el.text || '', {
+                            slide.addText(tr(String(el.text || '').trim(), translateToMN), {
                                 x: leftW + 0.1, y: itemY, w: 0.16, h: 0.16,
                                 align: 'center', valign: 'middle',
                                 fontSize: 6, color: 'FFFFFF', bold: true
                             });
                             // 📝 상세 설명 텍스트 (아이콘 옆 배치)
-                            slide.addText(cleanDesc, {
+                            slide.addText(tr(cleanDesc, translateToMN), {
                                 x: leftW + 0.32, y: itemY, w: rightW - 0.45, h: 0.16,
                                 align: 'left', valign: 'middle',
                                 fontSize: 5, color: '334155'
@@ -329,7 +337,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         // 원본 기능상세(functionDetails) 텍스트가 있으면 추가 렌더링
                         if (screen.functionDetails) {
                             const { text: cleanFuncText } = parseStyles(screen.functionDetails);
-                            slide.addText(cleanFuncText, {
+                            slide.addText(tr(cleanFuncText, translateToMN), {
                                 x: leftW + 0.1, y: currentY + titleH + itemOffset, 
                                 w: rightW - 0.2, h: 0.2,
                                 align: 'left', valign: 'top',
@@ -341,7 +349,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         const content = sectionContents[idx];
                         if (content) {
                             const { text: cleanText } = parseStyles(content);
-                            slide.addText(cleanText, {
+                            slide.addText(tr(cleanText, translateToMN), {
                                 x: leftW + 0.1, 
                                 y: currentY + titleH + 0.05, 
                                 w: rightW - 0.2, 
@@ -398,7 +406,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             });
                             if (el.text) {
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
-                                slide.addText(cleanText, {
+                                slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
@@ -422,7 +430,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             });
                             if (el.text) {
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
-                                slide.addText(cleanText, {
+                                slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
@@ -440,7 +448,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         case 'text':
                             if (el.text) {
                                 const { text, options: styleOpts } = parseStyles(el.text);
-                                slide.addText(text, {
+                                slide.addText(tr(text, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'left') as 'left' | 'center' | 'right',
                                     valign: (el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
@@ -460,7 +468,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 x: elX, y: elY, w: elW, h: elH,
                                 fill: { color: cleanColor(el.fill || 'EF4444') },
                             });
-                            slide.addText(el.text || '', {
+                            slide.addText(tr(String(el.text || '').trim(), translateToMN), {
                                 x: elX, y: elY, w: elW, h: elH,
                                 align: 'center', valign: 'middle',
                                 fontSize: Math.max(PPT_FONT_MIN_SIZE, (el.fontSize || 10) * scale * PPT_FONT_SCALE_RATIO),
@@ -561,7 +569,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                             console.log('bgColor:', bgColor);
                                         }
                                         row.push({
-                                            text: text || '',
+                                            text: tr(text || '', translateToMN),
                                             options: {
                                                 fill: { color: bgColor.replace('#', '') },
                                                 color: finalColor,
@@ -656,7 +664,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             });
                             if (el.text) {
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
-                                slide.addText(cleanText, {
+                                slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
@@ -686,7 +694,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             });
                             if (el.text) {
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
-                                slide.addText(cleanText, {
+                                slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
                                     align: (el.textAlign || 'center') as any,
                                     valign: (el.verticalAlign || 'middle') as any,
@@ -823,20 +831,20 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 // 데이터 매핑용 맵 생성
                 const textMap: Record<string, string> = {
-                    "0,0": t('시스템명', translateToMN),
+                    "0,0": tr('시스템명', translateToMN),
                     "0,1": screen.systemName || '',
-                    "0,2": t('작성자', translateToMN),
+                    "0,2": tr('작성자', translateToMN),
                     "0,3": screen.author || '',
-                    "0,4": t('작성일자', translateToMN),
+                    "0,4": tr('작성일자', translateToMN),
                     "0,5": screen.createdDate || '',
-                    "1,0": t('화면ID', translateToMN),
+                    "1,0": tr('화면ID', translateToMN),
                     "1,1": screen.screenId || '',
-                    "1,2": t('화면유형', translateToMN),
+                    "1,2": tr('화면유형', translateToMN),
                     "1,3": screen.screenType || '',
-                    "1,4": t('페이지', translateToMN),
+                    "1,4": tr('페이지', translateToMN),
                     "1,5": screen.page || '',
-                    "2,0": t('화면설명', translateToMN),
-                    "2,1": screen.screenDescription || t('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
+                    "2,0": tr('화면설명', translateToMN),
+                    "2,1": screen.screenDescription || tr('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
                 };
 
                 // ─── 상단 헤더 영역 ───
@@ -865,7 +873,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 });
                                 // 화면설명 내용 추가 (왼쪽 정렬)
                                 const { text, options: styleOpts } = parseStyles(textMap["2,1"]);
-                                slide.addText(text, {
+                                slide.addText(tr(text, translateToMN), {
                                     x: c * cW, y: r * rH, w: cW * 5, h: rH,
                                     align: 'left', valign: 'middle',
                                     fontSize: Math.max(PPT_FONT_MIN_SIZE, 9), color: '94A3B8', 
@@ -889,7 +897,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         // 텍스트 추가
                         if (content) {
                             const { text, options: styleOpts } = parseStyles(content);
-                            slide.addText(text, {
+                            slide.addText(tr(text, translateToMN), {
                                 x: c * cW, y: r * rH, w: cW, h: rH,
                                 align: 'center', valign: 'middle',
                                 fontSize: Math.max(PPT_FONT_MIN_SIZE, isLabel ? 9 : 9.5),
@@ -921,33 +929,33 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const specTableData = [
                     // Header Row 1
                     [
-                        { text: t('테이블명(한글)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: t('테이블명(영문)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: t('항목명(한글)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: t('필드명(영문)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: t('항목타입', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: t('항목정의', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'DBEAFE' }, colspan: 4, align: 'center' as any, valign: 'middle' as any } },
-                        { text: t('비고', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('테이블명(한글)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('테이블명(영문)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('항목명(한글)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('필드명(영문)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('항목타입', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('항목정의', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'DBEAFE' }, colspan: 4, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('비고', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
                     ],
                     // Header Row 2
                     [
                         { text: 'Format', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
-                        { text: t('자릿수', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
-                        { text: t('초기값', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('자릿수', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr('초기값', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
                         { text: 'Validation', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
                     ],
                     // Data Rows
                     ...specs.map(spec => [
-                        { text: spec.tableNameKr || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.tableNameEn || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.fieldName || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.controlName || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.dataType || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.format || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.length || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.defaultValue || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.validation || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
-                        { text: spec.memo || '', options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.tableNameKr || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.tableNameEn || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.fieldName || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.controlName || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.dataType || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.format || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.length || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.defaultValue || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.validation || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
+                        { text: tr(spec.memo || '', translateToMN), options: { fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 8 * scale * PPT_FONT_SCALE_RATIO), color: '334155', align: 'center' as any, valign: 'middle' as any } },
                     ]),
                 ];
 
@@ -974,6 +982,22 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             try {
                 const selectedScreens = screens.filter(screen => screenIds.includes(screen.id));
                 if (selectedScreens.length === 0) throw new Error('선택된 화면을 찾을 수 없습니다.');
+
+                let dynamicDict: Record<string, string> = {};
+                if (translateToMN) {
+                    try {
+                        const dictRes = await fetchWithAuth(`${API_ROOT}/translations/dictionary`);
+                        if (dictRes.ok) {
+                            dynamicDict = await dictRes.json();
+                        }
+                    } catch {
+                        /* 서버 사전 없으면 정적 mnDict만 사용 */
+                    }
+                }
+                tr = (text: string, isMn: boolean): string => {
+                    if (!isMn || !text) return text;
+                    return dynamicDict[text] ?? staticMnDict[text] ?? text;
+                };
 
                 // 하나의 pptx 객체 생성
                 const pptx = new pptxgen();

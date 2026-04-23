@@ -12,6 +12,7 @@ import {
     rollbackProjectHistory,
     getAdminAccessLogs,
 } from '../controllers/adminController';
+import { listTranslations, syncTranslations, importTranslations, patchTranslation } from '../controllers/adminTranslationController';
 
 const router = Router();
 
@@ -28,5 +29,10 @@ router.delete('/users/:id', deleteUser);
 router.get('/projects', getAdminProjects);
 router.get('/projects/:projectId/history', getProjectHistory);
 router.post('/projects/:projectId/rollback', rollbackProjectHistory);
+
+router.get('/translations', listTranslations);
+router.post('/translations/sync', syncTranslations);
+router.post('/translations/import', importTranslations);
+router.patch('/translations/:id', patchTranslation);
 
 export default router;
