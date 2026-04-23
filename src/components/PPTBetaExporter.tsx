@@ -3,9 +3,118 @@ import pptxgen from "pptxgenjs";
 import type { Screen } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { getImageDisplayUrl } from '../utils/imageUrl';
 import { mnDict as staticMnDict } from '../utils/translation';
 
 const API_ROOT = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
+
+/** img 로드로 크기 추정 (실패 시 기본값) */
+function measureImageUrl(url: string): Promise<{ w: number; h: number }> {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.naturalWidth || 100, h: img.naturalHeight || 100 });
+        img.onerror = () => resolve({ w: 100, h: 100 });
+        img.src = url;
+    });
+}
+
+function svgStringFromDataUrl(dataUrl: string): string | null {
+    try {
+        const lower = dataUrl.toLowerCase();
+        if (lower.startsWith('data:image/svg+xml;base64,')) {
+            const b64 = dataUrl.slice('data:image/svg+xml;base64,'.length);
+            const bin = atob(b64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return new TextDecoder('utf-8').decode(bytes);
+        }
+        const comma = dataUrl.indexOf(',');
+        if (comma === -1) return null;
+        const head = dataUrl.slice(0, comma).toLowerCase();
+        if (!head.includes('image/svg+xml')) return null;
+        const body = dataUrl.slice(comma + 1);
+        return decodeURIComponent(body.replace(/\+/g, ' '));
+    } catch {
+        return null;
+    }
+}
+
+async function rasterizeSvgToPngDataUrl(svgMarkup: string): Promise<{ data: string; w: number; h: number } | null> {
+    const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+    const objUrl = URL.createObjectURL(blob);
+    try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const i = new Image();
+            i.onload = () => resolve(i);
+            i.onerror = () => reject(new Error('svg'));
+            i.src = objUrl;
+        });
+        let nw = img.naturalWidth;
+        let nh = img.naturalHeight;
+        if (!nw || !nh) {
+            nw = 800;
+            nh = 600;
+        }
+        const maxSide = 4096;
+        const scale = nw > maxSide || nh > maxSide ? maxSide / Math.max(nw, nh) : 1;
+        const cw = Math.max(1, Math.round(nw * scale));
+        const ch = Math.max(1, Math.round(nh * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(img, 0, 0, cw, ch);
+        return { data: canvas.toDataURL('image/png'), w: nw, h: nh };
+    } catch {
+        return null;
+    } finally {
+        URL.revokeObjectURL(objUrl);
+    }
+}
+
+/**
+ * pptxgenjs는 SVG path를 Image로 읽을 때 자주 실패하므로 PNG data로 바꿉니다.
+ * 그 외 URL은 화면과 동일하게 표시 URL로 정규화합니다.
+ */
+async function resolveImageForPpt(
+    rawUrl: string,
+    fetchAuth: typeof fetchWithAuth
+): Promise<{ data?: string; path?: string; w: number; h: number } | null> {
+    if (!rawUrl || rawUrl.length < 10) return null;
+
+    if (rawUrl.startsWith('data:')) {
+        const svgInline = svgStringFromDataUrl(rawUrl);
+        if (svgInline) {
+            const r = await rasterizeSvgToPngDataUrl(svgInline);
+            return r ? { data: r.data, w: r.w, h: r.h } : null;
+        }
+        const dim = await measureImageUrl(rawUrl);
+        return { data: rawUrl, w: dim.w, h: dim.h };
+    }
+
+    const resolved = getImageDisplayUrl(rawUrl);
+    if (!resolved) return null;
+
+    const noQuery = resolved.split('?')[0].toLowerCase();
+    const rawNoQuery = rawUrl.split('?')[0].toLowerCase();
+    const isSvg = noQuery.endsWith('.svg') || rawNoQuery.endsWith('.svg');
+
+    if (isSvg) {
+        try {
+            const res = await fetchAuth(resolved);
+            if (!res.ok) return null;
+            const svgText = await res.text();
+            const r = await rasterizeSvgToPngDataUrl(svgText);
+            return r ? { data: r.data, w: r.w, h: r.h } : null;
+        } catch {
+            return null;
+        }
+    }
+
+    const dim = await measureImageUrl(resolved);
+    return { path: resolved, w: dim.w, h: dim.h };
+}
 
 interface PPTBetaExporterProps {
     screenIds: string[];
@@ -24,16 +133,6 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     onError
 }) => {
     const { screens, sections } = useScreenDesignStore();
-
-    // 🚀 이미지 실제 크기를 가져오는 헬퍼 함수
-    const getImageSize = (url: string): Promise<{ w: number; h: number }> => {
-        return new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-            img.onerror = () => resolve({ w: 100, h: 100 }); // 실패 시 기본값
-            img.src = url;
-        });
-    };
 
     React.useEffect(() => {
         let tr = (text: string, isMn: boolean): string => {
@@ -720,9 +819,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         }
                         case 'image':
                             if (el.imageUrl && el.imageUrl.length > 10) {
-                                // 🚀 이미지 비율 수동 계산 로직
-                                const dim = await getImageSize(el.imageUrl);
-                                const imgRatio = dim.w / dim.h;
+                                const prepared = await resolveImageForPpt(el.imageUrl, fetchWithAuth);
+                                if (!prepared) break;
+                                const imgRatio = prepared.w / prepared.h;
 
                                 let finalW = elW;
                                 let finalH = elW / imgRatio;
@@ -732,19 +831,24 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     finalW = elH * imgRatio;
                                 }
 
-                                // 중앙 정렬 좌표 계산
                                 const offsetX = (elW - finalW) / 2;
                                 const offsetY = (elH - finalH) / 2;
 
-                                const imgOptions: any = { 
-                                    x: elX + offsetX, y: elY + offsetY, w: finalW, h: finalH, 
-                                    rotate: el.imageRotation || 0 
+                                const imgOptions: any = {
+                                    x: elX + offsetX,
+                                    y: elY + offsetY,
+                                    w: finalW,
+                                    h: finalH,
+                                    rotate: el.imageRotation || 0,
                                 };
-                                
-                                if (el.imageUrl.startsWith('data:')) imgOptions.data = el.imageUrl;
-                                else imgOptions.path = el.imageUrl;
-                                
-                                try { slide.addImage(imgOptions); } catch { }
+                                if (prepared.data) imgOptions.data = prepared.data;
+                                else if (prepared.path) imgOptions.path = prepared.path;
+
+                                try {
+                                    slide.addImage(imgOptions);
+                                } catch {
+                                    /* 래스터/경로 실패 시 해당 이미지만 생략 */
+                                }
                             }
                             break;
                     }
