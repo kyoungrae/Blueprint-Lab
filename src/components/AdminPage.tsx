@@ -274,7 +274,11 @@ interface AdminHistoryEntry {
     timestamp: string;
 }
 
-const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab }> = ({ onBack, initialTab = 'members' }) => {
+const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?: boolean }> = ({
+    onBack,
+    initialTab = 'members',
+    embedded = false,
+}) => {
     const { user, updateUser } = useAuthStore();
     const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
     const [users, setUsers] = useState<AdminUser[]>([]);
@@ -794,7 +798,8 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab }> = ({ on
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className={`${embedded ? 'h-full overflow-hidden' : 'min-h-screen'} bg-gray-50 flex flex-col`}>
+            {!embedded && (
             <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -871,8 +876,15 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab }> = ({ on
                     </div>
                 </div>
             </header>
+            )}
 
-            <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+            <main
+                className={
+                    embedded
+                        ? 'flex-1 min-h-0 w-full px-3 py-3 overflow-hidden'
+                        : 'flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6'
+                }
+            >
                 {error && (
                     <div className="mb-4 p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 text-sm font-medium">
                         {error}
@@ -1171,7 +1183,7 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab }> = ({ on
                 )}
 
                 {activeTab === 'translation' && (
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                    <div className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col ${embedded ? 'h-full min-h-0' : ''}`}>
                         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4">
                             <div className="flex items-center gap-2">
                                 <Languages size={20} className="text-violet-600" />
@@ -1223,7 +1235,7 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab }> = ({ on
                             </div>
                         </div>
 
-                        <div className="max-h-[600px] overflow-y-auto overflow-x-auto custom-scrollbar">
+                        <div className={`${embedded ? 'flex-1 min-h-0' : 'max-h-[600px]'} overflow-y-auto overflow-x-auto custom-scrollbar`}>
                             <table className="w-full table-fixed border-collapse text-left">
                                 <thead className="bg-gray-50 sticky top-0 z-10">
                                     <tr className="h-11 align-middle">

@@ -2314,7 +2314,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
                 {isTranslationPopupOpen && (
                     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-[1002] flex items-center justify-center p-4">
-                        <div className="relative w-[80vw] max-w-[960px] h-[72vh] max-h-[72vh] rounded-2xl shadow-2xl border border-gray-200 bg-white overflow-hidden">
+                        <div className="relative w-[88vw] max-w-[1056px] h-[72vh] max-h-[72vh] rounded-2xl shadow-2xl border border-gray-200 bg-white overflow-hidden">
                             <button
                                 type="button"
                                 onClick={() => setIsTranslationPopupOpen(false)}
@@ -2323,9 +2323,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                             >
                                 <X size={18} />
                             </button>
-                            <div className="w-full h-full overflow-auto rounded-2xl">
-                                <AdminPage onBack={() => setIsTranslationPopupOpen(false)} initialTab="translation" />
-                            </div>
+                            <AdminPage onBack={() => setIsTranslationPopupOpen(false)} initialTab="translation" embedded />
                         </div>
                     </div>
                 )}
