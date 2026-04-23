@@ -4229,10 +4229,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             }}
                                         >
                                             <div
-                                                className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2 cursor-move select-none"
+                                                className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2 cursor-grab active:cursor-grabbing group/header select-none"
                                                 onMouseDown={handleFontStylePanelHeaderMouseDown}
                                             >
                                                 <div className="flex items-center gap-2">
+                                                    <GripVertical size={14} className="text-gray-300 group-hover/header:text-gray-400 transition-colors" />
                                                     <Type size={14} className="text-[#2c3e7c]" />
                                                     <span className="text-[11px] font-bold text-gray-600">폰트 스타일</span>
                                                     </div>
