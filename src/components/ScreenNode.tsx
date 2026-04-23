@@ -385,6 +385,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const [showGridPanel, setShowGridPanel] = useState(false);
     const [gridPanelPos, setGridPanelPos] = useState({ x: 0, y: 0 });
     const gridPanelAnchorRef = useRef<HTMLDivElement>(null);
+    const isDraggingFontStylePanelRef = useRef(false);
 
     const [showStylePanel, setShowStylePanel] = useState(false);
     const [showLayerPanel, setShowLayerPanel] = useState(false);
@@ -723,6 +724,27 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
     const [showFontStylePanel, setShowFontStylePanel] = useState(false);
     const [fontStylePanelPos, setFontStylePanelPos] = useState({ x: 0, y: 0 });
+    const handleFontStylePanelHeaderMouseDown = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        isDraggingFontStylePanelRef.current = true;
+        const flowAtClick = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        const offsetFlowX = flowAtClick.x - fontStylePanelPos.x;
+        const offsetFlowY = flowAtClick.y - fontStylePanelPos.y;
+        const onMove = (me: MouseEvent) => {
+            if (!isDraggingFontStylePanelRef.current) return;
+            me.stopImmediatePropagation();
+            const flowAtMove = screenToFlowPosition({ x: me.clientX, y: me.clientY });
+            setFontStylePanelPos({ x: flowAtMove.x - offsetFlowX, y: flowAtMove.y - offsetFlowY });
+        };
+        const onUp = () => {
+            isDraggingFontStylePanelRef.current = false;
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp);
+    }, [screenToFlowPosition, fontStylePanelPos]);
 
     const handleElementTextSelectionChange = useCallback((rect: DOMRect | null) => {
         setTextSelectionRect(rect);
@@ -833,7 +855,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             }
 
             // If it's a dragging operation for any panel, it's safe
-            if (isDraggingImageStylePanelRef.current || isDraggingStylePanelRef.current || isDraggingLayerPanelRef.current || isDraggingTablePanelRef.current || isDraggingTablePickerRef.current) {
+            if (isDraggingImageStylePanelRef.current || isDraggingStylePanelRef.current || isDraggingLayerPanelRef.current || isDraggingTablePanelRef.current || isDraggingTablePickerRef.current || isDraggingFontStylePanelRef.current) {
                 setLastInteractedScreenId(screen.id);
                 return;
             }
@@ -4206,13 +4228,17 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                 e.preventDefault();
                                             }}
                                         >
-                                            <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2">
+                                            <div
+                                                className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2 cursor-move select-none"
+                                                onMouseDown={handleFontStylePanelHeaderMouseDown}
+                                            >
                                                 <div className="flex items-center gap-2">
                                                     <Type size={14} className="text-[#2c3e7c]" />
                                                     <span className="text-[11px] font-bold text-gray-600">폰트 스타일</span>
                                                     </div>
                                                                 <button
                                                     type="button"
+                                                    onMouseDown={(e) => e.stopPropagation()}
                                                     onClick={() => setShowFontStylePanel(false)}
                                                     className="p-1 rounded hover:bg-gray-100 text-gray-500"
                                                 >
