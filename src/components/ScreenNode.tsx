@@ -397,6 +397,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     useEffect(() => {
         setSubComponentNameComposing(null);
     }, [selectedElementIds]);
+    useEffect(() => {
+        // 선택 대상이 바뀌면 폰트 스타일 패널은 닫는다.
+        setShowFontStylePanel(false);
+        setShowStylePanel(false);
+        setShowLayerPanel(false);
+    }, [selectedElementIds]);
     const [componentPickerPos, setComponentPickerPos] = useState({ x: 0, y: 0 });
     const isDraggingTablePickerRef = useRef(false);
     const isDraggingComponentPickerRef = useRef(false);

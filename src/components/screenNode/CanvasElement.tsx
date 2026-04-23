@@ -136,6 +136,10 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
 
     const rot = el.type === 'image' ? (el.imageRotation ?? 0) : (el.rotation ?? 0);
     const drawElements = getDrawElements();
+    const shadowColor = el.shadowColor || '#000000';
+    const shadowOpacity = Math.max(0, Math.min(1, el.shadowOpacity ?? 0));
+    const shadowOffsetX = el.shadowOffsetX ?? 0;
+    const shadowOffsetY = el.shadowOffsetY ?? 0;
 
     const handleDeleteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -187,6 +191,7 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
         transition: (isDrawing || isMoving) ? 'none' : 'all 0.1s ease',
         pointerEvents: isDrawing ? 'none' : 'auto',
         opacity: el.opacity !== undefined ? el.opacity : 1,
+        boxShadow: shadowOpacity > 0 ? `${shadowOffsetX}px ${shadowOffsetY}px 12px ${hexToRgba(shadowColor, shadowOpacity)}` : undefined,
         ...(rot !== 0 ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' } : {}),
         overflow: 'visible',
     };

@@ -190,6 +190,10 @@ export interface DrawElement {
     opacity?: number;
     fillOpacity?: number;
     strokeOpacity?: number;
+    shadowColor?: string;
+    shadowOpacity?: number;
+    shadowOffsetX?: number;
+    shadowOffsetY?: number;
     description?: string;
     borderRadius?: number;
     textAlign?: 'left' | 'center' | 'right';

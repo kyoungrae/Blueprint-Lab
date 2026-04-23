@@ -205,6 +205,10 @@ const StylePanel: React.FC<StylePanelProps> = ({
 
     const currentBgColor = getCurrentBgColor();
     const { recentFillColors, recentStrokeColors, addRecentFillColor, addRecentStrokeColor } = useRecentStyleColors();
+    const shadowColor = selectedEl?.shadowColor || '#000000';
+    const shadowOpacity = Math.max(0, Math.min(1, selectedEl?.shadowOpacity ?? 0));
+    const shadowOffsetX = selectedEl?.shadowOffsetX ?? 0;
+    const shadowOffsetY = selectedEl?.shadowOffsetY ?? 0;
 
     const isText = selectedEl?.type === 'text';
     const [fonts, setFonts] = useState<{ name: string; filename: string; url: string }[]>([]);
@@ -578,6 +582,100 @@ const StylePanel: React.FC<StylePanelProps> = ({
                         </div>
                     </div>
                 )}
+            </div>
+
+            {/* Shadow */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-gray-600 font-medium">그림자</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-400 font-mono uppercase">{shadowColor}</span>
+                        <div className="relative w-6 h-6 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition-all cursor-pointer">
+                            <input
+                                type="color"
+                                value={shadowColor}
+                                onChange={(e) => {
+                                    updateElements(selectedElementIds, { shadowColor: e.target.value });
+                                    (e.target as HTMLInputElement).blur();
+                                }}
+                                className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
+                            />
+                        </div>
+                    </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                    <div className="flex justify-between items-center">
+                        <span className="text-[10px] text-gray-500">투명도</span>
+                        <span className="text-[10px] text-blue-600 font-bold">{Math.round(shadowOpacity * 100)}%</span>
+                    </div>
+                    <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={Math.round(shadowOpacity * 100)}
+                        onChange={(e) => {
+                            const val = parseInt(e.target.value, 10) / 100;
+                            updateElements(selectedElementIds, { shadowOpacity: val });
+                        }}
+                        className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
+                    />
+                </div>
+                <div className="flex items-center gap-1">
+                    {([
+                        { label: '가운데', dx: 0, dy: 0 },
+                        { label: '위', dx: 0, dy: -6 },
+                        { label: '아래', dx: 0, dy: 6 },
+                        { label: '왼쪽', dx: -6, dy: 0 },
+                        { label: '오른쪽', dx: 6, dy: 0 },
+                    ]).map((preset) => {
+                        const active = shadowOffsetX === preset.dx && shadowOffsetY === preset.dy;
+                        return (
+                            <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() => {
+                                    updateElements(selectedElementIds, { shadowOffsetX: preset.dx, shadowOffsetY: preset.dy });
+                                }}
+                                className={`px-2 py-1 text-[10px] rounded-md border transition-colors ${active ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                            >
+                                {preset.label}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="flex-1 flex items-center gap-1.5">
+                        <label className="text-[10px] text-gray-500 shrink-0">X</label>
+                        <input
+                            type="number"
+                            min={-100}
+                            max={100}
+                            step={1}
+                            value={shadowOffsetX}
+                            onChange={(e) => {
+                                const num = Math.max(-100, Math.min(100, parseInt(e.target.value, 10) || 0));
+                                updateElements(selectedElementIds, { shadowOffsetX: num });
+                            }}
+                            className="w-full px-2 py-1.5 text-[11px] font-medium border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                        />
+                    </div>
+                    <div className="flex-1 flex items-center gap-1.5">
+                        <label className="text-[10px] text-gray-500 shrink-0">Y</label>
+                        <input
+                            type="number"
+                            min={-100}
+                            max={100}
+                            step={1}
+                            value={shadowOffsetY}
+                            onChange={(e) => {
+                                const num = Math.max(-100, Math.min(100, parseInt(e.target.value, 10) || 0));
+                                updateElements(selectedElementIds, { shadowOffsetY: num });
+                            }}
+                            className="w-full px-2 py-1.5 text-[11px] font-medium border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                        />
+                    </div>
+                </div>
             </div>
 
             {/* 크기 (넓이 · 높이) - 테두리 스타일 위 */}
