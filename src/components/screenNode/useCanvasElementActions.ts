@@ -265,50 +265,119 @@ export function useCanvasElementActions({
             const selectedElements = drawElements.filter((el) => selectedElementIds.includes(el.id));
             if (selectedElements.length < 2) return;
 
-            let nextElements = [...drawElements];
+            type AlignUnit = {
+                key: string;
+                members: DrawElement[];
+                minX: number;
+                minY: number;
+                maxX: number;
+                maxY: number;
+                width: number;
+                height: number;
+            };
+            const unitMap = new Map<string, DrawElement[]>();
+            selectedElements.forEach((el) => {
+                const key = el.groupId ? `group:${el.groupId}` : `el:${el.id}`;
+                const arr = unitMap.get(key) ?? [];
+                arr.push(el);
+                unitMap.set(key, arr);
+            });
+            const units: AlignUnit[] = [...unitMap.entries()].map(([key, members]) => {
+                const minX = Math.min(...members.map((m) => m.x));
+                const minY = Math.min(...members.map((m) => m.y));
+                const maxX = Math.max(...members.map((m) => m.x + m.width));
+                const maxY = Math.max(...members.map((m) => m.y + m.height));
+                return { key, members, minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+            });
+            if (units.length < 2) return;
+
+            const targetXByUnit = new Map<string, number>();
+            const targetYByUnit = new Map<string, number>();
             if (action === 'align-left') {
-                const minX = Math.min(...selectedElements.map((el) => el.x));
-                nextElements = nextElements.map((el) => selectedElementIds.includes(el.id) ? { ...el, x: minX } : el);
+                const minX = Math.min(...units.map((u) => u.minX));
+                units.forEach((u) => targetXByUnit.set(u.key, minX));
             } else if (action === 'align-center-h') {
-                const minX = Math.min(...selectedElements.map((el) => el.x));
-                const maxRight = Math.max(...selectedElements.map((el) => el.x + el.width));
+                const minX = Math.min(...units.map((u) => u.minX));
+                const maxRight = Math.max(...units.map((u) => u.maxX));
                 const centerX = (minX + maxRight) / 2;
-                nextElements = nextElements.map((el) => selectedElementIds.includes(el.id) ? { ...el, x: centerX - el.width / 2 } : el);
+                units.forEach((u) => targetXByUnit.set(u.key, centerX - u.width / 2));
             } else if (action === 'align-right') {
-                const maxRight = Math.max(...selectedElements.map((el) => el.x + el.width));
-                nextElements = nextElements.map((el) => selectedElementIds.includes(el.id) ? { ...el, x: maxRight - el.width } : el);
+                const maxRight = Math.max(...units.map((u) => u.maxX));
+                units.forEach((u) => targetXByUnit.set(u.key, maxRight - u.width));
             } else if (action === 'align-top') {
-                const minY = Math.min(...selectedElements.map((el) => el.y));
-                nextElements = nextElements.map((el) => selectedElementIds.includes(el.id) ? { ...el, y: minY } : el);
+                const minY = Math.min(...units.map((u) => u.minY));
+                units.forEach((u) => targetYByUnit.set(u.key, minY));
             } else if (action === 'align-center-v') {
-                const minY = Math.min(...selectedElements.map((el) => el.y));
-                const maxBottom = Math.max(...selectedElements.map((el) => el.y + el.height));
+                const minY = Math.min(...units.map((u) => u.minY));
+                const maxBottom = Math.max(...units.map((u) => u.maxY));
                 const centerY = (minY + maxBottom) / 2;
-                nextElements = nextElements.map((el) => selectedElementIds.includes(el.id) ? { ...el, y: centerY - el.height / 2 } : el);
+                units.forEach((u) => targetYByUnit.set(u.key, centerY - u.height / 2));
             } else if (action === 'align-bottom') {
-                const maxBottom = Math.max(...selectedElements.map((el) => el.y + el.height));
-                nextElements = nextElements.map((el) => selectedElementIds.includes(el.id) ? { ...el, y: maxBottom - el.height } : el);
+                const maxBottom = Math.max(...units.map((u) => u.maxY));
+                units.forEach((u) => targetYByUnit.set(u.key, maxBottom - u.height));
             } else if (action === 'distribute-h') {
-                const sorted = [...selectedElements].sort((a, b) => a.x - b.x);
-                const firstX = sorted[0].x;
-                const lastRight = sorted[sorted.length - 1].x + sorted[sorted.length - 1].width;
-                const totalW = sorted.reduce((s, e) => s + e.width, 0);
+                const sorted = [...units].sort((a, b) => a.minX - b.minX);
+                const firstX = sorted[0].minX;
+                const lastRight = sorted[sorted.length - 1].maxX;
+                const totalW = sorted.reduce((s, u) => s + u.width, 0);
                 const gap = (lastRight - firstX - totalW) / (sorted.length - 1);
                 let curX = firstX;
-                const posMap = new Map();
-                sorted.forEach(el => { posMap.set(el.id, curX); curX += el.width + gap; });
-                nextElements = nextElements.map(el => { const nx = posMap.get(el.id); return nx !== undefined ? { ...el, x: nx } : el; });
+                sorted.forEach((u) => {
+                    targetXByUnit.set(u.key, curX);
+                    curX += u.width + gap;
+                });
             } else if (action === 'distribute-v') {
-                const sorted = [...selectedElements].sort((a, b) => a.y - b.y);
-                const firstY = sorted[0].y;
-                const lastBtn = sorted[sorted.length - 1].y + sorted[sorted.length - 1].height;
-                const totalH = sorted.reduce((s, e) => s + e.height, 0);
-                const gap = (lastBtn - firstY - totalH) / (sorted.length - 1);
+                const sorted = [...units].sort((a, b) => a.minY - b.minY);
+                const firstY = sorted[0].minY;
+                const lastBottom = sorted[sorted.length - 1].maxY;
+                const totalH = sorted.reduce((s, u) => s + u.height, 0);
+                const gap = (lastBottom - firstY - totalH) / (sorted.length - 1);
                 let curY = firstY;
-                const posMap = new Map();
-                sorted.forEach(el => { posMap.set(el.id, curY); curY += el.height + gap; });
-                nextElements = nextElements.map(el => { const ny = posMap.get(el.id); return ny !== undefined ? { ...el, y: ny } : el; });
+                sorted.forEach((u) => {
+                    targetYByUnit.set(u.key, curY);
+                    curY += u.height + gap;
+                });
             }
+
+            const deltaByElementId = new Map<string, { dx: number; dy: number }>();
+            units.forEach((u) => {
+                const targetX = targetXByUnit.has(u.key) ? targetXByUnit.get(u.key)! : u.minX;
+                const targetY = targetYByUnit.has(u.key) ? targetYByUnit.get(u.key)! : u.minY;
+                const dx = targetX - u.minX;
+                const dy = targetY - u.minY;
+                u.members.forEach((m) => deltaByElementId.set(m.id, { dx, dy }));
+            });
+
+            const nextElements = drawElements.map((el) => {
+                const d = deltaByElementId.get(el.id);
+                if (!d || (d.dx === 0 && d.dy === 0)) return el;
+                if (el.type === 'polygon' && el.polygonPoints?.length) {
+                    return {
+                        ...el,
+                        x: el.x + d.dx,
+                        y: el.y + d.dy,
+                        polygonPoints: el.polygonPoints.map((p) => ({ x: p.x + d.dx, y: p.y + d.dy })),
+                    };
+                }
+                if (el.type === 'line' && el.lineX1 != null && el.lineY1 != null && el.lineX2 != null && el.lineY2 != null) {
+                    const lineX1 = el.lineX1 + d.dx;
+                    const lineY1 = el.lineY1 + d.dy;
+                    const lineX2 = el.lineX2 + d.dx;
+                    const lineY2 = el.lineY2 + d.dy;
+                    return {
+                        ...el,
+                        x: Math.min(lineX1, lineX2),
+                        y: Math.min(lineY1, lineY2),
+                        width: Math.max(Math.abs(lineX2 - lineX1), 1),
+                        height: Math.max(Math.abs(lineY2 - lineY1), 1),
+                        lineX1,
+                        lineY1,
+                        lineX2,
+                        lineY2,
+                    };
+                }
+                return { ...el, x: el.x + d.dx, y: el.y + d.dy };
+            });
 
             update({ drawElements: nextElements });
             syncUpdate({ drawElements: nextElements });
