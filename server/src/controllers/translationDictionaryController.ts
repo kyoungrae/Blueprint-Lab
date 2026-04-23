@@ -5,7 +5,12 @@ import { Translation } from '../models/Translation';
 /** 로그인 사용자용: PPT 등에서 사용할 원문→번역문 맵 (빈 번역 제외) */
 export const getTranslationDictionary = async (_req: AuthRequest, res: Response) => {
     try {
-        const list = await Translation.find({ translatedText: { $ne: '' } }).select('originalText translatedText').lean();
+        const list = await Translation.find({
+            translatedText: { $ne: '' },
+            status: { $ne: 'IGNORED' },
+        })
+            .select('originalText translatedText')
+            .lean();
         const dictionary: Record<string, string> = {};
         for (const item of list) {
             if (item.originalText && item.translatedText) {

@@ -10,13 +10,14 @@ export const syncTranslations = async (req: AuthRequest, res: Response) => {
     try {
         const projects = await Project.find({ projectType: 'SCREEN_DESIGN' }).select('screenSnapshot').lean();
         const allKoreanWords = extractKoreanWords(projects.map((p) => p.screenSnapshot ?? {}));
+        const uniqueWords = [...new Set(allKoreanWords)];
 
-        if (allKoreanWords.length === 0) {
+        if (uniqueWords.length === 0) {
             return res.json({ success: true, newWordsCount: 0 });
         }
 
         const now = new Date();
-        const bulkOps = allKoreanWords.map((word) => ({
+        const bulkOps = uniqueWords.map((word) => ({
             updateOne: {
                 filter: { originalText: word },
                 update: {
@@ -64,7 +65,10 @@ export const importTranslations = async (req: AuthRequest, res: Response) => {
         }
 
         const now = new Date();
-        const bulkOps: Parameters<typeof Translation.bulkWrite>[0] = [];
+        const rowByOriginal = new Map<
+            string,
+            { orig: string; translated: string; status: 'PENDING' | 'COMPLETED' }
+        >();
 
         for (const item of translations) {
             const raw = item?.originalText;
@@ -75,7 +79,11 @@ export const importTranslations = async (req: AuthRequest, res: Response) => {
             const translated =
                 typeof traw === 'string' ? traw : traw !== undefined && traw !== null ? String(traw) : '';
             const status = translated.trim() ? ('COMPLETED' as const) : ('PENDING' as const);
+            rowByOriginal.set(orig, { orig, translated, status });
+        }
 
+        const bulkOps: Parameters<typeof Translation.bulkWrite>[0] = [];
+        for (const { orig, translated, status } of rowByOriginal.values()) {
             bulkOps.push({
                 updateOne: {
                     filter: { originalText: orig },
@@ -122,11 +130,30 @@ export const patchTranslation = async (req: AuthRequest, res: Response) => {
         }
         const { translatedText } = req.body as { translatedText?: string };
         const text = translatedText ?? '';
-        const status = text.trim() ? 'COMPLETED' : 'PENDING';
+        const status = text.trim() ? ('COMPLETED' as const) : ('PENDING' as const);
         await Translation.findByIdAndUpdate(id, { translatedText: text, status });
         return res.json({ success: true });
     } catch (error) {
         console.error('patchTranslation', error);
         return res.status(500).json({ message: '저장 중 오류가 발생했습니다.' });
+    }
+};
+
+export const deleteTranslation = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            res.status(400).json({ message: '잘못된 ID입니다.' });
+            return;
+        }
+        const deleted = await Translation.findByIdAndDelete(id);
+        if (!deleted) {
+            res.status(404).json({ message: '항목을 찾을 수 없습니다.' });
+            return;
+        }
+        res.json({ success: true });
+    } catch (error) {
+        console.error('deleteTranslation', error);
+        res.status(500).json({ message: '삭제 중 오류가 발생했습니다.' });
     }
 };

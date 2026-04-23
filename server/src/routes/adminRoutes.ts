@@ -12,7 +12,13 @@ import {
     rollbackProjectHistory,
     getAdminAccessLogs,
 } from '../controllers/adminController';
-import { listTranslations, syncTranslations, importTranslations, patchTranslation } from '../controllers/adminTranslationController';
+import {
+    listTranslations,
+    syncTranslations,
+    importTranslations,
+    patchTranslation,
+    deleteTranslation,
+} from '../controllers/adminTranslationController';
 
 const router = Router();
 
@@ -34,5 +40,6 @@ router.get('/translations', listTranslations);
 router.post('/translations/sync', syncTranslations);
 router.post('/translations/import', importTranslations);
 router.patch('/translations/:id', patchTranslation);
+router.delete('/translations/:id', deleteTranslation);
 
 export default router;

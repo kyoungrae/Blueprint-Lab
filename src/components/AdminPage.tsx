@@ -372,6 +372,30 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         [fetchTranslations]
     );
 
+    const handleDeleteTranslation = useCallback(
+        async (id: string) => {
+            if (
+                !window.confirm(
+                    '이 항목을 삭제할까요?\n\n화면 설계 원본에 같은 한글이 남아 있으면, 다음「DB 단어 수동 동기화」 시 다시 수집될 수 있습니다.'
+                )
+            ) {
+                return;
+            }
+            try {
+                const res = await fetchWithAuth(`${API_BASE}/admin/translations/${id}`, { method: 'DELETE' });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.message || '삭제에 실패했습니다.');
+                }
+                await fetchTranslations();
+            } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : '삭제에 실패했습니다.';
+                alert(msg);
+            }
+        },
+        [fetchTranslations]
+    );
+
     const handleDownloadExcel = useCallback(() => {
         const dataToExport = translations.map((t) => ({
             '한글 원문(Key)': t.originalText,
@@ -1202,7 +1226,7 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         <th className="h-11 min-w-0 px-4 py-2 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider border-r border-gray-200">
                                             몽골어 번역
                                         </th>
-                                        <th className="h-11 w-24 shrink-0 px-3 py-2 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider text-center">
+                                        <th className="h-11 w-[5.5rem] shrink-0 px-2 py-2 align-middle text-xs font-bold text-gray-500 uppercase tracking-wider text-center">
                                             관리
                                         </th>
                                     </tr>
@@ -1258,22 +1282,33 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="w-24 shrink-0 px-3 py-2 align-middle text-center">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            setTranslations((prev) =>
-                                                                prev.map((item) =>
-                                                                    item._id === doc._id
-                                                                        ? { ...item, isEditing: !item.isEditing }
-                                                                        : item
+                                                <td className="w-[5.5rem] shrink-0 px-2 py-2 align-middle text-center">
+                                                    <div className="flex items-center justify-center gap-0.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setTranslations((prev) =>
+                                                                    prev.map((item) =>
+                                                                        item._id === doc._id
+                                                                            ? { ...item, isEditing: !item.isEditing }
+                                                                            : item
+                                                                    )
                                                                 )
-                                                            )
-                                                        }
-                                                        className="inline-flex items-center justify-center p-1.5 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
-                                                    >
-                                                        <Edit2 size={18} />
-                                                    </button>
+                                                            }
+                                                            className="inline-flex items-center justify-center p-1.5 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
+                                                            title="수정"
+                                                        >
+                                                            <Edit2 size={18} />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void handleDeleteTranslation(doc._id)}
+                                                            className="inline-flex items-center justify-center p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                                            title="삭제"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1291,12 +1326,18 @@ const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             )}
                         </div>
 
-                        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-[11px] text-gray-500">
-                            * 동기화로 단어 수집 → <strong className="text-gray-600">엑셀 다운로드</strong>로 편집 →{' '}
-                            <strong className="text-gray-600">엑셀 업로드</strong>로 일괄 반영. 업로드 시 헤더는{' '}
-                            <code className="font-mono text-gray-700">한글 원문(Key)</code>,{' '}
-                            <code className="font-mono text-gray-700">몽골어 번역</code>과 동일해야 합니다. PPT 몽골어는 로그인 후
-                            서버 사전과 정적 <code className="font-mono text-gray-700">mnDict</code>를 합쳐 적용합니다.
+                        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-[11px] text-gray-500 space-y-1">
+                            <p>
+                                * 동기화로 단어 수집 → <strong className="text-gray-600">엑셀 다운로드</strong>로 편집 →{' '}
+                                <strong className="text-gray-600">엑셀 업로드</strong>로 일괄 반영. 업로드 시 헤더는{' '}
+                                <code className="font-mono text-gray-700">한글 원문(Key)</code>,{' '}
+                                <code className="font-mono text-gray-700">몽골어 번역</code>과 동일해야 합니다. PPT 몽골어는 로그인 후
+                                서버 사전과 정적 <code className="font-mono text-gray-700">mnDict</code>를 합쳐 적용합니다.
+                            </p>
+                            <p>
+                                * 같은 한글 원문은 DB에서 한 건만 유지됩니다(스키마 unique). 삭제한 단어는 설계에 남아 있으면 다음 동기화에서
+                                다시 생길 수 있습니다.
+                            </p>
                         </div>
                     </div>
                 )}
