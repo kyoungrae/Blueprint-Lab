@@ -2,15 +2,18 @@ import React from 'react';
 import pptxgen from "pptxgenjs";
 import type { Screen } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
+import { t } from '../utils/translation';
 
 interface PPTBetaExporterProps {
     screenIds: string[];
+    translateToMN?: boolean;
     onComplete?: () => void;
     onError?: (error: string) => void;
 }
 
 const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     screenIds,
+    translateToMN = false,
     onComplete,
     onError
 }) => {
@@ -136,20 +139,20 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 // --- 데이터 매핑용 맵 생성 ---
                 const textMap: Record<string, string> = {
-                    "0,0": "시스템명",
+                    "0,0": t('시스템명', translateToMN),
                     "0,1": screen.systemName || '',
-                    "0,2": "작성자",
+                    "0,2": t('작성자', translateToMN),
                     "0,3": screen.author || '',
-                    "0,4": "작성일자",
+                    "0,4": t('작성일자', translateToMN),
                     "0,5": screen.createdDate || '',
-                    "1,0": "화면ID",
+                    "1,0": t('화면ID', translateToMN),
                     "1,1": screen.screenId || '',
-                    "1,2": "화면유형",
+                    "1,2": t('화면유형', translateToMN),
                     "1,3": screen.screenType || '',
-                    "1,4": "페이지",
+                    "1,4": t('페이지', translateToMN),
                     "1,5": screen.page || '',
-                    "2,0": "화면설명",
-                    "2,1": screen.screenDescription || '화면에 대한 구체적인 설명을 입력하세요'
+                    "2,0": t('화면설명', translateToMN),
+                    "2,1": screen.screenDescription || t('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
                 };
 
                 // ─── 상단 헤더 영역 ───
@@ -237,7 +240,11 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 const ratios = screen.rightPaneRatios || [40, 35, 25];
                 const titleH = 26 * scale; 
-                const titles = ["초기화면설정", "기능상세", "관련테이블"];
+                const titles = [
+                    t('초기화면설정', translateToMN),
+                    t('기능상세', translateToMN),
+                    t('관련테이블', translateToMN),
+                ];
                 
                 // 🚀 섹션별 실제 데이터 매핑 수정
                 const funcNoDetails = (screen.drawElements || [])
@@ -816,20 +823,20 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 // 데이터 매핑용 맵 생성
                 const textMap: Record<string, string> = {
-                    "0,0": "시스템명",
+                    "0,0": t('시스템명', translateToMN),
                     "0,1": screen.systemName || '',
-                    "0,2": "작성자",
+                    "0,2": t('작성자', translateToMN),
                     "0,3": screen.author || '',
-                    "0,4": "작성일자",
+                    "0,4": t('작성일자', translateToMN),
                     "0,5": screen.createdDate || '',
-                    "1,0": "화면ID",
+                    "1,0": t('화면ID', translateToMN),
                     "1,1": screen.screenId || '',
-                    "1,2": "화면유형",
+                    "1,2": t('화면유형', translateToMN),
                     "1,3": screen.screenType || '',
-                    "1,4": "페이지",
+                    "1,4": t('페이지', translateToMN),
                     "1,5": screen.page || '',
-                    "2,0": "화면설명",
-                    "2,1": screen.screenDescription || '화면에 대한 구체적인 설명을 입력하세요'
+                    "2,0": t('화면설명', translateToMN),
+                    "2,1": screen.screenDescription || t('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
                 };
 
                 // ─── 상단 헤더 영역 ───
@@ -914,19 +921,19 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const specTableData = [
                     // Header Row 1
                     [
-                        { text: '테이블명(한글)', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: '테이블명(영문)', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: '항목명(한글)', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: '필드명(영문)', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: '항목타입', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
-                        { text: '항목정의', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'DBEAFE' }, colspan: 4, align: 'center' as any, valign: 'middle' as any } },
-                        { text: '비고', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('테이블명(한글)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('테이블명(영문)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('항목명(한글)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('필드명(영문)', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('항목타입', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('항목정의', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'DBEAFE' }, colspan: 4, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('비고', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, rowspan: 2, align: 'center' as any, valign: 'middle' as any } },
                     ],
                     // Header Row 2
                     [
                         { text: 'Format', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
-                        { text: '자릿수', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
-                        { text: '초기값', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('자릿수', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
+                        { text: t('초기값', translateToMN), options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
                         { text: 'Validation', options: { bold: true, fontSize: Math.max(PPT_FONT_MIN_SIZE+3.5, 9 * scale * PPT_FONT_SCALE_RATIO), color: '334155', fill: { color: 'EFF6FF' }, align: 'center' as any, valign: 'middle' as any } },
                     ],
                     // Data Rows
@@ -1038,11 +1045,13 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
         };
 
         runExport();
-    }, [screenIds, screens, onComplete, onError]);
+    }, [screenIds, screens, sections, translateToMN, onComplete, onError]);
 
     return (
         <div className="p-4">
-            <h3 className="text-lg font-bold mb-2 text-purple-700">PPT_BETA 데이터 매핑 중</h3>
+            <h3 className="text-lg font-bold mb-2 text-purple-700">
+                PPT_BETA 데이터 매핑 중{translateToMN ? ' (몽골어 번역 적용)' : ''}
+            </h3>
             <p className="text-sm text-gray-600 mb-4">
                 레이아웃 위에 실시간 데이터를 입히고 있습니다.
             </p>

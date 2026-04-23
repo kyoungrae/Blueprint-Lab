@@ -324,7 +324,7 @@ import { jsPDF } from 'jspdf';
 import { useSyncStore } from '../store/syncStore';
 import { useYjsStore } from '../store/yjsStore';
 
-import type { ExportFormat } from './ScreenExportModal';
+import type { ExportFormat, ExportOptions } from './ScreenExportModal';
 import PPTBetaExporter from './PPTBetaExporter';
 
 const nodeTypes: NodeTypes = {
@@ -442,6 +442,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [chatUnreadTabs, setChatUnreadTabs] = useState<Set<string>>(() => new Set());
     const [pptBetaExportOpen, setPptBetaExportOpen] = useState(false);
     const [selectedExportIds, setSelectedExportIds] = useState<string[]>([]);
+    const [pptTranslateToMN, setPptTranslateToMN] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
     const lastSyncedComponentAtRef = useRef<string | null>(null);
@@ -1665,7 +1666,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         [updateScreen, yjsMoveScreen, sections]
     );
 
-    const handleExportImage = useCallback((selectedIds: string[], format: ExportFormat) => {
+    const handleExportImage = useCallback((selectedIds: string[], format: ExportFormat, options?: ExportOptions) => {
         setIsExportModalOpen(false);
 
         const element = document.querySelector('.react-flow') as HTMLElement;
@@ -1762,6 +1763,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             if (format === 'ppt_beta') {
                 // PPT_BETA 컴포넌트를 사용하여 내보내기
                 setSelectedExportIds(selectedIds);
+                setPptTranslateToMN(Boolean(options?.translateToMN));
                 setPptBetaExportOpen(true);
                 setIsExporting(false);
                 return;
@@ -2316,6 +2318,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                             </div>
                                             <PPTBetaExporter
                                                 screenIds={selectedExportIds}
+                                                translateToMN={pptTranslateToMN}
                                                 onComplete={() => {
                                                     setPptBetaExportOpen(false);
                                                     setSelectedExportIds([]);

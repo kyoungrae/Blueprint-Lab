@@ -1,19 +1,24 @@
 import React, { useState } from 'react';
-import { X, Download, Monitor, CheckSquare, Square, FileText, Image, Edit3, FolderOpen } from 'lucide-react';
+import { X, Download, Monitor, CheckSquare, Square, FileText, Image, Edit3, FolderOpen, Globe } from 'lucide-react';
 import type { Screen, ScreenSection } from '../types/screenDesign';
 
 export type ExportFormat = 'png' | 'pdf' | 'ppt_beta' | 'json';
 
+export interface ExportOptions {
+    translateToMN?: boolean;
+}
+
 interface ScreenExportModalProps {
     screens: Screen[];
     sections: ScreenSection[]; // 🚀 추가됨: 부모로부터 섹션 데이터 받아오기
-    onExport: (selectedIds: string[], format: ExportFormat) => void;
+    onExport: (selectedIds: string[], format: ExportFormat, options?: ExportOptions) => void;
     onClose: () => void;
 }
 
 const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections = [], onExport, onClose }) => {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(screens.map(s => s.id)));
     const [format, setFormat] = useState<ExportFormat>('png');
+    const [translateToMN, setTranslateToMN] = useState(false);
 
     const toggleItem = (id: string) => {
         const next = new Set(selectedIds);
@@ -64,12 +69,12 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
         setSelectedIds(next);
     };
 
-    const handleExport = (exportFormat?: ExportFormat) => {
+    const handleExport = () => {
         if (selectedIds.size === 0) {
             alert('내보낼 화면을 선택해주세요.');
             return;
         }
-        onExport(Array.from(selectedIds), exportFormat ?? format);
+        onExport(Array.from(selectedIds), format, { translateToMN });
     };
 
     // 🚀 재귀적으로 섹션과 그 하위 항목들을 그리는 함수
@@ -240,7 +245,7 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
                 </div>
 
                 {/* Format Selection */}
-                <div className="px-6 py-3 border-t border-gray-100 flex gap-2 shrink-0">
+                <div className="px-6 py-3 border-t border-gray-100 flex gap-2 shrink-0 bg-white">
                     <button
                         onClick={() => setFormat('png')}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${format === 'png' ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-300' : 'bg-gray-50 text-gray-600 border-2 border-transparent hover:bg-gray-100'}`}
@@ -271,15 +276,38 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
                     </button>
                 </div>
 
+                {format === 'ppt_beta' && (
+                    <div className="px-6 py-3 border-t border-gray-100 bg-purple-50/50 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <Globe size={18} className="text-purple-500 flex-shrink-0" />
+                            <div className="min-w-0">
+                                <span className="text-sm font-bold text-gray-800 block">몽골어로 번역해서 보내기</span>
+                                <span className="text-xs text-gray-500">라벨 및 헤더 텍스트를 몽골어로 변환합니다.</span>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={translateToMN}
+                            onClick={() => setTranslateToMN((v) => !v)}
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 ${translateToMN ? 'bg-purple-600' : 'bg-gray-300'}`}
+                        >
+                            <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${translateToMN ? 'translate-x-6' : 'translate-x-1'}`}
+                            />
+                        </button>
+                    </div>
+                )}
+
                 {/* Footer */}
                 <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 shrink-0 bg-white">
                     <button onClick={onClose} className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm hover:bg-gray-200 transition-all active:scale-95">
                         취소
                     </button>
                     <button
-                        onClick={() => handleExport()}
+                        onClick={handleExport}
                         disabled={selectedIds.size === 0}
-                        className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-200"
+                        className={`px-5 py-2.5 text-white rounded-xl font-bold text-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg ${format === 'ppt_beta' ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}
                     >
                         <div className="flex items-center gap-2">
                             <Download size={16} />

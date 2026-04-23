@@ -52,7 +52,7 @@ import { ProcessFlowEdge as ProcessFlowEdgeComponent } from './edges/ProcessFlow
 import type { Connection, Node, Edge } from 'reactflow';
 import { copyToClipboard } from '../../utils/clipboard';
 import PremiumTooltip from '../screenNode/PremiumTooltip';
-import ScreenExportModal, { type ExportFormat } from '../ScreenExportModal';
+import ScreenExportModal, { type ExportFormat, type ExportOptions } from '../ScreenExportModal';
 import { getSmartGuidesAndSnap, type AlignmentGuides, type SnapState } from '../screenNode/smartGuides';
 const nodeTypes = {
     processFlow: ProcessFlowNodeComponent,
@@ -1850,7 +1850,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
     }, [pfAddNode, handleDeleteSelectedNodes]);
 
     const handleProcessFlowExport = useCallback(
-        async (_selectedIds: string[], format: ExportFormat) => {
+        async (_selectedIds: string[], format: ExportFormat, _options?: ExportOptions) => {
             const projectName = (currentProject?.name || 'process_flow').replace(/[/\\?%*:|"<>]/g, '_');
             const now = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
 
