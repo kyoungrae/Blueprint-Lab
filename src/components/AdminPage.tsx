@@ -244,7 +244,7 @@ interface AdminProject {
     memberCount: number;
 }
 
-type AdminTab = 'members' | 'projects' | 'accessLogs' | 'rollback' | 'ddl' | 'translation';
+export type AdminTab = 'members' | 'projects' | 'accessLogs' | 'rollback' | 'ddl' | 'translation';
 
 type AdminAccessLogRow = {
     id: string;
@@ -274,9 +274,9 @@ interface AdminHistoryEntry {
     timestamp: string;
 }
 
-const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab }> = ({ onBack, initialTab = 'members' }) => {
     const { user, updateUser } = useAuthStore();
-    const [activeTab, setActiveTab] = useState<AdminTab>('members');
+    const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
     const [users, setUsers] = useState<AdminUser[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
     const [userProjects, setUserProjects] = useState<AdminProject[]>([]);

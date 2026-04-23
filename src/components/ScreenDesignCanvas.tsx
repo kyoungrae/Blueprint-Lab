@@ -301,6 +301,7 @@ import ScreenEdge from './ScreenEdge';
 import ScreenSidebar from './ScreenSidebar';
 import ScreenExportModal from './ScreenExportModal';
 import AddScreenModal from './AddScreenModal';
+import AdminPage from './AdminPage';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
@@ -309,7 +310,7 @@ import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
-    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3, MessageCircle, Palette
+    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3, MessageCircle, Palette, Languages
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { RecentTextColorsProvider } from '../contexts/RecentTextColorsContext';
@@ -432,6 +433,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [sidebarListKey, setSidebarListKey] = useState(0); // 가져오기 후 사이드바 목록 갱신용
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [isTranslationPopupOpen, setIsTranslationPopupOpen] = useState(false);
     const [importJsonText, setImportJsonText] = useState('');
     const [importError, setImportError] = useState<string | null>(null);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
@@ -2141,6 +2143,15 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                                     {currentProject && <BugReportButton project={currentProject} />}
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="번역 관리">
+                                        <button
+                                            onClick={() => setIsTranslationPopupOpen(true)}
+                                            className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-white text-gray-600 hover:text-orange-500 hover:bg-orange-50 transition-all border border-gray-200 shadow-sm active:scale-95 shrink-0"
+                                            title="번역 관리"
+                                        >
+                                            <Languages size={16} />
+                                        </button>
+                                    </PremiumTooltip>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
@@ -2299,6 +2310,24 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         onExport={handleExportImage}
                         onClose={() => setIsExportModalOpen(false)}
                     />
+                )}
+
+                {isTranslationPopupOpen && (
+                    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-[1002] flex items-center justify-center p-4">
+                        <div className="relative w-[80vw] max-w-[960px] h-[72vh] max-h-[72vh] rounded-2xl shadow-2xl border border-gray-200 bg-white overflow-hidden">
+                            <button
+                                type="button"
+                                onClick={() => setIsTranslationPopupOpen(false)}
+                                className="absolute top-3 right-3 z-[1200] p-2 rounded-lg bg-white border border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+                                title="닫기"
+                            >
+                                <X size={18} />
+                            </button>
+                            <div className="w-full h-full overflow-auto rounded-2xl">
+                                <AdminPage onBack={() => setIsTranslationPopupOpen(false)} initialTab="translation" />
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                                 {pptBetaExportOpen && (
