@@ -1124,30 +1124,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         const handleUp = () => {
             const ref = groupResizeStartRef.current;
             if (ref) {
-                const nextElements = getDrawElements().map(el => {
-                    if (!ref.elements.find(re => re.id === el.id)) return el;
-                    const nextEl = { ...el };
-                    if (el.type === 'polygon' && el.polygonPoints?.length) {
-                        const rel = ref.elements.find(re => re.id === el.id)!;
-                        nextEl.polygonPoints = rel.polygonPoints;
-                    } else if (el.type === 'line' && el.lineX1 !== undefined && el.lineY1 !== undefined && el.lineX2 !== undefined && el.lineY2 !== undefined) {
-                        const rel = ref.elements.find(re => re.id === el.id)!;
-                        nextEl.lineX1 = rel.lineX1;
-                        nextEl.lineY1 = rel.lineY1;
-                        nextEl.lineX2 = rel.lineX2;
-                        nextEl.lineY2 = rel.lineY2;
-                    } else {
-                        const rel = ref.elements.find(re => re.id === el.id)!;
-                        nextEl.x = rel.x;
-                        nextEl.y = rel.y;
-                        nextEl.width = rel.width;
-                        nextEl.height = rel.height;
-                    }
-                    return nextEl;
-                });
-                update({ drawElements: nextElements });
-                syncDrawElements(nextElements); // drawElements 전용 실시간 동기화
-                saveHistory(nextElements);
+                // 마우스업 시 리사이즈 시작값(ref.elements)으로 되돌리지 않고, 현재 프리뷰 상태를 확정한다.
+                const currentElements = getDrawElements();
+                update({ drawElements: currentElements });
+                syncDrawElements(currentElements); // drawElements 전용 실시간 동기화
+                saveHistory(currentElements);
                 groupResizeStartRef.current = null;
             }
             window.removeEventListener('mousemove', handleMove);
