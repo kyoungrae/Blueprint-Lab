@@ -13,8 +13,15 @@ function parseTranslationExcelRow(row: Record<string, unknown>): { originalText:
     let translatedText = '';
     for (const [k, v] of Object.entries(row)) {
         const nk = norm(k);
-        if (nk === '한글 원문(Key)' || nk === '한글 원문') originalText = String(v ?? '').trim();
-        else if (nk === '몽골어 번역') translatedText = String(v ?? '');
+        if (nk === '한글 원문(Key)' || nk === '한글 원문') {
+            originalText = String(v ?? '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        } else if (nk === '몽골어 번역') {
+            translatedText = String(v ?? '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
     }
     if (!originalText) return null;
     return { originalText, translatedText };

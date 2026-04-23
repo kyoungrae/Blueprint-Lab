@@ -4,6 +4,11 @@ function hasKorean(text: string): boolean {
     return KOREAN.test(text);
 }
 
+/** 줄바꿈·탭·연속 공백(유니코드 공백 포함)을 단일 스페이스로 — 동일 문구의 억울한 중복 키 방지 */
+export function normalizeTranslationWhitespace(s: string): string {
+    return String(s ?? '').replace(/\s+/g, ' ').trim();
+}
+
 /**
  * 번역 추출용: HTML 주석·태그만 제거하고 일반 텍스트의 `>` 는 유지.
  * 기존 /<[^>]*>/g 는 `<전자업무 > 메뉴>` 처럼 `<` 뒤에 태그명이 아닌 경우까지 한 덩어리로 지워
@@ -28,7 +33,7 @@ function stripHtmlForExtract(raw: string): string {
     s = s.replace(/<!--[\s\S]*?-->/g, '');
     // </? + (영문 태그명) + 속성… + >
     s = s.replace(/<\/?[a-zA-Z][\w:-]*(?:\s[^>]*)?>/g, '');
-    return s.replace(/\s+/g, ' ').trim();
+    return normalizeTranslationWhitespace(s);
 }
 
 /** HTML 태그 제거 후 한글이 포함된 문자열만 수집 */

@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import type { AuthRequest } from '../middleware/authMiddleware';
 import { Project } from '../models/Project';
 import { Translation } from '../models/Translation';
-import { extractKoreanWords } from '../utils/translationExtractor';
+import { extractKoreanWords, normalizeTranslationWhitespace } from '../utils/translationExtractor';
 
 /** 화면 설계 프로젝트 data에서 한글 문자열을 스캔해 Translation 컬렉션에 upsert */
 export const syncTranslations = async (req: AuthRequest, res: Response) => {
@@ -72,13 +72,14 @@ export const importTranslations = async (req: AuthRequest, res: Response) => {
 
         for (const item of translations) {
             const raw = item?.originalText;
-            const orig = typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim();
+            const orig = normalizeTranslationWhitespace(typeof raw === 'string' ? raw : String(raw ?? ''));
             if (!orig) continue;
 
             const traw = item?.translatedText;
-            const translated =
-                typeof traw === 'string' ? traw : traw !== undefined && traw !== null ? String(traw) : '';
-            const status = translated.trim() ? ('COMPLETED' as const) : ('PENDING' as const);
+            const translated = normalizeTranslationWhitespace(
+                typeof traw === 'string' ? traw : traw !== undefined && traw !== null ? String(traw) : ''
+            );
+            const status = translated ? ('COMPLETED' as const) : ('PENDING' as const);
             rowByOriginal.set(orig, { orig, translated, status });
         }
 
@@ -129,8 +130,8 @@ export const patchTranslation = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: '잘못된 ID입니다.' });
         }
         const { translatedText } = req.body as { translatedText?: string };
-        const text = translatedText ?? '';
-        const status = text.trim() ? ('COMPLETED' as const) : ('PENDING' as const);
+        const text = normalizeTranslationWhitespace(translatedText ?? '');
+        const status = text ? ('COMPLETED' as const) : ('PENDING' as const);
         await Translation.findByIdAndUpdate(id, { translatedText: text, status });
         return res.json({ success: true });
     } catch (error) {
