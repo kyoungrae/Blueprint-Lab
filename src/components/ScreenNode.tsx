@@ -1695,18 +1695,27 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         let nextSelected: string[];
         if (e.shiftKey) {
             nextSelected = [...selectedElementIds];
-            if (nextSelected.includes(id)) {
+            if (clickedEl?.groupId) {
+                const groupIds = drawElements.filter(el => el.groupId === clickedEl.groupId).map(el => el.id);
+                const allInSelected = groupIds.every(gid => nextSelected.includes(gid));
+                if (allInSelected) {
+                    nextSelected = nextSelected.filter(sid => !groupIds.includes(sid));
+                } else {
+                    nextSelected = [...new Set([...nextSelected, ...groupIds])];
+                }
+            } else if (nextSelected.includes(id)) {
                 nextSelected = nextSelected.filter(sid => sid !== id);
             } else {
                 nextSelected.push(id);
             }
         } else {
-            if (clickedEl?.groupId) {
-                nextSelected = drawElements.filter(el => el.groupId === clickedEl.groupId).map(el => el.id);
-            } else if (!selectedElementIds.includes(id)) {
-                nextSelected = [id];
-            } else {
+            // 이미 다중 선택된 요소를 다시 잡아 드래그할 때는 선택을 유지해야 함께 이동된다.
+            if (selectedElementIds.includes(id)) {
                 nextSelected = selectedElementIds;
+            } else if (clickedEl?.groupId) {
+                nextSelected = drawElements.filter(el => el.groupId === clickedEl.groupId).map(el => el.id);
+            } else {
+                nextSelected = [id];
             }
         }
         setSelectedElementIds(nextSelected);
@@ -2641,11 +2650,24 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             const doPaste = (toPaste: DrawElement[], scaleToFit = false) => {
                 const isSameScreen = (toPaste[0] as any)?._sourceScreenId === screen.id;
                 const processed = scaleToFit ? scaleElementsToFitCanvas(toPaste, canvasW, canvasH) : toPaste;
+                // 붙여넣기 배치마다 groupId를 새로 발급해, 이전 붙여넣기본과 그룹이 합쳐지지 않게 한다.
+                const groupIdRemap = new Map<string, string>();
+                const remapGroupId = (gid?: string) => {
+                    if (!gid) return gid;
+                    if (!groupIdRemap.has(gid)) {
+                        groupIdRemap.set(
+                            gid,
+                            `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                        );
+                    }
+                    return groupIdRemap.get(gid);
+                };
                 const newElements = processed.map((el, idx) => {
                     const offset = scaleToFit ? 0 : (isSameScreen ? 20 : 0);
                     const base = {
                         ...el,
                         id: `el_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+                        groupId: remapGroupId(el.groupId),
                         x: el.x + offset,
                         y: el.y + offset,
                         _sourceScreenId: screen.id, // next paste on same screen shifts by 20px (see isSameScreen)
