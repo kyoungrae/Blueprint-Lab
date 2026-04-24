@@ -893,8 +893,8 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
             <main
                 className={
                     embedded
-                        ? 'flex-1 min-h-0 w-full px-3 py-3 overflow-hidden'
-                        : 'flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6'
+                        ? 'flex flex-col flex-1 min-h-0 w-full px-3 py-3 overflow-hidden'
+                        : 'flex-1 min-h-0 flex flex-col max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6'
                 }
             >
                 {error && (
@@ -1441,8 +1441,8 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                 )}
 
                 {!loading && activeTab === 'rollback' && (
-                    <div className="space-y-4">
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className={`flex flex-col min-h-0 gap-4 ${rollbackSelectedProjectId ? 'flex-1' : ''}`}>
+                        <div className="shrink-0 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                             <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 font-bold text-sm text-gray-700">
                                 프로젝트 선택 (최근 24시간 삭제 이력 · 원복 시 해당 항목만 복원)
                             </div>
@@ -1492,17 +1492,17 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                         </div>
 
                         {rollbackSelectedProjectId && (
-                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                            <div className="flex flex-col flex-1 min-h-0 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div className="shrink-0 px-4 py-3 bg-gray-50 border-b border-gray-200">
                                     <div className="font-bold text-sm text-gray-700">최근 24시간 작업 이력 (삭제 + 저장)</div>
                                     <div className="text-xs text-gray-500 mt-0.5">삭제·저장 작업 이력을 표시하며, 저장 시점 JSON(payload/previousState)도 함께 확인할 수 있습니다.</div>
                                 </div>
                                 {rollbackHistoryLoading ? (
-                                    <div className="flex items-center justify-center py-12">
+                                    <div className="flex flex-1 min-h-[12rem] items-center justify-center py-12">
                                         <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
                                     </div>
                                 ) : (
-                                    <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+                                    <div className="flex-1 min-h-0 divide-y divide-gray-100 overflow-y-auto overscroll-contain">
                                         {rollbackHistory.length === 0 ? (
                                             <div className="p-8 text-center text-gray-500 text-sm">최근 24시간 내 작업 이력이 없습니다.</div>
                                         ) : (
