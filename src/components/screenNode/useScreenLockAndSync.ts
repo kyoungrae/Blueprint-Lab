@@ -53,9 +53,42 @@ export const useScreenLockAndSync = (screen: Screen) => {
                     userName: user?.name || 'Anonymous',
                     payload: yjsPatch,
                 });
+                return;
+            }
+
+            const hasHistoryTargetFields =
+                'initialSettings' in updates ||
+                'functionDetails' in updates ||
+                'relatedTables' in updates ||
+                'rightPaneRatios' in updates;
+
+            if (hasHistoryTargetFields) {
+                const previousState: Record<string, unknown> = {};
+                if ('initialSettings' in updates) previousState.initialSettings = screen.initialSettings ?? '';
+                if ('functionDetails' in updates) previousState.functionDetails = screen.functionDetails ?? '';
+                if ('relatedTables' in updates) previousState.relatedTables = screen.relatedTables ?? '';
+                if ('rightPaneRatios' in updates) previousState.rightPaneRatios = screen.rightPaneRatios ?? null;
+
+                sendOperation({
+                    type: 'SCREEN_UPDATE',
+                    targetId: screen.id,
+                    userId: user?.id || 'anonymous',
+                    userName: user?.name || 'Anonymous',
+                    payload: {
+                        ...yjsPatch,
+                        name: screen.name,
+                        screenId: screen.screenId,
+                        historyLog: {
+                            details: '우측 패널 데이터 저장',
+                            targetName: `${screen.name} (${screen.screenId})`,
+                            targetType: 'SCREEN',
+                        },
+                    },
+                    previousState,
+                });
             }
         },
-        [yjsUpdate, sendOperation, screen.id, user?.id, user?.name],
+        [yjsUpdate, sendOperation, screen.id, screen.name, screen.screenId, screen.initialSettings, screen.functionDetails, screen.relatedTables, screen.rightPaneRatios, user?.id, user?.name],
     );
 
     // drawElements 전용 동기화 → Yjs 직접 호출 (Socket.IO 이중 전송 제거)
