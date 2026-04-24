@@ -784,6 +784,8 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                 return 'Yjs 연결';
             case 'MEMBER_SAVE':
                 return '저장·동기화';
+            case 'EXPORT_PPT':
+                return '내보내기(PPT)';
             default:
                 return kind || '—';
         }

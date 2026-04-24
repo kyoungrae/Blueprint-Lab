@@ -8,6 +8,24 @@ import { mnDict as staticMnDict } from '../utils/translation';
 
 const API_ROOT = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
 
+function normalizeTranslationKey(text: string): string {
+    return String(text ?? '')
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function buildNormalizedDictionary(dict: Record<string, string>): Record<string, string> {
+    const normalized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(dict)) {
+        const nk = normalizeTranslationKey(key);
+        if (!nk || !value || normalized[nk]) continue;
+        normalized[nk] = value;
+    }
+    return normalized;
+}
+
 /** img 로드로 크기 추정 (실패 시 기본값) */
 function measureImageUrl(url: string): Promise<{ w: number; h: number }> {
     return new Promise((resolve) => {
@@ -118,6 +136,7 @@ async function resolveImageForPpt(
 
 interface PPTBetaExporterProps {
     screenIds: string[];
+    projectId?: string;
     translateToMN?: boolean;
     /** 몽골어 보내기 시 좌측 캔버스(엔티티) 텍스트에만 적용. 100 = 기본, 50~200 권장 */
     mnPptFontScalePercent?: number;
@@ -127,6 +146,7 @@ interface PPTBetaExporterProps {
 
 const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     screenIds,
+    projectId,
     translateToMN = false,
     mnPptFontScalePercent = 100,
     onComplete,
@@ -135,6 +155,21 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     const { screens, sections } = useScreenDesignStore();
 
     React.useEffect(() => {
+        const staticNormalizedDict = buildNormalizedDictionary(staticMnDict as Record<string, string>);
+
+        const logPptExport = async () => {
+            if (!projectId || projectId.startsWith('local_')) return;
+            try {
+                await fetchWithAuth(`${API_ROOT}/projects/${projectId}/access-log`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: 'EXPORT_PPT' }),
+                });
+            } catch {
+                // 내보내기 완료 흐름은 유지
+            }
+        };
+
         let tr = (text: string, isMn: boolean): string => {
             if (!isMn || !text) return text;
             return staticMnDict[text] ?? text;
@@ -1097,11 +1132,13 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 if (selectedScreens.length === 0) throw new Error('선택된 화면을 찾을 수 없습니다.');
 
                 let dynamicDict: Record<string, string> = {};
+                let dynamicNormalizedDict: Record<string, string> = {};
                 if (translateToMN) {
                     try {
                         const dictRes = await fetchWithAuth(`${API_ROOT}/translations/dictionary`);
                         if (dictRes.ok) {
                             dynamicDict = await dictRes.json();
+                            dynamicNormalizedDict = buildNormalizedDictionary(dynamicDict);
                         }
                     } catch {
                         /* 서버 사전 없으면 정적 mnDict만 사용 */
@@ -1109,7 +1146,14 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 }
                 tr = (text: string, isMn: boolean): string => {
                     if (!isMn || !text) return text;
-                    return dynamicDict[text] ?? staticMnDict[text] ?? text;
+                    const normalizedKey = normalizeTranslationKey(text);
+                    return (
+                        dynamicDict[text] ??
+                        dynamicNormalizedDict[normalizedKey] ??
+                        staticMnDict[text] ??
+                        staticNormalizedDict[normalizedKey] ??
+                        text
+                    );
                 };
 
                 // 하나의 pptx 객체 생성
@@ -1174,6 +1218,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 // PPT 파일 저장
                 await pptx.writeFile({ fileName: `Blueprint_BETA_FullData_${Date.now()}.pptx` });
+                await logPptExport();
 
                 onComplete?.();
             } catch (error) {
@@ -1182,7 +1227,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
         };
 
         runExport();
-    }, [screenIds, screens, sections, translateToMN, mnPptFontScalePercent, onComplete, onError]);
+    }, [screenIds, projectId, screens, sections, translateToMN, mnPptFontScalePercent, onComplete, onError]);
 
     return (
         <div className="p-4">

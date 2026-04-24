@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 import { sendInvitationEmail } from '../services/EmailService';
 import { presenceManager, projectStateManager } from '../services/PresenceManager';
 import { touchProjectMemberLastEditedAt } from '../services/projectMemberActivity';
+import { recordProjectAccessLog } from '../services/recordProjectAccessLog';
 import { lockManager } from '../services/LockManager';
 import crypto from 'crypto';
 
@@ -292,6 +293,37 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
             message: '프로젝트 수정 중 오류가 발생했습니다.',
             ...(process.env.NODE_ENV !== 'production' ? { detail: msg || (error?.stack ?? 'Unknown error') } : {}),
         });
+    }
+};
+
+export const recordProjectActionLog = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user?.id;
+        const { kind } = req.body as { kind?: string };
+
+        if (!userId) {
+            return res.status(401).json({ message: '사용자 인증이 필요합니다.' });
+        }
+        if (!id || !Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: '유효한 프로젝트 ID가 필요합니다.' });
+        }
+        if (kind !== 'EXPORT_PPT') {
+            return res.status(400).json({ message: '유효하지 않은 로그 유형입니다.' });
+        }
+
+        const hasAccess = await Project.exists({
+            _id: new Types.ObjectId(id),
+            'members.userId': new Types.ObjectId(userId),
+        });
+        if (!hasAccess) {
+            return res.status(404).json({ message: '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.' });
+        }
+
+        await recordProjectAccessLog(userId, id, kind);
+        return res.status(204).send();
+    } catch {
+        return res.status(500).json({ message: '로그 기록 중 오류가 발생했습니다.' });
     }
 };
 

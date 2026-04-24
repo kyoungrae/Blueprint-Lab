@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createProject, getProjects, deleteProject, updateProject, getProject, getProjectScreensDebug, createInvitation, joinProjectWithCode, joinProjectById } from '../controllers/projectController';
+import { createProject, getProjects, deleteProject, updateProject, getProject, getProjectScreensDebug, createInvitation, joinProjectWithCode, joinProjectById, recordProjectActionLog } from '../controllers/projectController';
 import { authMiddleware } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -19,6 +19,7 @@ router.post('/join-with-code', joinProjectWithCode);
 router.post('/:id/join', joinProjectById);
 router.get('/', getProjects);
 router.patch('/:id', updateProject);
+router.post('/:id/access-log', recordProjectActionLog);
 router.delete('/:id', deleteProject);
 
 export default router;

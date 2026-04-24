@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
-export type ProjectAccessLogKind = 'SOCKET_JOIN' | 'YJS_CONNECT' | 'MEMBER_SAVE';
+export type ProjectAccessLogKind = 'SOCKET_JOIN' | 'YJS_CONNECT' | 'MEMBER_SAVE' | 'EXPORT_PPT';
 
 export interface IProjectAccessLog extends Document {
     userId: Types.ObjectId;
@@ -16,7 +16,7 @@ const ProjectAccessLogSchema = new Schema<IProjectAccessLog>(
         projectId: { type: Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
         kind: {
             type: String,
-            enum: ['SOCKET_JOIN', 'YJS_CONNECT', 'MEMBER_SAVE'],
+            enum: ['SOCKET_JOIN', 'YJS_CONNECT', 'MEMBER_SAVE', 'EXPORT_PPT'],
             required: true,
             index: true,
         },

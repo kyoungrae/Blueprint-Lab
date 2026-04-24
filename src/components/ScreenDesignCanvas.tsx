@@ -2352,6 +2352,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                             </div>
                                             <PPTBetaExporter
                                                 screenIds={selectedExportIds}
+                                                projectId={currentProjectId || undefined}
                                                 translateToMN={pptTranslateToMN}
                                                 mnPptFontScalePercent={pptMnFontScalePercent}
                                                 onComplete={() => {
