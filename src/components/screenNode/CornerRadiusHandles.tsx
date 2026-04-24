@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { DrawElement } from '../../types/screenDesign';
 
 type CornerId = 'a1' | 'a2' | 'a3' | 'a4';
@@ -154,13 +155,14 @@ const CornerRadiusHandles: React.FC<CornerRadiusHandlesProps> = ({
                     style={handleStyle(corner)}
                 />
             ))}
-            {dragInfo && (
+            {dragInfo && typeof document !== 'undefined' && createPortal(
                 <div
-                    className="fixed pointer-events-none z-[10000] px-2 py-1 rounded-md bg-gray-900/90 text-white text-[11px] font-mono shadow-lg whitespace-nowrap select-none"
-                    style={{ left: dragInfo.clientX + 14, top: dragInfo.clientY - 6 }}
+                    className="pointer-events-none px-2 py-1 rounded-md bg-gray-900/90 text-white text-[11px] font-mono shadow-lg whitespace-nowrap select-none"
+                    style={{ position: 'fixed', left: dragInfo.clientX + 14, top: dragInfo.clientY - 6, zIndex: 10000 }}
                 >
                     {CORNER_LABEL[dragInfo.corner]} · 곡률 {dragInfo.value}px
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );
