@@ -4,6 +4,7 @@ import ShapeElement from './ShapeElement';
 import DrawTextComponent from './DrawTextComponent';
 import ImageElement from './ImageElement';
 import TableElement from './TableElement';
+import CornerRadiusHandles from './CornerRadiusHandles';
 import { hexToRgba } from './types';
 import { X } from 'lucide-react';
 import { useDragStore } from '../../store/dragStore';
@@ -519,6 +520,15 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
                                         <div key={idx} onMouseDown={(e) => handlePolygonVertexDragStart(el.id, idx, e)} className="absolute w-[8px] h-[8px] bg-white border-[1.5px] border-blue-500 rounded-full shadow-sm hover:scale-125 hover:border-blue-600 cursor-move pointer-events-auto z-[131]" style={{ left: pt.x - el.x, top: pt.y - el.y, transform: 'translate(-50%, -50%)' }} />
                                     ))}
                                 </>
+                            )}
+                            {(el.type === 'rect' || el.type === 'table') && (
+                                <CornerRadiusHandles
+                                    el={el}
+                                    updateElement={updateElement}
+                                    saveHistory={saveHistory}
+                                    getDrawElements={getDrawElements}
+                                    flushPendingSync={flushPendingSync}
+                                />
                             )}
                         </>
                     )}

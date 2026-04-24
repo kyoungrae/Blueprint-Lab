@@ -628,7 +628,14 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                             });
                                             updateEl({ tableCellStyles: newStyles });
                                         } else {
-                                            updateEl({ tableBorderTop: val, tableBorderBottom: val, tableBorderLeft: val, tableBorderRight: val });
+                                            updateEl({
+                                                tableBorderTop: val,
+                                                tableBorderBottom: val,
+                                                tableBorderLeft: val,
+                                                tableBorderRight: val,
+                                                tableBorderInsideH: val,
+                                                tableBorderInsideV: val
+                                            });
                                         }
                                     }}
                                     onMouseDown={e => e.stopPropagation()}
