@@ -196,6 +196,11 @@ export interface DrawElement {
     shadowOffsetY?: number;
     description?: string;
     borderRadius?: number;
+    /** rect: 모서리별 곡률(px). 미지정 시 borderRadius를 해당 모서리 기본값으로 사용 */
+    borderRadiusTopLeft?: number;
+    borderRadiusTopRight?: number;
+    borderRadiusBottomRight?: number;
+    borderRadiusBottomLeft?: number;
     textAlign?: 'left' | 'center' | 'right';
     verticalAlign?: 'top' | 'middle' | 'bottom';
     zIndex: number;

@@ -39,6 +39,10 @@ export function scaleElementsToFitCanvas(
             ...(el.fontSize != null && { fontSize: Math.max(8, el.fontSize * scale) }),
             ...(el.strokeWidth != null && { strokeWidth: Math.max(0.5, el.strokeWidth * scale) }),
             ...(el.borderRadius != null && { borderRadius: el.borderRadius * scale }),
+            ...(el.borderRadiusTopLeft != null && { borderRadiusTopLeft: el.borderRadiusTopLeft * scale }),
+            ...(el.borderRadiusTopRight != null && { borderRadiusTopRight: el.borderRadiusTopRight * scale }),
+            ...(el.borderRadiusBottomRight != null && { borderRadiusBottomRight: el.borderRadiusBottomRight * scale }),
+            ...(el.borderRadiusBottomLeft != null && { borderRadiusBottomLeft: el.borderRadiusBottomLeft * scale }),
         };
         return scaled;
     });

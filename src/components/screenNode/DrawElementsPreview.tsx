@@ -69,6 +69,10 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
                     const top = (el.y - offsetY) * scale;
                     const w = el.width * scale;
                     const h = el.height * scale;
+                    const brBase = el.borderRadius ?? 0;
+                    const borderRadiusScaled: React.CSSProperties['borderRadius'] = el.type === 'rect'
+                        ? `${(el.borderRadiusTopLeft ?? brBase) * scale}px ${(el.borderRadiusTopRight ?? brBase) * scale}px ${(el.borderRadiusBottomRight ?? brBase) * scale}px ${(el.borderRadiusBottomLeft ?? brBase) * scale}px`
+                        : (el.borderRadius ?? 0) * scale;
                     const baseStyle: React.CSSProperties = {
                         position: 'absolute',
                         left,
@@ -79,7 +83,7 @@ const DrawElementsPreview: React.FC<DrawElementsPreviewProps> = ({
                         borderColor: hexToRgba(el.stroke || '#e2e8f0', el.strokeOpacity ?? 1),
                         borderWidth: Math.max(0.5, (el.strokeWidth ?? 1) * scale),
                         borderStyle: el.strokeStyle || 'solid',
-                        borderRadius: (el.borderRadius ?? 0) * scale,
+                        borderRadius: borderRadiusScaled,
                         fontSize: Math.max(6, (el.fontSize ?? 12) * scale),
                         color: el.color || '#374151',
                         fontWeight: el.fontWeight || 'normal',

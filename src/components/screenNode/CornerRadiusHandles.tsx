@@ -61,6 +61,15 @@ const CornerRadiusHandles: React.FC<CornerRadiusHandlesProps> = ({
                 case 'a4': return el.tableBorderRadiusBottomRight ?? el.tableBorderRadius ?? 0;
             }
         }
+        if (isRect) {
+            const base = el.borderRadius ?? 0;
+            switch (corner) {
+                case 'a1': return el.borderRadiusTopLeft ?? base;
+                case 'a2': return el.borderRadiusTopRight ?? base;
+                case 'a3': return el.borderRadiusBottomLeft ?? base;
+                case 'a4': return el.borderRadiusBottomRight ?? base;
+            }
+        }
         return el.borderRadius ?? 0;
     };
 
@@ -122,7 +131,12 @@ const CornerRadiusHandles: React.FC<CornerRadiusHandlesProps> = ({
                 if (corner === 'a4') updates.tableBorderRadiusBottomRight = next;
                 updateElement(el.id, updates);
             } else {
-                updateElement(el.id, { borderRadius: next });
+                const key =
+                    corner === 'a1' ? 'borderRadiusTopLeft' as const
+                        : corner === 'a2' ? 'borderRadiusTopRight' as const
+                            : corner === 'a3' ? 'borderRadiusBottomLeft' as const
+                                : 'borderRadiusBottomRight' as const;
+                updateElement(el.id, { [key]: next });
             }
 
             setDragInfo({ corner, clientX: ev.clientX, clientY: ev.clientY, value: next });

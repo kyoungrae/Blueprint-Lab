@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { RotateCw, Palette, GripVertical, X, Bold, Italic, Underline, ChevronDown, Plus } from 'lucide-react';
+import { RotateCw, Palette, GripVertical, X, Bold, Italic, Underline, ChevronDown, Plus, Circle } from 'lucide-react';
 import { useStore } from 'reactflow';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
@@ -211,6 +211,7 @@ const StylePanel: React.FC<StylePanelProps> = ({
     const shadowOffsetY = selectedEl?.shadowOffsetY ?? 0;
 
     const isText = selectedEl?.type === 'text';
+    const isRectShape = selectedEl?.type === 'rect';
     const [fonts, setFonts] = useState<{ name: string; filename: string; url: string }[]>([]);
     const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
     const fontInputRef = useRef<HTMLInputElement>(null);
@@ -835,11 +836,54 @@ const StylePanel: React.FC<StylePanelProps> = ({
                     step="1"
                     value={drawElements.find(el => el.id === selectedElementIds[0])?.borderRadius ?? 0}
                     onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        updateElements(selectedElementIds, { borderRadius: val });
+                        const val = parseInt(e.target.value, 10);
+                        updateElements(selectedElementIds, (el) => {
+                            if (el.type === 'rect') {
+                                return {
+                                    borderRadius: val,
+                                    borderRadiusTopLeft: val,
+                                    borderRadiusTopRight: val,
+                                    borderRadiusBottomRight: val,
+                                    borderRadiusBottomLeft: val,
+                                };
+                            }
+                            return { borderRadius: val };
+                        });
                     }}
                     className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#2c3e7c]"
                 />
+                {isRectShape && (
+                    <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                        <div className="flex items-center gap-1.5 text-gray-700">
+                            <Circle size={10} className="text-gray-400" />
+                            <span className="text-[10px] font-medium pl-0.5">모서리별 곡률</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            {([
+                                { key: 'borderRadiusTopLeft' as const, iconClass: 'border-t-2 border-l-2 rounded-tl-md' },
+                                { key: 'borderRadiusTopRight' as const, iconClass: 'border-t-2 border-r-2 rounded-tr-md' },
+                                { key: 'borderRadiusBottomLeft' as const, iconClass: 'border-b-2 border-l-2 rounded-bl-md' },
+                                { key: 'borderRadiusBottomRight' as const, iconClass: 'border-b-2 border-r-2 rounded-br-md' },
+                            ]).map(({ key, iconClass }) => (
+                                <div key={key} className="flex items-center gap-2 bg-gray-50 rounded px-2 py-1.5 border border-gray-100">
+                                    <div className={`w-2.5 h-2.5 border-gray-400 ${iconClass}`} />
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={(selectedEl[key] as number | undefined) ?? selectedEl.borderRadius ?? 0}
+                                        onChange={(e) => {
+                                            const n = parseInt(e.target.value, 10) || 0;
+                                            updateElements(selectedElementIds, (el) => (el.type === 'rect' ? { [key]: n } : {}));
+                                        }}
+                                        onMouseDown={e => e.stopPropagation()}
+                                        className="w-full bg-transparent text-[11px] text-gray-700 outline-none text-right font-mono"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
             {/* Opacity Sliders */}
             <div className="flex flex-col gap-3 pt-2 border-t border-gray-100">

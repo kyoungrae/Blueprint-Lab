@@ -7,7 +7,8 @@ import type { DrawElement, Screen, TableCellData } from '../types/screenDesign';
 const STYLE_KEYS: (keyof DrawElement)[] = [
     'fill', 'stroke', 'strokeWidth', 'strokeStyle', 'strokeOpacity',
     'fillOpacity', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'fontFamily', 'color', 'text', 'textAlign', 'verticalAlign',
-    'borderRadius', 'opacity', 'description',
+    'borderRadius', 'borderRadiusTopLeft', 'borderRadiusTopRight', 'borderRadiusBottomRight', 'borderRadiusBottomLeft',
+    'opacity', 'description',
     'imageUrl', 'imageCrop', 'imageRotation', 'imageFlipX', 'imageFlipY',
     // 표 구조 관련 키(tableRows, tableCols, 셀 수/크기 등)는 제외
     'tableBorderTop', 'tableBorderTopWidth', 'tableBorderTopStyle',

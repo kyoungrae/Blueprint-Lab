@@ -536,9 +536,17 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     } : undefined;
 
                     switch (el.type) {
-                        case 'rect':
-                            const shapeType = el.borderRadius ? pptx.ShapeType.roundRect : pptx.ShapeType.rect;
-                            const rectRadius = el.borderRadius ? (el.borderRadius * scale * 1) : undefined;
+                        case 'rect': {
+                            const r0 = el.borderRadius ?? 0;
+                            const rMax = Math.max(
+                                r0,
+                                el.borderRadiusTopLeft ?? 0,
+                                el.borderRadiusTopRight ?? 0,
+                                el.borderRadiusBottomRight ?? 0,
+                                el.borderRadiusBottomLeft ?? 0
+                            );
+                            const shapeType = rMax > 0 ? pptx.ShapeType.roundRect : pptx.ShapeType.rect;
+                            const rectRadius = rMax > 0 ? (rMax * scale * 1) : undefined;
                             slide.addShape(shapeType, {
                                 x: elX, y: elY, w: elW, h: elH,
                                 fill: fillOptions,
@@ -563,6 +571,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 });
                             }
                             break;
+                        }
                         case 'circle':
                             slide.addShape(pptx.ShapeType.ellipse, {
                                 x: elX, y: elY, w: elW, h: elH,
