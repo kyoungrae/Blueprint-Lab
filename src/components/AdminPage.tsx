@@ -270,7 +270,11 @@ interface AdminHistoryEntry {
     targetType: string;
     targetId: string;
     targetName: string;
+    screenName?: string | null;
+    screenCode?: string | null;
     details: string;
+    operationPayload?: Record<string, unknown> | null;
+    operationPreviousState?: Record<string, unknown> | null;
     timestamp: string;
 }
 
@@ -775,6 +779,12 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
             minute: '2-digit',
         });
     };
+
+    const isDeleteHistoryType = (operationType: string) =>
+        operationType.endsWith('_DELETE') || operationType === 'SCREEN_DRAW_DELETE';
+
+    const historyTypeLabel = (operationType: string) =>
+        isDeleteHistoryType(operationType) ? '삭제' : '저장';
 
     const accessLogKindLabel = (kind: string | undefined) => {
         switch (kind) {
@@ -1484,8 +1494,8 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                         {rollbackSelectedProjectId && (
                             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                                    <div className="font-bold text-sm text-gray-700">최근 24시간 삭제 이력</div>
-                                    <div className="text-xs text-gray-500 mt-0.5">테이블, 관계, 화면, 연결선, 컬럼, 표·그리기 요소(화면 내) 삭제만 표시됩니다.</div>
+                                    <div className="font-bold text-sm text-gray-700">최근 24시간 작업 이력 (삭제 + 저장)</div>
+                                    <div className="text-xs text-gray-500 mt-0.5">삭제·저장 작업 이력을 표시하며, 저장 시점 JSON(payload/previousState)도 함께 확인할 수 있습니다.</div>
                                 </div>
                                 {rollbackHistoryLoading ? (
                                     <div className="flex items-center justify-center py-12">
@@ -1494,27 +1504,54 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                 ) : (
                                     <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
                                         {rollbackHistory.length === 0 ? (
-                                            <div className="p-8 text-center text-gray-500 text-sm">이 기간 내 삭제된 항목이 없습니다.</div>
+                                            <div className="p-8 text-center text-gray-500 text-sm">최근 24시간 내 작업 이력이 없습니다.</div>
                                         ) : (
                                             rollbackHistory.map((entry) => (
                                                 <div
                                                     key={entry.id}
-                                                    className="px-4 py-3 flex flex-wrap items-center gap-2 sm:gap-4"
+                                                    className="px-4 py-3 space-y-2"
                                                 >
-                                                    <span className="text-xs text-gray-500 shrink-0 w-20 sm:w-24">
-                                                        {formatDate(entry.timestamp)}
-                                                    </span>
-                                                    <span className="text-sm font-medium text-gray-700 shrink-0">{entry.userName}</span>
-                                                    <span className="text-sm font-medium text-gray-900 truncate min-w-0 flex-1" title={entry.details}>
-                                                        {entry.details}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setRollbackEntryToRollback(entry)}
-                                                        className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200"
-                                                    >
-                                                        <RotateCcw size={14} /> 원복
-                                                    </button>
+                                                    <div className="grid grid-cols-[96px_88px_1fr_auto] items-center gap-2 sm:gap-4">
+                                                        <span className="text-xs text-gray-500">{formatDate(entry.timestamp)}</span>
+                                                        <span
+                                                            className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${isDeleteHistoryType(entry.operationType) ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}
+                                                        >
+                                                            {historyTypeLabel(entry.operationType)}
+                                                        </span>
+                                                        <span className="text-sm font-medium text-gray-900 truncate min-w-0" title={entry.details}>
+                                                            {entry.details}
+                                                        </span>
+                                                        {isDeleteHistoryType(entry.operationType) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setRollbackEntryToRollback(entry)}
+                                                                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200"
+                                                            >
+                                                                <RotateCcw size={14} /> 원복
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <div className="grid grid-cols-[96px_1fr] gap-2 text-[11px]">
+                                                        <span className="text-gray-500 font-medium">화면</span>
+                                                        <span className="text-gray-700">
+                                                            {entry.screenName || entry.screenCode
+                                                                ? `${entry.screenName || '-'}${entry.screenCode ? ` (${entry.screenCode})` : ''}`
+                                                                : '-'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                                                            <div className="text-[10px] font-bold text-gray-500 mb-1">PAYLOAD(JSON)</div>
+                                                            <pre className="text-[11px] text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-auto">{JSON.stringify(entry.operationPayload ?? {}, null, 2)}</pre>
+                                                        </div>
+                                                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                                                            <div className="text-[10px] font-bold text-gray-500 mb-1">PREVIOUS_STATE(JSON)</div>
+                                                            <pre className="text-[11px] text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-auto">{JSON.stringify(entry.operationPreviousState ?? {}, null, 2)}</pre>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-[11px] text-gray-500">
+                                                        {entry.userName} · {entry.operationType}
+                                                    </div>
                                                 </div>
                                             ))
                                         )}

@@ -266,7 +266,7 @@ export const getAdminProjects = async (req: AuthRequest, res: Response) => {
 export const getProjectHistory = async (req: AuthRequest, res: Response) => {
     try {
         const { projectId } = req.params;
-        const hours = Math.min(24 * 7, Math.max(1, parseInt(String(req.query.hours || '24'), 10) || 24));
+        const hours = 24;
         const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || '200'), 10) || 200));
 
         if (!projectId || !Types.ObjectId.isValid(projectId)) {
@@ -274,17 +274,52 @@ export const getProjectHistory = async (req: AuthRequest, res: Response) => {
         }
 
         const since = new Date(Date.now() - hours * 60 * 60 * 1000);
-        const deleteTypes = ['ENTITY_DELETE', 'RELATIONSHIP_DELETE', 'SCREEN_DELETE', 'FLOW_DELETE', 'SCREEN_FLOW_DELETE', 'ATTRIBUTE_DELETE', 'SCREEN_DRAW_DELETE'];
+        const historyTypes = [
+            'ENTITY_CREATE', 'ENTITY_UPDATE', 'ENTITY_MOVE', 'ENTITY_DELETE',
+            'ATTRIBUTE_ADD', 'ATTRIBUTE_UPDATE', 'ATTRIBUTE_FIELD_UPDATE', 'ATTRIBUTE_DELETE',
+            'RELATIONSHIP_CREATE', 'RELATIONSHIP_UPDATE', 'RELATIONSHIP_DELETE',
+            'SCREEN_CREATE', 'SCREEN_UPDATE', 'SCREEN_MOVE', 'SCREEN_DELETE',
+            'SCREEN_DRAW_ELEMENTS_UPDATE', 'SCREEN_DRAW_DELETE',
+            'FLOW_CREATE', 'FLOW_UPDATE', 'FLOW_DELETE',
+            'SCREEN_FLOW_CREATE', 'SCREEN_FLOW_UPDATE', 'SCREEN_FLOW_DELETE',
+            'ERD_IMPORT', 'SCREEN_IMPORT',
+        ];
         const list = await History.find({
             projectId: new Types.ObjectId(projectId),
             timestamp: { $gte: since },
-            operationType: { $in: deleteTypes },
+            operationType: { $in: historyTypes },
         })
             .sort({ timestamp: -1 })
             .limit(limit)
             .lean();
 
+        const project = await Project.findById(projectId)
+            .select('screenSnapshot.screens.id screenSnapshot.screens.name screenSnapshot.screens.screenId')
+            .lean();
+        const screenMetaMap = new Map<string, { name?: string; screenId?: string }>();
+        const screens = (project as any)?.screenSnapshot?.screens ?? [];
+        for (const s of screens) {
+            if (s?.id) {
+                screenMetaMap.set(String(s.id), { name: s.name, screenId: s.screenId });
+            }
+        }
+
         const data = list.map((h: any) => ({
+            ...(function () {
+                const payload = h.operation?.payload ?? {};
+                const prev = h.operation?.previousState ?? {};
+                const targetId = String(h.targetId ?? '');
+                const snapMeta = screenMetaMap.get(targetId);
+                const fromPayloadOrPrevName = payload?.name || prev?.name;
+                const fromPayloadOrPrevScreenId = payload?.screenId || prev?.screenId;
+                const isScreenContext =
+                    h.targetType === 'SCREEN' ||
+                    String(h.operationType || '').startsWith('SCREEN_');
+                return {
+                    screenName: isScreenContext ? (fromPayloadOrPrevName || snapMeta?.name || null) : null,
+                    screenCode: isScreenContext ? (fromPayloadOrPrevScreenId || snapMeta?.screenId || null) : null,
+                };
+            })(),
             id: h._id.toString(),
             projectId: h.projectId?.toString(),
             userId: h.userId?.toString(),
@@ -295,6 +330,8 @@ export const getProjectHistory = async (req: AuthRequest, res: Response) => {
             targetId: h.targetId,
             targetName: h.targetName,
             details: h.details,
+            operationPayload: h.operation?.payload ?? null,
+            operationPreviousState: h.operation?.previousState ?? null,
             timestamp: h.timestamp?.toISOString?.(),
         }));
 
