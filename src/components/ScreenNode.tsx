@@ -1504,7 +1504,6 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     nextY = elY + h - nextH;
                 }
             }
-
             // Update in-place for smooth visual
             const currentElements = getScreenById(screen.id)?.drawElements || [];
             const updated = currentElements.map(it => {
@@ -1518,6 +1517,17 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                         x: nextX + (p.x - it.x) * sx,
                         y: nextY + (p.y - it.y) * sy,
                     }));
+                } else if (it.type === 'line' && it.lineX1 != null && it.lineY1 != null && it.lineX2 != null && it.lineY2 != null && it.width > 0 && it.height > 0) {
+                    const sx = nextW / it.width;
+                    const sy = nextH / it.height;
+                    const lineX1 = nextX + (it.lineX1 - it.x) * sx;
+                    const lineY1 = nextY + (it.lineY1 - it.y) * sy;
+                    const lineX2 = nextX + (it.lineX2 - it.x) * sx;
+                    const lineY2 = nextY + (it.lineY2 - it.y) * sy;
+                    base.lineX1 = lineX1;
+                    base.lineY1 = lineY1;
+                    base.lineX2 = lineX2;
+                    base.lineY2 = lineY2;
                 }
                 return base;
             });
@@ -1807,7 +1817,13 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         const y = Math.round((e.clientY - rect.top) * scaleY);
 
         if (lineDrawStartRef.current) {
-            const end = { x, y };
+            const start = lineDrawStartRef.current;
+            let end = { x, y };
+            if (e.shiftKey) {
+                const dx = x - start.x;
+                const dy = y - start.y;
+                end = Math.abs(dx) >= Math.abs(dy) ? { x, y: start.y } : { x: start.x, y };
+            }
             setLineDrawEnd(end);
             lineDrawEndRef.current = end;
             return;
@@ -2443,10 +2459,18 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             const rect = canvasRef.current.getBoundingClientRect();
             const scaleX = canvasRef.current.clientWidth / rect.width;
             const scaleY = canvasRef.current.clientHeight / rect.height;
-            const x = Math.round((moveE.clientX - rect.left) * scaleX);
-            const y = Math.round((moveE.clientY - rect.top) * scaleY);
+            let x = Math.round((moveE.clientX - rect.left) * scaleX);
+            let y = Math.round((moveE.clientY - rect.top) * scaleY);
             const currentEl = getScreenById(screen.id)?.drawElements?.find(item => item.id === id);
             if (!currentEl || currentEl.type !== 'line' || currentEl.lineX1 == null || currentEl.lineY1 == null || currentEl.lineX2 == null || currentEl.lineY2 == null) return;
+            if (moveE.shiftKey) {
+                const anchorX = pointIndex === 0 ? currentEl.lineX2 : currentEl.lineX1;
+                const anchorY = pointIndex === 0 ? currentEl.lineY2 : currentEl.lineY1;
+                const dx = x - anchorX;
+                const dy = y - anchorY;
+                if (Math.abs(dx) >= Math.abs(dy)) y = anchorY;
+                else x = anchorX;
+            }
             const lineX1 = pointIndex === 0 ? x : currentEl.lineX1;
             const lineY1 = pointIndex === 0 ? y : currentEl.lineY1;
             const lineX2 = pointIndex === 1 ? x : currentEl.lineX2;
