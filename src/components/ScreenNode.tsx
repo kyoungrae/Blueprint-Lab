@@ -1748,8 +1748,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         }
         setSelectedElementIds(nextSelected);
 
-        // Exit table cell-edit mode when clicking a different element
-        if (editingTableId && !nextSelected.includes(id)) {
+        // Exit table cell-edit mode when the edited table is no longer among selected elements (e.g. clicked a shape)
+        if (editingTableId && !nextSelected.includes(editingTableId)) {
             setEditingTableId(null);
             setSelectedCellIndices([]);
             setEditingCellIndex(null);
