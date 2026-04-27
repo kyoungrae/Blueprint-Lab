@@ -403,8 +403,10 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                             const newData = [...(el.tableCellData || [])];
                                             newData[cellIndex] = html;
 
-                                            // 편집된 셀은 더 이상 컴포넌트 잠금 대상이 아니도록 인덱스 제거
-                                            const currentLocked = el.tableCellLockedIndices || (el.fromComponentId ? Array.from({ length: totalCells }, (_, k) => k) : []);
+                                            // 편집된 셀은 더 이상 컴포넌트 잠금 대상이 아니도록 인덱스 제거.
+                                            // tableCellLockedIndices가 없을 때 전체 그리드를 잠금으로 간주하면(구 fallback),
+                                            // 컴포넌트 빈 셀과 동기화할 때 화면 전용 입력이 지워질 수 있어 초기값은 빈 목록만 사용한다.
+                                            const currentLocked = el.tableCellLockedIndices ?? [];
                                             const newLocked = currentLocked.filter(idx => idx !== cellIndex);
 
                                             updateElement(el.id, {

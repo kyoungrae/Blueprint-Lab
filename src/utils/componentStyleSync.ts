@@ -80,6 +80,16 @@ function mergeTableCellData(target: DrawElement, source: DrawElement): DrawEleme
                 }
             }
 
+            // 잠금된 칸으로 남아 있어도 원본이 비어 있고 인스턴스에만 텍스트가 있으면 덮어쓰지 않음(오잠금 시 내용 삭제 방지).
+            if (
+                target.fromComponentId &&
+                target.tableCellLockedIndices?.includes(tgtIdx) &&
+                tgtVal.length > 0 &&
+                !srcVal.length
+            ) {
+                continue;
+            }
+
             const actualSrcVal = srcV2?.[srcIdx]?.content ?? srcLegacy?.[srcIdx] ?? '';
             newLegacy[tgtIdx] = actualSrcVal;
             if (newV2[tgtIdx]) newV2[tgtIdx] = { ...newV2[tgtIdx], content: actualSrcVal };

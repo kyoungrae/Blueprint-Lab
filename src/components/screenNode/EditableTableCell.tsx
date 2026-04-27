@@ -73,6 +73,8 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
     const lastSelectionRef = useRef({ start: 0, end: 0 });
     const textUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastSentTextRef = useRef<string | null>(null);
+    const onValueChangeRef = useRef(onValueChange);
+    onValueChangeRef.current = onValueChange;
 
     const isComposingRef = useRef(false);
 
@@ -92,6 +94,13 @@ const EditableTableCell: React.FC<EditableTableCellProps> = ({
                 clearTimeout(textUpdateTimerRef.current);
                 textUpdateTimerRef.current = null;
             }
+            if (isComposingRef.current) return;
+            const el = divRef.current;
+            if (!el) return;
+            const html = el.innerHTML;
+            if (lastSentTextRef.current === html) return;
+            lastSentTextRef.current = html;
+            onValueChangeRef.current(html);
         };
     }, []);
 
