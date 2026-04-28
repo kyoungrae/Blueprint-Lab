@@ -7,7 +7,7 @@ import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useComponentStore } from '../store/componentStore';
 import { useScreenCanvasStore } from '../contexts/ScreenCanvasStoreContext';
 
-import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, Table2, Settings2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle } from 'lucide-react';
+import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, Table2, Settings2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle, Copy } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import type { Project } from '../types/erd';
 import { collectErdTableNames, resolveLinkedErdProjects } from '../utils/linkedErdProjects';
@@ -65,6 +65,37 @@ type TableCellClipboard = {
 };
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
+
+/** 스타일 복사(PPT식 포맷 페인터): 배경·테두리·텍스트·그림자·투명도 등 시각 속성만 스냅샷 */
+const STYLE_SNAPSHOT_KEYS: (keyof DrawElement)[] = [
+    'fill', 'stroke', 'strokeWidth', 'strokeStyle',
+    'borderRadius', 'borderRadiusTopLeft', 'borderRadiusTopRight', 'borderRadiusBottomRight', 'borderRadiusBottomLeft',
+    'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'fontFamily', 'color', 'textAlign', 'verticalAlign',
+    'shadowColor', 'shadowOpacity', 'shadowOffsetX', 'shadowOffsetY',
+    'opacity', 'fillOpacity', 'strokeOpacity',
+    'tableBorderTop', 'tableBorderTopWidth', 'tableBorderTopStyle',
+    'tableBorderBottom', 'tableBorderBottomWidth', 'tableBorderBottomStyle',
+    'tableBorderLeft', 'tableBorderLeftWidth', 'tableBorderLeftStyle',
+    'tableBorderRight', 'tableBorderRightWidth', 'tableBorderRightStyle',
+    'tableBorderInsideH', 'tableBorderInsideHWidth', 'tableBorderInsideHStyle',
+    'tableBorderInsideV', 'tableBorderInsideVWidth', 'tableBorderInsideVStyle',
+    'tableBorderRadius', 'tableBorderRadiusTopLeft', 'tableBorderRadiusTopRight',
+    'tableBorderRadiusBottomLeft', 'tableBorderRadiusBottomRight',
+];
+
+function extractStyleSnapshot(src: DrawElement): Partial<DrawElement> {
+    const out: Partial<DrawElement> = {};
+    for (const k of STYLE_SNAPSHOT_KEYS) {
+        const v = src[k];
+        if (v !== undefined) (out as Record<string, unknown>)[k as string] = v as unknown;
+    }
+    return out;
+}
+
+const STYLE_PAINT_CURSOR_CSS =
+    `url("data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect width='14' height='14' x='8' y='8' rx='2' ry='2'/><path d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/></svg>`
+    )}") 12 12, crosshair`;
 
 /** 포털로 렌더링되는 패널들이 뷰포트 이동/줌에 기민하게 반응하도록 감싸는 컴포넌트 */
 const FloatingPanelWrapper: React.FC<{
@@ -362,6 +393,11 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     const polygonVertexSnapStateRef = useRef<SnapState>({});
     const lineVertexDragRef = useRef<{ elementId: string; pointIndex: 0 | 1 } | null>(null);
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+    /** 도형 스타일 복사 → 대상 클릭 시 적용 (포맷 페인터) */
+    const [stylePaintActive, setStylePaintActive] = useState(false);
+    const [stylePaintSnapshot, setStylePaintSnapshot] = useState<Partial<DrawElement> | null>(null);
+    const [stylePaintSourceId, setStylePaintSourceId] = useState<string | null>(null);
+    const tryApplyStylePaintRef = useRef<(id: string, e: React.MouseEvent) => boolean>(() => false);
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const tooltipContainerRef = useRef<HTMLDivElement>(null);
@@ -819,6 +855,25 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         }
     }, [selectedElementIds, editingTableId, textSelectionRect, textSelectionFromTable]);
 
+    useEffect(() => {
+        if (stylePaintActive) {
+            document.body.style.cursor = STYLE_PAINT_CURSOR_CSS;
+        } else {
+            document.body.style.cursor = '';
+        }
+        return () => {
+            document.body.style.cursor = '';
+        };
+    }, [stylePaintActive]);
+
+    useEffect(() => {
+        if (selectedElementIds.length !== 1) {
+            setStylePaintActive(false);
+            setStylePaintSnapshot(null);
+            setStylePaintSourceId(null);
+        }
+    }, [selectedElementIds.length]);
+
     // Clear selection when clicking outside the node (on the outer ReactFlow canvas)
     useEffect(() => {
         const clearSelection = () => {
@@ -830,6 +885,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             setTextSelectionRect(null);
             setTextSelectionFromTable(null);
             setShowFontStylePanel(false);
+            setStylePaintActive(false);
+            setStylePaintSnapshot(null);
+            setStylePaintSourceId(null);
         };
 
         const handleMouseDownCapture = (e: MouseEvent) => {
@@ -1599,6 +1657,9 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                     setSelectedCellIndices([]);
                     setEditingCellIndex(null);
                     setSelectedGuideLine(null);
+                    setStylePaintActive(false);
+                    setStylePaintSnapshot(null);
+                    setStylePaintSourceId(null);
                 }
                 setIsDragSelecting(true);
                 setDragSelectStart({ x, y });
@@ -1699,6 +1760,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
 
     const handleElementMouseDown = (id: string, e: React.MouseEvent) => {
         if (!canEdit) return;
+
+        if (tryApplyStylePaintRef.current(id, e)) return;
 
         // 그리기 도구일 때는 객체 위에서도 드래그로 새 객체 생성 가능하도록 이벤트를 캔버스까지 전파
         const isDrawingTool = ['rect', 'circle', 'polygon', 'line', 'func-no', 'table', 'text', 'image', 'arrow'].includes(activeTool) ||
@@ -2326,6 +2389,39 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         flushPendingFontSize,
         PENDING_FONT_SIZE_DEBOUNCE_MS,
     });
+
+    const tryApplyStylePaint = useCallback(
+        (id: string, e: React.MouseEvent): boolean => {
+            if (!stylePaintActive || !stylePaintSnapshot || isLocked) return false;
+            e.preventDefault();
+            e.stopPropagation();
+            if (id === stylePaintSourceId) {
+                setStylePaintActive(false);
+                setStylePaintSnapshot(null);
+                setStylePaintSourceId(null);
+                return true;
+            }
+            updateElement(id, stylePaintSnapshot);
+            flushPendingSync();
+            setStylePaintActive(false);
+            setStylePaintSnapshot(null);
+            setStylePaintSourceId(null);
+            setSelectedElementIds([id]);
+            setIsMoving(false);
+            setDraggingElementIds([]);
+            setDragPreviews(null);
+            return true;
+        },
+        [
+            stylePaintActive,
+            stylePaintSnapshot,
+            stylePaintSourceId,
+            isLocked,
+            updateElement,
+            flushPendingSync,
+        ]
+    );
+    tryApplyStylePaintRef.current = tryApplyStylePaint;
 
     // 텍스트 선택 상태를 저장하는 함수
     const saveTextSelection = useCallback(() => {
@@ -3421,6 +3517,33 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                         </button>
                                                     </PremiumTooltip>
                                                 </div>
+                                                {selectedElementIds.length === 1 && !isLocked && (
+                                                <div className="flex flex-nowrap items-center gap-0.5 border-r border-gray-200 pr-1 mr-1">
+                                                    <PremiumTooltip label="스타일 복사" dotColor="#8b5cf6" screenId={screen.id}>
+                                                        <button
+                                                            type="button"
+                                                            data-ignore-selection-clear
+                                                            onMouseDown={(e) => {
+                                                                e.stopPropagation();
+                                                                setLastInteractedScreenId(screen.id);
+                                                            }}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const sid = selectedElementIds[0];
+                                                                const src = drawElements.find((el) => el.id === sid);
+                                                                if (!src) return;
+                                                                setStylePaintSnapshot(extractStyleSnapshot(src));
+                                                                setStylePaintSourceId(src.id);
+                                                                setStylePaintActive(true);
+                                                                setActiveTool('select');
+                                                            }}
+                                                            className={`p-2 rounded-lg transition-colors ${stylePaintActive ? 'bg-violet-100 text-violet-700' : 'hover:bg-gray-100 text-gray-500'}`}
+                                                        >
+                                                            <Copy size={18} />
+                                                        </button>
+                                                    </PremiumTooltip>
+                                                </div>
+                                                )}
                                                 <div className="flex flex-nowrap items-center gap-0.5 shrink-0">
                                                     <div className="nodrag nopan relative flex items-center justify-center" ref={tablePickerRef}>
                                                             <PremiumTooltip label="표 삽입" screenId={screen.id}>
