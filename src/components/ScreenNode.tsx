@@ -438,6 +438,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
         setShowFontStylePanel(false);
         setShowStylePanel(false);
         setShowLayerPanel(false);
+        setShowTablePanel(false);
     }, [selectedElementIds]);
     const [componentPickerPos, setComponentPickerPos] = useState({ x: 0, y: 0 });
     const isDraggingTablePickerRef = useRef(false);
@@ -806,6 +807,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
     useEffect(() => {
         setStylePanelPos({ x: 200, y: 240 });
         setLayerPanelPos({ x: 200, y: 240 });
+        setTablePanelPos({ x: 200, y: 240 });
     }, [isLocked]);
 
     // 새로고침 시 자동 잠금 타이머 재설정
@@ -3714,6 +3716,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                                                                             const flowPos = screenToFlowPosition({ x: rect.left, y: rect.bottom + 8 });
                                                                             setTablePanelPos({ x: flowPos.x, y: flowPos.y });
+                                                                            setShowStylePanel(false);
+                                                                            setShowLayerPanel(false);
                                                                         }
                                                                         setShowTablePanel(prev => !prev);
                                                                     }}
@@ -3729,6 +3733,8 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             setLastInteractedScreenId(screen.id);
                                                                         }}
                                                                     onClick={() => {
+                                                                        setShowStylePanel(false);
+                                                                        setShowLayerPanel(false);
                                                                         setShowTablePanel(true);
                                                                     }}
                                                                     className={`p-2 rounded-lg transition-colors ${showTablePanel && selectedCellIndices.length > 0 ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
@@ -4315,6 +4321,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                             }
                                                             setShowStylePanel(!showStylePanel);
                                                             setShowLayerPanel(false);
+                                                            setShowTablePanel(false);
                                                         }}
                                                         className={`p-2 rounded-lg transition-colors ${showStylePanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
                                                     >
@@ -4335,6 +4342,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                             }
                                                             setShowLayerPanel(!showLayerPanel);
                                                             setShowStylePanel(false);
+                                                            setShowTablePanel(false);
                                                         }}
                                                         className={`p-2 rounded-lg transition-colors ${showLayerPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
                                                     >
