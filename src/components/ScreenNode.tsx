@@ -81,13 +81,97 @@ const STYLE_SNAPSHOT_KEYS: (keyof DrawElement)[] = [
     'tableBorderInsideV', 'tableBorderInsideVWidth', 'tableBorderInsideVStyle',
     'tableBorderRadius', 'tableBorderRadiusTopLeft', 'tableBorderRadiusTopRight',
     'tableBorderRadiusBottomLeft', 'tableBorderRadiusBottomRight',
+    'tableCellColors',
+    'tableCellStyles',
 ];
+
+/** 소스 표 격자 → 대상 표 격자: 동일 (r,c) 위치의 셀 스타일만 복사 (크기 다를 때 겹치는 영역만) */
+function remapTableCellArrayByGrid<T>(
+    sourceRows: number,
+    sourceCols: number,
+    sourceCells: (T | undefined)[] | undefined,
+    targetRows: number,
+    targetCols: number,
+    existingTarget: (T | undefined)[] | undefined,
+    clone: (v: T) => T
+): (T | undefined)[] {
+    const total = Math.max(0, targetRows * targetCols);
+    const base: (T | undefined)[] = [...(existingTarget ?? Array(total).fill(undefined))];
+    while (base.length < total) base.push(undefined);
+    if (!sourceCells?.length || total === 0) return base;
+    const sr = Math.max(1, sourceRows);
+    const sc = Math.max(1, sourceCols);
+    const maxR = Math.min(sr, targetRows);
+    const maxC = Math.min(sc, targetCols);
+    for (let r = 0; r < maxR; r++) {
+        for (let c = 0; c < maxC; c++) {
+            const si = r * sc + c;
+            const ti = r * targetCols + c;
+            if (ti >= total || si >= sourceCells.length) continue;
+            const val = sourceCells[si];
+            if (val !== undefined && val !== null) base[ti] = clone(val);
+        }
+    }
+    return base;
+}
+
+function mergeStylePaintOntoTarget(
+    snapshot: Partial<DrawElement>,
+    source: DrawElement | undefined,
+    target: DrawElement
+): Partial<DrawElement> {
+    if (source?.type !== 'table' || target.type !== 'table') {
+        return snapshot;
+    }
+    const sr = source.tableRows ?? 1;
+    const sc = source.tableCols ?? 1;
+    const tr = target.tableRows ?? 1;
+    const tc = target.tableCols ?? 1;
+    const srcColors = snapshot.tableCellColors ?? source.tableCellColors;
+    const srcStyles = snapshot.tableCellStyles ?? source.tableCellStyles;
+    const nextColors = remapTableCellArrayByGrid(
+        sr,
+        sc,
+        srcColors,
+        tr,
+        tc,
+        target.tableCellColors,
+        (v) => v
+    );
+    let nextStyles = target.tableCellStyles;
+    if (srcStyles?.length) {
+        nextStyles = remapTableCellArrayByGrid(
+            sr,
+            sc,
+            srcStyles,
+            tr,
+            tc,
+            target.tableCellStyles,
+            (s) => ({ ...s }) as (typeof srcStyles)[0]
+        );
+    }
+    const { tableCellColors: _c, tableCellStyles: _s, ...rest } = snapshot;
+    return {
+        ...rest,
+        tableCellColors: nextColors,
+        ...(srcStyles?.length ? { tableCellStyles: nextStyles } : {}),
+    };
+}
 
 function extractStyleSnapshot(src: DrawElement): Partial<DrawElement> {
     const out: Partial<DrawElement> = {};
     for (const k of STYLE_SNAPSHOT_KEYS) {
         const v = src[k];
-        if (v !== undefined) (out as Record<string, unknown>)[k as string] = v as unknown;
+        if (v === undefined) continue;
+        if (k === 'tableCellColors' && Array.isArray(v)) {
+            (out as Record<string, unknown>).tableCellColors = [...v] as unknown;
+        } else if (k === 'tableCellStyles' && Array.isArray(v)) {
+            (out as Record<string, unknown>).tableCellStyles = (v as (Record<string, unknown> | undefined)[]).map((s) =>
+                s ? { ...s } : undefined
+            ) as unknown;
+        } else {
+            (out as Record<string, unknown>)[k as string] = v as unknown;
+        }
     }
     return out;
 }
@@ -2403,7 +2487,12 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 setStylePaintSourceId(null);
                 return true;
             }
-            updateElement(id, stylePaintSnapshot);
+            const current = getDrawElements();
+            const sourceEl = stylePaintSourceId ? current.find((el) => el.id === stylePaintSourceId) : undefined;
+            const targetEl = current.find((el) => el.id === id);
+            if (!targetEl) return false;
+            const patch = mergeStylePaintOntoTarget(stylePaintSnapshot, sourceEl, targetEl);
+            updateElement(id, patch);
             flushPendingSync();
             setStylePaintActive(false);
             setStylePaintSnapshot(null);
@@ -2421,6 +2510,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
             isLocked,
             updateElement,
             flushPendingSync,
+            getDrawElements,
         ]
     );
     tryApplyStylePaintRef.current = tryApplyStylePaint;
