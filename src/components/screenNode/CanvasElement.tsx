@@ -141,6 +141,26 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
     const shadowOpacity = Math.max(0, Math.min(1, el.shadowOpacity ?? 0));
     const shadowOffsetX = el.shadowOffsetX ?? 0;
     const shadowOffsetY = el.shadowOffsetY ?? 0;
+    const shapeBorderRadius = (() => {
+        if (el.type === 'circle') return '50%';
+        if (el.type === 'rect') {
+            const base = el.borderRadius ?? 0;
+            const tl = el.borderRadiusTopLeft ?? base;
+            const tr = el.borderRadiusTopRight ?? base;
+            const br = el.borderRadiusBottomRight ?? base;
+            const bl = el.borderRadiusBottomLeft ?? base;
+            return `${tl}px ${tr}px ${br}px ${bl}px`;
+        }
+        if (el.type === 'table') {
+            const base = el.tableBorderRadius ?? 0;
+            const tl = el.tableBorderRadiusTopLeft ?? base;
+            const tr = el.tableBorderRadiusTopRight ?? base;
+            const br = el.tableBorderRadiusBottomRight ?? base;
+            const bl = el.tableBorderRadiusBottomLeft ?? base;
+            return `${tl}px ${tr}px ${br}px ${bl}px`;
+        }
+        return undefined;
+    })();
 
     const handleDeleteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -193,6 +213,7 @@ const CanvasElement: React.FC<CanvasElementProps> = memo(({
         pointerEvents: isDrawing ? 'none' : 'auto',
         opacity: el.opacity !== undefined ? el.opacity : 1,
         boxShadow: shadowOpacity > 0 ? `${shadowOffsetX}px ${shadowOffsetY}px 12px ${hexToRgba(shadowColor, shadowOpacity)}` : undefined,
+        borderRadius: shapeBorderRadius,
         ...(rot !== 0 ? { transform: `rotate(${rot}deg)`, transformOrigin: 'center center' } : {}),
         overflow: 'visible',
     };
