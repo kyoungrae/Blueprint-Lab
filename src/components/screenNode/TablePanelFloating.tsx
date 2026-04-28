@@ -280,6 +280,14 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
         update({ drawElements: next });
         syncUpdate({ drawElements: next });
     };
+    const closeColorPicker = (input: HTMLInputElement) => {
+        requestAnimationFrame(() => {
+            input.blur();
+            if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+            }
+        });
+    };
 
     return createPortal(
         <div
@@ -637,6 +645,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                                 tableBorderInsideV: val
                                             });
                                         }
+                                        closeColorPicker(e.currentTarget);
                                     }}
                                     onMouseDown={e => e.stopPropagation()}
                                     className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
@@ -718,6 +727,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                                     } else {
                                                         updateEl({ [colorKey]: val });
                                                     }
+                                                    closeColorPicker(e.currentTarget);
                                                 }}
                                                 onMouseDown={e => e.stopPropagation()}
                                                 className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
@@ -785,7 +795,10 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                         <div className="flex items-center gap-2">
                                             <div className="relative w-6 h-6 rounded border border-gray-200 shadow-sm overflow-hidden flex-shrink-0">
                                                 <input type="color" value={currentColor}
-                                                    onChange={(e) => updateEl({ [colorKey]: e.target.value })}
+                                                    onChange={(e) => {
+                                                        updateEl({ [colorKey]: e.target.value });
+                                                        closeColorPicker(e.currentTarget);
+                                                    }}
                                                     onMouseDown={e => e.stopPropagation()}
                                                     className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
                                                 />
@@ -925,6 +938,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                                 } else {
                                                     updateEl({ color: val });
                                                 }
+                                                closeColorPicker(e.currentTarget);
                                             }}
                                             onMouseDown={e => e.stopPropagation()}
                                             className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
@@ -1110,6 +1124,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                             const newCellColors = Array(totalCells).fill(color) as (string | undefined)[];
                                             updateEl({ fill: color, tableCellColors: newCellColors });
                                         }
+                                        closeColorPicker(e.currentTarget);
                                     }}
                                 />
                             </label>
