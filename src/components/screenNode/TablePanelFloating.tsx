@@ -1062,7 +1062,7 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                     </div>
                 </div>
 
-                {/* Cell color picker */}
+                {/* Cell color picker — 셀 선택 시 선택 셀만 / 표만 선택 시 fill + 전체 tableCellColors 동시 반영 (스타일 패널과 동일) */}
                 <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
                     <div className="flex justify-between items-center">
                         <span className="text-[11px] font-bold text-gray-700">배경색</span>
@@ -1077,12 +1077,15 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                             {cellColorPresets.map(color => (
                                 <button key={color} onMouseDown={e => e.stopPropagation()}
                                     onClick={() => {
-                                        if (selectedCellIndices.length > 0) {
+                                        const isCellBgMode = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                        if (isCellBgMode) {
                                             const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
                                             selectedCellIndices.forEach(idx => { newCellColors[idx] = color === 'transparent' ? undefined : color; });
                                             updateEl({ tableCellColors: newCellColors });
                                         } else {
-                                            updateEl({ fill: color === 'transparent' ? undefined : color });
+                                            const fillVal = color === 'transparent' ? undefined : color;
+                                            const newCellColors = Array(totalCells).fill(fillVal) as (string | undefined)[];
+                                            updateEl({ fill: fillVal, tableCellColors: newCellColors });
                                         }
                                     }}
                                     className="w-5 h-5 rounded-full border-2 border-gray-200 hover:border-blue-400 hover:scale-125 transition-all flex items-center justify-center overflow-hidden shadow-sm"
@@ -1098,18 +1101,30 @@ const TablePanelFloating: React.FC<TablePanelFloatingProps> = ({
                                     onMouseDown={e => e.stopPropagation()}
                                     onChange={(e) => {
                                         const color = e.target.value;
-                                        const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
-                                        selectedCellIndices.forEach(idx => { newCellColors[idx] = color; });
-                                        updateEl({ tableCellColors: newCellColors });
+                                        const isCellBgMode = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                        if (isCellBgMode) {
+                                            const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                                            selectedCellIndices.forEach(idx => { newCellColors[idx] = color; });
+                                            updateEl({ tableCellColors: newCellColors });
+                                        } else {
+                                            const newCellColors = Array(totalCells).fill(color) as (string | undefined)[];
+                                            updateEl({ fill: color, tableCellColors: newCellColors });
+                                        }
                                     }}
                                 />
                             </label>
                         </div>
                         <button onMouseDown={e => e.stopPropagation()}
                             onClick={() => {
-                                const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
-                                selectedCellIndices.forEach(idx => { newCellColors[idx] = undefined; });
-                                updateEl({ tableCellColors: newCellColors });
+                                const isCellBgMode = selectedCellIndices.length > 0 && editingTableId === selectedEl.id;
+                                if (isCellBgMode) {
+                                    const newCellColors = [...(selectedEl.tableCellColors || Array(totalCells).fill(undefined))] as (string | undefined)[];
+                                    selectedCellIndices.forEach(idx => { newCellColors[idx] = undefined; });
+                                    updateEl({ tableCellColors: newCellColors });
+                                } else {
+                                    const newCellColors = Array(totalCells).fill(undefined) as (string | undefined)[];
+                                    updateEl({ fill: undefined, tableCellColors: newCellColors });
+                                }
                             }}
                             className="text-[10px] text-gray-400 hover:text-red-500 transition-colors text-left"
                         >색상 초기화</button>
