@@ -140,14 +140,14 @@ function mergeStylePaintOntoTarget(
     );
     let nextStyles = target.tableCellStyles;
     if (srcStyles?.length) {
-        nextStyles = remapTableCellArrayByGrid(
+        nextStyles = remapTableCellArrayByGrid<Record<string, any> | undefined>(
             sr,
             sc,
             srcStyles,
             tr,
             tc,
             target.tableCellStyles,
-            (s) => ({ ...s }) as (typeof srcStyles)[0]
+            (s) => (s != null ? { ...s } : undefined)
         );
     }
     const { tableCellColors: _c, tableCellStyles: _s, ...rest } = snapshot;
