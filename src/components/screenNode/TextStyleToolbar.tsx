@@ -68,14 +68,18 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
     screenId,
 }) => {
     const { recentTextColors, addRecentTextColor } = useRecentTextColors();
-    const closeColorPicker = (input: HTMLInputElement) => {
-        requestAnimationFrame(() => {
-            input.blur();
-            if (document.activeElement instanceof HTMLElement) {
-                document.activeElement.blur();
-            }
-        });
-    };
+    useEffect(() => {
+        const blurColorPickerOnOutsideClick = (e: MouseEvent) => {
+            const active = document.activeElement;
+            if (!(active instanceof HTMLInputElement) || active.type !== 'color') return;
+            if (active === e.target) return;
+            active.blur();
+        };
+        document.addEventListener('mousedown', blurColorPickerOnOutsideClick, true);
+        return () => {
+            document.removeEventListener('mousedown', blurColorPickerOnOutsideClick, true);
+        };
+    }, []);
     const [fonts, setFonts] = useState<FontInfo[]>([]);
     const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
     const [uploadingFont, setUploadingFont] = useState(false);
@@ -866,7 +870,6 @@ export const TextStyleToolbar: React.FC<TextStyleToolbarProps> = React.memo(({
                         onChange={(e) => {
                             const color = e.target.value;
                             applyColor(color, e.target);
-                            closeColorPicker(e.currentTarget);
                         }}
                         className="absolute inset-0 w-full h-full cursor-pointer opacity-0 scale-150"
                     />

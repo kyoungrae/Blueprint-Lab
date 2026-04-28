@@ -154,17 +154,21 @@ const StylePanel: React.FC<StylePanelProps> = ({
     onDragEnd,
     screenId,
 }) => {
-    const closeColorPicker = (input: HTMLInputElement) => {
-        requestAnimationFrame(() => {
-            input.blur();
-            if (document.activeElement instanceof HTMLElement) {
-                document.activeElement.blur();
-            }
-        });
-    };
     const isDraggingRef = useRef(false);
     // Force re-render on viewport transformation to keep position in sync
     useStore(s => s.transform);
+    useEffect(() => {
+        const blurColorPickerOnOutsideClick = (e: MouseEvent) => {
+            const active = document.activeElement;
+            if (!(active instanceof HTMLInputElement) || active.type !== 'color') return;
+            if (active === e.target) return;
+            active.blur();
+        };
+        document.addEventListener('mousedown', blurColorPickerOnOutsideClick, true);
+        return () => {
+            document.removeEventListener('mousedown', blurColorPickerOnOutsideClick, true);
+        };
+    }, []);
 
     if (selectedElementIds.length === 0 || !show) return null;
 
@@ -330,7 +334,6 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                         const color = e.target.value;
                                         applyBgColor(color);
                                         addRecentFillColor(color);
-                                    closeColorPicker(e.currentTarget);
                                     }}
                                     className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
                                 />
@@ -546,7 +549,6 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                     const color = e.target.value;
                                     updateElements(selectedElementIds, { stroke: color });
                                     addRecentStrokeColor(color);
-                                    closeColorPicker(e.currentTarget);
                                 }}
                                 className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
                             />
@@ -605,7 +607,6 @@ const StylePanel: React.FC<StylePanelProps> = ({
                                 value={shadowColor}
                                 onChange={(e) => {
                                     updateElements(selectedElementIds, { shadowColor: e.target.value });
-                                    closeColorPicker(e.currentTarget);
                                 }}
                                 className="absolute -inset-1 w-[150%] h-[150%] cursor-pointer p-0 border-none bg-transparent"
                             />
