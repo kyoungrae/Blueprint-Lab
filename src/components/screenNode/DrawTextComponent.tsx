@@ -136,6 +136,24 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             const scrollHeight = el.scrollHeight;
             el.style.height = `${scrollHeight}px`;
 
+            // 독립 텍스트 객체: 편집 중 내용이 박스를 넘칠 때만 확장한다.
+            // (수동 리사이즈 값이 자동 로직에 의해 덮어써지지 않도록 축소/강제 재설정은 하지 않음)
+            if (element.type === 'text' && !compact && !isLocked) {
+                const isEditingThisText = document.activeElement instanceof HTMLElement
+                    && el.contains(document.activeElement);
+                if (isEditingThisText) {
+                    const rw = Math.max(8, Math.ceil(el.scrollWidth));
+                    const rh = Math.max(8, Math.ceil(el.scrollHeight));
+                    const cw = element.width ?? 0;
+                    const ch = element.height ?? 0;
+                    const nextW = Math.max(cw, rw);
+                    const nextH = Math.max(ch, rh);
+                    if (nextW !== cw || nextH !== ch) {
+                        onUpdate({ width: nextW, height: nextH });
+                    }
+                }
+            }
+
             // 도형 높이 자동 조절은 중단 (사용자의 자유로운 크기 조절을 위해)
             /*
             if (autoResizeContainer && element.type === 'rect') {
@@ -160,7 +178,7 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
         adjustHeight();
 
         return () => observer.disconnect();
-    }, [autoResizeContainer, element.type, element.height, compact, onUpdate]);
+    }, [autoResizeContainer, element.type, element.height, element.width, compact, onUpdate, isLocked]);
 
     useEffect(() => {
         if (autoFocus && divRef.current) {
