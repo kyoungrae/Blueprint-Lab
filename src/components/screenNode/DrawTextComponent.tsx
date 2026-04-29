@@ -313,9 +313,9 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                 whiteSpace: 'pre-wrap',
                 cursor: isSelected ? 'text' : 'default',
                 backgroundColor:
-                    !element.fill || element.fill === 'transparent'
-                        ? 'transparent'
-                        : hexToRgba(element.fill, element.fillOpacity ?? 1),
+                    element.type === 'text' && element.fill && element.fill !== 'transparent'
+                        ? hexToRgba(element.fill, element.fillOpacity ?? 1)
+                        : 'transparent',
                 ...(compact ? { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: 0 } : {})
             }}
         />
