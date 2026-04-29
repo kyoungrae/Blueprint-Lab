@@ -1875,7 +1875,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                 y,
                 width: activeTool === 'table' ? 200 : 0,
                 height: activeTool === 'table' ? 120 : 0,
-                fill: '#ffffff',
+                fill: activeTool === 'text' ? 'transparent' : '#ffffff',
                 stroke: '#2c3e7c',
                 strokeWidth: 2,
                 zIndex: drawElements.length + 1,
