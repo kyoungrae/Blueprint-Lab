@@ -1273,6 +1273,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
             if (uiScreen && specScreen && uiScreen.variant !== 'SPEC' && specScreen.variant === 'SPEC') {
                 // 부모 화면상세 설계 엔티티의 메타 값을 명세 엔티티에 반영
                 const metaUpdates: Partial<Screen> = {
+                    name: uiScreen.name,
                     systemName: uiScreen.systemName,
                     author: uiScreen.author,
                     createdDate: uiScreen.createdDate,
@@ -1463,6 +1464,16 @@ const ScreenDesignCanvasContent: React.FC = () => {
         };
         addFlow(newFlow);
         // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
+
+        // 페이징(UI→UI): 연결 시작 화면의 화면명·시스템명·작성자를 타겟에 복사
+        if (!isSpecConnection && sourceScreen && params.target) {
+            updateScreen(params.target, {
+                name: sourceScreen.name,
+                systemName: sourceScreen.systemName,
+                author: sourceScreen.author,
+            });
+            // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
+        }
     }, [addFlow, updateFlow, updateScreen, flows, screens, projects, currentProject]);
 
     const onEdgeUpdateStart = useCallback((_: any, edge: RFEdge) => {
@@ -1502,6 +1513,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         const specScreen = sourceScreen?.variant === 'SPEC' ? sourceScreen : targetScreen;
         if (uiScreen && specScreen && uiScreen.variant !== 'SPEC' && specScreen.variant === 'SPEC') {
             const metaUpdates: Partial<Screen> = {
+                name: uiScreen.name,
                 systemName: uiScreen.systemName,
                 author: uiScreen.author,
                 createdDate: uiScreen.createdDate,

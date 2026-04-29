@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import type { DrawElement } from '../../types/screenDesign';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
+import { hexToRgba } from './types';
 
 const TEXT_UPDATE_DEBOUNCE_MS = 500;
 
@@ -293,6 +294,10 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
                 lineHeight: compact ? 1.5 : 1.4,
                 whiteSpace: 'pre-wrap',
                 cursor: isSelected ? 'text' : 'default',
+                backgroundColor:
+                    !element.fill || element.fill === 'transparent'
+                        ? 'transparent'
+                        : hexToRgba(element.fill, element.fillOpacity ?? 1),
                 ...(compact ? { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: 0 } : {})
             }}
         />

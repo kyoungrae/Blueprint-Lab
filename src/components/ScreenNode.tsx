@@ -4758,6 +4758,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                                             {tempElement.type === 'polygon' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm" />}
                                                                             {tempElement.type === 'arrow' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm" />}
                                                                             {tempElement.type === 'table' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm flex items-center justify-center"><Table2 size={24} className="text-blue-400 opacity-60" /></div>}
+                                                                            {tempElement.type === 'text' && <div className="w-full h-full border-2 border-blue-500 border-dashed bg-blue-50/20 rounded-sm flex items-center justify-center"><Type size={24} className="text-blue-400 opacity-60" /></div>}
                                                                             {tempElement.type === 'func-no' && <div className="w-full h-full border-2 border-red-500 border-dashed bg-red-50/20 rounded-full flex items-center justify-center text-[10px] text-red-600 font-bold">{tempElement.text}</div>}
                                         </div>
                                     )}
