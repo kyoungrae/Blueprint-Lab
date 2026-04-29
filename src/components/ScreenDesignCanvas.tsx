@@ -1465,14 +1465,19 @@ const ScreenDesignCanvasContent: React.FC = () => {
         addFlow(newFlow);
         // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
 
-        // 페이징(UI→UI): 연결 시작 화면의 화면명·시스템명·작성자를 타겟에 복사
+        // 페이징(UI→UI): 연결 시작 화면의 화면명·시스템명·작성자를 타겟에 복사(사용자 확인 후)
         if (!isSpecConnection && sourceScreen && params.target) {
-            updateScreen(params.target, {
-                name: sourceScreen.name,
-                systemName: sourceScreen.systemName,
-                author: sourceScreen.author,
-            });
-            // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
+            const shouldCopyMeta = window.confirm(
+                '페이징 연결 시 시작 화면의 제목/시스템명/작성자를 대상 화면에 동일하게 적용할까요?'
+            );
+            if (shouldCopyMeta) {
+                updateScreen(params.target, {
+                    name: sourceScreen.name,
+                    systemName: sourceScreen.systemName,
+                    author: sourceScreen.author,
+                });
+                // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
+            }
         }
     }, [addFlow, updateFlow, updateScreen, flows, screens, projects, currentProject]);
 
