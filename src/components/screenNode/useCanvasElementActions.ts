@@ -389,8 +389,30 @@ export function useCanvasElementActions({
     const handleGroup = useCallback(() => {
         const drawElements = getDrawElements();
         if (selectedElementIds.length < 2) return;
+
+        // 기존 그룹이 선택에 섞여 있어도, 해당 그룹 전체를 포함해 상위 그룹으로 재그룹화
+        const selectedSet = new Set(selectedElementIds);
+        const selectedGroupIds = new Set(
+            drawElements
+                .filter((el) => selectedSet.has(el.id) && el.groupId)
+                .map((el) => el.groupId as string)
+        );
+        const targetIds = new Set(
+            drawElements
+                .filter((el) => selectedSet.has(el.id) || (el.groupId != null && selectedGroupIds.has(el.groupId)))
+                .map((el) => el.id)
+        );
+        if (targetIds.size < 2) return;
+
         const groupId = `grp_${Date.now()}`;
-        const nextElements = drawElements.map((el) => selectedElementIds.includes(el.id) ? { ...el, groupId } : el);
+        const nextElements = drawElements.map((el) => {
+            if (!targetIds.has(el.id)) return el;
+            return {
+                ...el,
+                groupId,
+                groupIdHistory: [...(el.groupIdHistory ?? []), el.groupId],
+            };
+        });
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
@@ -398,14 +420,36 @@ export function useCanvasElementActions({
 
     const handleUngroup = useCallback(() => {
         const drawElements = getDrawElements();
-        const toUngroup = selectedElementIds.filter((id) => drawElements.find((e) => e.id === id)?.groupId != null);
-        if (toUngroup.length === 0) return;
-        const nextElements = drawElements.map((el) => toUngroup.includes(el.id) ? { ...el, groupId: undefined } : el);
+        const selectedSet = new Set(selectedElementIds);
+        const selectedGroupIds = new Set(
+            drawElements
+                .filter((el) => selectedSet.has(el.id) && el.groupId != null)
+                .map((el) => el.groupId as string)
+        );
+        if (selectedGroupIds.size === 0) return;
+
+        // 선택된 그룹은 부분 해제가 아니라 그룹 단위로 한 단계 해제
+        const targetIds = new Set(
+            drawElements
+                .filter((el) => el.groupId != null && selectedGroupIds.has(el.groupId))
+                .map((el) => el.id)
+        );
+        const nextElements = drawElements.map((el) => {
+            if (!targetIds.has(el.id)) return el;
+            const history = el.groupIdHistory ?? [];
+            const previousGroupId = history.length > 0 ? history[history.length - 1] : undefined;
+            const nextHistory = history.slice(0, -1);
+            return {
+                ...el,
+                groupId: previousGroupId,
+                groupIdHistory: nextHistory.length > 0 ? nextHistory : undefined,
+            };
+        });
         update({ drawElements: nextElements });
         syncUpdate({ drawElements: nextElements });
         saveHistory(nextElements);
-        setSelectedElementIds((prev) => prev.filter((id) => toUngroup.includes(id)));
-    }, [getDrawElements, selectedElementIds, update, syncUpdate, setSelectedElementIds]);
+        setSelectedElementIds((prev) => prev.filter((id) => targetIds.has(id)));
+    }, [getDrawElements, selectedElementIds, update, syncUpdate, saveHistory, setSelectedElementIds]);
 
     return {
         updateElement,

@@ -205,6 +205,8 @@ export interface DrawElement {
     verticalAlign?: 'top' | 'middle' | 'bottom';
     zIndex: number;
     groupId?: string;
+    /** 중첩 그룹화 해제를 위한 이전 그룹 스택(마지막이 직전 그룹) */
+    groupIdHistory?: (string | undefined)[];
     /** 컴포넌트로 추가된 경우 원본 컴포넌트 ID (선택 시 보라색 링 표시) */
     fromComponentId?: string;
     /** 컴포넌트로 추가된 경우 원본 drawElement ID (스타일 동기화용) */

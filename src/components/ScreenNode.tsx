@@ -4410,7 +4410,7 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                             {selectedElementIds.length >= 1 && (() => {
                                                 const selectedEls = drawElements.filter(el => selectedElementIds.includes(el.id));
                                                 const hasGrouped = selectedEls.some(el => el.groupId != null);
-                                                const groupEnabled = selectedElementIds.length >= 2 && !hasGrouped;
+                                                const groupEnabled = selectedElementIds.length >= 2;
                                                 const ungroupEnabled = hasGrouped;
                                                 return (
                                                     <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1 ml-1">
