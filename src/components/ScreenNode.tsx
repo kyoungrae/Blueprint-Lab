@@ -7,10 +7,11 @@ import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useComponentStore } from '../store/componentStore';
 import { useScreenCanvasStore } from '../contexts/ScreenCanvasStoreContext';
 
-import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, Table2, Settings2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle, Copy } from 'lucide-react';
+import { Minus, X, Image as ImageIcon, MousePointer2, Square, Type, Circle, Palette, Layers, GripVertical, Table2, Settings2, Group, Ungroup, Crop, Grid3x3, Trash2, Package, PackageX, Triangle, Copy, Minimize2 } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import type { Project } from '../types/erd';
 import { collectErdTableNames, resolveLinkedErdProjects } from '../utils/linkedErdProjects';
+import { resolveFontFamilyCSS } from '../utils/fontFamily';
 
 import { useScreenLockAndSync } from './screenNode/useScreenLockAndSync';
 import { useCanvasHistory } from './screenNode/useCanvasHistory';
@@ -65,6 +66,54 @@ type TableCellClipboard = {
 };
 
 const getPanelPortalRoot = () => document.getElementById('panel-portal-root') || document.body;
+
+/** 선택된 텍스트 객체의 HTML을 동일 폰트 스타일로 측정해 감싸는 최소 width·height(px) */
+function measureTextDrawElementSize(el: DrawElement): { width: number; height: number } {
+    const div = document.createElement('div');
+    // block + scrollWidth는 line box·여백까지 넓게 잡힘 → inline-block + Range 경계로 글자에 맞춤
+    div.style.cssText = [
+        'position:absolute', 'left:-99999px', 'top:0', 'visibility:hidden', 'pointer-events:none',
+        'box-sizing:border-box', 'padding:0', 'margin:0', 'border:none', 'outline:none',
+        'display:inline-block', 'vertical-align:top',
+        'white-space:pre-wrap', 'overflow:visible', 'max-width:none',
+    ].join(';');
+    div.style.overflowWrap = 'break-word';
+    div.style.wordBreak = 'normal';
+    div.style.fontSize = `${el.fontSize ?? 14}px`;
+    div.style.color = el.color || '#333333';
+    div.style.fontWeight = el.fontWeight || 'normal';
+    div.style.fontStyle = el.fontStyle || 'normal';
+    div.style.textDecoration = el.textDecoration || 'none';
+    div.style.fontFamily = resolveFontFamilyCSS(el.fontFamily);
+    div.style.lineHeight = '1.4';
+    div.style.textAlign = el.textAlign === 'right' ? 'right' : el.textAlign === 'center' ? 'center' : 'left';
+    div.innerHTML = el.text || '';
+    document.body.appendChild(div);
+
+    /** Range가 덮는 전체 텍스트의 래스터 경계(여러 줄이면 합집합 사각형) */
+    const SLACK = 1; // 정수 px 박스에 옮길 때만 최소 보정
+    let width = 8;
+    let height = 8;
+    try {
+        const range = document.createRange();
+        range.selectNodeContents(div);
+        const br = range.getBoundingClientRect();
+        if (br.width > 0 || br.height > 0) {
+            width = Math.max(8, Math.ceil(br.width) + SLACK);
+            height = Math.max(8, Math.ceil(br.height) + SLACK);
+        }
+    } catch {
+        /* ignore */
+    }
+    if (width <= 8 && height <= 8) {
+        const fb = div.getBoundingClientRect();
+        width = Math.max(8, Math.ceil(fb.width) + SLACK);
+        height = Math.max(8, Math.ceil(fb.height) + SLACK);
+    }
+
+    document.body.removeChild(div);
+    return { width, height };
+}
 
 /** 스타일 복사(PPT식 포맷 페인터): 배경·테두리·텍스트·그림자·투명도 등 시각 속성만 스냅샷 */
 const STYLE_SNAPSHOT_KEYS: (keyof DrawElement)[] = [
@@ -3634,6 +3683,38 @@ const ScreenNodeFull: React.FC<{ data: ScreenNodeData; selected?: boolean }> = m
                                                             <Copy size={18} />
                                                         </button>
                                                     </PremiumTooltip>
+                                                    {drawElements.find(e => e.id === selectedElementIds[0])?.type === 'text' && (
+                                                        <PremiumTooltip label="텍스트 길이·높이에 맞춤" screenId={screen.id}>
+                                                            <button
+                                                                type="button"
+                                                                onMouseDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setLastInteractedScreenId(screen.id);
+                                                                }}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const id = selectedElementIds[0];
+                                                                    const te = getDrawElements().find(el => el.id === id);
+                                                                    if (!te || te.type !== 'text') return;
+                                                                    let textForMeasure = te.text || '';
+                                                                    const root = canvasRef.current;
+                                                                    if (root) {
+                                                                        try {
+                                                                            const wrap = root.querySelector(`[data-element-id="${CSS.escape(id)}"]`);
+                                                                            const live = wrap?.querySelector('.draw-text-editable');
+                                                                            if (live instanceof HTMLElement) textForMeasure = live.innerHTML;
+                                                                        } catch { /* ignore selector errors */ }
+                                                                    }
+                                                                    const { width, height } = measureTextDrawElementSize({ ...te, text: textForMeasure });
+                                                                    updateElement(id, { width, height });
+                                                                    flushPendingSync();
+                                                                }}
+                                                                className="p-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-500"
+                                                            >
+                                                                <Minimize2 size={18} />
+                                                            </button>
+                                                        </PremiumTooltip>
+                                                    )}
                                                 </div>
                                                 )}
                                                 <div className="flex flex-nowrap items-center gap-0.5 shrink-0">
