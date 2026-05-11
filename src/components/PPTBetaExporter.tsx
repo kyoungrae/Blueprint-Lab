@@ -179,7 +179,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             const pptx = externalPptx || new pptxgen();
             
             // PPT 텍스트 크기 비율 전역 상수 - 모든 요소에 동일하게 적용
-            const PPT_FONT_SCALE_RATIO = (1.0)+70;
+            const PPT_FONT_SCALE_RATIO = 1.0;
             const PPT_FONT_MIN_SIZE = 4;
             const baseFs = (pt: number, floor: number = PPT_FONT_MIN_SIZE) => Math.max(floor, pt);
             const mnCanvasMul = translateToMN
@@ -205,9 +205,11 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 // @ts-ignore - pptxgenjs typing may not expose masterName, but runtime supports it
                 const slide = pptx.addSlide({ masterName: layoutName, sectionTitle: sectionTitle });
 
-                const hH = ADJUSTED_HEADER_H * scale; 
-                const rH = hH / 3;                    
-                const cW = slideWidth / 6;            
+                const hH = ADJUSTED_HEADER_H * scale;
+                const rH = hH / 3;
+                const leftW = slideWidth * 0.7;
+                const rightW = slideWidth * 0.3;
+                const cW = leftW / 6;
 
                 // pptxgenjs는 6자리 대문자 헥스(FFFFFF)만 색상으로 인식한다.
                 // 'white'/'#fff'/'rgba(...)' 등 어떤 표기든 6자리 헥스로 정규화하고,
@@ -369,9 +371,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     "2,1": screen.screenDescription || tr('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
                 };
 
-                // ─── 상단 헤더 영역 ───
+                // ─── 상단 헤더 영역 (좌측 캔버스 너비만; 우측은 Right Pane이 위로 이어짐) ───
                 slide.addShape(pptx.ShapeType.rect, {
-                    x: 0, y: 0, w: slideWidth, h: hH,
+                    x: 0, y: 0, w: leftW, h: hH,
                     fill: { color: "FFFFFF" },
                     line: { color: "E2E8F0", width: 1 }
                 });
@@ -437,8 +439,6 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 // ─── 하단 본문 영역 ───
                 const bodyY = hH;
                 const bodyH = slideHeight - hH;
-                const leftW = slideWidth * 0.7; 
-                const rightW = slideWidth * 0.3;
 
                 slide.addShape(pptx.ShapeType.rect, {
                     x: 0, y: bodyY, w: leftW, h: bodyH,
@@ -446,8 +446,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     line: { color: "E2E8F0", width: 0.5 }
                 });
 
+                // 우측 패널: 슬라이드 상단(y:0)부터 전체 높이까지 (헤더 위 우측 공간 포함)
                 slide.addShape(pptx.ShapeType.rect, {
-                    x: leftW, y: bodyY, w: rightW, h: bodyH,
+                    x: leftW, y: 0, w: rightW, h: slideHeight,
                     fill: { color: "FFFFFF" },
                     line: { color: "E2E8F0", width: 0.5 }
                 });
@@ -485,9 +486,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     screen.relatedTables || ''
                 ];
                 
-                let currentY = bodyY;
+                let currentY = 0;
                 ratios.forEach((ratioVal, idx) => {
-                    const sectionH = (bodyH * ratioVal) / 100;
+                    const sectionH = (slideHeight * ratioVal) / 100;
                     const sectionColor = idx === 2 ? "5E6B7C" : "5C6B9E";
                     
                     // 1. 섹션 타이틀 바 배경
@@ -498,10 +499,10 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                     // 2. 섹션 제목 텍스트 (흰색 Bold)
                     slide.addText(titles[idx], {
-                        x: leftW + 0.05, y: currentY, w: rightW - 0.1, h: titleH,
+                        x: leftW, y: currentY, w: rightW, h: titleH,
                         align: 'left', valign: 'middle',
-                        fontSize: baseFs(8), color: 'FFFFFF', bold: true,
-                        inset: 0.05
+                        fontSize: baseFs(9), color: 'FFFFFF', bold: true,
+                        inset: 0.15,
                     });
 
                     // 3. 🚀 섹션 본문 렌더링 (기능상세는 아이콘으로 그림)
@@ -1119,9 +1120,11 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 const slide = pptx.addSlide({ masterName: layoutName, sectionTitle: sectionTitle });
 
-                const hH = ADJUSTED_HEADER_H * scale; 
-                const rH = hH / 3;                    
-                const cW = slideWidth / 6;
+                const hH = ADJUSTED_HEADER_H * scale;
+                const rH = hH / 3;
+                const leftW = slideWidth * 0.7;
+                const rightW = slideWidth * 0.3;
+                const cW = leftW / 6;
 
                 // pptxgenjs는 6자리 대문자 헥스(FFFFFF)만 색상으로 인식한다.
                 // 'white'/'#fff'/'rgba(...)' 등 어떤 표기든 6자리 헥스로 정규화하고,
@@ -1220,9 +1223,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     "2,1": screen.screenDescription || tr('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
                 };
 
-                // ─── 상단 헤더 영역 ───
+                // ─── 상단 헤더 영역 (좌측만 표; 우측 상단은 빈 영역) ───
                 slide.addShape(pptx.ShapeType.rect, {
-                    x: 0, y: 0, w: slideWidth, h: hH,
+                    x: 0, y: 0, w: leftW, h: hH,
                     fill: { color: "FFFFFF" },
                     line: { color: "E2E8F0", width: 1 }
                 });
@@ -1284,6 +1287,13 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         }
                     }
                 }
+
+                // 헤더 우측(표 밖) 상단 빈 공간 — 레이아웃보내기와 동일한 7:3 비율
+                slide.addShape(pptx.ShapeType.rect, {
+                    x: leftW, y: 0, w: rightW, h: hH,
+                    fill: { color: "FFFFFF" },
+                    line: { color: "E2E8F0", width: 0.5 }
+                });
 
                 // ─── 하단 본문 영역 ───
                 const bodyY = hH;
