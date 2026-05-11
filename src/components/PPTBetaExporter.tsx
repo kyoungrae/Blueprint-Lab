@@ -443,7 +443,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 slide.addShape(pptx.ShapeType.rect, {
                     x: 0, y: bodyY, w: leftW, h: bodyH,
-                    fill: { color: "F3F4F6" },
+                    fill: { color: "FFFFFF" },
                     line: { color: "E2E8F0", width: 0.5 }
                 });
 
