@@ -179,7 +179,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             const pptx = externalPptx || new pptxgen();
             
             // PPT 텍스트 크기 비율 전역 상수 - 모든 요소에 동일하게 적용
-            const PPT_FONT_SCALE_RATIO = 1.0;
+            // 캔버스 내 도형·표 텍스트 일괄 스케일 (헤더는 baseFs 고정 pt로 별도 조정)
+            const PPT_FONT_SCALE_RATIO = 60;
             const PPT_FONT_MIN_SIZE = 4;
             const baseFs = (pt: number, floor: number = PPT_FONT_MIN_SIZE) => Math.max(floor, pt);
             const mnCanvasMul = translateToMN
@@ -400,7 +401,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 slide.addText(tr(text, translateToMN), {
                                     x: c * cW, y: r * rH, w: cW * 5, h: rH,
                                     align: 'left', valign: 'middle',
-                                    fontSize: baseFs(9), color: '94A3B8', 
+                                    fontSize: baseFs(6.5), color: '94A3B8',
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -424,7 +425,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addText(tr(text, translateToMN), {
                                 x: c * cW, y: r * rH, w: cW, h: rH,
                                 align: 'center', valign: 'middle',
-                                fontSize: baseFs(isLabel ? 9 : 9.5),
+                                fontSize: baseFs(isLabel ? 6 : 6.5),
                                 color: isLabel ? 'FFFFFF' : '1E293B',
                                 bold: styleOpts?.bold,
                                 italic: styleOpts?.italic,
@@ -501,7 +502,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     slide.addText(titles[idx], {
                         x: leftW, y: currentY, w: rightW, h: titleH,
                         align: 'left', valign: 'middle',
-                        fontSize: baseFs(9), color: 'FFFFFF', bold: true,
+                        fontSize: baseFs(8.5), color: 'FFFFFF', bold: true,
                         inset: 0.15,
                     });
 
@@ -1252,7 +1253,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 slide.addText(tr(text, translateToMN), {
                                     x: c * cW, y: r * rH, w: cW * 5, h: rH,
                                     align: 'left', valign: 'middle',
-                                    fontSize: baseFs(9), color: '94A3B8', 
+                                    fontSize: baseFs(6.5), color: '94A3B8',
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -1276,7 +1277,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             slide.addText(tr(text, translateToMN), {
                                 x: c * cW, y: r * rH, w: cW, h: rH,
                                 align: 'center', valign: 'middle',
-                                fontSize: baseFs(isLabel ? 9 : 9.5),
+                                fontSize: baseFs(isLabel ? 6 : 6.5),
                                 color: isLabel ? 'FFFFFF' : '1E293B',
                                 bold: styleOpts?.bold,
                                 italic: styleOpts?.italic,
