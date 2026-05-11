@@ -635,6 +635,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     breakLine: true,
                                     inset: 0,
                                     wrap: false,
+                                    shrinkText: true,
                                 });
                             }
                             break;
@@ -662,6 +663,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     breakLine: true,
                                     inset: 0,
                                     wrap: false,
+                                    shrinkText: true,
                                 });
                             }
                             break;
@@ -682,6 +684,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     breakLine: true,
                                     inset: 0,
                                     wrap: false,
+                                    shrinkText: true,
                                 });
                             }
                             break;
@@ -698,6 +701,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 bold: true,
                                 inset: 0,
                                 wrap: false,
+                                shrinkText: true,
                             });
                             break;
                         case 'table': {
@@ -955,16 +959,31 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             break;
                         }
                         case 'line': {
+                            // 색·두께가 명확할 때만 그린다. (투명/0이면 화면에도 없으므로 PPT에도 생략)
+                            const rawLineColor = cleanColor(el.stroke);
+                            if (!rawLineColor) break;
+                            const lineStrokeWidth = el.strokeWidth ?? 1;
+                            if (lineStrokeWidth <= 0) break;
+
                             const arrowProps: any = {
-                                color: cleanColor(el.stroke || '000000'),
-                                width: (el.strokeWidth || 1) * scale * 72,
-                                dashType: (el.strokeStyle === 'dashed' ? 'dash' : el.strokeStyle === 'dotted' ? 'sysDot' : 'solid') as any,
+                                color: rawLineColor,
+                                width: lineStrokeWidth * scale * 72,
+                                dashType: (el.strokeStyle === 'dashed'
+                                    ? 'dash'
+                                    : el.strokeStyle === 'dotted'
+                                      ? 'sysDot'
+                                      : 'solid') as any,
                             };
                             if (el.lineEnd === 'start' || el.lineEnd === 'both') arrowProps.beginArrowType = 'arrow';
                             if (el.lineEnd === 'end' || el.lineEnd === 'both') arrowProps.endArrowType = 'arrow';
 
+                            // pptxgenjs는 너비/높이가 정확히 0인 수직·수평선을 렌더링하지 않는 버그가 있어
+                            // 시각적으로 차이가 나지 않는 최소값(0.01)을 채워 강제로 그려준다.
+                            const safeW = elW === 0 ? 0.01 : elW;
+                            const safeH = elH === 0 ? 0.01 : elH;
+
                             slide.addShape(pptx.ShapeType.line, {
-                                x: elX, y: elY, w: elW, h: elH,
+                                x: elX, y: elY, w: safeW, h: safeH,
                                 line: arrowProps,
                                 rotate: el.rotation || 0,
                             });
@@ -993,6 +1012,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     breakLine: true,
                                     inset: 0,
                                     wrap: false,
+                                    shrinkText: true,
                                 });
                             }
                             break;
@@ -1025,6 +1045,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     breakLine: true,
                                     inset: 0,
                                     wrap: false,
+                                    shrinkText: true,
                                 });
                             }
                             break;
