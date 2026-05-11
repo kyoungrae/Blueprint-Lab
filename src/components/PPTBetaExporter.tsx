@@ -764,16 +764,15 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                             cellStrokeWidth = parseFloat(rawCellBorderWidth) || 0;
                                         }
 
+                                        // 표 테두리는 일반 도형과 달리 dashType이 아니라 `type` 속성을 사용한다.
+                                        // 이중선(double)은 pptxgenjs 표 엔진이 지원하지 않아 solid로 유지된다.
                                         const rawCellBorderStyle =
                                             (cellStyle as any)?.borderStyle ||
                                             (cellV2 as any)?.style?.borderStyle ||
                                             'solid';
-                                        const cellDashType =
-                                            rawCellBorderStyle === 'dashed'
-                                                ? 'dash'
-                                                : rawCellBorderStyle === 'dotted'
-                                                  ? 'sysDot'
-                                                  : 'solid';
+                                        let cellBorderType: 'solid' | 'dash' | 'sysDot' = 'solid';
+                                        if (rawCellBorderStyle === 'dashed') cellBorderType = 'dash';
+                                        else if (rawCellBorderStyle === 'dotted') cellBorderType = 'sysDot';
 
                                         let cellBorderOption: any = { pt: 0 };
                                         if (
@@ -784,7 +783,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                             cellBorderOption = {
                                                 pt: cellStrokeWidth,
                                                 color: cleanedCellBorderColor,
-                                                dashType: cellDashType as any,
+                                                type: cellBorderType,
                                             };
                                         }
 
@@ -858,12 +857,10 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             } else if (typeof el.strokeWidth === 'string') {
                                 tableStrokeWidth = parseFloat(el.strokeWidth as string) || 0;
                             }
-                            const tableDashType =
-                                el.strokeStyle === 'dashed'
-                                    ? 'dash'
-                                    : el.strokeStyle === 'dotted'
-                                      ? 'sysDot'
-                                      : 'solid';
+                            // 표 외곽선도 셀과 동일하게 `type` 속성을 사용해야 점선/파선이 반영된다.
+                            let tableBorderType: 'solid' | 'dash' | 'sysDot' = 'solid';
+                            if (el.strokeStyle === 'dashed') tableBorderType = 'dash';
+                            else if (el.strokeStyle === 'dotted') tableBorderType = 'sysDot';
                             let tableBorderOption: any = { pt: 0 };
                             if (
                                 tableCleanedBorderColor &&
@@ -873,7 +870,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 tableBorderOption = {
                                     pt: tableStrokeWidth,
                                     color: tableCleanedBorderColor,
-                                    dashType: tableDashType as any,
+                                    type: tableBorderType,
                                 };
                             }
 
