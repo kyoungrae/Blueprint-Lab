@@ -209,13 +209,41 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const rH = hH / 3;                    
                 const cW = slideWidth / 6;            
 
-                const rgbToHex = (rgb: string): string => {
-                    const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-                    if (!match) return rgb.replace('#', '');
-                    return [match[1], match[2], match[3]]
-                        .map((x) => parseInt(x, 10).toString(16).padStart(2, '0'))
-                        .join('')
-                        .toUpperCase();
+                // pptxgenjs는 6자리 대문자 헥스(FFFFFF)만 색상으로 인식한다.
+                // 'white'/'#fff'/'rgba(...)' 등 어떤 표기든 6자리 헥스로 정규화하고,
+                // 끝까지 유효하지 않으면 undefined를 돌려서 호출부의 fallback 체인이 자연스럽게 동작하게 한다.
+                // ('000000' 강제 반환을 하면 fallback이 끊겨 의도치 않은 검정/회색이 박힌다.)
+                const NAMED_COLOR_HEX: Record<string, string> = {
+                    white: 'FFFFFF', black: '000000',
+                    red: 'FF0000', green: '008000', blue: '0000FF',
+                    yellow: 'FFFF00', cyan: '00FFFF', magenta: 'FF00FF',
+                    gray: '808080', grey: '808080', silver: 'C0C0C0',
+                    orange: 'FFA500', pink: 'FFC0CB', purple: '800080',
+                    brown: 'A52A2A', navy: '000080', teal: '008080',
+                };
+                const rgbToHex = (rgb?: string): string | undefined => {
+                    if (!rgb) return undefined;
+                    const trimmed = String(rgb).trim();
+                    if (!trimmed) return undefined;
+                    const named = NAMED_COLOR_HEX[trimmed.toLowerCase()];
+                    if (named) return named;
+                    const match = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+                    if (match) {
+                        return [match[1], match[2], match[3]]
+                            .map((x) => parseInt(x, 10).toString(16).padStart(2, '0'))
+                            .join('')
+                            .toUpperCase();
+                    }
+                    let hex = trimmed.replace(/#/g, '');
+                    if (hex.length === 3) {
+                        hex = hex.split('').map((c) => c + c).join('');
+                    } else if (hex.length === 4) {
+                        hex = hex.substring(0, 3).split('').map((c) => c + c).join('');
+                    } else if (hex.length === 8) {
+                        hex = hex.substring(0, 6);
+                    }
+                    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+                    return hex.toUpperCase();
                 };
 
                 // 🚀 스타일 추출, 태그 제거 및 줄바꿈(\n) 처리를 위한 확장된 헬퍼 함수
@@ -237,13 +265,18 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     if (!html) return { text: "", options: {} };
                     
 
-                    // 1. 색상 추출 (style="color:..." 또는 <font color="...">)
-                    // HTML에 색이 없으면 기본 검정을 넣지 않음 → slide.addText에서 el.color 등으로 대체
-                    const colorMatch = html.match(/color:\s*([^;"]+)/i) || html.match(/color="([^"]+)"/i);
+                    // 1. 색상 추출
+                    // - 텍스트 색만 뽑아야 하므로 background-color / border-color 같은 `-color`로 끝나는
+                    //   속성은 첫 lookbehind(`(?:^|[^a-zA-Z-])`)로 배제한다.
+                    // - <font color="…">는 `<font` 안의 속성만 잡아 다른 태그의 동명 속성과 충돌하지 않게 한다.
+                    // - 3자리 축약(#fff)·8자리(#RRGGBBAA)·rgba 등은 rgbToHex로 6자리 헥스로 정규화한다.
+                    const colorMatch =
+                        html.match(/(?:^|[^a-zA-Z-])color:\s*([^;"]+)/i) ||
+                        html.match(/<font[^>]+color="([^"]+)"/i);
                     let color: string | undefined;
                     if (colorMatch) {
                         const rawColor = colorMatch[1].trim();
-                        color = rawColor.startsWith('rgb') ? rgbToHex(rawColor) : rawColor.replace('#', '');
+                        color = rgbToHex(rawColor);
                     }
 
                     // 2. 폰트 크기 추출 (font-size: 16px)
@@ -258,12 +291,20 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     const fontFaceMatch = html.match(/face="([^"]+)"/i) || html.match(/font-family:\s*([^;,]+)/i);
                     const fontFace = fontFaceMatch ? fontFaceMatch[1].trim() : "맑은 고딕";
 
-                    // 정렬 속성: WYSIWYG 에디터는 style="text-align: right;" 식으로 정렬을 숨겨두므로 따로 빼낸다.
-                    const alignMatch = html.match(/text-align:\s*(left|center|right|justify)/i);
+                    // 정렬 속성: WYSIWYG 에디터마다 표기가 다르다.
+                    // ① inline style: text-align / vertical-align
+                    // ② class: ql-align-left, align-center 등 (Quill·기타 에디터)
+                    // ③ HTML 속성: <p align="right">, <td valign="top">
+                    const alignMatch =
+                        html.match(/text-align:\s*(left|center|right|justify)/i) ||
+                        html.match(/class="[^"]*align-(left|center|right|justify)[^"]*"/i) ||
+                        html.match(/\salign="(left|center|right|justify)"/i);
                     const align = alignMatch
                         ? (alignMatch[1].toLowerCase() as 'left' | 'center' | 'right' | 'justify')
                         : undefined;
-                    const valignMatch = html.match(/vertical-align:\s*(top|middle|bottom)/i);
+                    const valignMatch =
+                        html.match(/vertical-align:\s*(top|middle|bottom)/i) ||
+                        html.match(/\svalign="(top|middle|bottom)"/i);
                     const valign = valignMatch
                         ? (valignMatch[1].toLowerCase() as 'top' | 'middle' | 'bottom')
                         : undefined;
@@ -581,10 +622,11 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
                                 slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
-                                    align: (styleOpts?.align || el.textAlign || 'center') as any,
+                                    // 웹 캔버스의 rect 텍스트 기본 정렬은 좌측이므로 PPT도 동일하게 맞춘다.
+                                    align: (styleOpts?.align || el.textAlign || 'left') as any,
                                     valign: (styleOpts?.valign || el.verticalAlign || 'middle') as any,
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
-                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    color: styleOpts?.color || cleanColor((el as any).textColor) || cleanColor((el as any).fontColor) || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -611,7 +653,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     align: (styleOpts?.align || el.textAlign || 'center') as any,
                                     valign: (styleOpts?.valign || el.verticalAlign || 'middle') as any,
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
-                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    color: styleOpts?.color || cleanColor((el as any).textColor) || cleanColor((el as any).fontColor) || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -631,7 +673,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     align: (styleOpts?.align || el.textAlign || 'left') as 'left' | 'center' | 'right',
                                     valign: (styleOpts?.valign || el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
-                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    color: styleOpts?.color || cleanColor((el as any).textColor) || cleanColor((el as any).fontColor) || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: (styleOpts?.underline ?? false) as any,
@@ -942,7 +984,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     align: (styleOpts?.align || el.textAlign || 'center') as any,
                                     valign: (styleOpts?.valign || el.verticalAlign || 'middle') as any,
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
-                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    color: styleOpts?.color || cleanColor((el as any).textColor) || cleanColor((el as any).fontColor) || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -974,7 +1016,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     align: (styleOpts?.align || el.textAlign || 'center') as any,
                                     valign: (styleOpts?.valign || el.verticalAlign || 'middle') as any,
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
-                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
+                                    color: styleOpts?.color || cleanColor((el as any).textColor) || cleanColor((el as any).fontColor) || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: styleOpts?.underline as any,
@@ -1060,13 +1102,41 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 const rH = hH / 3;                    
                 const cW = slideWidth / 6;
 
-                const rgbToHex = (rgb: string): string => {
-                    const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-                    if (!match) return rgb.replace('#', '');
-                    return [match[1], match[2], match[3]]
-                        .map((x) => parseInt(x, 10).toString(16).padStart(2, '0'))
-                        .join('')
-                        .toUpperCase();
+                // pptxgenjs는 6자리 대문자 헥스(FFFFFF)만 색상으로 인식한다.
+                // 'white'/'#fff'/'rgba(...)' 등 어떤 표기든 6자리 헥스로 정규화하고,
+                // 끝까지 유효하지 않으면 undefined를 돌려서 호출부의 fallback 체인이 자연스럽게 동작하게 한다.
+                // ('000000' 강제 반환을 하면 fallback이 끊겨 의도치 않은 검정/회색이 박힌다.)
+                const NAMED_COLOR_HEX: Record<string, string> = {
+                    white: 'FFFFFF', black: '000000',
+                    red: 'FF0000', green: '008000', blue: '0000FF',
+                    yellow: 'FFFF00', cyan: '00FFFF', magenta: 'FF00FF',
+                    gray: '808080', grey: '808080', silver: 'C0C0C0',
+                    orange: 'FFA500', pink: 'FFC0CB', purple: '800080',
+                    brown: 'A52A2A', navy: '000080', teal: '008080',
+                };
+                const rgbToHex = (rgb?: string): string | undefined => {
+                    if (!rgb) return undefined;
+                    const trimmed = String(rgb).trim();
+                    if (!trimmed) return undefined;
+                    const named = NAMED_COLOR_HEX[trimmed.toLowerCase()];
+                    if (named) return named;
+                    const match = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+                    if (match) {
+                        return [match[1], match[2], match[3]]
+                            .map((x) => parseInt(x, 10).toString(16).padStart(2, '0'))
+                            .join('')
+                            .toUpperCase();
+                    }
+                    let hex = trimmed.replace(/#/g, '');
+                    if (hex.length === 3) {
+                        hex = hex.split('').map((c) => c + c).join('');
+                    } else if (hex.length === 4) {
+                        hex = hex.substring(0, 3).split('').map((c) => c + c).join('');
+                    } else if (hex.length === 8) {
+                        hex = hex.substring(0, 6);
+                    }
+                    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+                    return hex.toUpperCase();
                 };
 
                 const parseStyles = (
@@ -1097,12 +1167,11 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     const familyMatch = html.match(/font-family:\s*([^;]+)/i);
                     if (familyMatch) fontFace = familyMatch[1].trim();
                     
+                    // 모든 색 표기(#fff, rgba, white 등)는 rgbToHex로 6자리 헥스 정규화.
                     let color: string | undefined;
                     const colorMatch = html.match(/color=["']?([^"'\s>]+)/i);
-                    if (colorMatch && !colorMatch[1].startsWith('#')) {
-                        color = rgbToHex(colorMatch[1]);
-                    } else if (colorMatch) {
-                        color = colorMatch[1].replace('#', '');
+                    if (colorMatch) {
+                        color = rgbToHex(colorMatch[1].trim());
                     }
                     
                     let fontSizePx: number | undefined;
