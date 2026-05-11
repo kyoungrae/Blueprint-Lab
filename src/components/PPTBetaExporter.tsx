@@ -230,6 +230,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         fontFace?: string;
                         color?: string;
                         fontSizePx?: number;
+                        align?: 'left' | 'center' | 'right' | 'justify';
+                        valign?: 'top' | 'middle' | 'bottom';
                     };
                 } => {
                     if (!html) return { text: "", options: {} };
@@ -255,6 +257,16 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                     const fontFaceMatch = html.match(/face="([^"]+)"/i) || html.match(/font-family:\s*([^;,]+)/i);
                     const fontFace = fontFaceMatch ? fontFaceMatch[1].trim() : "맑은 고딕";
+
+                    // 정렬 속성: WYSIWYG 에디터는 style="text-align: right;" 식으로 정렬을 숨겨두므로 따로 빼낸다.
+                    const alignMatch = html.match(/text-align:\s*(left|center|right|justify)/i);
+                    const align = alignMatch
+                        ? (alignMatch[1].toLowerCase() as 'left' | 'center' | 'right' | 'justify')
+                        : undefined;
+                    const valignMatch = html.match(/vertical-align:\s*(top|middle|bottom)/i);
+                    const valign = valignMatch
+                        ? (valignMatch[1].toLowerCase() as 'top' | 'middle' | 'bottom')
+                        : undefined;
 
                     // 2. 🚀 줄바꿈 태그를 PPT용 개행 문자(\n)로 변환
                     let processedText = html.replace(/<br\s*\/?>/gi, "\n");
@@ -282,6 +294,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         fontFace: string;
                         color?: string;
                         fontSizePx: number;
+                        align?: 'left' | 'center' | 'right' | 'justify';
+                        valign?: 'top' | 'middle' | 'bottom';
                     } = {
                         bold: isBold,
                         italic: isItalic,
@@ -290,6 +304,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         fontSizePx,
                     };
                     if (color !== undefined) options.color = color;
+                    if (align !== undefined) options.align = align;
+                    if (valign !== undefined) options.valign = valign;
 
                     return { text: cleanText, options };
                 };
@@ -565,8 +581,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
                                 slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
-                                    align: (el.textAlign || 'center') as any,
-                                    valign: (el.verticalAlign || 'middle') as any,
+                                    align: (styleOpts?.align || el.textAlign || 'center') as any,
+                                    valign: (styleOpts?.valign || el.verticalAlign || 'middle') as any,
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
@@ -592,8 +608,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
                                 slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
-                                    align: (el.textAlign || 'center') as any,
-                                    valign: (el.verticalAlign || 'middle') as any,
+                                    align: (styleOpts?.align || el.textAlign || 'center') as any,
+                                    valign: (styleOpts?.valign || el.verticalAlign || 'middle') as any,
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
@@ -612,8 +628,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 const { text, options: styleOpts } = parseStyles(el.text);
                                 slide.addText(tr(text, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
-                                    align: (el.textAlign || 'left') as 'left' | 'center' | 'right',
-                                    valign: (el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
+                                    align: (styleOpts?.align || el.textAlign || 'left') as 'left' | 'center' | 'right',
+                                    valign: (styleOpts?.valign || el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
@@ -787,13 +803,25 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                             };
                                         }
 
+                                        // 정렬: inline style → cellStyle → parseStyles 결과 → 기본값(center/middle) 순.
+                                        const cellAlign =
+                                            cellInlineStyle.textAlign ||
+                                            (cellStyle as any)?.textAlign ||
+                                            s.align ||
+                                            'center';
+                                        const cellValign =
+                                            cellInlineStyle.verticalAlign ||
+                                            (cellStyle as any)?.verticalAlign ||
+                                            s.valign ||
+                                            'middle';
+
                                         row.push({
                                             text: tr(text || '', translateToMN),
                                             options: {
                                                 fill: cellFill,
                                                 color: finalColor,
-                                                align: (cellV2 as any)?.style?.textAlign || 'center',
-                                                valign: 'middle',
+                                                align: cellAlign as any,
+                                                valign: cellValign as any,
                                                 fontSize: canvasFs(finalFontSizePx * scale * PPT_FONT_SCALE_RATIO),
                                                 inset: TABLE_CELL_INSET,
                                                 breakLine: false,
@@ -911,8 +939,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
                                 slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
-                                    align: (el.textAlign || 'center') as any,
-                                    valign: (el.verticalAlign || 'middle') as any,
+                                    align: (styleOpts?.align || el.textAlign || 'center') as any,
+                                    valign: (styleOpts?.valign || el.verticalAlign || 'middle') as any,
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
@@ -943,8 +971,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 const { text: cleanText, options: styleOpts } = parseStyles(el.text);
                                 slide.addText(tr(cleanText, translateToMN), {
                                     x: elX, y: elY, w: elW, h: elH,
-                                    align: (el.textAlign || 'center') as any,
-                                    valign: (el.verticalAlign || 'middle') as any,
+                                    align: (styleOpts?.align || el.textAlign || 'center') as any,
+                                    valign: (styleOpts?.valign || el.verticalAlign || 'middle') as any,
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
                                     color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
