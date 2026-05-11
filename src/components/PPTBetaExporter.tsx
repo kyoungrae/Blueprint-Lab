@@ -236,8 +236,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     
 
                     // 1. 색상 추출 (style="color:..." 또는 <font color="...">)
+                    // HTML에 색이 없으면 기본 검정을 넣지 않음 → slide.addText에서 el.color 등으로 대체
                     const colorMatch = html.match(/color:\s*([^;"]+)/i) || html.match(/color="([^"]+)"/i);
-                    let color = "000000";
+                    let color: string | undefined;
                     if (colorMatch) {
                         const rawColor = colorMatch[1].trim();
                         color = rawColor.startsWith('rgb') ? rgbToHex(rawColor) : rawColor.replace('#', '');
@@ -274,17 +275,23 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     // 5. 끝에 불필요하게 남은 빈 줄바꿈 제거
                     cleanText = cleanText.replace(/\n+$/, "");
 
-                    return {
-                        text: cleanText,
-                        options: {
-                            bold: isBold,
-                            italic: isItalic,
-                            underline: isUnderline,
-                            fontFace: fontFace,
-                            color,
-                            fontSizePx,
-                        },
+                    const options: {
+                        bold: boolean;
+                        italic: boolean;
+                        underline: boolean;
+                        fontFace: string;
+                        color?: string;
+                        fontSizePx: number;
+                    } = {
+                        bold: isBold,
+                        italic: isItalic,
+                        underline: isUnderline,
+                        fontFace,
+                        fontSizePx,
                     };
+                    if (color !== undefined) options.color = color;
+
+                    return { text: cleanText, options };
                 };
 
                 // --- 데이터 매핑용 맵 생성 ---
@@ -568,6 +575,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
                                     breakLine: true,
+                                    inset: 0,
+                                    wrap: false,
                                 });
                             }
                             break;
@@ -593,6 +602,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
                                     breakLine: true,
+                                    inset: 0,
+                                    wrap: false,
                                 });
                             }
                             break;
@@ -604,13 +615,15 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     align: (el.textAlign || 'left') as 'left' | 'center' | 'right',
                                     valign: (el.verticalAlign || 'middle') as 'top' | 'middle' | 'bottom',
                                     fontSize: canvasFs((el.fontSize ?? styleOpts?.fontSizePx ?? 12) * scale * PPT_FONT_SCALE_RATIO),
-                                    color: styleOpts?.color || cleanColor(el.color) || '000000',
+                                    color: styleOpts?.color || cleanColor(el.color) || (el.fill === '#2c3e7c' ? 'FFFFFF' : '000000'),
                                     bold: styleOpts?.bold,
                                     italic: styleOpts?.italic,
                                     underline: (styleOpts?.underline ?? false) as any,
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
                                     breakLine: true,
+                                    inset: 0,
+                                    wrap: false,
                                 });
                             }
                             break;
@@ -625,6 +638,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 fontSize: canvasFs((el.fontSize || 10) * scale * PPT_FONT_SCALE_RATIO),
                                 color: 'FFFFFF',
                                 bold: true,
+                                inset: 0,
+                                wrap: false,
                             });
                             break;
                         case 'table': {
@@ -678,7 +693,12 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     // 셀의 inline style에서 스타일 추출 (HTML이 포함된 경우)
                                     const cellInlineStyle = (cellV2 as any)?.style || {};
 
-                                    const finalColor = ((cellStyle as any)?.color || cellInlineStyle.color || s.color || '000000').replace('#', '');
+                                    const finalColor = (
+                                        (cellStyle as any)?.color ||
+                                        cellInlineStyle.color ||
+                                        s.color ||
+                                        '000000'
+                                    ).replace('#', '');
                                     // 🚀 디버깅: 텍스트 색상 확인
                                     if (index === 37) {
                                         console.log('=== 텍스트 색상 디버깅 (index=37) ===');
@@ -709,29 +729,79 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     // 셀 추가 (isMerged가 true이면 빈 셀 대신 추가하지 않음)
                                     const isMerged = (cellV2 as any)?.isMerged;
                                     if (!isMerged) {
-                                        // 배경색 우선순위: cellColor > cellStyle.backgroundColor > cellV2.style.backgroundColor > FFFFFF
-                                        const bgColor = cellColor || (cellStyle as any)?.backgroundColor || (cellV2 as any)?.style?.backgroundColor || 'FFFFFF';
+                                        // 배경색 우선순위: cellColor > cellStyle.backgroundColor > cellV2.style.backgroundColor
+                                        // pptxgenjs는 'transparent'/'rgba(0,0,0,0)' 같은 값을 검정색으로 잘못 렌더링하므로
+                                        // cleanColor를 통과시켜 안전한 hex만 남기고, 비어 있으면 투명 처리(흰색 + transparency 100).
+                                        const rawBgColor = cellColor || (cellStyle as any)?.backgroundColor || (cellV2 as any)?.style?.backgroundColor;
+                                        const cleanedBgColor = cleanColor(rawBgColor);
+                                        const cellFill = cleanedBgColor
+                                            ? { color: cleanedBgColor }
+                                            : { color: 'FFFFFF', transparency: 100 };
                                         // 🚀 디버깅: 배경색 확인
                                         if (index === 37) {
                                             console.log('=== 배경색 디버깅 (index=37) ===');
                                             console.log('cellColor:', cellColor);
                                             console.log('cellStyle?.backgroundColor:', (cellStyle as any)?.backgroundColor);
                                             console.log('cellV2?.style?.backgroundColor:', (cellV2 as any)?.style?.backgroundColor);
-                                            console.log('bgColor:', bgColor);
+                                            console.log('rawBgColor:', rawBgColor);
+                                            console.log('cellFill:', cellFill);
                                         }
+
+                                        // 셀 단위 테두리: 부모(el.stroke) 상속을 끊고 셀 고유 값만 사용.
+                                        // "선이 명확히 존재"할 때만 그리고, 그 외엔 무조건 `{ pt: 0 }`으로 지운다.
+                                        // 이렇게 해야 탭/내부 셀에 회색 0.5pt 선이 강제로 따라붙지 않는다.
+                                        const rawCellBorderColor =
+                                            (cellStyle as any)?.borderColor || (cellV2 as any)?.style?.borderColor;
+                                        const cleanedCellBorderColor = cleanColor(rawCellBorderColor);
+
+                                        // 웹 inline style은 "1px" 같은 문자열로 오기도 하므로 숫자로 정규화.
+                                        const rawCellBorderWidth =
+                                            (cellStyle as any)?.borderWidth ?? (cellV2 as any)?.style?.borderWidth;
+                                        let cellStrokeWidth = 0;
+                                        if (typeof rawCellBorderWidth === 'number') {
+                                            cellStrokeWidth = rawCellBorderWidth;
+                                        } else if (typeof rawCellBorderWidth === 'string') {
+                                            cellStrokeWidth = parseFloat(rawCellBorderWidth) || 0;
+                                        }
+
+                                        const rawCellBorderStyle =
+                                            (cellStyle as any)?.borderStyle ||
+                                            (cellV2 as any)?.style?.borderStyle ||
+                                            'solid';
+                                        const cellDashType =
+                                            rawCellBorderStyle === 'dashed'
+                                                ? 'dash'
+                                                : rawCellBorderStyle === 'dotted'
+                                                  ? 'sysDot'
+                                                  : 'solid';
+
+                                        let cellBorderOption: any = { pt: 0 };
+                                        if (
+                                            cleanedCellBorderColor &&
+                                            cellStrokeWidth > 0 &&
+                                            rawCellBorderStyle !== 'none'
+                                        ) {
+                                            cellBorderOption = {
+                                                pt: cellStrokeWidth,
+                                                color: cleanedCellBorderColor,
+                                                dashType: cellDashType as any,
+                                            };
+                                        }
+
                                         row.push({
                                             text: tr(text || '', translateToMN),
                                             options: {
-                                                fill: { color: bgColor.replace('#', '') },
+                                                fill: cellFill,
                                                 color: finalColor,
                                                 align: (cellV2 as any)?.style?.textAlign || 'center',
                                                 valign: 'middle',
                                                 fontSize: canvasFs(finalFontSizePx * scale * PPT_FONT_SCALE_RATIO),
                                                 inset: TABLE_CELL_INSET,
                                                 breakLine: false,
+                                                wrap: false,
                                                 shrinkText: true,
                                                 autoFit: true,
-                                                border: { pt: 0.5, color: 'D1D5DB' },
+                                                border: cellBorderOption,
                                                 bold: isBold,
                                                 italic: isItalic,
                                                 underline: (isUnderline ?? false) as any,
@@ -780,12 +850,39 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 }
                             }
 
+                            // 테이블 전체 테두리: 셀과 같은 규칙. 값이 명확하지 않으면 강제로 그리지 않는다.
+                            const tableCleanedBorderColor = cleanColor(el.stroke);
+                            let tableStrokeWidth = 0;
+                            if (typeof el.strokeWidth === 'number') {
+                                tableStrokeWidth = el.strokeWidth;
+                            } else if (typeof el.strokeWidth === 'string') {
+                                tableStrokeWidth = parseFloat(el.strokeWidth as string) || 0;
+                            }
+                            const tableDashType =
+                                el.strokeStyle === 'dashed'
+                                    ? 'dash'
+                                    : el.strokeStyle === 'dotted'
+                                      ? 'sysDot'
+                                      : 'solid';
+                            let tableBorderOption: any = { pt: 0 };
+                            if (
+                                tableCleanedBorderColor &&
+                                tableStrokeWidth > 0 &&
+                                el.strokeStyle !== 'none'
+                            ) {
+                                tableBorderOption = {
+                                    pt: tableStrokeWidth,
+                                    color: tableCleanedBorderColor,
+                                    dashType: tableDashType as any,
+                                };
+                            }
+
                             // @ts-ignore pptxgenjs table typing is loose
                             slide.addTable(tableRows, {
                                 x: elX, y: elY, w: elW, h: elH,
                                 colW: adjustedColWidths,
                                 rowH: finalRowHeights,
-                                border: { pt: 0.5, color: 'D1D5DB' },
+                                border: tableBorderOption,
                                 autoPage: false,
                             });
                             break;
@@ -827,6 +924,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
                                     breakLine: true,
+                                    inset: 0,
+                                    wrap: false,
                                 });
                             }
                             break;
@@ -857,6 +956,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
                                     breakLine: true,
+                                    inset: 0,
+                                    wrap: false,
                                 });
                             }
                             break;
