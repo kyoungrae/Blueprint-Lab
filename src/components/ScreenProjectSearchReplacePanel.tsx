@@ -19,6 +19,9 @@ const SKIP_REPLACE_KEYS = new Set([
     'imageUrl',
 ]);
 
+/** 화면 메모(memos)는 검색·치환에서 제외 (작성자명 등으로 검색 hit이 어긋나는 것 방지) */
+const SKIP_PROJECT_SEARCH_SUBTREE_KEYS = new Set(['memos']);
+
 function deepReplaceStrings(value: unknown, find: string, replace: string, key?: string): unknown {
     if (!find) return value;
     if (typeof value === 'string') {
@@ -32,7 +35,11 @@ function deepReplaceStrings(value: unknown, find: string, replace: string, key?:
         const obj = value as Record<string, unknown>;
         const next: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(obj)) {
-            next[k] = deepReplaceStrings(v, find, replace, k);
+            if (SKIP_PROJECT_SEARCH_SUBTREE_KEYS.has(k)) {
+                next[k] = v;
+            } else {
+                next[k] = deepReplaceStrings(v, find, replace, k);
+            }
         }
         return next;
     }
@@ -55,7 +62,10 @@ function countOccurrences(value: unknown, find: string, key?: string): number {
         return value.reduce((acc, item) => acc + countOccurrences(item, find, key), 0);
     }
     if (value !== null && typeof value === 'object') {
-        return Object.entries(value as object).reduce((acc, [k, v]) => acc + countOccurrences(v, find, k), 0);
+        return Object.entries(value as object).reduce((acc, [k, v]) => {
+            if (SKIP_PROJECT_SEARCH_SUBTREE_KEYS.has(k)) return acc;
+            return acc + countOccurrences(v, find, k);
+        }, 0);
     }
     return 0;
 }
@@ -320,7 +330,7 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
                     </button>
                 </div>
                 <p className="text-[11px] text-gray-500 mb-3 leading-snug">
-                    화면·연결·섹션 데이터 안의 문자열을 검색합니다. 이전 검색·다음 검색으로 캔버스에서 일치 항목을 순서대로 이동합니다.
+                    화면·연결·섹션 데이터 안의 문자열을 검색합니다. (화면 메모는 제외) 이전 검색·다음 검색으로 캔버스에서 일치 항목을 순서대로 이동합니다.
                     바꿀 내용 칸을 수정한 뒤에만 치환 적용이 나타납니다. id·연결(source/target)·이미지 URL 등은 치환에서 제외됩니다.
                 </p>
                 <div className="space-y-2 mb-3">
