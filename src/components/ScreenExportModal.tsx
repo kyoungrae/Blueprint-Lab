@@ -274,7 +274,10 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
                                 <Monitor size={14} className="text-indigo-400 flex-shrink-0" />
                                 <div className="flex flex-col min-w-0 flex-1">
                                     <span className="text-sm font-bold text-gray-800 truncate">{screen.name}</span>
-                                    <span className="text-[10px] text-gray-400 font-mono">{screen.screenId}</span>
+                                    <span className="text-[10px] text-gray-400 font-mono truncate">{screen.screenId}</span>
+                                    {screen.author?.trim() ? (
+                                        <span className="text-[10px] text-gray-500 truncate">작성자 · {screen.author.trim()}</span>
+                                    ) : null}
                                 </div>
                             </button>
                         ))}
@@ -459,7 +462,10 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
                                                         <Monitor size={16} className="text-indigo-400 flex-shrink-0" />
                                                         <div className="flex flex-col min-w-0 flex-1">
                                                             <span className="text-sm font-bold text-gray-800 truncate">{screen.name}</span>
-                                                            <span className="text-[10px] text-gray-400 font-mono">{screen.screenId}</span>
+                                                            <span className="text-[10px] text-gray-400 font-mono truncate">{screen.screenId}</span>
+                                                            {screen.author?.trim() ? (
+                                                                <span className="text-[10px] text-gray-500 truncate">작성자 · {screen.author.trim()}</span>
+                                                            ) : null}
                                                         </div>
                                                     </button>
                                                 ))}
