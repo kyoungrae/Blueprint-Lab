@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, X } from 'lucide-react';
+import { Loader2, Search, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Screen, ScreenFlow, ScreenSection } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useYjsStore } from '../store/yjsStore';
@@ -87,7 +87,7 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
     const [busy, setBusy] = useState(false);
     /** 바꿀 내용 입력란을 한 번이라도 수정했을 때만 치환 적용 버튼 표시 (빈 문자열로 삭제 치환 포함) */
     const [replaceDirty, setReplaceDirty] = useState(false);
-    const [searchHitIndex, setSearchHitIndex] = useState(0);
+    const [searchHitIndex, setSearchHitIndex] = useState(-1);
 
     const yjsScreens = useYjsStore((s) => s.screens);
     const yjsFlows = useYjsStore((s) => s.flows);
@@ -127,19 +127,20 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
     }, [findText, baseScreens, baseFlows, baseSections]);
 
     useEffect(() => {
-        setSearchHitIndex(0);
+        setSearchHitIndex(-1);
         setReplaceDirty(false);
     }, [findText]);
 
     useEffect(() => {
         if (!isOpen) {
-            setSearchHitIndex(0);
+            setSearchHitIndex(-1);
             useScreenDesignStore.getState().setProjectSearchHighlightTerm(null);
         }
     }, [isOpen]);
 
     useEffect(() => {
-        if (searchHitIndex >= searchHits.length) setSearchHitIndex(0);
+        if (searchHits.length === 0) setSearchHitIndex(-1);
+        else if (searchHitIndex >= searchHits.length) setSearchHitIndex(-1);
     }, [searchHitIndex, searchHits.length]);
 
     useEffect(() => {
@@ -265,13 +266,24 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
         onClose,
     ]);
 
-    const goSearchHit = useCallback(() => {
+    const goSearchHitPrev = useCallback(() => {
         const f = findText.trim();
-        if (!f || searchHits.length === 0 || !onNavigateSearchHit) return;
-        const idx = searchHitIndex % searchHits.length;
+        const n = searchHits.length;
+        if (!f || n === 0 || !onNavigateSearchHit) return;
+        const prev = searchHitIndex < 0 ? n - 1 : (searchHitIndex - 1 + n) % n;
         useScreenDesignStore.getState().setProjectSearchHighlightTerm(f);
-        onNavigateSearchHit(searchHits[idx]);
-        setSearchHitIndex((i) => (i + 1) % searchHits.length);
+        onNavigateSearchHit(searchHits[prev]);
+        setSearchHitIndex(prev);
+    }, [findText, searchHits, searchHitIndex, onNavigateSearchHit]);
+
+    const goSearchHitNext = useCallback(() => {
+        const f = findText.trim();
+        const n = searchHits.length;
+        if (!f || n === 0 || !onNavigateSearchHit) return;
+        const next = searchHitIndex < 0 ? 0 : (searchHitIndex + 1) % n;
+        useScreenDesignStore.getState().setProjectSearchHighlightTerm(f);
+        onNavigateSearchHit(searchHits[next]);
+        setSearchHitIndex(next);
     }, [findText, searchHits, searchHitIndex, onNavigateSearchHit]);
 
     if (!isOpen) return null;
@@ -308,12 +320,12 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
                     </button>
                 </div>
                 <p className="text-[11px] text-gray-500 mb-3 leading-snug">
-                    화면·연결·섹션 데이터 안의 문자열을 검색합니다. 검색 버튼으로 캔버스 뷰를 해당 항목으로 이동합니다(여러 번 누르면 순서대로).
+                    화면·연결·섹션 데이터 안의 문자열을 검색합니다. 이전 검색·다음 검색으로 캔버스에서 일치 항목을 순서대로 이동합니다.
                     바꿀 내용 칸을 수정한 뒤에만 치환 적용이 나타납니다. id·연결(source/target)·이미지 URL 등은 치환에서 제외됩니다.
                 </p>
                 <div className="space-y-2 mb-3">
                     <label className="block text-[11px] font-bold text-gray-600">검색</label>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-stretch flex-wrap">
                         <input
                             value={findText}
                             onChange={(e) => setFindText(e.target.value)}
@@ -322,20 +334,42 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
                             disabled={busy}
                         />
                         {onNavigateSearchHit && (
-                            <button
-                                type="button"
-                                onClick={goSearchHit}
-                                disabled={busy || !findText.trim() || searchHits.length === 0}
-                                className="shrink-0 px-3 py-2 rounded-lg text-sm font-bold bg-gray-800 text-white hover:bg-gray-900 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                                title="캔버스 뷰를 일치 항목으로 이동합니다. 여러 번 누르면 순서대로 이동합니다."
-                            >
-                                검색
-                                {searchHits.length > 0 ? (
-                                    <span className="ml-1 font-mono text-[11px] opacity-90">
-                                        다음 {(searchHitIndex % searchHits.length) + 1}/{searchHits.length}
-                                    </span>
-                                ) : null}
-                            </button>
+                            <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={goSearchHitPrev}
+                                    disabled={busy || !findText.trim() || searchHits.length === 0}
+                                    className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-bold bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap border border-gray-200"
+                                    title="이전 일치 항목(화면·연결·섹션 순)으로 이동"
+                                >
+                                    <ChevronLeft size={16} className="shrink-0" />
+                                    이전 검색
+                                </button>
+                                <span className="text-[10px] font-mono font-bold text-gray-500 tabular-nums px-1 min-w-[3.25rem] text-center self-center">
+                                    {searchHits.length === 0 ? (
+                                        '—'
+                                    ) : searchHitIndex < 0 ? (
+                                        <>
+                                            —<span className="text-gray-400">/{searchHits.length}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {searchHitIndex + 1}
+                                            <span className="text-gray-400">/{searchHits.length}</span>
+                                        </>
+                                    )}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={goSearchHitNext}
+                                    disabled={busy || !findText.trim() || searchHits.length === 0}
+                                    className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-bold bg-gray-800 text-white hover:bg-gray-900 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                                    title="다음 일치 항목(화면·연결·섹션 순)으로 이동"
+                                >
+                                    다음 검색
+                                    <ChevronRight size={16} className="shrink-0" />
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
