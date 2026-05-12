@@ -381,7 +381,7 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
                     ) : (
                         <div className="flex flex-1 min-h-0">
                             <nav
-                                className="w-[9.5rem] sm:w-44 shrink-0 border-r border-gray-200/90 bg-indigo-50/30 overflow-y-auto custom-scrollbar p-2.5 flex flex-col gap-1.5"
+                                className="w-[calc(9.5rem+50px)] sm:w-[calc(11rem+50px)] shrink-0 border-r border-gray-200/90 bg-indigo-50/30 overflow-y-auto custom-scrollbar p-2.5 flex flex-col gap-1.5"
                                 aria-label="보내기 목록 빠른 이동"
                             >
                                 <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-1 border-b border-indigo-100/80 mb-0.5">
