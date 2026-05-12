@@ -780,27 +780,77 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             const cellSpans = ((el as any).tableCellSpans || []) as any;
                             const cellColors = ((el as any).tableCellColors || []) as any;
 
-                            const TABLE_CELL_INSET = 0.03;
+                            const TABLE_CELL_INSET = 0.02;
+
+                            /** pptxgenjs 셀/표 border: [상, 우, 하, 좌] 각각 pt/color/type */
+                            const resolveBorder = (
+                                specificColor: any,
+                                specificWidth: any,
+                                specificStyle: any,
+                                generalColor: any,
+                                generalWidth: any,
+                                generalStyle: any,
+                                fallbackColor: string
+                            ): { pt: number; color?: string; type?: 'solid' | 'dash' | 'sysDot' } => {
+                                const style = specificStyle || generalStyle || 'solid';
+                                if (style === 'none' || style === 'hidden') return { pt: 0 };
+
+                                let widthRaw = specificWidth ?? generalWidth;
+                                let width = typeof widthRaw === 'number' ? widthRaw : parseFloat(String(widthRaw));
+                                if (Number.isNaN(width)) width = 0;
+
+                                if (width <= 0) return { pt: 0 };
+
+                                const color =
+                                    cleanColor(specificColor || generalColor) || cleanColor(fallbackColor);
+                                if (!color) return { pt: 0 };
+
+                                let borderType: 'solid' | 'dash' | 'sysDot' = 'solid';
+                                if (style === 'dashed') borderType = 'dash';
+                                else if (style === 'dotted') borderType = 'sysDot';
+
+                                return {
+                                    pt: Math.max(0.25, width * 0.5),
+                                    color,
+                                    type: borderType,
+                                };
+                            };
 
                             let finalColWidths: number[] = [];
-                            const rawColWidths = Array.isArray((el as any).tableColWidths) ? ((el as any).tableColWidths as number[]) : [];
+                            const rawColWidths = Array.isArray((el as any).tableColWidths)
+                                ? ((el as any).tableColWidths as number[])
+                                : [];
                             if (rawColWidths.length === tCols) {
                                 const sumRawW = rawColWidths.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
-                                const adjustFactor = ((el.width || 1) as number) / (sumRawW || 1);
-                                finalColWidths = rawColWidths.map((w) => (Number.isFinite(w) ? w : 0) * adjustFactor * scale);
+                                finalColWidths = rawColWidths.map((w) =>
+                                    ((Number.isFinite(w) ? w : 0) / (sumRawW || 1)) * elW
+                                );
                             } else {
                                 finalColWidths = Array.from({ length: tCols }, () => elW / tCols);
                             }
 
+                            // 빈 셀만 있는 레이아웃 표가 pptxgen에서 높이 0으로 수축되는 것 방지: elH에 비율 맞춰 행 높이 분배
                             let finalRowHeights: number[] = [];
-                            const rawRowHeights = Array.isArray((el as any).tableRowHeights) ? ((el as any).tableRowHeights as number[]) : [];
+                            const rawRowHeights = Array.isArray((el as any).tableRowHeights)
+                                ? ((el as any).tableRowHeights as number[])
+                                : [];
                             if (rawRowHeights.length === tRows) {
                                 const sumRawH = rawRowHeights.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
-                                const adjustFactorH = ((el.height || 1) as number) / (sumRawH || 1);
-                                finalRowHeights = rawRowHeights.map((h) => (Number.isFinite(h) ? h : 0) * adjustFactorH * scale);
+                                finalRowHeights = rawRowHeights.map((h) =>
+                                    ((Number.isFinite(h) ? h : 0) / (sumRawH || 1)) * elH
+                                );
                             } else {
                                 finalRowHeights = Array.from({ length: tRows }, () => elH / tRows);
                             }
+
+                            const genHColor =
+                                el.tableBorderInsideH || el.stroke || '#cbd5e1';
+                            const genHWidth = el.tableBorderInsideHWidth ?? el.strokeWidth ?? 1;
+                            const genHStyle = el.tableBorderInsideHStyle || el.strokeStyle || 'solid';
+                            const genVColor =
+                                el.tableBorderInsideV || el.stroke || '#cbd5e1';
+                            const genVWidth = el.tableBorderInsideVWidth ?? el.strokeWidth ?? 1;
+                            const genVStyle = el.tableBorderInsideVStyle || el.strokeStyle || 'solid';
 
                             const tableRows: any[][] = [];
                             for (let r = 0; r < tRows; r++) {
@@ -815,125 +865,125 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     const cellSpan = Array.isArray(cellSpans) ? cellSpans[index] : undefined;
                                     const cellColor = Array.isArray(cellColors) ? cellColors[index] : undefined;
 
-                                    const rawContent = (cellV2 as any)?.content ?? (cellV2 as any)?.text ?? fallback ?? '';
-
+                                    const rawContent =
+                                        (cellV2 as any)?.content ?? (cellV2 as any)?.text ?? fallback ?? '';
                                     const { text, options: s } = parseStyles(String(rawContent));
-
-                                    // 셀의 inline style에서 스타일 추출 (HTML이 포함된 경우)
                                     const cellInlineStyle = (cellV2 as any)?.style || {};
+                                    const cStyle = (cellStyle as any) || {};
 
                                     const isHeaderRow = r === 0;
-                                    const finalColor = cleanColor(
-                                        (cellStyle as any)?.color ||
-                                        cellInlineStyle.color ||
-                                        s.color ||
-                                        el.color ||
-                                        (isHeaderRow ? '#2c3e7c' : '#333333')
-                                    ) || (isHeaderRow ? '2C3E7C' : '333333');
+                                    const finalColor =
+                                        cleanColor(
+                                            cStyle.color ||
+                                                cellInlineStyle.color ||
+                                                s.color ||
+                                                el.color ||
+                                                (isHeaderRow ? '#2c3e7c' : '#333333')
+                                        ) || (isHeaderRow ? '2C3E7C' : '333333');
                                     const finalFontSizePx =
-                                        (cellStyle as any)?.fontSize ??
+                                        cStyle.fontSize ??
                                         el.fontSize ??
                                         cellInlineStyle.fontSize ??
                                         s.fontSizePx ??
                                         12;
-                                    const finalFontFace = cellInlineStyle.fontFamily || (cellStyle as any)?.fontFamily || el.fontFamily || s.fontFace || 'Pretendard';
+                                    const finalFontFace =
+                                        cellInlineStyle.fontFamily ||
+                                        cStyle.fontFamily ||
+                                        el.fontFamily ||
+                                        s.fontFace ||
+                                        'Pretendard';
 
-                                    // cellStyle에서 bold/italic/underline 추출 (없으면 parseStyles 결과 사용)
-                                    const isBold = (cellStyle as any)?.fontWeight === 'bold' || s.bold || (isHeaderRow && !cellColor);
-                                    const isItalic = (cellStyle as any)?.fontStyle === 'italic' || s.italic;
-                                    const isUnderline = (cellStyle as any)?.textDecoration === 'underline' || s.underline;
+                                    const isBold =
+                                        cStyle.fontWeight === 'bold' ||
+                                        s.bold ||
+                                        (isHeaderRow && !cellColor);
+                                    const isItalic = cStyle.fontStyle === 'italic' || s.italic;
+                                    const isUnderline =
+                                        cStyle.textDecoration === 'underline' || s.underline;
 
-                                    // colSpan/rowSpan 값 계산
                                     const colspan = (cellSpan as any)?.colSpan || (cellV2 as any)?.colSpan || 1;
                                     const rowspan = (cellSpan as any)?.rowSpan || (cellV2 as any)?.rowSpan || 1;
 
-                                    // 셀 추가 (isMerged가 true이면 빈 셀 대신 추가하지 않음)
                                     const isMerged = (cellV2 as any)?.isMerged;
                                     if (!isMerged) {
-                                        // 화면 렌더러와 같은 우선순위로 셀 배경을 계산한다.
-                                        // pptxgenjs는 'transparent'/'rgba(0,0,0,0)' 같은 값을 검정색으로 잘못 렌더링하므로
-                                        // cleanColor를 통과시켜 안전한 hex만 남기고, 비어 있으면 흰색으로 둔다.
                                         const rawBgColor =
                                             cellColor ||
-                                            (cellStyle as any)?.backgroundColor ||
+                                            cStyle.backgroundColor ||
+                                            cellInlineStyle.backgroundColor ||
                                             (cellV2 as any)?.style?.backgroundColor ||
                                             el.fill ||
-                                            (isHeaderRow ? '#f1f5f9' : '#ffffff');
+                                            (isHeaderRow ? '#f1f5f9' : 'transparent');
                                         const cleanedBgColor = cleanColor(rawBgColor);
                                         const cellFill = cleanedBgColor
                                             ? { color: cleanedBgColor }
-                                            : { color: 'FFFFFF' };
-                                        // 화면 표는 기본 내부선이 있으므로 셀 고유 값이 없으면 표 기본 선을 상속한다.
-                                        const rawCellBorderColor =
-                                            (cellStyle as any)?.borderColor ||
-                                            (cellStyle as any)?.borderBottom ||
-                                            (cellStyle as any)?.borderRight ||
-                                            (cellStyle as any)?.borderTop ||
-                                            (cellStyle as any)?.borderLeft ||
-                                            (cellV2 as any)?.style?.borderColor ||
-                                            el.tableBorderInsideH ||
-                                            el.tableBorderInsideV ||
-                                            el.stroke ||
-                                            '#cbd5e1';
-                                        const cleanedCellBorderColor = cleanColor(rawCellBorderColor) || 'CBD5E1';
+                                            : { color: 'FFFFFF', transparency: 100 };
 
-                                        // 웹 inline style은 "1px" 같은 문자열로 오기도 하므로 숫자로 정규화.
-                                        const rawCellBorderWidth =
-                                            (cellStyle as any)?.borderWidth ??
-                                            (cellStyle as any)?.borderBottomWidth ??
-                                            (cellStyle as any)?.borderRightWidth ??
-                                            (cellStyle as any)?.borderTopWidth ??
-                                            (cellStyle as any)?.borderLeftWidth ??
-                                            el.tableBorderInsideHWidth ??
-                                            el.tableBorderInsideVWidth ??
-                                            el.strokeWidth ??
-                                            (cellV2 as any)?.style?.borderWidth ??
-                                            1;
-                                        let cellStrokeWidth = 0.5;
-                                        if (typeof rawCellBorderWidth === 'number') {
-                                            cellStrokeWidth = rawCellBorderWidth;
-                                        } else if (typeof rawCellBorderWidth === 'string') {
-                                            cellStrokeWidth = parseFloat(rawCellBorderWidth) || 0;
-                                        }
+                                        // 셀 4면: borderTop 등은 앱에서 색(hex)으로 저장되는 경우가 많음 → *Color / * 키 모두 시도
+                                        const bTop = resolveBorder(
+                                            cStyle.borderTopColor ||
+                                                cellInlineStyle.borderTopColor ||
+                                                cStyle.borderTop ||
+                                                cellInlineStyle.borderTop,
+                                            cStyle.borderTopWidth ?? cellInlineStyle.borderTopWidth,
+                                            cStyle.borderTopStyle || cellInlineStyle.borderTopStyle,
+                                            r === 0 ? el.tableBorderTop || genHColor : genHColor,
+                                            r === 0 ? el.tableBorderTopWidth ?? genHWidth : genHWidth,
+                                            r === 0 ? el.tableBorderTopStyle ?? genHStyle : genHStyle,
+                                            '#CBD5E1'
+                                        );
+                                        const bRight = resolveBorder(
+                                            cStyle.borderRightColor ||
+                                                cellInlineStyle.borderRightColor ||
+                                                cStyle.borderRight ||
+                                                cellInlineStyle.borderRight,
+                                            cStyle.borderRightWidth ?? cellInlineStyle.borderRightWidth,
+                                            cStyle.borderRightStyle || cellInlineStyle.borderRightStyle,
+                                            c + colspan >= tCols ? el.tableBorderRight || genVColor : genVColor,
+                                            c + colspan >= tCols
+                                                ? el.tableBorderRightWidth ?? genVWidth
+                                                : genVWidth,
+                                            c + colspan >= tCols
+                                                ? el.tableBorderRightStyle ?? genVStyle
+                                                : genVStyle,
+                                            '#CBD5E1'
+                                        );
+                                        const bBottom = resolveBorder(
+                                            cStyle.borderBottomColor ||
+                                                cellInlineStyle.borderBottomColor ||
+                                                cStyle.borderBottom ||
+                                                cellInlineStyle.borderBottom,
+                                            cStyle.borderBottomWidth ?? cellInlineStyle.borderBottomWidth,
+                                            cStyle.borderBottomStyle || cellInlineStyle.borderBottomStyle,
+                                            r + rowspan >= tRows ? el.tableBorderBottom || genHColor : genHColor,
+                                            r + rowspan >= tRows
+                                                ? el.tableBorderBottomWidth ?? genHWidth
+                                                : genHWidth,
+                                            r + rowspan >= tRows
+                                                ? el.tableBorderBottomStyle ?? genHStyle
+                                                : genHStyle,
+                                            '#CBD5E1'
+                                        );
+                                        const bLeft = resolveBorder(
+                                            cStyle.borderLeftColor ||
+                                                cellInlineStyle.borderLeftColor ||
+                                                cStyle.borderLeft ||
+                                                cellInlineStyle.borderLeft,
+                                            cStyle.borderLeftWidth ?? cellInlineStyle.borderLeftWidth,
+                                            cStyle.borderLeftStyle || cellInlineStyle.borderLeftStyle,
+                                            c === 0 ? el.tableBorderLeft || genVColor : genVColor,
+                                            c === 0 ? el.tableBorderLeftWidth ?? genVWidth : genVWidth,
+                                            c === 0 ? el.tableBorderLeftStyle ?? genVStyle : genVStyle,
+                                            '#CBD5E1'
+                                        );
 
-                                        // 표 테두리는 일반 도형과 달리 dashType이 아니라 `type` 속성을 사용한다.
-                                        // 이중선(double)은 pptxgenjs 표 엔진이 지원하지 않아 solid로 유지된다.
-                                        const rawCellBorderStyle =
-                                            (cellStyle as any)?.borderStyle ||
-                                            (cellStyle as any)?.borderBottomStyle ||
-                                            (cellStyle as any)?.borderRightStyle ||
-                                            (cellStyle as any)?.borderTopStyle ||
-                                            (cellStyle as any)?.borderLeftStyle ||
-                                            el.tableBorderInsideHStyle ||
-                                            el.tableBorderInsideVStyle ||
-                                            (cellV2 as any)?.style?.borderStyle ||
-                                            'solid';
-                                        let cellBorderType: 'solid' | 'dash' | 'sysDot' = 'solid';
-                                        if (rawCellBorderStyle === 'dashed') cellBorderType = 'dash';
-                                        else if (rawCellBorderStyle === 'dotted') cellBorderType = 'sysDot';
-
-                                        let cellBorderOption: any = { pt: 0 };
-                                        if (
-                                            cleanedCellBorderColor &&
-                                            cellStrokeWidth > 0 &&
-                                            rawCellBorderStyle !== 'none'
-                                        ) {
-                                            cellBorderOption = {
-                                                pt: Math.max(0.25, cellStrokeWidth * 0.5),
-                                                color: cleanedCellBorderColor,
-                                                type: cellBorderType,
-                                            };
-                                        }
-
-                                        // 정렬: inline style → cellStyle → parseStyles 결과 → 기본값(center/middle) 순.
                                         const cellAlign =
                                             cellInlineStyle.textAlign ||
-                                            (cellStyle as any)?.textAlign ||
+                                            cStyle.textAlign ||
                                             s.align ||
                                             'center';
                                         const cellValign =
                                             cellInlineStyle.verticalAlign ||
-                                            (cellStyle as any)?.verticalAlign ||
+                                            cStyle.verticalAlign ||
                                             s.valign ||
                                             'middle';
 
@@ -944,13 +994,15 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                                 color: finalColor,
                                                 align: cellAlign as any,
                                                 valign: cellValign as any,
-                                                fontSize: canvasFs(finalFontSizePx * scale * PPT_FONT_SCALE_RATIO),
+                                                fontSize: canvasFs(
+                                                    finalFontSizePx * scale * PPT_FONT_SCALE_RATIO
+                                                ),
                                                 inset: TABLE_CELL_INSET,
                                                 breakLine: false,
-                                                wrap: false,
+                                                wrap: true,
                                                 shrinkText: true,
                                                 autoFit: true,
-                                                border: cellBorderOption,
+                                                border: [bTop, bRight, bBottom, bLeft],
                                                 bold: isBold,
                                                 italic: isItalic,
                                                 underline: (isUnderline ?? false) as any,
@@ -960,45 +1012,49 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                             },
                                         });
                                     }
-
-                                    // colSpan만큼 열 인덱스 증가
                                     c += colspan;
                                 }
                                 if (row.length > 0) tableRows.push(row);
                             }
-                            // 테이블 전체 테두리: 셀과 같은 규칙. 값이 명확하지 않으면 강제로 그리지 않는다.
-                            const tableCleanedBorderColor = cleanColor(el.stroke);
-                            let tableStrokeWidth = 0;
-                            if (typeof el.strokeWidth === 'number') {
-                                tableStrokeWidth = el.strokeWidth;
-                            } else if (typeof el.strokeWidth === 'string') {
-                                tableStrokeWidth = parseFloat(el.strokeWidth as string) || 0;
-                            }
-                            // 표 외곽선도 셀과 동일하게 `type` 속성을 사용해야 점선/파선이 반영된다.
-                            let tableBorderType: 'solid' | 'dash' | 'sysDot' = 'solid';
-                            if (el.strokeStyle === 'dashed') tableBorderType = 'dash';
-                            else if (el.strokeStyle === 'dotted') tableBorderType = 'sysDot';
-                            let tableBorderOption: any = { pt: 0 };
-                            if (
-                                tableCleanedBorderColor &&
-                                tableStrokeWidth > 0 &&
-                                el.strokeStyle !== 'none'
-                            ) {
-                                tableBorderOption = {
-                                    pt: tableStrokeWidth,
-                                    color: tableCleanedBorderColor,
-                                    type: tableBorderType,
-                                };
-                            }
 
-                            // @ts-ignore pptxgenjs table typing is loose
-                            slide.addTable(tableRows, {
-                                x: elX, y: elY, w: elW, h: elH,
+                            const tGenColor = el.stroke;
+                            const tGenWidth = el.strokeWidth ?? 1;
+                            const tGenStyle = el.strokeStyle || 'solid';
+
+                            const getOuter = (side: 'Top' | 'Right' | 'Bottom' | 'Left') => {
+                                const e = el as any;
+                                return resolveBorder(
+                                    e[`tableBorder${side}`],
+                                    e[`tableBorder${side}Width`],
+                                    e[`tableBorder${side}Style`],
+                                    tGenColor,
+                                    tGenWidth,
+                                    tGenStyle,
+                                    '#CBD5E1'
+                                );
+                            };
+
+                            const tableBorderOption = [
+                                getOuter('Top'),
+                                getOuter('Right'),
+                                getOuter('Bottom'),
+                                getOuter('Left'),
+                            ] as [any, any, any, any];
+
+                            const tableProps: any = {
+                                x: elX,
+                                y: elY,
+                                w: elW,
+                                h: elH,
                                 colW: finalColWidths,
                                 rowH: finalRowHeights,
                                 border: tableBorderOption,
                                 autoPage: false,
-                            });
+                                margin: 0,
+                            };
+
+                            // @ts-ignore pptxgenjs table typing
+                            slide.addTable(tableRows, tableProps);
                             break;
                         }
                         case 'line': {
