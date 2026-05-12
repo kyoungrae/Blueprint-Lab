@@ -300,6 +300,7 @@ import SpecNode from './SpecNode';
 import ScreenEdge from './ScreenEdge';
 import ScreenSidebar from './ScreenSidebar';
 import ScreenExportModal from './ScreenExportModal';
+import ScreenProjectSearchReplacePanel from './ScreenProjectSearchReplacePanel';
 import AddScreenModal from './AddScreenModal';
 import AdminPage from './AdminPage';
 import { useScreenDesignStore } from '../store/screenDesignStore';
@@ -310,7 +311,7 @@ import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
 import {
-    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3, MessageCircle, Palette, Languages
+    Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, FileText, X, ArrowLeft, Undo2, Redo2, Square, Edit3, MessageCircle, Palette, Languages, Search
 } from 'lucide-react';
 import { ScreenDesignUndoRedoProvider, useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { RecentTextColorsProvider } from '../contexts/RecentTextColorsContext';
@@ -434,6 +435,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isTranslationPopupOpen, setIsTranslationPopupOpen] = useState(false);
+    const [isProjectSearchReplaceOpen, setIsProjectSearchReplaceOpen] = useState(false);
     const [importJsonText, setImportJsonText] = useState('');
     const [importError, setImportError] = useState<string | null>(null);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
@@ -2014,6 +2016,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         transformOrigin: 'top center',
                     }}
                 >
+                <div className="relative">
                 <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 p-2 flex flex-nowrap items-center gap-2 whitespace-nowrap overflow-x-auto max-w-[calc(100%-2rem)]">
                                     <PremiumTooltip placement="bottom" offsetBottom={10} label="프로젝트 목록으로 돌아가기">
                     <button
@@ -2169,6 +2172,17 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                             <Languages size={16} />
                                         </button>
                                     </PremiumTooltip>
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="프로젝트 검색·치환">
+                                        <button
+                                            id="screen-project-search-open-btn"
+                                            type="button"
+                                            onClick={() => setIsProjectSearchReplaceOpen((v) => !v)}
+                                            className={`relative flex items-center justify-center w-8 h-8 rounded-lg bg-white text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all border border-gray-200 shadow-sm active:scale-95 shrink-0 ${isProjectSearchReplaceOpen ? 'ring-2 ring-violet-300 text-violet-600' : ''}`}
+                                            title="프로젝트 검색·치환"
+                                        >
+                                            <Search size={16} />
+                                        </button>
+                                    </PremiumTooltip>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
@@ -2204,6 +2218,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         </button>
                                         </PremiumTooltip>
                     </div>
+                </div>
+                    <ScreenProjectSearchReplacePanel
+                        isOpen={isProjectSearchReplaceOpen}
+                        onClose={() => setIsProjectSearchReplaceOpen(false)}
+                        currentProjectId={currentProjectId}
+                        yjsIsSynced={yjsIsSynced}
+                    />
                 </div>
                 </div>
 

@@ -1,0 +1,305 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Loader2, Search, X } from 'lucide-react';
+import type { Screen, ScreenFlow, ScreenSection } from '../types/screenDesign';
+import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useYjsStore } from '../store/yjsStore';
+import { useProjectStore } from '../store/projectStore';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
+
+/** id·연결 참조 등 치환 시 깨질 수 있는 필드는 문자열 치환에서 제외 */
+const SKIP_REPLACE_KEYS = new Set([
+    'id',
+    'source',
+    'target',
+    'unlockedUserId',
+    'authorId',
+    'fromComponentId',
+    'imageUrl',
+]);
+
+function deepReplaceStrings(value: unknown, find: string, replace: string, key?: string): unknown {
+    if (!find) return value;
+    if (typeof value === 'string') {
+        if (key && SKIP_REPLACE_KEYS.has(key)) return value;
+        return value.split(find).join(replace);
+    }
+    if (Array.isArray(value)) {
+        return value.map((item) => deepReplaceStrings(item, find, replace, key));
+    }
+    if (value !== null && typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        const next: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(obj)) {
+            next[k] = deepReplaceStrings(v, find, replace, k);
+        }
+        return next;
+    }
+    return value;
+}
+
+function countOccurrences(value: unknown, find: string, key?: string): number {
+    if (!find) return 0;
+    if (typeof value === 'string') {
+        if (key && SKIP_REPLACE_KEYS.has(key)) return 0;
+        let count = 0;
+        let i = 0;
+        while ((i = value.indexOf(find, i)) !== -1) {
+            count++;
+            i += find.length;
+        }
+        return count;
+    }
+    if (Array.isArray(value)) {
+        return value.reduce((acc, item) => acc + countOccurrences(item, find, key), 0);
+    }
+    if (value !== null && typeof value === 'object') {
+        return Object.entries(value as object).reduce((acc, [k, v]) => acc + countOccurrences(v, find, k), 0);
+    }
+    return 0;
+}
+
+export interface ScreenProjectSearchReplacePanelProps {
+    isOpen: boolean;
+    onClose: () => void;
+    currentProjectId: string | null;
+    yjsIsSynced: boolean;
+}
+
+const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelProps> = ({
+    isOpen,
+    onClose,
+    currentProjectId,
+    yjsIsSynced,
+}) => {
+    const [findText, setFindText] = useState('');
+    const [replaceText, setReplaceText] = useState('');
+    const [busy, setBusy] = useState(false);
+
+    const yjsScreens = useYjsStore((s) => s.screens);
+    const yjsFlows = useYjsStore((s) => s.flows);
+    const yjsSections = useYjsStore((s) => s.sections);
+    const storeScreens = useScreenDesignStore((s) => s.screens);
+    const storeFlows = useScreenDesignStore((s) => s.flows);
+    const storeSections = useScreenDesignStore((s) => s.sections);
+
+    const baseScreens = yjsIsSynced ? yjsScreens : storeScreens;
+    const baseFlows = yjsIsSynced ? yjsFlows : storeFlows;
+    const baseSections = yjsIsSynced ? yjsSections : storeSections;
+
+    const matchCount = useMemo(() => {
+        const f = findText.trim();
+        if (!f) return 0;
+        let n = 0;
+        for (const sc of baseScreens) n += countOccurrences(sc as unknown, f);
+        for (const fl of baseFlows) n += countOccurrences(fl as unknown, f);
+        for (const sec of baseSections) n += countOccurrences(sec as unknown, f);
+        return n;
+    }, [findText, baseScreens, baseFlows, baseSections]);
+
+    useEffect(() => {
+        if (!isOpen || busy) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isOpen, onClose, busy]);
+
+    useEffect(() => {
+        if (!isOpen || busy) return;
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as HTMLElement | null;
+            if (t?.closest('#screen-project-search-open-btn')) return;
+            const el = document.getElementById('screen-project-search-replace-panel');
+            if (el && !el.contains(e.target as Node)) {
+                onClose();
+            }
+        };
+        document.addEventListener('mousedown', onDown, true);
+        return () => document.removeEventListener('mousedown', onDown, true);
+    }, [isOpen, onClose, busy]);
+
+    const runReplace = useCallback(async () => {
+        const find = findText.trim();
+        if (!find) {
+            alert('검색할 단어를 입력해 주세요.');
+            return;
+        }
+        if (matchCount === 0) {
+            alert('일치하는 항목이 없습니다.');
+            return;
+        }
+        if (
+            !window.confirm(
+                `총 ${matchCount}곳에서 "${find}"을(를) "${replaceText}"(으)로 바꿉니다.\n\n연결 id·imageUrl 등은 보호되며, 나머지 텍스트 필드에만 적용됩니다.\n계속할까요?`
+            )
+        ) {
+            return;
+        }
+
+        const tStart = Date.now();
+        setBusy(true);
+        let success = false;
+        try {
+            const nextScreens = baseScreens.map((s) =>
+                deepReplaceStrings(structuredClone(s) as unknown, find, replaceText) as Screen
+            );
+            const nextFlows = baseFlows.map((f) =>
+                deepReplaceStrings(structuredClone(f) as unknown, find, replaceText) as ScreenFlow
+            );
+            const nextSections = baseSections.map((sec) =>
+                deepReplaceStrings(structuredClone(sec) as unknown, find, replaceText) as ScreenSection
+            );
+
+            if (yjsIsSynced) {
+                const ok = useYjsStore.getState().importData({
+                    screens: nextScreens,
+                    flows: nextFlows,
+                    sections: nextSections,
+                });
+                if (!ok) {
+                    throw new Error('동기화(Yjs)가 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.');
+                }
+            } else {
+                useScreenDesignStore.getState().importData({
+                    screens: nextScreens,
+                    flows: nextFlows,
+                    sections: nextSections,
+                });
+                if (currentProjectId && !currentProjectId.startsWith('local_')) {
+                    const res = await fetchWithAuth(`${API_URL}/${currentProjectId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            data: { screens: nextScreens, flows: nextFlows, sections: nextSections },
+                        }),
+                    });
+                    if (!res.ok) {
+                        const errBody = await res.json().catch(() => ({}));
+                        throw new Error((errBody as { message?: string }).message || '서버 저장에 실패했습니다.');
+                    }
+                }
+                if (currentProjectId) {
+                    useProjectStore.getState().updateProjectData(currentProjectId, {
+                        screens: nextScreens,
+                        flows: nextFlows,
+                        sections: nextSections,
+                    });
+                }
+            }
+
+            success = true;
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : '치환 중 오류가 발생했습니다.';
+            alert(msg);
+        } finally {
+            const elapsed = Date.now() - tStart;
+            const minMs = 500;
+            if (elapsed < minMs) {
+                await new Promise((r) => setTimeout(r, minMs - elapsed));
+            }
+            setBusy(false);
+        }
+        if (success) onClose();
+    }, [
+        findText,
+        replaceText,
+        matchCount,
+        baseScreens,
+        baseFlows,
+        baseSections,
+        yjsIsSynced,
+        currentProjectId,
+        onClose,
+    ]);
+
+    if (!isOpen) return null;
+
+    return (
+        <>
+            {busy && (
+                <div
+                    className="fixed inset-0 z-[10060] flex flex-col items-center justify-center bg-gray-900/50 backdrop-blur-[1px] text-white gap-3"
+                    role="status"
+                    aria-live="polite"
+                >
+                    <Loader2 className="w-10 h-10 animate-spin text-violet-200" />
+                    <p className="text-sm font-bold">프로젝트 데이터를 저장하는 중입니다…</p>
+                    <p className="text-xs text-white/80">잠시만 기다려 주세요.</p>
+                </div>
+            )}
+            <div
+                id="screen-project-search-replace-panel"
+                className="absolute left-1/2 top-full z-[10002] mt-2 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-gray-200 bg-white shadow-xl p-4 text-left"
+            >
+                <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2 text-gray-800 font-black text-sm">
+                        <Search size={16} className="text-violet-600 shrink-0" />
+                        프로젝트 검색·치환
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                        title="닫기"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+                <p className="text-[11px] text-gray-500 mb-3 leading-snug">
+                    화면·연결·섹션 JSON 안의 문자열을 검색합니다. id·연결(source/target)·이미지 URL 등은 치환에서 제외됩니다.
+                </p>
+                <div className="space-y-2 mb-3">
+                    <label className="block text-[11px] font-bold text-gray-600">검색</label>
+                    <input
+                        value={findText}
+                        onChange={(e) => setFindText(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                        placeholder="찾을 단어 또는 문구"
+                        disabled={busy}
+                    />
+                </div>
+                <div className="space-y-2 mb-3">
+                    <label className="block text-[11px] font-bold text-gray-600">바꿀 내용</label>
+                    <input
+                        value={replaceText}
+                        onChange={(e) => setReplaceText(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                        placeholder="치환 후 문자열 (비워두면 삭제)"
+                        disabled={busy}
+                    />
+                </div>
+                <div className="flex items-center justify-between gap-2 mb-3 text-xs">
+                    <span className="text-gray-600">
+                        일치: <span className="font-mono font-bold text-violet-700">{matchCount}</span>곳
+                    </span>
+                    {!yjsIsSynced && currentProjectId && !currentProjectId.startsWith('local_') && (
+                        <span className="text-amber-700 font-medium">Yjs 미연결 시 서버 PATCH로 저장합니다.</span>
+                    )}
+                </div>
+                <div className="flex justify-end gap-2">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-3 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        disabled={busy}
+                    >
+                        닫기
+                    </button>
+                    <button
+                        type="button"
+                        onClick={runReplace}
+                        disabled={busy || !findText.trim() || matchCount === 0}
+                        className="px-3 py-2 rounded-lg text-sm font-bold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        치환 적용
+                    </button>
+                </div>
+            </div>
+        </>
+    );
+};
+
+export default ScreenProjectSearchReplacePanel;
