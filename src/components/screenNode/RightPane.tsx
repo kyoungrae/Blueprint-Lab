@@ -5,6 +5,8 @@ import { Trash2, Database, GripHorizontal, Edit3, X } from 'lucide-react';
 import type { Screen, DrawElement } from '../../types/screenDesign';
 import type { Project } from '../../types/erd';
 import { useScreenNodeStore } from '../../contexts/ScreenCanvasStoreContext';
+import { useScreenDesignStore } from '../../store/screenDesignStore';
+import { renderTextWithSearchHighlight, textMatchesSearchHighlight } from '../../utils/projectSearchHighlight';
 import ErdTableSearchPanel from '../erd/ErdTableSearchPanel';
 import { getErdTableKoreanName } from '../../utils/linkedErdProjects';
 
@@ -60,6 +62,8 @@ const AutoResizeTextarea: React.FC<{
     minRows?: number;
     className?: string;
     id?: string;
+    searchHighlightTerm?: string | null;
+    searchHighlightKey?: string;
 }> = ({
     value,
     onChange,
@@ -71,9 +75,17 @@ const AutoResizeTextarea: React.FC<{
     disabled,
     minRows = 1,
     className,
-    id
+    id,
+    searchHighlightTerm,
+    searchHighlightKey,
 }) => {
         const textareaRef = useRef<HTMLTextAreaElement>(null);
+        const [hlFocused, setHlFocused] = useState(false);
+        const showHl =
+            Boolean(searchHighlightTerm) &&
+            !hlFocused &&
+            !disabled &&
+            textMatchesSearchHighlight(value, searchHighlightTerm);
 
         useEffect(() => {
             const textarea = textareaRef.current;
@@ -89,25 +101,43 @@ const AutoResizeTextarea: React.FC<{
         }, [value, minRows]);
 
         return (
-            <textarea
-                ref={textareaRef}
-                id={id}
-                value={value}
-                onChange={onChange}
-                onCompositionEnd={onCompositionEnd}
-                onBlur={onBlur}
-                onMouseDown={onMouseDown}
-                onKeyDown={onKeyDown}
-                placeholder={placeholder}
-                disabled={disabled}
-                rows={1}
-                className={className}
-                style={{
-                    resize: 'none',
-                    overflow: 'hidden',
-                    height: 'auto'
-                }}
-            />
+            <div className="relative w-full min-h-0 flex-1">
+                <textarea
+                    ref={textareaRef}
+                    id={id}
+                    value={value}
+                    onChange={onChange}
+                    onCompositionEnd={onCompositionEnd}
+                    onFocus={() => setHlFocused(true)}
+                    onBlur={(e) => {
+                        setHlFocused(false);
+                        onBlur?.(e);
+                    }}
+                    onMouseDown={onMouseDown}
+                    onKeyDown={onKeyDown}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    rows={1}
+                    className={`${className ?? ''} ${showHl && searchHighlightTerm ? 'text-transparent caret-gray-800' : ''}`}
+                    style={{
+                        resize: 'none',
+                        overflow: 'hidden',
+                        height: 'auto',
+                    }}
+                />
+                {showHl && searchHighlightTerm ? (
+                    <div
+                        className={`pointer-events-none absolute inset-0 overflow-hidden nodrag ${className ?? ''}`}
+                        aria-hidden
+                    >
+                        {renderTextWithSearchHighlight(
+                            value,
+                            searchHighlightTerm,
+                            searchHighlightKey || id || 'rta'
+                        )}
+                    </div>
+                ) : null}
+            </div>
         );
     };
 
@@ -201,6 +231,16 @@ const RightPane: React.FC<RightPaneProps> = ({
         if (localValue?.field === field) return localValue.value;
         return propValue;
     };
+
+    const projectSearchHighlightTerm = useScreenDesignStore((s) => s.projectSearchHighlightTerm);
+    const initialSettingsTaRef = useRef<HTMLTextAreaElement>(null);
+    const [initialSettingsFocused, setInitialSettingsFocused] = useState(false);
+    const initialSettingsDisplay = getDisplayValue('initialSettings', screen.initialSettings || '');
+    const showInitialSettingsHl =
+        Boolean(projectSearchHighlightTerm) &&
+        !initialSettingsFocused &&
+        !isLocked &&
+        textMatchesSearchHighlight(initialSettingsDisplay, projectSearchHighlightTerm);
 
     /** 기능상세(번호별): ↑ 첫 번째는 맨 앞, 맨 앞에서 한 번 더 ↑면 이전 번호 입력란 · ↓는 맨 끝, 맨 끝에서 한 번 더 ↓면 다음 번호 입력란 */
     const handleFuncDescKeyDown = useCallback(
@@ -339,23 +379,40 @@ const RightPane: React.FC<RightPaneProps> = ({
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 초기화면설정
                 </div>
                 <div className="flex-1 min-h-0 flex flex-col">
-                    <textarea
-                        value={getDisplayValue('initialSettings', screen.initialSettings || '')}
-                        onChange={(e) => handleChange('initialSettings', e.target.value, e)}
-                        onCompositionEnd={(e) => handleCompositionEnd('initialSettings', (e.target as HTMLTextAreaElement).value)}
-                        onBlur={(e) => { 
-    if (isLocked) return; // 잠금 상태에서는 업데이트 방지
-    const v = (e.target as HTMLTextAreaElement).value; 
-    setLocalValue(null); 
-    update({ initialSettings: v }); 
-    syncUpdate({ initialSettings: v }); 
-}}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        disabled={isLocked}
-                        className={`nodrag w-full h-full flex-1 min-h-0 text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none overflow-hidden ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
-                        placeholder={isLocked ? "" : "• 화면 진입 시 초기 설정..."}
-                        spellCheck={false}
-                    />
+                    <div className="relative w-full h-full flex-1 min-h-0 flex flex-col">
+                        <textarea
+                            ref={initialSettingsTaRef}
+                            value={initialSettingsDisplay}
+                            onChange={(e) => handleChange('initialSettings', e.target.value, e)}
+                            onCompositionEnd={(e) => handleCompositionEnd('initialSettings', (e.target as HTMLTextAreaElement).value)}
+                            onFocus={() => setInitialSettingsFocused(true)}
+                            onBlur={(e) => {
+                                setInitialSettingsFocused(false);
+                                if (isLocked) return;
+                                const v = (e.target as HTMLTextAreaElement).value;
+                                setLocalValue(null);
+                                update({ initialSettings: v });
+                                syncUpdate({ initialSettings: v });
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            disabled={isLocked}
+                            className={`nodrag w-full h-full flex-1 min-h-0 text-[11px] leading-relaxed bg-transparent border-none outline-none p-3 resize-none overflow-hidden ${isLocked ? 'text-gray-600' : 'text-gray-800'} ${showInitialSettingsHl && projectSearchHighlightTerm ? 'text-transparent caret-gray-800' : ''}`}
+                            placeholder={isLocked ? '' : '• 화면 진입 시 초기 설정...'}
+                            spellCheck={false}
+                        />
+                        {showInitialSettingsHl && projectSearchHighlightTerm ? (
+                            <div
+                                className="pointer-events-none absolute inset-0 overflow-hidden nodrag w-full h-full flex-1 min-h-0 text-[11px] leading-relaxed p-3 text-gray-800 whitespace-pre-wrap break-words"
+                                aria-hidden
+                            >
+                                {renderTextWithSearchHighlight(
+                                    initialSettingsDisplay,
+                                    projectSearchHighlightTerm,
+                                    'initial-settings'
+                                )}
+                            </div>
+                        ) : null}
+                    </div>
                 </div>
             </div>
 
@@ -399,6 +456,8 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 placeholder={isLocked ? "" : `${fn.text}번에 대한 기능 설명...`}
                                 minRows={1}
                                 className="nodrag flex-1 bg-transparent border-none outline-none text-[11px] leading-relaxed text-gray-800 placeholder-gray-300"
+                                searchHighlightTerm={projectSearchHighlightTerm}
+                                searchHighlightKey={`func-${fn.id}`}
                             />
                         </div>
                     ))}
@@ -422,6 +481,8 @@ const RightPane: React.FC<RightPaneProps> = ({
                         minRows={3}
                         className={`nodrag w-full text-[11px] leading-relaxed bg-transparent border-none outline-none ${isLocked ? 'text-gray-600' : 'text-gray-800'}`}
                         placeholder={isLocked ? "" : "기타 상세 기능 설명 입력..."}
+                        searchHighlightTerm={projectSearchHighlightTerm}
+                        searchHighlightKey="functionDetails"
                     />
                 </div>
             </div>

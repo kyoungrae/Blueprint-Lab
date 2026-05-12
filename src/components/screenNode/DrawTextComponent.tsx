@@ -1,7 +1,13 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import type { DrawElement } from '../../types/screenDesign';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import { sanitizePasteHtml } from '../../utils/sanitizePasteHtml';
+import { useScreenDesignStore } from '../../store/screenDesignStore';
+import {
+    renderTextWithSearchHighlight,
+    stripHtmlToPlainText,
+    textMatchesSearchHighlight,
+} from '../../utils/projectSearchHighlight';
 import { hexToRgba } from './types';
 
 const TEXT_UPDATE_DEBOUNCE_MS = 500;
@@ -47,6 +53,15 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
     const [localFontSizeOverride, setLocalFontSizeOverride] = useState<number | null>(null);
     const [localColorOverride, setLocalColorOverride] = useState<string | null>(null);
     const [localStyleOverrides, setLocalStyleOverrides] = useState<Partial<Pick<DrawElement, 'fontWeight' | 'fontStyle' | 'textDecoration' | 'fontFamily'>>>({});
+    const projectSearchHighlightTerm = useScreenDesignStore((s) => s.projectSearchHighlightTerm);
+    const plainForHighlight = useMemo(
+        () => stripHtmlToPlainText(element.text || ''),
+        [element.text]
+    );
+    const showSearchHighlight =
+        Boolean(projectSearchHighlightTerm) &&
+        !isSelected &&
+        textMatchesSearchHighlight(plainForHighlight, projectSearchHighlightTerm);
 
     useEffect(() => {
         const handleFontSize = (e: Event) => {
@@ -270,6 +285,36 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
         }
     };
 
+    const sharedTextStyle: React.CSSProperties = {
+        fontSize: `${localFontSizeOverride ?? fontSizeOverride ?? (element.fontSize ?? 14)}px`,
+        color: localColorOverride ?? (element.color || '#333333'),
+        fontWeight: localStyleOverrides.fontWeight ?? (element.fontWeight || 'normal'),
+        fontStyle: localStyleOverrides.fontStyle ?? (element.fontStyle || 'normal'),
+        textDecoration: localStyleOverrides.textDecoration ?? (element.textDecoration || 'none'),
+        fontFamily: resolveFontFamilyCSS(localStyleOverrides.fontFamily ?? element.fontFamily),
+        lineHeight: compact ? 1.5 : 1.4,
+        whiteSpace: 'pre-wrap' as const,
+        backgroundColor:
+            element.type === 'text' && element.fill && element.fill !== 'transparent'
+                ? hexToRgba(element.fill, element.fillOpacity ?? 1)
+                : 'transparent',
+        ...(compact ? { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: 0 } : {}),
+    };
+
+    if (showSearchHighlight && projectSearchHighlightTerm) {
+        return (
+            <div
+                className={`draw-text-editable nodrag nopan outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0 overflow-visible' : 'p-0 min-h-0 w-full overflow-visible'} pointer-events-none ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
+                style={{
+                    ...sharedTextStyle,
+                    cursor: 'default',
+                }}
+            >
+                {renderTextWithSearchHighlight(plainForHighlight, projectSearchHighlightTerm, `dt-${element.id}`)}
+            </div>
+        );
+    }
+
     return (
         <div
             ref={divRef}
@@ -303,20 +348,8 @@ const DrawTextComponent: React.FC<DrawTextComponentProps> = ({
             }}
             className={`draw-text-editable nodrag nopan outline-none text-gray-800 break-words ${compact ? 'min-h-0 h-full w-full p-0 overflow-visible' : 'p-0 min-h-0 w-full overflow-visible'} ${!isSelected ? 'pointer-events-none' : 'pointer-events-auto'} ${element.textAlign === 'center' ? 'text-center' : element.textAlign === 'right' ? 'text-right' : 'text-left'} ${className || ''}`}
             style={{
-                fontSize: `${localFontSizeOverride ?? fontSizeOverride ?? (element.fontSize ?? 14)}px`,
-                color: localColorOverride ?? (element.color || '#333333'),
-                fontWeight: localStyleOverrides.fontWeight ?? (element.fontWeight || 'normal'),
-                fontStyle: localStyleOverrides.fontStyle ?? (element.fontStyle || 'normal'),
-                textDecoration: localStyleOverrides.textDecoration ?? (element.textDecoration || 'none'),
-                fontFamily: resolveFontFamilyCSS(localStyleOverrides.fontFamily ?? element.fontFamily),
-                lineHeight: compact ? 1.5 : 1.4,
-                whiteSpace: 'pre-wrap',
+                ...sharedTextStyle,
                 cursor: isSelected ? 'text' : 'default',
-                backgroundColor:
-                    element.type === 'text' && element.fill && element.fill !== 'transparent'
-                        ? hexToRgba(element.fill, element.fillOpacity ?? 1)
-                        : 'transparent',
-                ...(compact ? { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: 0 } : {})
             }}
         />
     );

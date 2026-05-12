@@ -1,5 +1,11 @@
 import React, { memo } from 'react';
 import type { DrawElement } from '../../types/screenDesign';
+import { useScreenDesignStore } from '../../store/screenDesignStore';
+import {
+    renderTextWithSearchHighlight,
+    stripHtmlToPlainText,
+    textMatchesSearchHighlight,
+} from '../../utils/projectSearchHighlight';
 import { hexToRgba, flatIdxToRowCol, rowColToFlatIdx, getV2Cells, deepCopyCells } from './types';
 import { resolveFontFamilyCSS } from '../../utils/fontFamily';
 import EditableTableCell from './EditableTableCell';
@@ -46,6 +52,7 @@ const TableElement: React.FC<TableElementProps> = memo(({
     isDraggingCellSelectionRef,
     dragStartCellIndexRef,
 }) => {
+    const projectSearchHighlightTerm = useScreenDesignStore((s) => s.projectSearchHighlightTerm);
     const rows = el.tableRows || 3;
     const cols = el.tableCols || 3;
     const v2Cells = getV2Cells(el);
@@ -457,23 +464,85 @@ const TableElement: React.FC<TableElementProps> = memo(({
                                         }}
                                     />
                                 ) : (
-                                    <div
-                                        dir="ltr"
-                                        className="draw-text-editable whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0 nodrag nopan"
-                                        style={{
-                                            alignItems: cellStyle.verticalAlign === 'top' ? 'flex-start' : cellStyle.verticalAlign === 'bottom' ? 'flex-end' : 'center',
-                                            justifyContent: cellStyle.textAlign === 'left' ? 'flex-start' : cellStyle.textAlign === 'right' ? 'flex-end' : 'center',
-                                            wordBreak: 'break-word', unicodeBidi: 'isolate',
-                                            fontSize: cellStyle.fontSize ?? el.fontSize ?? 14,
-                                            fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
-                                            fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
-                                            textDecoration: cellStyle.textDecoration || el.textDecoration || 'none',
-                                            fontFamily: resolveFontFamilyCSS(cellStyle.fontFamily || el.fontFamily),
-                                            color: cellStyle.color ?? el.color ?? '#333333',
-                                            pointerEvents: 'none',
-                                        }}
-                                        dangerouslySetInnerHTML={{ __html: cellData || '' }}
-                                    />
+                                    (() => {
+                                        const cellPlain = stripHtmlToPlainText(cellData || '');
+                                        const showCellHl =
+                                            Boolean(projectSearchHighlightTerm) &&
+                                            textMatchesSearchHighlight(cellPlain, projectSearchHighlightTerm);
+                                        if (showCellHl && projectSearchHighlightTerm) {
+                                            return (
+                                                <div
+                                                    dir="ltr"
+                                                    className="draw-text-editable whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0 nodrag nopan"
+                                                    style={{
+                                                        alignItems:
+                                                            cellStyle.verticalAlign === 'top'
+                                                                ? 'flex-start'
+                                                                : cellStyle.verticalAlign === 'bottom'
+                                                                  ? 'flex-end'
+                                                                  : 'center',
+                                                        justifyContent:
+                                                            cellStyle.textAlign === 'left'
+                                                                ? 'flex-start'
+                                                                : cellStyle.textAlign === 'right'
+                                                                  ? 'flex-end'
+                                                                  : 'center',
+                                                        wordBreak: 'break-word',
+                                                        unicodeBidi: 'isolate',
+                                                        fontSize: cellStyle.fontSize ?? el.fontSize ?? 14,
+                                                        fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
+                                                        fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
+                                                        textDecoration:
+                                                            cellStyle.textDecoration || el.textDecoration || 'none',
+                                                        fontFamily: resolveFontFamilyCSS(
+                                                            cellStyle.fontFamily || el.fontFamily
+                                                        ),
+                                                        color: cellStyle.color ?? el.color ?? '#333333',
+                                                        pointerEvents: 'none',
+                                                    }}
+                                                >
+                                                    {renderTextWithSearchHighlight(
+                                                        cellPlain,
+                                                        projectSearchHighlightTerm,
+                                                        `tbl-${el.id}-${cellIndex}`
+                                                    )}
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <div
+                                                dir="ltr"
+                                                className="draw-text-editable whitespace-pre-wrap w-full h-full flex overflow-hidden min-w-0 nodrag nopan"
+                                                style={{
+                                                    alignItems:
+                                                        cellStyle.verticalAlign === 'top'
+                                                            ? 'flex-start'
+                                                            : cellStyle.verticalAlign === 'bottom'
+                                                              ? 'flex-end'
+                                                              : 'center',
+                                                    justifyContent:
+                                                        cellStyle.textAlign === 'left'
+                                                            ? 'flex-start'
+                                                            : cellStyle.textAlign === 'right'
+                                                              ? 'flex-end'
+                                                              : 'center',
+                                                    wordBreak: 'break-word',
+                                                    unicodeBidi: 'isolate',
+                                                    fontSize: cellStyle.fontSize ?? el.fontSize ?? 14,
+                                                    fontWeight: cellStyle.fontWeight || el.fontWeight || 'normal',
+                                                    fontStyle: cellStyle.fontStyle || el.fontStyle || 'normal',
+                                                    textDecoration:
+                                                        cellStyle.textDecoration || el.textDecoration || 'none',
+                                                    fontFamily: resolveFontFamilyCSS(
+                                                        cellStyle.fontFamily || el.fontFamily
+                                                    ),
+                                                    color: cellStyle.color ?? el.color ?? '#333333',
+                                                    pointerEvents: 'none',
+                                                }}
+                                                dangerouslySetInnerHTML={{ __html: cellData || '' }}
+                                            />
+                                        );
+                                    })()
                                 )}
                             </div>
                         );

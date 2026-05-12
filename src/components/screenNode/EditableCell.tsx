@@ -1,5 +1,7 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useRef, useId } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useScreenDesignStore } from '../../store/screenDesignStore';
+import { renderTextWithSearchHighlight, textMatchesSearchHighlight } from '../../utils/projectSearchHighlight';
 
 interface EditableCellProps {
     value: string;
@@ -17,6 +19,15 @@ const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlu
     // 로컬 편집 상태 (IME 및 실시간 입력 시 커서 튐 방지)
     const [localValue, setLocalValue] = useState<string | null>(null);
     const displayValue = localValue !== null ? localValue : value;
+    const [isFocused, setIsFocused] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const highlightKey = useId();
+    const projectSearchHighlightTerm = useScreenDesignStore((s) => s.projectSearchHighlightTerm);
+    const showSearchHighlight =
+        !isSelect &&
+        !isFocused &&
+        Boolean(projectSearchHighlightTerm) &&
+        textMatchesSearchHighlight(displayValue, projectSearchHighlightTerm);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const v = e.target.value;
@@ -56,13 +67,40 @@ const EditableCell: React.FC<EditableCellProps> = memo(({ value, onChange, onBlu
             </div>
         );
     }
+    if (showSearchHighlight && projectSearchHighlightTerm) {
+        return (
+            <div
+                role="button"
+                tabIndex={0}
+                className={`w-full bg-transparent border-none outline-none text-xs p-1 text-left ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 cursor-text rounded'} ${mono ? 'font-mono' : ''} ${className}`}
+                onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    inputRef.current?.focus();
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        inputRef.current?.focus();
+                    }
+                }}
+            >
+                {renderTextWithSearchHighlight(displayValue, projectSearchHighlightTerm, highlightKey)}
+            </div>
+        );
+    }
     return (
         <input
+            ref={inputRef}
             type="text"
             value={displayValue}
             onChange={handleChange}
             onCompositionEnd={handleCompositionEnd}
-            onBlur={handleBlur}
+            onFocus={() => setIsFocused(true)}
+            onBlur={(e) => {
+                setIsFocused(false);
+                handleBlur(e);
+            }}
             onMouseDown={(e) => !isLocked && e.stopPropagation()}
             disabled={isLocked}
             className={`w-full bg-transparent border-none outline-none text-xs p-1 ${isLocked ? 'text-gray-700' : 'nodrag text-gray-900 hover:bg-blue-50 focus:bg-blue-50 rounded transition-colors'} ${mono ? 'font-mono' : ''} ${className}`}
