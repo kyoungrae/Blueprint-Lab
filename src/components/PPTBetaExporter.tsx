@@ -1,7 +1,8 @@
 import React from 'react';
 import pptxgen from "pptxgenjs";
-import type { Screen } from '../types/screenDesign';
+import type { Screen, ScreenSection } from '../types/screenDesign';
 import { useScreenDesignStore } from '../store/screenDesignStore';
+import { useAuthStore } from '../store/authStore';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { getImageDisplayUrl } from '../utils/imageUrl';
 import { mnDict as staticMnDict } from '../utils/translation';
@@ -24,6 +25,59 @@ function buildNormalizedDictionary(dict: Record<string, string>): Record<string,
         normalized[nk] = value;
     }
     return normalized;
+}
+
+/** OS/브라우저 다운로드에 안전한 파일명 조각 */
+function sanitizePptxFileNameSegment(raw: string): string {
+    const s = String(raw ?? '')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return s.slice(0, 120) || 'untitled';
+}
+
+/**
+ * 선택된 화면이 속한 최상위 섹션 이름(여러 루트면 정렬 후 `_` 연결) + 다운로드 사용자 표시명
+ */
+function buildPptBetaDownloadFileName(
+    selectedScreens: Screen[],
+    sections: ScreenSection[],
+    downloaderDisplayName: string
+): string {
+    const sectionById = new Map(sections.map((sec) => [sec.id, sec]));
+    const sectionIdSet = new Set(sections.map((s) => s.id));
+
+    const getRootSection = (startId: string | null | undefined): ScreenSection | null => {
+        let sid: string | null | undefined = startId;
+        const visited = new Set<string>();
+        while (sid && sectionById.has(sid) && !visited.has(sid)) {
+            visited.add(sid);
+            const sec = sectionById.get(sid)!;
+            const pid = sec.parentId;
+            if (!pid || !sectionIdSet.has(pid)) return sec;
+            sid = pid;
+        }
+        return null;
+    };
+
+    const rootLabels = new Set<string>();
+    for (const screen of selectedScreens) {
+        const root = getRootSection(screen.sectionId ?? undefined);
+        if (root) {
+            const label = (root.name ?? '').trim() || '섹션';
+            rootLabels.add(label);
+        }
+    }
+
+    const topPart =
+        rootLabels.size === 0
+            ? '화면설계'
+            : rootLabels.size === 1
+              ? [...rootLabels][0]
+              : Array.from(rootLabels).sort().join('_');
+
+    const userPart = sanitizePptxFileNameSegment(downloaderDisplayName || 'User');
+    return `${sanitizePptxFileNameSegment(topPart)}_${userPart}.pptx`;
 }
 
 /** img 로드로 크기 추정 (실패 시 기본값) */
@@ -153,6 +207,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     onError
 }) => {
     const { screens, sections } = useScreenDesignStore();
+    const downloaderDisplayName = useAuthStore(
+        (s) => s.user?.name?.trim() || s.user?.email?.split('@')[0]?.trim() || ''
+    );
 
     React.useEffect(() => {
         const staticNormalizedDict = buildNormalizedDictionary(staticMnDict as Record<string, string>);
@@ -175,7 +232,12 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             return staticMnDict[text] ?? text;
         };
 
-        const exportLayoutToPPT = async (selectedScreens: Screen[], externalPptx?: pptxgen, sectionTitle?: string) => {
+        const exportLayoutToPPT = async (
+            selectedScreens: Screen[],
+            externalPptx?: pptxgen,
+            sectionTitle?: string,
+            downloadFileName?: string
+        ) => {
             const pptx = externalPptx || new pptxgen();
             
             // PPT 텍스트 크기 비율 전역 상수 - 모든 요소에 동일하게 적용
@@ -1092,11 +1154,18 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
             // 외부에서 pptx 객체를 전달받은 경우 writeFile 호출하지 않음
             if (!externalPptx) {
-                await pptx.writeFile({ fileName: `Blueprint_BETA_FullData_${Date.now()}.pptx` });
+                const fileName =
+                    downloadFileName ?? `Blueprint_BETA_FullData_${Date.now()}.pptx`;
+                await pptx.writeFile({ fileName });
             }
         };
 
-        const exportSpecLayoutToPPT = async (selectedScreens: Screen[], externalPptx?: pptxgen, sectionTitle?: string) => {
+        const exportSpecLayoutToPPT = async (
+            selectedScreens: Screen[],
+            externalPptx?: pptxgen,
+            sectionTitle?: string,
+            downloadFileName?: string
+        ) => {
             const pptx = externalPptx || new pptxgen();
             
             // PPT 텍스트 크기 비율 전역 상수 - 명세서용
@@ -1358,7 +1427,8 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
             // 외부에서 pptx 객체를 전달받은 경우 writeFile 호출하지 않음
             if (!externalPptx) {
-                await pptx.writeFile({ fileName: `Blueprint_Spec_${Date.now()}.pptx` });
+                const fileName = downloadFileName ?? `Blueprint_Spec_${Date.now()}.pptx`;
+                await pptx.writeFile({ fileName });
             }
         };
 
@@ -1366,6 +1436,12 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             try {
                 const selectedScreens = screens.filter(screen => screenIds.includes(screen.id));
                 if (selectedScreens.length === 0) throw new Error('선택된 화면을 찾을 수 없습니다.');
+
+                const pptFileName = buildPptBetaDownloadFileName(
+                    selectedScreens,
+                    sections,
+                    downloaderDisplayName
+                );
 
                 let dynamicDict: Record<string, string> = {};
                 let dynamicNormalizedDict: Record<string, string> = {};
@@ -1414,12 +1490,12 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                             // 화면 설계 슬라이드 추가
                             if (uiScreens.length > 0) {
-                                await exportLayoutToPPT(uiScreens, pptx, sectionTitle);
+                                await exportLayoutToPPT(uiScreens, pptx, sectionTitle, pptFileName);
                             }
 
                             // 명세서 슬라이드 추가
                             if (specScreens.length > 0) {
-                                await exportSpecLayoutToPPT(specScreens, pptx, sectionTitle);
+                                await exportSpecLayoutToPPT(specScreens, pptx, sectionTitle, pptFileName);
                             }
                         }
                     }
@@ -1431,11 +1507,11 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         const specScreens = unsectionedScreens.filter(screen => screen.variant === 'SPEC');
 
                         if (uiScreens.length > 0) {
-                            await exportLayoutToPPT(uiScreens, pptx, undefined);
+                            await exportLayoutToPPT(uiScreens, pptx, undefined, pptFileName);
                         }
 
                         if (specScreens.length > 0) {
-                            await exportSpecLayoutToPPT(specScreens, pptx, undefined);
+                            await exportSpecLayoutToPPT(specScreens, pptx, undefined, pptFileName);
                         }
                     }
                 } else {
@@ -1444,16 +1520,16 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     const specScreens = selectedScreens.filter(screen => screen.variant === 'SPEC');
 
                     if (uiScreens.length > 0) {
-                        await exportLayoutToPPT(uiScreens, pptx, undefined);
+                        await exportLayoutToPPT(uiScreens, pptx, undefined, pptFileName);
                     }
 
                     if (specScreens.length > 0) {
-                        await exportSpecLayoutToPPT(specScreens, pptx, undefined);
+                        await exportSpecLayoutToPPT(specScreens, pptx, undefined, pptFileName);
                     }
                 }
 
                 // PPT 파일 저장
-                await pptx.writeFile({ fileName: `Blueprint_BETA_FullData_${Date.now()}.pptx` });
+                await pptx.writeFile({ fileName: pptFileName });
                 await logPptExport();
 
                 onComplete?.();
@@ -1463,7 +1539,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
         };
 
         runExport();
-    }, [screenIds, projectId, screens, sections, translateToMN, mnPptFontScalePercent, onComplete, onError]);
+    }, [screenIds, projectId, screens, sections, translateToMN, mnPptFontScalePercent, downloaderDisplayName, onComplete, onError]);
 
     return (
         <div className="p-4">
