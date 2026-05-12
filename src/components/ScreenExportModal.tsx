@@ -164,7 +164,9 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
     };
 
     // 최상위 섹션 및 섹션 없는 화면들 추출
-    const rootSections = sections.filter(s => !s.parentId);
+    // parentId가 존재해도 실제 부모 섹션이 없으면(고아 데이터) 루트로 표시
+    const sectionIds = new Set(sections.map((s) => s.id));
+    const rootSections = sections.filter(s => !s.parentId || !sectionIds.has(s.parentId));
     const rootScreens = screens.filter(s => !s.sectionId);
 
     return (

@@ -25,8 +25,9 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
     const yjsUpdateScreen = useYjsStore((s) => s.updateScreen);
     
     // Yjs 스토어 우선 사용 (실시간 동기화)
-    const screens = props.screens ?? yjsScreens.length > 0 ? yjsScreens : storeScreens;
-    const sections = props.sections ?? yjsSections.length > 0 ? yjsSections : storeSections;
+    // NOTE: nullish-coalescing(??)과 삼항연산자(?:) 우선순위 이슈를 피하기 위해 괄호로 명시
+    const screens = props.screens ?? (yjsScreens.length > 0 ? yjsScreens : storeScreens);
+    const sections = props.sections ?? (yjsSections.length > 0 ? yjsSections : storeSections);
     const { fitView, setNodes } = useReactFlow();
     const [search, setSearch] = useState('');
     const [composing, setComposing] = useState<string | null>(null);
@@ -39,10 +40,9 @@ const ScreenSidebar: React.FC<ScreenSidebarProps> = (props) => {
         s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.screenId.toLowerCase().includes(search.toLowerCase())
     );
-    // 🚀 추가: 부모가 없는 '최상위 섹션'만 필터링합니다.
-    const rootSections = sections.filter((s) => !s.parentId);
-    
     const sectionIds = new Set(sections.map((sec) => sec.id));
+    // 부모가 없거나(parentId falsy), parentId가 실제 목록에 없는 고아 섹션도 루트로 간주
+    const rootSections = sections.filter((s) => !s.parentId || !sectionIds.has(s.parentId));
     // 섹션 없음: sectionId가 없거나, 해당 섹션이 sections 목록에 없는 화면 (데이터 있어도 목록에 항상 표시)
     const rootScreens = filteredScreens.filter((s) => !s.sectionId || !sectionIds.has(s.sectionId));
 

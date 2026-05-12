@@ -154,19 +154,32 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
         const ts = () => `_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
         const mergedScreens: Screen[] = [...existingScreens];
         const mergedSections: ScreenSection[] = [...existingSections];
+        // 1) 모든 가져온 섹션의 최종 id를 먼저 정해 parentId 리매핑에 사용합니다.
+        //    (충돌로 id만 바꾸고 parentId를 옛날 id로 두면 루트에서 자식 섹션이 끊겨
+        //    사이드바·보내기 목록에 해당 섹션·화면이 안 나옵니다.)
         for (const sec of newSections) {
             const newId = existingSectionIds.has(sec.id) ? `section${ts()}` : sec.id;
-            if (newId !== sec.id) sectionIdMap.set(sec.id, newId);
+            sectionIdMap.set(sec.id, newId);
             existingSectionIds.add(newId);
-            mergedSections.push({ ...sec, id: newId });
+        }
+        for (const sec of newSections) {
+            const newId = sectionIdMap.get(sec.id)!;
+            const rawParent = sec.parentId;
+            const parentId =
+                rawParent != null && rawParent !== ''
+                    ? (sectionIdMap.get(rawParent) ?? rawParent)
+                    : rawParent;
+            mergedSections.push({ ...sec, id: newId, parentId });
         }
         for (const sc of newScreens) {
             const newId = existingScreenIds.has(sc.id) ? `screen${ts()}` : sc.id;
             if (newId !== sc.id) screenIdMap.set(sc.id, newId);
             existingScreenIds.add(newId);
-            const sectionId = sc.sectionId && sectionIdMap.has(sc.sectionId)
-                ? sectionIdMap.get(sc.sectionId)!
-                : sc.sectionId;
+            const rawSid = sc.sectionId;
+            const sectionId =
+                rawSid != null && rawSid !== ''
+                    ? (sectionIdMap.get(rawSid) ?? rawSid)
+                    : rawSid;
             mergedScreens.push({ ...sc, id: newId, sectionId });
         }
         const mergedFlows: ScreenFlow[] = [...existingFlows];
