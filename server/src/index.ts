@@ -40,11 +40,11 @@ app.use(cors({
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
-// Request Logging Middleware
-app.use((req, res, next) => {
-    logger.info(`${req.method} ${req.url}`);
-    next();
-});
+// Request Logging Middleware (매 요청마다 터미널/로그에 찍힘 — 필요 시만 주석 해제)
+// app.use((req, res, next) => {
+//     logger.info(`${req.method} ${req.url}`);
+//     next();
+// });
 
 // Health check endpoint
 app.get('/health', (req, res) => {

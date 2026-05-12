@@ -35,7 +35,9 @@ export function useDatabasePolling({ interval = 5000, projectId, enabled = true 
         fetchProjects().then(() => {
             lastUpdateRef.current = Date.now();
             startPolling();
-        }).catch(console.error);
+        }).catch(() => {
+            // console.warn('Database polling initial fetch failed');
+        });
 
         return () => {
             if (pollingIntervalRef.current) {

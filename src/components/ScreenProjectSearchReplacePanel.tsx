@@ -287,7 +287,7 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
             )}
             <div
                 id="screen-project-search-replace-panel"
-                className="absolute left-1/2 top-full z-[10002] mt-2 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-gray-200 bg-white shadow-xl p-4 text-left"
+                className="absolute right-0 top-full z-[10002] mt-2 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white shadow-xl p-4 text-left"
             >
                 <div className="flex items-center justify-between gap-2 mb-3">
                     <div className="flex items-center gap-2 text-gray-800 font-black text-sm">
