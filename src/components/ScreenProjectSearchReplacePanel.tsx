@@ -132,7 +132,10 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
     }, [findText]);
 
     useEffect(() => {
-        if (!isOpen) setSearchHitIndex(0);
+        if (!isOpen) {
+            setSearchHitIndex(0);
+            useScreenDesignStore.getState().setProjectSearchHighlightTerm(null);
+        }
     }, [isOpen]);
 
     useEffect(() => {
@@ -266,6 +269,7 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
         const f = findText.trim();
         if (!f || searchHits.length === 0 || !onNavigateSearchHit) return;
         const idx = searchHitIndex % searchHits.length;
+        useScreenDesignStore.getState().setProjectSearchHighlightTerm(f);
         onNavigateSearchHit(searchHits[idx]);
         setSearchHitIndex((i) => (i + 1) % searchHits.length);
     }, [findText, searchHits, searchHitIndex, onNavigateSearchHit]);

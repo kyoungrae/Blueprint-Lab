@@ -45,6 +45,10 @@ interface ScreenDesignStore {
     // 마지막 상호작용한 화면 ID (붙여넣기 대상 판단)
     lastInteractedScreenId: string | null;
     setLastInteractedScreenId: (id: string | null) => void;
+
+    /** 프로젝트 검색 이동 시 캔버스에 표시할 검색어(팝업 닫으면 null) */
+    projectSearchHighlightTerm: string | null;
+    setProjectSearchHighlightTerm: (term: string | null) => void;
 }
 
 export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
@@ -139,6 +143,7 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
             screens: data.screens || [],
             flows: nextFlows,
             sections: nextSections,
+            projectSearchHighlightTerm: null,
         });
     },
 
@@ -191,7 +196,7 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
             mergedFlows.push({ ...f, id: `flow${ts()}`, source: src, target: tgt });
         }
         const next: ScreenDesignState = { screens: mergedScreens, flows: mergedFlows, sections: mergedSections };
-        set(next);
+        set({ ...next, projectSearchHighlightTerm: null });
         return next;
     },
 
@@ -206,4 +211,7 @@ export const useScreenDesignStore = create<ScreenDesignStore>((set, get) => ({
 
     lastInteractedScreenId: null,
     setLastInteractedScreenId: (id) => set({ lastInteractedScreenId: id }),
+
+    projectSearchHighlightTerm: null,
+    setProjectSearchHighlightTerm: (term) => set({ projectSearchHighlightTerm: term }),
 }));

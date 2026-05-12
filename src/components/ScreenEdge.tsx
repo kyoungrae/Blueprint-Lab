@@ -4,6 +4,8 @@ import {
     EdgeLabelRenderer,
     BaseEdge,
 } from 'reactflow';
+import { useScreenDesignStore } from '../store/screenDesignStore';
+import { renderTextWithSearchHighlight } from '../utils/projectSearchHighlight';
 
 const ScreenEdge = ({
     id,
@@ -19,6 +21,7 @@ const ScreenEdge = ({
     interactionWidth,
     data,
 }: EdgeProps) => {
+    const projectSearchHighlightTerm = useScreenDesignStore((s) => s.projectSearchHighlightTerm);
     // Screen design's signature deep blue color
     const edgeColor = data?.color || '#2c3e7c';
 
@@ -71,7 +74,7 @@ const ScreenEdge = ({
                             e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
                         }}
                     >
-                        {label}
+                        {renderTextWithSearchHighlight(String(label ?? ''), projectSearchHighlightTerm, `edge-${id}`)}
                     </div>
 
                     {/* Tooltip */}

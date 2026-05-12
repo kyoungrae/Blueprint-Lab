@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { Screen } from '../../types/screenDesign';
+import { useScreenDesignStore } from '../../store/screenDesignStore';
+import { renderTextWithSearchHighlight, textMatchesSearchHighlight } from '../../utils/projectSearchHighlight';
 import { PAGE_SIZE_OPTIONS, PAGE_SIZE_DIMENSIONS_MM, getCanvasDimensions } from '../../types/screenDesign';
 import { Lock, Unlock, X, Monitor, SlidersHorizontal, RectangleVertical, RectangleHorizontal, MessageSquare } from 'lucide-react';
 import PremiumTooltip from './PremiumTooltip';
@@ -40,6 +42,12 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
     // 1. composing 대신 localName과 isFocused 상태를 사용합니다.
     const [localName, setLocalName] = useState(screen.name || '');
     const [isFocused, setIsFocused] = useState(false);
+    const nameInputRef = useRef<HTMLInputElement>(null);
+    const projectSearchHighlightTerm = useScreenDesignStore((s) => s.projectSearchHighlightTerm);
+    const nameHasHighlight = textMatchesSearchHighlight(localName, projectSearchHighlightTerm);
+    const showHighlightedName = Boolean(
+        projectSearchHighlightTerm && nameHasHighlight && (!isFocused || isLocked)
+    );
 
     // 2. 내가 수정 중이 아닐 때만, 외부(전역 상태/다른 사용자)에서 변경된 이름을 동기화합니다.
     useEffect(() => {
@@ -84,22 +92,60 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
                         <tr>
                             <td className={`${labelCell} rounded-tl-[15px]`} style={{ width: '10%' }}>컴포넌트명</td>
                             <td className={valueCell} style={{ width: '35%' }}>
-                                <input
-                                    type="text"
-                                    value={localName} // displayValue 대신 localName 사용
-                                    onChange={handleChange}
-                                    onFocus={handleFocus} // 추가
-                                    onBlur={handleBlur}
-                                    // onCompositionEnd 제거 (더 이상 필요 없음)
-                                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                                    disabled={isLocked}
-                                    className={`nodrag w-full border-none focus:ring-0 font-bold text-sm p-0 outline-none placeholder-gray-400 ${!isLocked ? 'bg-transparent' : 'bg-transparent pointer-events-none'}`}
-                                    placeholder="컴포넌트명"
-                                    spellCheck={false}
-                                />
+                                {showHighlightedName ? (
+                                    <div
+                                        className={`nodrag w-full font-bold text-sm p-0 min-h-[1.25rem] flex items-center text-gray-800 ${
+                                            !isLocked ? 'cursor-text' : ''
+                                        }`}
+                                        {...(!isLocked
+                                            ? {
+                                                  role: 'button' as const,
+                                                  tabIndex: 0,
+                                                  onMouseDown: (e: React.MouseEvent) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      nameInputRef.current?.focus();
+                                                  },
+                                                  onKeyDown: (e: React.KeyboardEvent) => {
+                                                      if (e.key === 'Enter' || e.key === ' ') {
+                                                          e.preventDefault();
+                                                          nameInputRef.current?.focus();
+                                                      }
+                                                  },
+                                              }
+                                            : {})}
+                                    >
+                                        {renderTextWithSearchHighlight(
+                                            localName,
+                                            projectSearchHighlightTerm,
+                                            'cmp-name'
+                                        )}
+                                    </div>
+                                ) : (
+                                    <input
+                                        ref={nameInputRef}
+                                        type="text"
+                                        value={localName} // displayValue 대신 localName 사용
+                                        onChange={handleChange}
+                                        onFocus={handleFocus} // 추가
+                                        onBlur={handleBlur}
+                                        // onCompositionEnd 제거 (더 이상 필요 없음)
+                                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                                        disabled={isLocked}
+                                        className={`nodrag w-full border-none focus:ring-0 font-bold text-sm p-0 outline-none placeholder-gray-400 ${!isLocked ? 'bg-transparent' : 'bg-transparent pointer-events-none'}`}
+                                        placeholder="컴포넌트명"
+                                        spellCheck={false}
+                                    />
+                                )}
                             </td>
                             <td className={labelCell} style={{ width: '10%' }}>생성자</td>
-                            <td className={`${valueCell} text-center font-medium`} style={{ width: '25%' }}>{screen.author || '-'}</td>
+                            <td className={`${valueCell} text-center font-medium`} style={{ width: '25%' }}>
+                                {renderTextWithSearchHighlight(
+                                    screen.author || '-',
+                                    projectSearchHighlightTerm,
+                                    'cmp-auth'
+                                )}
+                            </td>
                             <td className="bg-[#2c3e7c] px-2 py-1 border-r-0 align-middle rounded-tr-[15px] whitespace-nowrap" style={{ width: '13%', minWidth: '120px' }}>
                                 <div className={`flex items-center justify-end gap-1 shrink-0 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto' : ''}`}>
                                     <div className="relative" ref={screenOptionsRef}>
@@ -203,19 +249,51 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = React.memo(({
                 /* 화면 설계: 기존 네이비 헤더 스타일 */
                 <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white rounded-t-[15px]">
                     <Monitor size={16} className="flex-shrink-0 text-white/90" />
-                    <input
-                        type="text"
-                        value={localName} // displayValue 대신 localName 사용
-                        onChange={handleChange}
-                        onFocus={handleFocus} // 추가
-                        onBlur={handleBlur}
-                        // onCompositionEnd 제거
-                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                        disabled={isLocked}
-                        className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
-                        placeholder={namePlaceholder}
-                        spellCheck={false}
-                    />
+                    {showHighlightedName ? (
+                        <div
+                            className={`nodrag font-bold text-lg w-full p-0 px-2 min-h-[1.75rem] flex items-center text-white ${
+                                !isLocked ? 'cursor-text' : ''
+                            }`}
+                            {...(!isLocked
+                                ? {
+                                      role: 'button' as const,
+                                      tabIndex: 0,
+                                      onMouseDown: (e: React.MouseEvent) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          nameInputRef.current?.focus();
+                                      },
+                                      onKeyDown: (e: React.KeyboardEvent) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                              e.preventDefault();
+                                              nameInputRef.current?.focus();
+                                          }
+                                      },
+                                  }
+                                : {})}
+                        >
+                            {renderTextWithSearchHighlight(
+                                localName,
+                                projectSearchHighlightTerm,
+                                'ui-name'
+                            )}
+                        </div>
+                    ) : (
+                        <input
+                            ref={nameInputRef}
+                            type="text"
+                            value={localName} // displayValue 대신 localName 사용
+                            onChange={handleChange}
+                            onFocus={handleFocus} // 추가
+                            onBlur={handleBlur}
+                            // onCompositionEnd 제거
+                            onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                            disabled={isLocked}
+                            className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
+                            placeholder={namePlaceholder}
+                            spellCheck={false}
+                        />
+                    )}
                     <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
                         <div className="relative" ref={screenOptionsRef}>
                             <button

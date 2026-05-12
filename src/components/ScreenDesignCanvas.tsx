@@ -54,6 +54,7 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
     const layerRef = useRef<HTMLDivElement>(null);
     const [portalTarget, setPortalTarget] = useState<Element | null>(null);
     const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
+    const projectSearchHighlightTerm = useScreenDesignStore((s) => s.projectSearchHighlightTerm);
 
     useEffect(() => {
         // 🚀 ReactFlow의 진짜 도화지(줌/팬 엔진) DOM을 찾아냅니다.
@@ -164,7 +165,11 @@ const SectionOverlayLayer: React.FC<SectionOverlayLayerProps> = (props) => {
                                         className="text-xl font-semibold text-gray-700 truncate flex-1 min-w-0"
                                         onDoubleClick={(e) => { e.stopPropagation(); startEditingSectionName(s); }}
                                     >
-                                        {s.name || 'Section'}
+                                        {renderTextWithSearchHighlight(
+                                            s.name || 'Section',
+                                            projectSearchHighlightTerm,
+                                            `sec-h-${s.id}`
+                                        )}
                                     </span>
                                 )}
                                 <div className="relative">
@@ -304,6 +309,7 @@ import ScreenProjectSearchReplacePanel, { type ProjectSearchNavigateHit } from '
 import AddScreenModal from './AddScreenModal';
 import AdminPage from './AdminPage';
 import { useScreenDesignStore } from '../store/screenDesignStore';
+import { renderTextWithSearchHighlight } from '../utils/projectSearchHighlight';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import { useDatabasePolling } from '../hooks/useDatabasePolling';

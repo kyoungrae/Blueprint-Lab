@@ -6,10 +6,12 @@ import { SCREEN_FIELD_TYPES, SCREEN_TYPES, PAGE_SIZE_PRESETS, PAGE_SIZE_OPTIONS,
 import { Plus, Trash2, Lock, Unlock, X, ChevronDown, GripVertical, FileText, SlidersHorizontal, RectangleVertical, RectangleHorizontal } from 'lucide-react';
 import { useScreenNodeStore } from '../contexts/ScreenCanvasStoreContext';
 import { useProjectStore } from '../store/projectStore';
+import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useSyncStore } from '../store/syncStore';
 import { useAuthStore } from '../store/authStore';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
+import { renderTextWithSearchHighlight, textMatchesSearchHighlight } from '../utils/projectSearchHighlight';
 
 // 명세 그리드 기본 컬럼 너비(px): [테이블명(한글), 테이블명(영어), 항목명(한글), 필드명(영문), 항목타입, Format, 자릿수, 초기값, Validation, 비고]
 const DEFAULT_SPEC_COLUMN_WIDTHS = [110, 110, 128, 128, 96, 80, 64, 64, 80, 96];
@@ -459,6 +461,17 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const [showScreenOptionsPanel, setShowScreenOptionsPanel] = React.useState(false);
     const [specNameComposing, setSpecNameComposing] = React.useState<string | null>(null);
     const screenOptionsRef = React.useRef<HTMLDivElement>(null);
+    const specNameInputRef = React.useRef<HTMLInputElement>(null);
+    const [specNameFocused, setSpecNameFocused] = React.useState(false);
+    const projectSearchHighlightTerm = useScreenDesignStore((s) => s.projectSearchHighlightTerm);
+    const specDisplayName = specNameComposing !== null ? specNameComposing : screen.name;
+    const specNameHasHl = textMatchesSearchHighlight(specDisplayName, projectSearchHighlightTerm);
+    const showSpecHighlightedName = Boolean(
+        projectSearchHighlightTerm &&
+            specNameHasHl &&
+            specNameComposing === null &&
+            (!specNameFocused || isLocked)
+    );
 
     // 명세 그리드 컬럼 너비
     const colWidths = React.useMemo(() => {
@@ -758,35 +771,69 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
                 {/* ── 1. Top Header Bar (Spec Style - Slightly different icon) ── */}
                 <div className={`px-4 py-2 flex items-center gap-2 text-white bg-[#2c3e7c] border-b border-white`}>
                     <FileText size={16} className="flex-shrink-0 text-white/90" />
-                    <input
-                        type="text"
-                        value={specNameComposing !== null ? specNameComposing : screen.name}
-                        onChange={(e) => {
-                            const v = e.target.value;
-                            if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-                                setSpecNameComposing(v);
-                                return;
-                            }
-                            setSpecNameComposing(null);
-                            update({ name: v });
-                        }}
-                        onCompositionEnd={(e) => {
-                            const v = (e.target as HTMLInputElement).value;
-                            setSpecNameComposing(null);
-                            update({ name: v });
-                        }}
-                        onBlur={(e) => {
-                            const v = e.target.value;
-                            setSpecNameComposing(null);
-                            update({ name: v });
-                            syncUpdate({ name: v });
-                        }}
-                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                        disabled={isLocked}
-                        className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
-                        placeholder="화면명 (기능명세)"
-                        spellCheck={false}
-                    />
+                    {showSpecHighlightedName ? (
+                        <div
+                            className={`nodrag font-bold text-lg w-full p-0 px-2 min-h-[1.75rem] flex items-center text-white ${
+                                !isLocked ? 'cursor-text' : ''
+                            }`}
+                            {...(!isLocked
+                                ? {
+                                      role: 'button' as const,
+                                      tabIndex: 0,
+                                      onMouseDown: (e: React.MouseEvent) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          specNameInputRef.current?.focus();
+                                      },
+                                      onKeyDown: (e: React.KeyboardEvent) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                              e.preventDefault();
+                                              specNameInputRef.current?.focus();
+                                          }
+                                      },
+                                  }
+                                : {})}
+                        >
+                            {renderTextWithSearchHighlight(
+                                specDisplayName,
+                                projectSearchHighlightTerm,
+                                'spec-name'
+                            )}
+                        </div>
+                    ) : (
+                        <input
+                            ref={specNameInputRef}
+                            type="text"
+                            value={specDisplayName}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                                    setSpecNameComposing(v);
+                                    return;
+                                }
+                                setSpecNameComposing(null);
+                                update({ name: v });
+                            }}
+                            onCompositionEnd={(e) => {
+                                const v = (e.target as HTMLInputElement).value;
+                                setSpecNameComposing(null);
+                                update({ name: v });
+                            }}
+                            onFocus={() => setSpecNameFocused(true)}
+                            onBlur={(e) => {
+                                setSpecNameFocused(false);
+                                const v = e.target.value;
+                                setSpecNameComposing(null);
+                                update({ name: v });
+                                syncUpdate({ name: v });
+                            }}
+                            onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                            disabled={isLocked}
+                            className={`${!isLocked ? 'nodrag bg-white/10' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 px-2 outline-none placeholder-white/50 rounded transition-colors disabled:text-white`}
+                            placeholder="화면명 (기능명세)"
+                            spellCheck={false}
+                        />
+                    )}
 
                     {/* Header Actions */}
                     <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
