@@ -64,6 +64,8 @@ const AutoResizeTextarea: React.FC<{
     id?: string;
     searchHighlightTerm?: string | null;
     searchHighlightKey?: string;
+    /** flex 행(번호 옆)이면 grow, 단독 블록이면 전체 너비 */
+    wrapperLayout?: 'flexGrow' | 'fullWidth';
 }> = ({
     value,
     onChange,
@@ -78,6 +80,7 @@ const AutoResizeTextarea: React.FC<{
     id,
     searchHighlightTerm,
     searchHighlightKey,
+    wrapperLayout = 'flexGrow',
 }) => {
         const textareaRef = useRef<HTMLTextAreaElement>(null);
         const [hlFocused, setHlFocused] = useState(false);
@@ -100,8 +103,13 @@ const AutoResizeTextarea: React.FC<{
             textarea.style.height = `${newHeight}px`;
         }, [value, minRows]);
 
+        const wrapClass =
+            wrapperLayout === 'fullWidth'
+                ? 'relative w-full min-w-0'
+                : 'relative min-w-0 flex-1 basis-0 self-stretch';
+
         return (
-            <div className="relative w-full min-h-0 flex-1">
+            <div className={wrapClass}>
                 <textarea
                     ref={textareaRef}
                     id={id}
@@ -435,9 +443,9 @@ const RightPane: React.FC<RightPaneProps> = ({
                 <div className="w-full bg-[#5c6b9e] text-white text-[11px] font-bold px-3 py-1.5 border-b border-[#4a588a] select-none shadow-sm flex items-center gap-1.5 shrink-0">
                     <span className="w-1.5 h-1.5 bg-white rounded-full opacity-50" /> 기능상세
                 </div>
-                <div className="p-3 space-y-2">
+                <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
                     {funcNos.map((fn, fnIndex) => (
-                        <div key={fn.id} className="flex gap-2 items-start">
+                        <div key={fn.id} className="flex gap-2 items-start min-w-0">
                             <div
                                 className="w-6 h-6 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0 shadow-sm mt-0.5"
                                 style={{ backgroundColor: fn.fill || '#ef4444', lineHeight: 1 }}
@@ -455,7 +463,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                                 disabled={isLocked}
                                 placeholder={isLocked ? "" : `${fn.text}번에 대한 기능 설명...`}
                                 minRows={1}
-                                className="nodrag flex-1 bg-transparent border-none outline-none text-[11px] leading-relaxed text-gray-800 placeholder-gray-300"
+                                className="nodrag w-full min-w-0 bg-transparent border-none outline-none text-[11px] leading-relaxed text-gray-800 placeholder-gray-300"
                                 searchHighlightTerm={projectSearchHighlightTerm}
                                 searchHighlightKey={`func-${fn.id}`}
                             />
@@ -483,6 +491,7 @@ const RightPane: React.FC<RightPaneProps> = ({
                         placeholder={isLocked ? "" : "기타 상세 기능 설명 입력..."}
                         searchHighlightTerm={projectSearchHighlightTerm}
                         searchHighlightKey="functionDetails"
+                        wrapperLayout="fullWidth"
                     />
                 </div>
             </div>
