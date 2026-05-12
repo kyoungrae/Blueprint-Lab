@@ -60,11 +60,19 @@ function countOccurrences(value: unknown, find: string, key?: string): number {
     return 0;
 }
 
+/** 캔버스로 스크롤할 검색 일치 항목 (화면 노드 / 연결 / 섹션 영역) */
+export type ProjectSearchNavigateHit =
+    | { kind: 'screen'; id: string }
+    | { kind: 'flow'; id: string }
+    | { kind: 'section'; id: string };
+
 export interface ScreenProjectSearchReplacePanelProps {
     isOpen: boolean;
     onClose: () => void;
     currentProjectId: string | null;
     yjsIsSynced: boolean;
+    /** 검색 버튼으로 현재 일치 항목으로 뷰 이동 (React Flow 쪽에서 구현) */
+    onNavigateSearchHit?: (hit: ProjectSearchNavigateHit) => void;
 }
 
 const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelProps> = ({
@@ -72,10 +80,14 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
     onClose,
     currentProjectId,
     yjsIsSynced,
+    onNavigateSearchHit,
 }) => {
     const [findText, setFindText] = useState('');
     const [replaceText, setReplaceText] = useState('');
     const [busy, setBusy] = useState(false);
+    /** 바꿀 내용 입력란을 한 번이라도 수정했을 때만 치환 적용 버튼 표시 (빈 문자열로 삭제 치환 포함) */
+    const [replaceDirty, setReplaceDirty] = useState(false);
+    const [searchHitIndex, setSearchHitIndex] = useState(0);
 
     const yjsScreens = useYjsStore((s) => s.screens);
     const yjsFlows = useYjsStore((s) => s.flows);
@@ -97,6 +109,35 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
         for (const sec of baseSections) n += countOccurrences(sec as unknown, f);
         return n;
     }, [findText, baseScreens, baseFlows, baseSections]);
+
+    const searchHits = useMemo((): ProjectSearchNavigateHit[] => {
+        const f = findText.trim();
+        if (!f) return [];
+        const out: ProjectSearchNavigateHit[] = [];
+        for (const sc of baseScreens) {
+            if (countOccurrences(sc as unknown, f) > 0) out.push({ kind: 'screen', id: sc.id });
+        }
+        for (const fl of baseFlows) {
+            if (countOccurrences(fl as unknown, f) > 0) out.push({ kind: 'flow', id: fl.id });
+        }
+        for (const sec of baseSections) {
+            if (countOccurrences(sec as unknown, f) > 0) out.push({ kind: 'section', id: sec.id });
+        }
+        return out;
+    }, [findText, baseScreens, baseFlows, baseSections]);
+
+    useEffect(() => {
+        setSearchHitIndex(0);
+        setReplaceDirty(false);
+    }, [findText]);
+
+    useEffect(() => {
+        if (!isOpen) setSearchHitIndex(0);
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (searchHitIndex >= searchHits.length) setSearchHitIndex(0);
+    }, [searchHitIndex, searchHits.length]);
 
     useEffect(() => {
         if (!isOpen || busy) return;
@@ -122,6 +163,7 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
     }, [isOpen, onClose, busy]);
 
     const runReplace = useCallback(async () => {
+        if (!replaceDirty) return;
         const find = findText.trim();
         if (!find) {
             alert('검색할 단어를 입력해 주세요.');
@@ -131,9 +173,13 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
             alert('일치하는 항목이 없습니다.');
             return;
         }
+        const replaceDesc =
+            replaceText === ''
+                ? '빈 문자열로 치환(삭제)합니다'
+                : `"${replaceText}"(으)로 바꿉니다`;
         if (
             !window.confirm(
-                `총 ${matchCount}곳에서 "${find}"을(를) "${replaceText}"(으)로 바꿉니다.\n\n연결 id·imageUrl 등은 보호되며, 나머지 텍스트 필드에만 적용됩니다.\n계속할까요?`
+                `총 ${matchCount}곳에서 "${find}"을(를) ${replaceDesc}.\n\n연결 id·imageUrl 등은 보호되며, 나머지 텍스트 필드에만 적용됩니다.\n계속할까요?`
             )
         ) {
             return;
@@ -204,6 +250,7 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
         }
         if (success) onClose();
     }, [
+        replaceDirty,
         findText,
         replaceText,
         matchCount,
@@ -214,6 +261,14 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
         currentProjectId,
         onClose,
     ]);
+
+    const goSearchHit = useCallback(() => {
+        const f = findText.trim();
+        if (!f || searchHits.length === 0 || !onNavigateSearchHit) return;
+        const idx = searchHitIndex % searchHits.length;
+        onNavigateSearchHit(searchHits[idx]);
+        setSearchHitIndex((i) => (i + 1) % searchHits.length);
+    }, [findText, searchHits, searchHitIndex, onNavigateSearchHit]);
 
     if (!isOpen) return null;
 
@@ -249,23 +304,45 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
                     </button>
                 </div>
                 <p className="text-[11px] text-gray-500 mb-3 leading-snug">
-                    화면·연결·섹션 JSON 안의 문자열을 검색합니다. id·연결(source/target)·이미지 URL 등은 치환에서 제외됩니다.
+                    화면·연결·섹션 데이터 안의 문자열을 검색합니다. 검색 버튼으로 캔버스 뷰를 해당 항목으로 이동합니다(여러 번 누르면 순서대로).
+                    바꿀 내용 칸을 수정한 뒤에만 치환 적용이 나타납니다. id·연결(source/target)·이미지 URL 등은 치환에서 제외됩니다.
                 </p>
                 <div className="space-y-2 mb-3">
                     <label className="block text-[11px] font-bold text-gray-600">검색</label>
-                    <input
-                        value={findText}
-                        onChange={(e) => setFindText(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                        placeholder="찾을 단어 또는 문구"
-                        disabled={busy}
-                    />
+                    <div className="flex gap-2">
+                        <input
+                            value={findText}
+                            onChange={(e) => setFindText(e.target.value)}
+                            className="min-w-0 flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                            placeholder="찾을 단어 또는 문구"
+                            disabled={busy}
+                        />
+                        {onNavigateSearchHit && (
+                            <button
+                                type="button"
+                                onClick={goSearchHit}
+                                disabled={busy || !findText.trim() || searchHits.length === 0}
+                                className="shrink-0 px-3 py-2 rounded-lg text-sm font-bold bg-gray-800 text-white hover:bg-gray-900 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                                title="캔버스 뷰를 일치 항목으로 이동합니다. 여러 번 누르면 순서대로 이동합니다."
+                            >
+                                검색
+                                {searchHits.length > 0 ? (
+                                    <span className="ml-1 font-mono text-[11px] opacity-90">
+                                        다음 {(searchHitIndex % searchHits.length) + 1}/{searchHits.length}
+                                    </span>
+                                ) : null}
+                            </button>
+                        )}
+                    </div>
                 </div>
                 <div className="space-y-2 mb-3">
                     <label className="block text-[11px] font-bold text-gray-600">바꿀 내용</label>
                     <input
                         value={replaceText}
-                        onChange={(e) => setReplaceText(e.target.value)}
+                        onChange={(e) => {
+                            setReplaceText(e.target.value);
+                            setReplaceDirty(true);
+                        }}
                         className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
                         placeholder="치환 후 문자열 (비워두면 삭제)"
                         disabled={busy}
@@ -279,7 +356,7 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
                         <span className="text-amber-700 font-medium">Yjs 미연결 시 서버 PATCH로 저장합니다.</span>
                     )}
                 </div>
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end gap-2 flex-wrap">
                     <button
                         type="button"
                         onClick={onClose}
@@ -288,14 +365,16 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
                     >
                         닫기
                     </button>
-                    <button
-                        type="button"
-                        onClick={runReplace}
-                        disabled={busy || !findText.trim() || matchCount === 0}
-                        className="px-3 py-2 rounded-lg text-sm font-bold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                        치환 적용
-                    </button>
+                    {replaceDirty && (
+                        <button
+                            type="button"
+                            onClick={runReplace}
+                            disabled={busy || !findText.trim() || matchCount === 0}
+                            className="px-3 py-2 rounded-lg text-sm font-bold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            치환 적용
+                        </button>
+                    )}
                 </div>
             </div>
         </>

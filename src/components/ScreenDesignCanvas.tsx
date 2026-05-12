@@ -300,7 +300,7 @@ import SpecNode from './SpecNode';
 import ScreenEdge from './ScreenEdge';
 import ScreenSidebar from './ScreenSidebar';
 import ScreenExportModal from './ScreenExportModal';
-import ScreenProjectSearchReplacePanel from './ScreenProjectSearchReplacePanel';
+import ScreenProjectSearchReplacePanel, { type ProjectSearchNavigateHit } from './ScreenProjectSearchReplacePanel';
 import AddScreenModal from './AddScreenModal';
 import AdminPage from './AdminPage';
 import { useScreenDesignStore } from '../store/screenDesignStore';
@@ -451,7 +451,8 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const flowWrapper = useRef<HTMLDivElement>(null);
     const sectionHeadersContainerRef = useRef<HTMLDivElement>(null);
     const lastSyncedComponentAtRef = useRef<string | null>(null);
-    const { getNodes, fitView, screenToFlowPosition, flowToScreenPosition, getViewport, setViewport } = useReactFlow();
+    const { getNodes, fitView, fitBounds, screenToFlowPosition, flowToScreenPosition, getViewport, setViewport } =
+        useReactFlow();
 
     /** 새로고침·프로젝트 전환 후 첫 로드에서만 최대 줌아웃(최소 줌)으로 맞춤 */
     const initialMaxZoomOutForProjectRef = useRef<string | null>(null);
@@ -526,6 +527,49 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [editingSectionName, setEditingSectionName] = useState('');
     const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
     const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+
+    const navigateProjectSearchHit = useCallback(
+        (hit: ProjectSearchNavigateHit) => {
+            if (hit.kind === 'screen') {
+                setSelectedSectionId(null);
+                fitView({
+                    nodes: [{ id: hit.id }],
+                    padding: 0.45,
+                    duration: 500,
+                    minZoom: SCREEN_DESIGN_MIN_ZOOM,
+                    maxZoom: 1.25,
+                });
+                setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === hit.id })));
+                setEdges((es) => es.map((e) => ({ ...e, selected: false })));
+                return;
+            }
+            if (hit.kind === 'flow') {
+                const flow = flows.find((f) => f.id === hit.id);
+                if (!flow) return;
+                setSelectedSectionId(null);
+                fitView({
+                    nodes: [{ id: flow.source }, { id: flow.target }],
+                    padding: 0.38,
+                    duration: 500,
+                    minZoom: SCREEN_DESIGN_MIN_ZOOM,
+                    maxZoom: 1,
+                });
+                setNodes((ns) => ns.map((n) => ({ ...n, selected: false })));
+                setEdges((es) => es.map((e) => ({ ...e, selected: e.id === hit.id })));
+                return;
+            }
+            const sec = sections.find((s) => s.id === hit.id);
+            if (!sec) return;
+            fitBounds(
+                { x: sec.position.x, y: sec.position.y, width: sec.size.width, height: sec.size.height },
+                { padding: 0.42, duration: 500 }
+            );
+            setSelectedSectionId(hit.id);
+            setNodes((ns) => ns.map((n) => ({ ...n, selected: false })));
+            setEdges((es) => es.map((e) => ({ ...e, selected: false })));
+        },
+        [fitView, fitBounds, flows, sections, setNodes, setEdges, setSelectedSectionId]
+    );
 
     useEffect(() => {
         const onRemoteChat = (e: Event) => {
@@ -2224,6 +2268,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
                         onClose={() => setIsProjectSearchReplaceOpen(false)}
                         currentProjectId={currentProjectId}
                         yjsIsSynced={yjsIsSynced}
+                        onNavigateSearchHit={navigateProjectSearchHit}
                     />
                 </div>
                 </div>
