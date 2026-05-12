@@ -17,6 +17,11 @@ function normalizeTranslationKey(text: string): string {
         .trim();
 }
 
+/** PPT에서 일반 하이픈이 줄바꿈·오토핏 클리핑으로 깨져 보이는 경우가 있어 비분리 하이픈(U+2011)으로 통일 */
+function pptSafeFuncNoLabel(text: string): string {
+    return String(text ?? '').replace(/[\u002D\u2010]/g, '\u2011');
+}
+
 function buildNormalizedDictionary(dict: Record<string, string>): Record<string, string> {
     const normalized: Record<string, string> = {};
     for (const [key, value] of Object.entries(dict)) {
@@ -538,7 +543,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     .map(el => {
                         // 🚀 기능 설명에 포함된 HTML 태그를 제거하고 텍스트만 추출
                         const { text: cleanDesc } = parseStyles(el.description || (el as any).desc || '');
-                        return `[${tr(String(el.text || '').trim(), translateToMN)}] ${tr(cleanDesc, translateToMN)}`;
+                        return `[${pptSafeFuncNoLabel(tr(String(el.text || '').trim(), translateToMN))}] ${tr(cleanDesc, translateToMN)}`;
                     })
                     .join('\n');
 
@@ -585,21 +590,32 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         funcNoElements.forEach(el => {
                             const itemY = currentY + titleH + itemOffset;
                             const { text: cleanDesc } = parseStyles(el.description || (el as any).desc || '');
-                            
-                            // 🔴 기능 번호 빨간 원 그리기
+                            const badgeLabel = pptSafeFuncNoLabel(tr(String(el.text || '').trim(), translateToMN));
+                            const badgeLen = [...badgeLabel].length;
+                            const circleW = 0.16;
+                            const circleH = 0.16;
+                            const circleLeft = leftW + 0.1;
+                            const circleCx = circleLeft + circleW / 2;
+                            const textW = badgeLen > 2 ? 0.24 : circleW;
+                            const textX = circleCx - textW / 2;
+                            const badgeFs = baseFs(badgeLen > 2 ? 5.75 : 6);
+
+                            // 🔴 기능 번호 빨간 원 (크기 고정)
                             slide.addShape(pptx.ShapeType.ellipse, {
-                                x: leftW + 0.1, y: itemY, w: 0.16, h: 0.16,
+                                x: circleLeft, y: itemY, w: circleW, h: circleH,
                                 fill: { color: 'EF4444' }
                             });
-                            // ⚪ 원 안의 숫자 텍스트
-                            slide.addText(tr(String(el.text || '').trim(), translateToMN), {
-                                x: leftW + 0.1, y: itemY, w: 0.16, h: 0.16,
+                            // ⚪ 숫자: 원보다 넓은 박스로 그려 가로 여유를 두고 원과 동심 정렬
+                            slide.addText(badgeLabel, {
+                                x: textX, y: itemY, w: textW, h: circleH,
                                 align: 'center', valign: 'middle',
-                                fontSize: baseFs(6), color: 'FFFFFF', bold: true
+                                fontSize: badgeFs, color: 'FFFFFF', bold: true,
+                                wrap: false,
                             });
-                            // 📝 상세 설명 텍스트 (아이콘 옆 배치)
+                            // 📝 상세 설명 (숫자 박스 오른쪽 끝 기준 간격)
+                            const descX = textX + textW + 0.08;
                             slide.addText(tr(cleanDesc, translateToMN), {
-                                x: leftW + 0.32, y: itemY, w: rightW - 0.45, h: 0.16,
+                                x: descX, y: itemY, w: leftW + rightW - descX - 0.1, h: 0.16,
                                 align: 'left', valign: 'middle',
                                 fontSize: baseFs(5), color: '334155'
                             });
@@ -755,22 +771,30 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 });
                             }
                             break;
-                        case 'func-no':
+                        case 'func-no': {
+                            const fnLabel = pptSafeFuncNoLabel(tr(String(el.text || '').trim(), translateToMN));
+                            const fnLen = [...fnLabel].length;
+                            const fnBasePt = (el.fontSize || 10) * scale * PPT_FONT_SCALE_RATIO;
+                            const fnScale = fnLen <= 2 ? 1 : fnLen <= 4 ? 0.9 : 0.82;
+                            const cx = elX + elW / 2;
+                            const textW = fnLen > 2 ? elW * 1.55 : elW;
+                            const textX = cx - textW / 2;
                             slide.addShape(pptx.ShapeType.ellipse, {
                                 x: elX, y: elY, w: elW, h: elH,
                                 fill: { color: cleanColor(el.fill || 'EF4444') },
                             });
-                            slide.addText(tr(String(el.text || '').trim(), translateToMN), {
-                                x: elX, y: elY, w: elW, h: elH,
+                            slide.addText(fnLabel, {
+                                x: textX, y: elY, w: textW, h: elH,
                                 align: 'center', valign: 'middle',
-                                fontSize: canvasFs((el.fontSize || 10) * scale * PPT_FONT_SCALE_RATIO),
+                                fontSize: canvasFs(fnBasePt * fnScale),
                                 color: 'FFFFFF',
                                 bold: true,
                                 inset: 0,
                                 wrap: false,
-                                shrinkText: true,
+                                shrinkText: false,
                             });
                             break;
+                        }
                         case 'table': {
                             const tRows = el.tableRows || 1;
                             const tCols = el.tableCols || 1;
