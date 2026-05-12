@@ -206,7 +206,10 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
     onComplete,
     onError
 }) => {
-    const { screens, sections } = useScreenDesignStore();
+    const screenIdsKey = React.useMemo(() => [...screenIds].sort().join(','), [screenIds]);
+    const exportCallbacksRef = React.useRef({ onComplete, onError });
+    exportCallbacksRef.current = { onComplete, onError };
+
     const downloaderDisplayName = useAuthStore(
         (s) => s.user?.name?.trim() || s.user?.email?.split('@')[0]?.trim() || ''
     );
@@ -1432,8 +1435,10 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             }
         };
 
+        let cancelled = false;
         const runExport = async () => {
             try {
+                const { screens, sections } = useScreenDesignStore.getState();
                 const selectedScreens = screens.filter(screen => screenIds.includes(screen.id));
                 if (selectedScreens.length === 0) throw new Error('선택된 화면을 찾을 수 없습니다.');
 
@@ -1529,17 +1534,26 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 }
 
                 // PPT 파일 저장
+                if (cancelled) return;
                 await pptx.writeFile({ fileName: pptFileName });
+                if (cancelled) return;
                 await logPptExport();
-
-                onComplete?.();
+                if (cancelled) return;
+                exportCallbacksRef.current.onComplete?.();
             } catch (error) {
-                onError?.(`PPT_BETA 내보내기 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+                if (!cancelled) {
+                    exportCallbacksRef.current.onError?.(
+                        `PPT_BETA 내보내기 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
+                    );
+                }
             }
         };
 
-        runExport();
-    }, [screenIds, projectId, screens, sections, translateToMN, mnPptFontScalePercent, downloaderDisplayName, onComplete, onError]);
+        void runExport();
+        return () => {
+            cancelled = true;
+        };
+    }, [screenIdsKey, projectId, translateToMN, mnPptFontScalePercent, downloaderDisplayName]);
 
     return (
         <div className="p-4">
