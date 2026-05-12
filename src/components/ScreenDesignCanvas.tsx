@@ -2017,12 +2017,19 @@ const ScreenDesignCanvasContent: React.FC = () => {
         );
     }
 
+    const blockCollaborationServerDown = Boolean(
+        currentProjectId &&
+            !currentProjectId.startsWith('local_') &&
+            yjsIsSynced &&
+            !yjsIsConnected
+    );
+
     return (
         <ScreenDesignUndoRedoProvider>
             <RecentTextColorsProvider>
                 <RecentStyleColorsProvider>
         <ExportModeContext.Provider value={isExporting}>
-        <div className="flex w-full h-screen overflow-hidden bg-gray-50">
+        <div className="relative flex w-full h-screen overflow-hidden bg-gray-50">
             <div className="relative flex h-full min-w-0">
                 <div
                                     className={`relative h-full border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'flex-shrink-0' : 'w-0 border-none'}`}
@@ -2675,6 +2682,32 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     })()
                 )}
             </div>
+            {blockCollaborationServerDown && (
+                <div
+                    className="absolute inset-0 z-[25000] flex items-center justify-center bg-gray-900/65 backdrop-blur-sm px-6"
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-labelledby="yjs-server-down-title"
+                >
+                    <div className="max-w-md w-full rounded-2xl bg-white shadow-2xl border border-gray-200 p-8 text-center">
+                        <p id="yjs-server-down-title" className="text-lg font-black text-gray-900 mb-2">
+                            실시간 저장 서버에 연결할 수 없습니다
+                        </p>
+                        <p className="text-sm text-gray-600 mb-6 leading-relaxed">
+                            서버가 내려간 동안에는 편집할 수 없습니다. 연결이 복구될 때까지 기다리거나 프로젝트 목록으로 돌아가 주세요. 지금 편집하면 서버 복구 후에도 반영되지 않을 수 있습니다.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (currentProjectId) yjsJoin(currentProjectId);
+                            }}
+                            className="px-5 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 transition-colors"
+                        >
+                            다시 연결 시도
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
         </ExportModeContext.Provider>
                 </RecentStyleColorsProvider>
