@@ -780,7 +780,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             const cellSpans = ((el as any).tableCellSpans || []) as any;
                             const cellColors = ((el as any).tableCellColors || []) as any;
 
-                            const TABLE_CELL_INSET = 0;
+                            const TABLE_CELL_INSET = 0.03;
 
                             let finalColWidths: number[] = [];
                             const rawColWidths = Array.isArray((el as any).tableColWidths) ? ((el as any).tableColWidths as number[]) : [];
@@ -822,32 +822,24 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     // 셀의 inline style에서 스타일 추출 (HTML이 포함된 경우)
                                     const cellInlineStyle = (cellV2 as any)?.style || {};
 
-                                    const finalColor = (
+                                    const isHeaderRow = r === 0;
+                                    const finalColor = cleanColor(
                                         (cellStyle as any)?.color ||
                                         cellInlineStyle.color ||
                                         s.color ||
-                                        '000000'
-                                    ).replace('#', '');
-                                    // 🚀 디버깅: 텍스트 색상 확인
-                                    if (index === 37) {
-                                        console.log('=== 텍스트 색상 디버깅 (index=37) ===');
-                                        console.log('index:', index);
-                                        console.log('cellStyle:', cellStyle);
-                                        console.log('s.color:', s.color);
-                                        console.log('cellInlineStyle.color:', cellInlineStyle.color);
-                                        console.log('cellStyle?.color:', (cellStyle as any)?.color);
-                                        console.log('finalColor:', finalColor);
-                                    }
+                                        el.color ||
+                                        (isHeaderRow ? '#2c3e7c' : '#333333')
+                                    ) || (isHeaderRow ? '2C3E7C' : '333333');
                                     const finalFontSizePx =
                                         (cellStyle as any)?.fontSize ??
                                         el.fontSize ??
                                         cellInlineStyle.fontSize ??
                                         s.fontSizePx ??
                                         12;
-                                    const finalFontFace = cellInlineStyle.fontFamily || (cellStyle as any)?.fontFamily || el.fontFamily || 'Pretendard' || s.fontFace;
+                                    const finalFontFace = cellInlineStyle.fontFamily || (cellStyle as any)?.fontFamily || el.fontFamily || s.fontFace || 'Pretendard';
 
                                     // cellStyle에서 bold/italic/underline 추출 (없으면 parseStyles 결과 사용)
-                                    const isBold = (cellStyle as any)?.fontWeight === 'bold' || s.bold;
+                                    const isBold = (cellStyle as any)?.fontWeight === 'bold' || s.bold || (isHeaderRow && !cellColor);
                                     const isItalic = (cellStyle as any)?.fontStyle === 'italic' || s.italic;
                                     const isUnderline = (cellStyle as any)?.textDecoration === 'underline' || s.underline;
 
@@ -858,35 +850,46 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     // 셀 추가 (isMerged가 true이면 빈 셀 대신 추가하지 않음)
                                     const isMerged = (cellV2 as any)?.isMerged;
                                     if (!isMerged) {
-                                        // 배경색 우선순위: cellColor > cellStyle.backgroundColor > cellV2.style.backgroundColor
+                                        // 화면 렌더러와 같은 우선순위로 셀 배경을 계산한다.
                                         // pptxgenjs는 'transparent'/'rgba(0,0,0,0)' 같은 값을 검정색으로 잘못 렌더링하므로
-                                        // cleanColor를 통과시켜 안전한 hex만 남기고, 비어 있으면 투명 처리(흰색 + transparency 100).
-                                        const rawBgColor = cellColor || (cellStyle as any)?.backgroundColor || (cellV2 as any)?.style?.backgroundColor;
+                                        // cleanColor를 통과시켜 안전한 hex만 남기고, 비어 있으면 흰색으로 둔다.
+                                        const rawBgColor =
+                                            cellColor ||
+                                            (cellStyle as any)?.backgroundColor ||
+                                            (cellV2 as any)?.style?.backgroundColor ||
+                                            el.fill ||
+                                            (isHeaderRow ? '#f1f5f9' : '#ffffff');
                                         const cleanedBgColor = cleanColor(rawBgColor);
                                         const cellFill = cleanedBgColor
                                             ? { color: cleanedBgColor }
-                                            : { color: 'FFFFFF', transparency: 100 };
-                                        // 🚀 디버깅: 배경색 확인
-                                        if (index === 37) {
-                                            console.log('=== 배경색 디버깅 (index=37) ===');
-                                            console.log('cellColor:', cellColor);
-                                            console.log('cellStyle?.backgroundColor:', (cellStyle as any)?.backgroundColor);
-                                            console.log('cellV2?.style?.backgroundColor:', (cellV2 as any)?.style?.backgroundColor);
-                                            console.log('rawBgColor:', rawBgColor);
-                                            console.log('cellFill:', cellFill);
-                                        }
-
-                                        // 셀 단위 테두리: 부모(el.stroke) 상속을 끊고 셀 고유 값만 사용.
-                                        // "선이 명확히 존재"할 때만 그리고, 그 외엔 무조건 `{ pt: 0 }`으로 지운다.
-                                        // 이렇게 해야 탭/내부 셀에 회색 0.5pt 선이 강제로 따라붙지 않는다.
+                                            : { color: 'FFFFFF' };
+                                        // 화면 표는 기본 내부선이 있으므로 셀 고유 값이 없으면 표 기본 선을 상속한다.
                                         const rawCellBorderColor =
-                                            (cellStyle as any)?.borderColor || (cellV2 as any)?.style?.borderColor;
-                                        const cleanedCellBorderColor = cleanColor(rawCellBorderColor);
+                                            (cellStyle as any)?.borderColor ||
+                                            (cellStyle as any)?.borderBottom ||
+                                            (cellStyle as any)?.borderRight ||
+                                            (cellStyle as any)?.borderTop ||
+                                            (cellStyle as any)?.borderLeft ||
+                                            (cellV2 as any)?.style?.borderColor ||
+                                            el.tableBorderInsideH ||
+                                            el.tableBorderInsideV ||
+                                            el.stroke ||
+                                            '#cbd5e1';
+                                        const cleanedCellBorderColor = cleanColor(rawCellBorderColor) || 'CBD5E1';
 
                                         // 웹 inline style은 "1px" 같은 문자열로 오기도 하므로 숫자로 정규화.
                                         const rawCellBorderWidth =
-                                            (cellStyle as any)?.borderWidth ?? (cellV2 as any)?.style?.borderWidth;
-                                        let cellStrokeWidth = 0;
+                                            (cellStyle as any)?.borderWidth ??
+                                            (cellStyle as any)?.borderBottomWidth ??
+                                            (cellStyle as any)?.borderRightWidth ??
+                                            (cellStyle as any)?.borderTopWidth ??
+                                            (cellStyle as any)?.borderLeftWidth ??
+                                            el.tableBorderInsideHWidth ??
+                                            el.tableBorderInsideVWidth ??
+                                            el.strokeWidth ??
+                                            (cellV2 as any)?.style?.borderWidth ??
+                                            1;
+                                        let cellStrokeWidth = 0.5;
                                         if (typeof rawCellBorderWidth === 'number') {
                                             cellStrokeWidth = rawCellBorderWidth;
                                         } else if (typeof rawCellBorderWidth === 'string') {
@@ -897,6 +900,12 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                         // 이중선(double)은 pptxgenjs 표 엔진이 지원하지 않아 solid로 유지된다.
                                         const rawCellBorderStyle =
                                             (cellStyle as any)?.borderStyle ||
+                                            (cellStyle as any)?.borderBottomStyle ||
+                                            (cellStyle as any)?.borderRightStyle ||
+                                            (cellStyle as any)?.borderTopStyle ||
+                                            (cellStyle as any)?.borderLeftStyle ||
+                                            el.tableBorderInsideHStyle ||
+                                            el.tableBorderInsideVStyle ||
                                             (cellV2 as any)?.style?.borderStyle ||
                                             'solid';
                                         let cellBorderType: 'solid' | 'dash' | 'sysDot' = 'solid';
@@ -910,7 +919,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                             rawCellBorderStyle !== 'none'
                                         ) {
                                             cellBorderOption = {
-                                                pt: cellStrokeWidth,
+                                                pt: Math.max(0.25, cellStrokeWidth * 0.5),
                                                 color: cleanedCellBorderColor,
                                                 type: cellBorderType,
                                             };
@@ -957,39 +966,6 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                 }
                                 if (row.length > 0) tableRows.push(row);
                             }
-
-                            // 디버깅: 첫 번째 행의 열 수 확인
-                            if (tableRows.length > 0) {
-                            }
-
-                            // colSpan을 고려하여 colWidths 조정
-                            let adjustedColWidths = finalColWidths;
-                            if (tableRows.length > 0 && tableRows[0].length !== finalColWidths.length) {
-                                const firstRow = tableRows[0];
-                                adjustedColWidths = [];
-                                let rawColIdx = 0;
-                                for (let c = 0; c < firstRow.length && rawColIdx < finalColWidths.length; c++) {
-                                    const cell = firstRow[c];
-                                    const colspan = cell?.options?.colspan || 1;
-                                    // colspan이 적용된 경우 해당 열들의 너비를 합산
-                                    let combinedWidth = 0;
-                                    for (let i = 0; i < colspan && rawColIdx < finalColWidths.length; i++) {
-                                        combinedWidth += finalColWidths[rawColIdx];
-                                        rawColIdx++;
-                                    }
-                                    adjustedColWidths.push(combinedWidth);
-                                }
-
-                                // 모든 행에서 colspan 옵션 제거 (너비 일관성 유지)
-                                for (const row of tableRows) {
-                                    for (const cell of row) {
-                                        if (cell?.options?.colspan) {
-                                            delete cell.options.colspan;
-                                        }
-                                    }
-                                }
-                            }
-
                             // 테이블 전체 테두리: 셀과 같은 규칙. 값이 명확하지 않으면 강제로 그리지 않는다.
                             const tableCleanedBorderColor = cleanColor(el.stroke);
                             let tableStrokeWidth = 0;
@@ -1018,7 +994,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                             // @ts-ignore pptxgenjs table typing is loose
                             slide.addTable(tableRows, {
                                 x: elX, y: elY, w: elW, h: elH,
-                                colW: adjustedColWidths,
+                                colW: finalColWidths,
                                 rowH: finalRowHeights,
                                 border: tableBorderOption,
                                 autoPage: false,
