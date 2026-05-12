@@ -139,10 +139,12 @@ const ScreenExportModal: React.FC<ScreenExportModalProps> = ({ screens, sections
     const expandPathToSection = (sectionId: string) => {
         const sidSet = new Set(sections.map((s) => s.id));
         const toExpand: string[] = [sectionId];
-        let cur = sections.find((s) => s.id === sectionId);
-        while (cur?.parentId && sidSet.has(cur.parentId)) {
-            toExpand.push(cur.parentId);
-            cur = sections.find((s) => s.id === cur.parentId);
+        let cur: ScreenSection | undefined = sections.find((s) => s.id === sectionId);
+        while (cur) {
+            const pid = cur.parentId;
+            if (!pid || !sidSet.has(pid)) break;
+            toExpand.push(pid);
+            cur = sections.find((s) => s.id === pid);
         }
         setCollapsedSections((prev) => {
             const next = { ...prev };
