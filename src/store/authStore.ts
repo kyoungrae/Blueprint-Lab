@@ -1,5 +1,35 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
+
+const safeStateStorage: StateStorage<void> = {
+    getItem: (name: string) => {
+        try {
+            return localStorage.getItem(name);
+        } catch {
+            return null;
+        }
+    },
+    setItem: (name: string, value: string) => {
+        try {
+            localStorage.setItem(name, value);
+        } catch {
+            try {
+                localStorage.removeItem(name);
+            } catch {
+                /* ignore */
+            }
+        }
+        return undefined;
+    },
+    removeItem: (name: string) => {
+        try {
+            localStorage.removeItem(name);
+        } catch {
+            /* ignore */
+        }
+        return undefined;
+    },
+};
 
 export type UserTier = 'FREE' | 'PRO' | 'MASTER';
 
@@ -41,6 +71,25 @@ export const useAuthStore = create<AuthState>()(
         }),
         {
             name: 'auth-storage',
+            storage: createJSONStorage(() => ({
+                getItem: (name) => {
+                    try {
+                        const raw = localStorage.getItem(name);
+                        if (raw == null) return null;
+                        JSON.parse(raw);
+                        return raw;
+                    } catch {
+                        try {
+                            localStorage.removeItem(name);
+                        } catch {
+                            /* ignore */
+                        }
+                        return null;
+                    }
+                },
+                setItem: (name, value) => safeStateStorage.setItem(name, value),
+                removeItem: (name) => safeStateStorage.removeItem(name),
+            })),
         }
     )
 );

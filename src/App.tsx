@@ -60,7 +60,8 @@ function App() {
 
     if (!isSessionActive) {
       // Determine if user is guest based on LoginPage.tsx implementation
-      const isGuest = user?.email === 'guest@test.com' || user?.id.startsWith('guest_');
+      const isGuest =
+        user?.email === 'guest@test.com' || Boolean(user?.id?.startsWith('guest_'));
 
       if (isAuthenticated && isGuest) {
         // console.log('🧹 Clearing stale guest session on browser restart');
