@@ -308,6 +308,7 @@ import ScreenExportModal from './ScreenExportModal';
 import ScreenProjectSearchReplacePanel, { type ProjectSearchNavigateHit } from './ScreenProjectSearchReplacePanel';
 import AddScreenModal from './AddScreenModal';
 import AdminPage from './AdminPage';
+import { canManageTranslationMemory } from '../utils/tierAccess';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { renderTextWithSearchHighlight } from '../utils/projectSearchHighlight';
 import { useAuthStore } from '../store/authStore';
@@ -401,6 +402,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     } = useScreenDesignStore();
 
     const { user, logout } = useAuthStore();
+    const canManageTranslations = canManageTranslationMemory(user?.tier);
     const { updateCursor, isSynced, isConnected } = useSyncStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -2220,11 +2222,27 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />
 
                                     {currentProject && <BugReportButton project={currentProject} />}
-                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="번역 관리">
+                                    <PremiumTooltip
+                                        placement="bottom"
+                                        offsetBottom={10}
+                                        label={
+                                            canManageTranslations
+                                                ? '번역 메모리 관리'
+                                                : '번역 메모리 관리는 Pro tier 이상부터 사용 가능합니다. 관리자에게 문의해 주세요.'
+                                        }
+                                        dotColor={canManageTranslations ? '#14b8a6' : undefined}
+                                    >
                                         <button
-                                            onClick={() => setIsTranslationPopupOpen(true)}
-                                            className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-white text-gray-600 hover:text-orange-500 hover:bg-orange-50 transition-all border border-gray-200 shadow-sm active:scale-95 shrink-0"
-                                            title="번역 관리"
+                                            onClick={() => {
+                                                if (!canManageTranslations) return;
+                                                setIsTranslationPopupOpen(true);
+                                            }}
+                                            className={`relative flex items-center justify-center w-8 h-8 rounded-lg bg-white transition-all border border-gray-200 shadow-sm active:scale-95 shrink-0 ${
+                                                canManageTranslations
+                                                    ? 'text-gray-600 hover:text-orange-500 hover:bg-orange-50'
+                                                    : 'text-gray-300 cursor-not-allowed opacity-60'
+                                            }`}
+                                            title="번역 메모리 관리"
                                         >
                                             <Languages size={16} />
                                         </button>

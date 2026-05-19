@@ -39,6 +39,8 @@ interface User {
     name: string;
     picture?: string;
     tier?: UserTier;
+    /** ADMIN_EMAILS에 등록된 시스템 관리자 */
+    isAdmin?: boolean;
 }
 
 interface AuthState {

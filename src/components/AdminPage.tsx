@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, Languages, RefreshCw, Download, Upload } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
+import { canManageTranslationMemory } from '../utils/tierAccess';
 import * as XLSX from 'xlsx';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
@@ -284,7 +285,11 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
     embedded = false,
 }) => {
     const { user, updateUser } = useAuthStore();
-    const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
+    const translationOnlyMode =
+        !embedded && canManageTranslationMemory(user?.tier) && user?.isAdmin !== true;
+    const [activeTab, setActiveTab] = useState<AdminTab>(
+        translationOnlyMode ? 'translation' : initialTab
+    );
     const [users, setUsers] = useState<AdminUser[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
     const [userProjects, setUserProjects] = useState<AdminProject[]>([]);
@@ -472,8 +477,14 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
     onBackRef.current = onBack;
 
     useEffect(() => {
-        fetchUsers();
-    }, []);
+        if (translationOnlyMode) {
+            setActiveTab('translation');
+            return;
+        }
+        if (!embedded) {
+            fetchUsers();
+        }
+    }, [translationOnlyMode, embedded]);
 
     useEffect(() => {
         if (activeTab === 'projects' && selectedUserId) {
@@ -823,9 +834,12 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                             <span className="font-bold">프로젝트 목록</span>
                         </button>
                         <div className="w-px h-6 bg-gray-200" />
-                        <h1 className="text-lg font-black text-gray-900">관리자</h1>
+                        <h1 className="text-lg font-black text-gray-900">
+                            {translationOnlyMode ? '번역 메모리 관리' : '관리자'}
+                        </h1>
                     </div>
                 </div>
+                {!translationOnlyMode && (
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-gray-100">
                     <div className="flex gap-1 pt-2">
                         <button
@@ -887,6 +901,7 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                         </button>
                     </div>
                 </div>
+                )}
             </header>
             )}
 

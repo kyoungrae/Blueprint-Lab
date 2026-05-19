@@ -34,7 +34,7 @@ function App() {
     fetchWithAuth(`${AUTH_API}/me`)
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
-        if (data?.tier) updateUser({ tier: data.tier });
+        if (data) updateUser({ tier: data.tier, isAdmin: data.isAdmin === true });
       })
       .catch(() => {});
   }, [isAuthenticated, updateUser]);
@@ -46,7 +46,7 @@ function App() {
       fetchWithAuth(`${AUTH_API}/me`)
         .then((res) => res.ok ? res.json() : null)
         .then((data) => {
-          if (data?.tier) updateUser({ tier: data.tier });
+          if (data) updateUser({ tier: data.tier, isAdmin: data.isAdmin === true });
         })
         .catch(() => {});
     };

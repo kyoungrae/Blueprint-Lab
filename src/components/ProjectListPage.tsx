@@ -384,13 +384,15 @@ const ProjectListPage: React.FC = () => {
                             <img src={user?.picture} alt="" className="w-8 h-8 rounded-full border-2 border-white shadow-sm" />
                             <span className="text-sm font-bold text-gray-700 hidden sm:block">{user?.name}</span>
                         </div>
-                        <button
-                            onClick={() => setShowAdminPage(true)}
-                            className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all active:scale-95"
-                            title="관리자 페이지"
-                        >
-                            <Shield size={20} />
-                        </button>
+                        {user?.isAdmin && (
+                            <button
+                                onClick={() => setShowAdminPage(true)}
+                                className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all active:scale-95"
+                                title="관리자 페이지"
+                            >
+                                <Shield size={20} />
+                            </button>
+                        )}
                         <button
                             onClick={() => {
                                 if (window.confirm('로그아웃 하시겠습니까?')) {
