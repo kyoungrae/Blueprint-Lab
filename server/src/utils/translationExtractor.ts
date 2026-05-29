@@ -36,6 +36,32 @@ function stripHtmlForExtract(raw: string): string {
     return normalizeTranslationWhitespace(s);
 }
 
+/** 줄바꿈 유지 — PPT 한 상자 안 여러 줄을 줄별 사전 키로도 등록 */
+function stripHtmlPreserveLines(raw: string): string {
+    let s = raw.replace(/&nbsp;/gi, ' ');
+    s = s
+        .replace(/&#(\d+);/g, (m, n) => {
+            const code = parseInt(n, 10);
+            return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCharCode(code) : m;
+        })
+        .replace(/&#x([0-9a-f]+);/gi, (m, h) => {
+            const code = parseInt(h, 16);
+            return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCharCode(code) : m;
+        })
+        .replace(/&gt;/gi, '>')
+        .replace(/&lt;/gi, '<')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/gi, '&');
+    s = s.replace(/<!--[\s\S]*?-->/g, '');
+    s = s.replace(/<\/?[a-zA-Z][\w:-]*(?:\s[^>]*)?>/g, '');
+    return s
+        .split(/\n+/)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .join('\n');
+}
+
 /** HTML 태그 제거 후 한글이 포함된 문자열만 수집 */
 export function extractKoreanWords(projectsData: unknown): string[] {
     const textSet = new Set<string>();
@@ -45,6 +71,15 @@ export function extractKoreanWords(projectsData: unknown): string[] {
             const clean = stripHtmlForExtract(obj);
             if (clean && hasKorean(clean)) {
                 textSet.add(clean);
+            }
+            const withLines = stripHtmlPreserveLines(obj);
+            if (withLines && hasKorean(withLines)) {
+                for (const part of withLines.split('\n')) {
+                    const line = normalizeTranslationWhitespace(part);
+                    if (line && hasKorean(line)) {
+                        textSet.add(line);
+                    }
+                }
             }
         } else if (Array.isArray(obj)) {
             obj.forEach(traverse);

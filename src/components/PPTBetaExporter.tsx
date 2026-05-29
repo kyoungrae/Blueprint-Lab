@@ -6,16 +6,14 @@ import { useAuthStore } from '../store/authStore';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { getImageDisplayUrl } from '../utils/imageUrl';
 import { mnDict as staticMnDict } from '../utils/translation';
+import { preserveWhitespaceForPpt, translateTextPreservingIndent } from '../utils/pptPreserveWhitespace';
+import {
+    plainForTranslationLookup,
+    translationLookupKeyCompact,
+    translationLookupKeySpaced,
+} from '../utils/translationTextNormalize';
 
 const API_ROOT = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
-
-function normalizeTranslationKey(text: string): string {
-    return String(text ?? '')
-        .replace(/[“”]/g, '"')
-        .replace(/[‘’]/g, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-}
 
 /** PPT에서 일반 하이픈이 줄바꿈·오토핏 클리핑으로 깨져 보이는 경우가 있어 비분리 하이픈(U+2011)으로 통일 */
 function pptSafeFuncNoLabel(text: string): string {
@@ -25,11 +23,46 @@ function pptSafeFuncNoLabel(text: string): string {
 function buildNormalizedDictionary(dict: Record<string, string>): Record<string, string> {
     const normalized: Record<string, string> = {};
     for (const [key, value] of Object.entries(dict)) {
-        const nk = normalizeTranslationKey(key);
-        if (!nk || !value || normalized[nk]) continue;
-        normalized[nk] = value;
+        if (!value) continue;
+        const candidates = new Set<string>();
+        const spaced = translationLookupKeySpaced(key);
+        const compact = translationLookupKeyCompact(key);
+        const raw = plainForTranslationLookup(key).trim();
+        if (spaced) candidates.add(spaced);
+        if (compact) candidates.add(compact);
+        if (raw) candidates.add(raw);
+        for (const nk of candidates) {
+            if (!nk || normalized[nk]) continue;
+            normalized[nk] = value;
+        }
     }
     return normalized;
+}
+
+function lookupTranslation(
+    plain: string,
+    dynamicNormalized: Record<string, string>,
+    dynamicRaw: Record<string, string>,
+    staticNormalized: Record<string, string>
+): string {
+    const spaced = translationLookupKeySpaced(plain);
+    const compact = translationLookupKeyCompact(plain);
+    const raw = plainForTranslationLookup(plain).trim();
+
+    const keys = [compact, spaced, raw].filter((k): k is string => Boolean(k));
+    for (const k of keys) {
+        const hit = dynamicNormalized[k] ?? staticNormalized[k];
+        if (hit) return hit;
+    }
+    for (const [origKey, translated] of Object.entries(dynamicRaw)) {
+        if (!translated) continue;
+        if (translationLookupKeyCompact(origKey) === compact && compact) return translated;
+        if (translationLookupKeySpaced(origKey) === spaced && spaced) return translated;
+    }
+    if (spaced && dynamicRaw[spaced]) return dynamicRaw[spaced];
+    if (raw && dynamicRaw[raw]) return dynamicRaw[raw];
+    if (compact && dynamicRaw[compact]) return dynamicRaw[compact];
+    return plain;
 }
 
 /** OS/브라우저 다운로드에 안전한 파일명 조각 */
@@ -235,9 +268,12 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
             }
         };
 
+        const staticNormalizedDictEarly = buildNormalizedDictionary(staticMnDict as Record<string, string>);
+        const lookupMn = (plain: string) =>
+            lookupTranslation(plain, {}, {}, staticNormalizedDictEarly);
         let tr = (text: string, isMn: boolean): string => {
             if (!isMn || !text) return text;
-            return staticMnDict[text] ?? text;
+            return translateTextPreservingIndent(text, lookupMn);
         };
 
         const exportLayoutToPPT = async (
@@ -257,6 +293,14 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 ? Math.max(0.5, Math.min(3, (mnPptFontScalePercent ?? 100) / 100))
                 : 1;
             const canvasFs = (pt: number, floor: number = PPT_FONT_MIN_SIZE) => Math.max(floor, pt * mnCanvasMul);
+
+            /** rect·text·circle 등 — 박스 너비에서 줄바꿈 (글자 축소 대신 wrap) */
+            const canvasBoxTextWrap = {
+                breakLine: true,
+                wrap: true,
+                shrinkText: false,
+                inset: 0.03,
+            } as const;
 
             for (const screen of selectedScreens) {
                 const canvasW = screen.imageWidth || 800;
@@ -389,9 +433,10 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     // 3. 나머지 모든 HTML 태그 제거
                     let cleanText = processedText.replace(/<\/?[^>]+(>|$)/g, "");
 
-                    // 4. 🚀 HTML 특수 문자 디코딩
+                    // 4. HTML 특수 문자 디코딩 (&nbsp;는 PPT에서 trim되지 않도록 NBSP 유지)
                     cleanText = cleanText
-                        .replace(/&nbsp;/g, " ")
+                        .replace(/&nbsp;/gi, '\u00A0')
+                        .replace(/&#160;/gi, '\u00A0')
                         .replace(/&amp;/g, "&")
                         .replace(/&lt;/g, "<")
                         .replace(/&gt;/g, ">")
@@ -400,6 +445,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                     // 5. 끝에 불필요하게 남은 빈 줄바꿈 제거
                     cleanText = cleanText.replace(/\n+$/, "");
+
+                    // 6. 일반 스페이스 들여쓰기·연속 공백 보존 (PPT <a:t> trim 방지)
+                    cleanText = preserveWhitespaceForPpt(cleanText);
 
                     const options: {
                         bold: boolean;
@@ -715,10 +763,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     underline: styleOpts?.underline as any,
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
-                                    breakLine: true,
-                                    inset: 0,
-                                    wrap: false,
-                                    shrinkText: true,
+                                    ...canvasBoxTextWrap,
                                 });
                             }
                             break;
@@ -743,10 +788,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     underline: styleOpts?.underline as any,
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
-                                    breakLine: true,
-                                    inset: 0,
-                                    wrap: false,
-                                    shrinkText: true,
+                                    ...canvasBoxTextWrap,
                                 });
                             }
                             break;
@@ -764,10 +806,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     underline: (styleOpts?.underline ?? false) as any,
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
-                                    breakLine: true,
-                                    inset: 0,
-                                    wrap: false,
-                                    shrinkText: true,
+                                    ...canvasBoxTextWrap,
                                 });
                             }
                             break;
@@ -1132,10 +1171,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     underline: styleOpts?.underline as any,
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
-                                    breakLine: true,
-                                    inset: 0,
-                                    wrap: false,
-                                    shrinkText: true,
+                                    ...canvasBoxTextWrap,
                                 });
                             }
                             break;
@@ -1165,10 +1201,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                                     underline: styleOpts?.underline as any,
                                     fontFace: styleOpts?.fontFace,
                                     rotate: el.rotation || 0,
-                                    breakLine: true,
-                                    inset: 0,
-                                    wrap: false,
-                                    shrinkText: true,
+                                    ...canvasBoxTextWrap,
                                 });
                             }
                             break;
@@ -1305,11 +1338,18 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         fontSizePx?: number;
                     };
                 } => {
-                    let text = html.replace(/<[^>]*>/g, '');
-                    text = text.replace(/&nbsp;/g, ' ');
-                    text = text.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-                    text = text.replace(/&amp;/g, '&');
-                    
+                    let text = html.replace(/<br\s*\/?>/gi, '\n');
+                    text = text.replace(/<\/p>|<\/div>/gi, '\n');
+                    text = text.replace(/<[^>]*>/g, '');
+                    text = text
+                        .replace(/&nbsp;/gi, '\u00A0')
+                        .replace(/&#160;/gi, '\u00A0')
+                        .replace(/&lt;/g, '<')
+                        .replace(/&gt;/g, '>')
+                        .replace(/&amp;/g, '&');
+                    text = text.replace(/\n+$/, '');
+                    text = preserveWhitespaceForPpt(text);
+
                     const bold = /<b>|<strong>/i.test(html);
                     const italic = /<i>|<em>/i.test(html);
                     const underline = /<u>/i.test(html);
@@ -1517,16 +1557,11 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         /* 서버 사전 없으면 정적 mnDict만 사용 */
                     }
                 }
+                const lookupMnWithDict = (plain: string) =>
+                    lookupTranslation(plain, dynamicNormalizedDict, dynamicDict, staticNormalizedDict);
                 tr = (text: string, isMn: boolean): string => {
                     if (!isMn || !text) return text;
-                    const normalizedKey = normalizeTranslationKey(text);
-                    return (
-                        dynamicDict[text] ??
-                        dynamicNormalizedDict[normalizedKey] ??
-                        staticMnDict[text] ??
-                        staticNormalizedDict[normalizedKey] ??
-                        text
-                    );
+                    return translateTextPreservingIndent(text, lookupMnWithDict);
                 };
 
                 // 하나의 pptx 객체 생성
