@@ -45,6 +45,8 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
     const [draftName, setDraftName] = useState('');
     const [dragId, setDragId] = useState<string | null>(null);
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+    // 드롭 위치: 대상 위(형제 앞) / 가운데(하위로) / 아래(형제 뒤)
+    const [dropPos, setDropPos] = useState<'before' | 'inside' | 'after' | null>(null);
 
     const toggleCollapse = (id: string) =>
         setCollapsed((prev) => {
@@ -70,11 +72,41 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
         const hasChildren = node.children.length > 0;
         const isCollapsed = collapsed.has(node.id);
         const isSelected = selectedId === node.id;
-        const isDropTarget = dropTargetId === node.id && dragId !== null && dragId !== node.id;
+        const isActiveTarget = dropTargetId === node.id && dragId !== null && dragId !== node.id;
+        const showBefore = isActiveTarget && dropPos === 'before';
+        const showAfter = isActiveTarget && dropPos === 'after';
+        const isInsideTarget = isActiveTarget && dropPos === 'inside';
         const progress = showProgress ? calcMenuProgress(rows, node.id) : 0;
+        const indentStyle = { marginLeft: depth * 16 + 4 } as React.CSSProperties;
+
+        const performDrop = () => {
+            const did = dragId;
+            if (!did || did === node.id) return;
+            const pos = dropPos ?? 'inside';
+            if (pos === 'inside') {
+                // 대상의 하위(맨 끝)로 이동 후 펼친다
+                moveMenu(did, node.id, siblingsOrderEnd(node.id));
+                setCollapsed((prev) => {
+                    const next = new Set(prev);
+                    next.delete(node.id);
+                    return next;
+                });
+            } else {
+                // 대상과 같은 부모의 형제로, 대상의 앞/뒤 순서에 삽입 (= 빼내기/순서 변경)
+                const parentId = node.parentId;
+                const sibs = menus
+                    .filter((m) => m.parentId === parentId && m.id !== did)
+                    .sort((a, b) => a.order - b.order);
+                const idx = sibs.findIndex((s) => s.id === node.id);
+                const order = pos === 'before' ? idx : idx + 1;
+                moveMenu(did, parentId, Math.max(0, order));
+            }
+        };
 
         return (
-            <div key={node.id}>
+            <div key={node.id} className="relative">
+                {/* 위쪽 삽입 표시선 (형제 앞) */}
+                <div className={`h-0.5 rounded-full transition-colors ${showBefore ? 'bg-emerald-500' : 'bg-transparent'}`} style={indentStyle} />
                 <div
                     draggable={editable && editingId !== node.id}
                     onDragStart={(e) => {
@@ -83,30 +115,35 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
                         e.dataTransfer.effectAllowed = 'move';
                     }}
                     onDragOver={(e) => {
-                        if (!editable || dragId === null) return;
+                        if (!editable || dragId === null || dragId === node.id) return;
                         e.preventDefault();
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const y = e.clientY - rect.top;
+                        const pos = y < rect.height * 0.3 ? 'before' : y > rect.height * 0.7 ? 'after' : 'inside';
                         setDropTargetId(node.id);
+                        setDropPos(pos);
                     }}
-                    onDragLeave={() => setDropTargetId((cur) => (cur === node.id ? null : cur))}
+                    onDragLeave={() => {
+                        setDropTargetId((cur) => (cur === node.id ? null : cur));
+                    }}
                     onDrop={(e) => {
                         if (!editable || dragId === null) return;
                         e.preventDefault();
-                        if (dragId !== node.id) {
-                            // 대상 노드의 자식 맨 끝으로 이동
-                            moveMenu(dragId, node.id, siblingsOrderEnd(node.id));
-                            setCollapsed((prev) => {
-                                const next = new Set(prev);
-                                next.delete(node.id);
-                                return next;
-                            });
-                        }
+                        e.stopPropagation();
+                        performDrop();
                         setDragId(null);
                         setDropTargetId(null);
+                        setDropPos(null);
+                    }}
+                    onDragEnd={() => {
+                        setDragId(null);
+                        setDropTargetId(null);
+                        setDropPos(null);
                     }}
                     onClick={() => onSelect?.(node.id)}
                     className={`group flex items-center gap-1 pr-2 py-1.5 rounded-lg cursor-pointer select-none transition-colors ${
                         isSelected ? 'bg-emerald-50 ring-1 ring-emerald-300' : 'hover:bg-gray-50'
-                    } ${isDropTarget ? 'ring-2 ring-emerald-400 bg-emerald-50/60' : ''}`}
+                    } ${isInsideTarget ? 'ring-2 ring-emerald-400 bg-emerald-50/60' : ''}`}
                     style={{ paddingLeft: depth * 16 + 4 }}
                 >
                     {editable && (
@@ -175,6 +212,8 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
                         </div>
                     )}
                 </div>
+                {/* 아래쪽 삽입 표시선 (형제 뒤) */}
+                <div className={`h-0.5 rounded-full transition-colors ${showAfter ? 'bg-emerald-500' : 'bg-transparent'}`} style={indentStyle} />
                 {hasChildren && !isCollapsed && <div>{node.children.map((c) => renderNode(c, depth + 1))}</div>}
             </div>
         );
@@ -187,12 +226,13 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
                 if (editable && dragId !== null) e.preventDefault();
             }}
             onDrop={(e) => {
-                // 빈 영역에 드롭 → 최상위로 이동
+                // 빈 영역에 드롭 → 최상위(맨 끝)로 이동 (= 빼내기)
                 if (editable && dragId !== null) {
                     e.preventDefault();
                     moveMenu(dragId, null, siblingsOrderEnd(null));
                     setDragId(null);
                     setDropTargetId(null);
+                    setDropPos(null);
                 }
             }}
         >
