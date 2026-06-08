@@ -4,10 +4,14 @@ import { useWbsStore } from '../../store/wbsStore';
 import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, WBS_DEFAULT_CATEGORIES } from '../../types/wbs';
 import WbsMenuTree from './WbsMenuTree';
 
+/** ‘+ ALL’ 클릭 시 자동 추가되는 산출물 구분 행 */
+const ALL_ARTIFACT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html'];
+
 const WbsDevDetail: React.FC = () => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
     const addRow = useWbsStore((s) => s.addRow);
+    const addRows = useWbsStore((s) => s.addRows);
     const updateRow = useWbsStore((s) => s.updateRow);
     const deleteRow = useWbsStore((s) => s.deleteRow);
 
@@ -69,13 +73,23 @@ const WbsDevDetail: React.FC = () => {
                                 </div>
                                 <p className="text-[11px] text-gray-400 mt-0.5">선택한 메뉴의 산출물·기능별 일정을 입력합니다.</p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => addRow(selectedMenu.id)}
-                                className="shrink-0 flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                            >
-                                <Plus size={15} /> 행 추가
-                            </button>
+                            <div className="shrink-0 flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => addRow(selectedMenu.id)}
+                                    className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                                >
+                                    <Plus size={15} /> 행 추가
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => addRows(selectedMenu.id, ALL_ARTIFACT_CATEGORIES)}
+                                    title={`산출물 행 일괄 추가: ${ALL_ARTIFACT_CATEGORIES.join(', ')}`}
+                                    className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 transition-colors"
+                                >
+                                    <Plus size={15} /> ALL
+                                </button>
+                            </div>
                         </div>
 
                         <div className="flex-1 overflow-auto">

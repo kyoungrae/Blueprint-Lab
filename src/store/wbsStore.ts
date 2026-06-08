@@ -35,6 +35,8 @@ interface WbsState {
     moveMenu: (id: string, newParentId: string | null, newOrder: number) => void;
 
     addRow: (menuId: string) => string;
+    /** 여러 산출물 구분(category)을 한 번에 행으로 추가 */
+    addRows: (menuId: string, categories: string[]) => void;
     updateRow: (id: string, patch: Partial<Omit<WbsDevRow, 'id' | 'menuId'>>) => void;
     deleteRow: (id: string) => void;
 
@@ -166,6 +168,22 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         set({ rows: [...get().rows, row] });
         get().scheduleSave();
         return id;
+    },
+
+    addRows: (menuId, categories) => {
+        const newRows: WbsDevRow[] = categories.map((category) => ({
+            id: uid('row'),
+            menuId,
+            category,
+            featureName: '',
+            assignee: '',
+            startDate: '',
+            endDate: '',
+            status: 'TODO' as WbsStatus,
+            progress: 0,
+        }));
+        set({ rows: [...get().rows, ...newRows] });
+        get().scheduleSave();
     },
 
     updateRow: (id, patch) => {

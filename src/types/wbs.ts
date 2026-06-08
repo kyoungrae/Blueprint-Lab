@@ -49,4 +49,4 @@ export interface WbsData {
     rows: WbsDevRow[];
 }
 
-export const WBS_DEFAULT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'JSP/View', '기능'];
+export const WBS_DEFAULT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html', '기능'];
