@@ -1983,7 +1983,18 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     // 서버 프로젝트: Yjs sync 도착 전 편집 시 상태가 덮어쓰여 롤백되는 것 방지
     // Socket(state_sync)은 ERD/락/커서 등 보조 기능에 가까우므로 화면 설계 편집 게이트는 Yjs를 기준으로 한다.
-    if (currentProjectId && !currentProjectId.startsWith('local_') && !yjsIsSynced) {
+    //
+    // ⚡ 진입 로딩 개선: fetchProjects가 이미 로컬에 올려둔 데이터(screens/sections)가 있으면
+    // 동기화를 기다리지 않고 캔버스를 즉시 렌더한다(읽기 전용). 편집은 nodesDraggable 등과
+    // Yjs 메서드의 isSynced 가드로 막혀 있어 동기화 전 충돌 편집 위험은 없다.
+    // 보여줄 로컬 데이터가 전혀 없을 때(빈/신규 진입, 캐시 미스)만 전체 화면 스피너를 유지한다.
+    const hasLocalDataToRender = screens.length > 0 || sections.length > 0;
+    if (
+        currentProjectId &&
+        !currentProjectId.startsWith('local_') &&
+        !yjsIsSynced &&
+        !hasLocalDataToRender
+    ) {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 px-6">
                 <div className="w-12 h-12 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin mb-4" />
@@ -2032,6 +2043,19 @@ const ScreenDesignCanvasContent: React.FC = () => {
                 <RecentStyleColorsProvider>
         <ExportModeContext.Provider value={isExporting}>
         <div className="relative flex w-full h-screen overflow-hidden bg-gray-50">
+            {currentProjectId && !currentProjectId.startsWith('local_') && !yjsIsSynced && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[10050] flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 border border-amber-200 shadow-md backdrop-blur-sm">
+                    <span className="w-3.5 h-3.5 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin shrink-0" />
+                    <span className="text-xs font-bold text-amber-700">서버와 동기화 중… (편집은 동기화 후 가능)</span>
+                    <button
+                        type="button"
+                        onClick={() => yjsJoin(currentProjectId)}
+                        className="text-[11px] font-bold text-violet-700 hover:text-violet-900 underline underline-offset-2"
+                    >
+                        재연결
+                    </button>
+                </div>
+            )}
             <div className="relative flex h-full min-w-0">
                 <div
                                     className={`relative h-full border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'flex-shrink-0' : 'w-0 border-none'}`}

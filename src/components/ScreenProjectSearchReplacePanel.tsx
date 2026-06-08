@@ -139,10 +139,19 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
     useEffect(() => {
         setSearchHitIndex(-1);
         setReplaceDirty(false);
+        // 검색어를 비웠을 때만 캔버스 하이라이트를 제거한다.
+        // (패널을 닫는 것만으로는 하이라이트가 사라지지 않도록 한다)
+        if (!findText.trim()) {
+            useScreenDesignStore.getState().setProjectSearchHighlightTerm(null);
+        }
     }, [findText]);
 
     useEffect(() => {
+        // 패널을 닫으면 검색 영역과 캔버스 하이라이트를 모두 초기화한다.
         if (!isOpen) {
+            setFindText('');
+            setReplaceText('');
+            setReplaceDirty(false);
             setSearchHitIndex(-1);
             useScreenDesignStore.getState().setProjectSearchHighlightTerm(null);
         }
