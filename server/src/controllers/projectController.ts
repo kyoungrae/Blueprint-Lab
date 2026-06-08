@@ -69,6 +69,14 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                     sections: [],
                     savedAt: new Date()
                 }
+            }),
+            ...(pt === 'WBS' && {
+                wbsSnapshot: {
+                    version: 1,
+                    menus: [],
+                    rows: [],
+                    savedAt: new Date()
+                }
             })
         });
 
@@ -212,6 +220,13 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                     nodes: data.nodes ?? project.processFlowSnapshot?.nodes ?? [],
                     edges: data.edges ?? project.processFlowSnapshot?.edges ?? [],
                     sections: Array.isArray(data.sections) ? data.sections : (project.processFlowSnapshot?.sections ?? []),
+                    savedAt: new Date()
+                };
+            } else if (project.projectType === 'WBS' && (data.menus !== undefined || data.rows !== undefined)) {
+                project.wbsSnapshot = {
+                    version: (project.wbsSnapshot?.version || 0) + 1,
+                    menus: Array.isArray(data.menus) ? data.menus : (project.wbsSnapshot?.menus ?? []),
+                    rows: Array.isArray(data.rows) ? data.rows : (project.wbsSnapshot?.rows ?? []),
                     savedAt: new Date()
                 };
             } else {

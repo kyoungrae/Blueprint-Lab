@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil, GanttChartSquare } from 'lucide-react';
 import './ProjectListPage.css';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
@@ -9,7 +9,7 @@ import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 import AdminPage from './AdminPage';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 
-const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2, PROCESS_FLOW: 3 };
+const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2, PROCESS_FLOW: 3, WBS: 4 };
 
 /** 화면 설계에 연결된 ERD 프로젝트 ID 목록 (단일/다중 모두 지원) */
 function getLinkedErdIds(project: Project): string[] {
@@ -319,7 +319,7 @@ const ProjectListPage: React.FC = () => {
         try {
             const project = await addProject(
                 newProjectName,
-                selectedProjectType === 'PROCESS_FLOW' ? 'MySQL' : newProjectDbType, // Process Flow doesn't need DB but API requires it
+                (selectedProjectType === 'PROCESS_FLOW' || selectedProjectType === 'WBS') ? 'MySQL' : newProjectDbType, // Process Flow·WBS don't need DB but API requires it
                 [],
                 newProjectDesc,
                 selectedProjectType
@@ -533,9 +533,11 @@ const ProjectListPage: React.FC = () => {
                                                     ? 'bg-teal-50 text-teal-500 group-hover:bg-teal-600 group-hover:text-white'
                                                     : project.projectType === 'PROCESS_FLOW'
                                                         ? 'bg-amber-50 text-amber-500 group-hover:bg-amber-600 group-hover:text-white'
+                                                        : project.projectType === 'WBS'
+                                                            ? 'bg-emerald-50 text-emerald-500 group-hover:bg-emerald-600 group-hover:text-white'
                                                         : 'bg-gray-50 text-blue-500 group-hover:bg-blue-600 group-hover:text-white'
                                                 }`}>
-                                                {project.projectType === 'SCREEN_DESIGN' ? <Monitor size={24} /> : project.projectType === 'COMPONENT' ? <Box size={24} /> : project.projectType === 'PROCESS_FLOW' ? <Users size={24} /> : <Database size={24} />}
+                                                {project.projectType === 'SCREEN_DESIGN' ? <Monitor size={24} /> : project.projectType === 'COMPONENT' ? <Box size={24} /> : project.projectType === 'PROCESS_FLOW' ? <Users size={24} /> : project.projectType === 'WBS' ? <GanttChartSquare size={24} /> : <Database size={24} />}
                                             </div>
                                             <div className="flex flex-col gap-1">
                                                 {isLocal && (
@@ -549,9 +551,11 @@ const ProjectListPage: React.FC = () => {
                                                         ? 'bg-teal-50 text-teal-600'
                                                         : project.projectType === 'PROCESS_FLOW'
                                                             ? 'bg-amber-50 text-amber-600'
+                                                            : project.projectType === 'WBS'
+                                                                ? 'bg-emerald-50 text-emerald-600'
                                                             : 'bg-blue-50 text-blue-600'
                                                     }`}>
-                                                    {project.projectType === 'SCREEN_DESIGN' ? '화면설계' : project.projectType === 'COMPONENT' ? '컴포넌트' : project.projectType === 'PROCESS_FLOW' ? '프로세스흐름' : project.dbType}
+                                                    {project.projectType === 'SCREEN_DESIGN' ? '화면설계' : project.projectType === 'COMPONENT' ? '컴포넌트' : project.projectType === 'PROCESS_FLOW' ? '프로세스흐름' : project.projectType === 'WBS' ? 'WBS' : project.dbType}
                                                 </div>
                                             </div>
                                         </div>
@@ -909,7 +913,7 @@ const ProjectListPage: React.FC = () => {
 
             {isTypeSelectionOpen && (
                 <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-[32px] w-full max-w-4xl shadow-2xl overflow-hidden scale-in">
+                    <div className="bg-white rounded-[32px] w-full max-w-6xl shadow-2xl overflow-hidden scale-in">
                         <div className="p-8 border-b border-gray-100 flex items-center justify-between">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-900 mb-2">프로젝트 유형 선택</h3>
@@ -920,7 +924,7 @@ const ProjectListPage: React.FC = () => {
                             </button>
                         </div>
                         <div className="p-8">
-                            <div className="grid grid-cols-4 gap-4">
+                            <div className="grid grid-cols-5 gap-4">
                                 <button onClick={() => handleSelectProjectType('ERD')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-blue-400 hover:bg-blue-50/80 transition-all duration-300 active:scale-[0.97]">
                                     <div className="w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-5 group-hover:bg-blue-600 group-hover:text-white transition-all">
                                         <Database size={28} />
@@ -973,6 +977,13 @@ const ProjectListPage: React.FC = () => {
                                         </button>
                                     </div>
                                 </PremiumTooltip>
+                                <button onClick={() => handleSelectProjectType('WBS')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-emerald-400 hover:bg-emerald-50/80 transition-all duration-300 active:scale-[0.97]">
+                                    <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-5 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                                        <GanttChartSquare size={28} />
+                                    </div>
+                                    <h4 className="text-lg font-black text-gray-900 mb-2">WBS 일정관리</h4>
+                                    <p className="text-xs text-gray-500 text-center font-medium">메뉴 구조·개발 상세·진척율로 일정을 관리합니다</p>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1001,6 +1012,8 @@ const ProjectListPage: React.FC = () => {
                                                 ? '컴포넌트 프로젝트 생성'
                                                 : selectedProjectType === 'PROCESS_FLOW'
                                                     ? '프로세스 흐름도 생성'
+                                                    : selectedProjectType === 'WBS'
+                                                        ? 'WBS 일정관리 생성'
                                                     : 'ERD 프로젝트 생성'}
                                     </h3>
                                 </div>

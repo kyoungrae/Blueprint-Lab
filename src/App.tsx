@@ -2,6 +2,7 @@ import ERDCanvas from './components/ERDCanvas';
 import ScreenDesignCanvas from './components/ScreenDesignCanvas';
 import ComponentCanvas from './components/ComponentCanvas';
 import ProcessFlowCanvas from './components/processFlow/ProcessFlowCanvas';
+import WbsCanvas from './components/wbs/WbsCanvas';
 import LoginPage from './components/LoginPage';
 import ProjectListPage from './components/ProjectListPage';
 import { useAuthStore } from './store/authStore';
@@ -131,6 +132,14 @@ function App() {
     return (
       <div className="w-full h-screen">
         <ProcessFlowCanvas />
+      </div>
+    );
+  }
+
+  if (projectType === 'WBS') {
+    return (
+      <div className="w-full h-screen">
+        <WbsCanvas />
       </div>
     );
   }

@@ -226,6 +226,14 @@ export interface IProcessFlowSnapshot {
     savedAt: Date;
 }
 
+/** WBS(일정 관리) 스냅샷. menus/rows는 프론트 구조를 그대로 보관(유연한 Mixed). */
+export interface IWbsSnapshot {
+    version: number;
+    menus: any[];
+    rows: any[];
+    savedAt: Date;
+}
+
 // Project Document Interface
 export interface IBugReportReply {
     id: string;
@@ -255,7 +263,7 @@ export interface IBugReport {
 
 export interface IProject extends Document {
     name: string;
-    projectType: 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT' | 'PROCESS_FLOW';
+    projectType: 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT' | 'PROCESS_FLOW' | 'WBS';
     dbType: 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';
     description?: string;
     /** 프로젝트 생성자 표시명 (미설정 시 members OWNER의 name 사용) */
@@ -267,6 +275,7 @@ export interface IProject extends Document {
     screenSnapshot?: IScreenSnapshot;
     componentSnapshot?: IComponentSnapshot;
     processFlowSnapshot?: IProcessFlowSnapshot;
+    wbsSnapshot?: IWbsSnapshot;
     linkedErdProjectId?: string;
     /** 화면 설계에 연결된 ERD 프로젝트 ID 배열 (여러 개 연결 가능) */
     linkedErdProjectIds?: string[];
@@ -493,6 +502,13 @@ const ProcessFlowSnapshotSchema = new Schema<IProcessFlowSnapshot>({
     savedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+const WbsSnapshotSchema = new Schema({
+    version: { type: Number, default: 1 },
+    menus: { type: [Schema.Types.Mixed], default: [] },
+    rows: { type: [Schema.Types.Mixed], default: [] },
+    savedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const BugReportReplySchema = new Schema<IBugReportReply>({
     id: { type: String, required: true },
     bugReportId: { type: String, required: true },
@@ -521,7 +537,7 @@ const BugReportSchema = new Schema<IBugReport>({
 
 const ProjectSchema = new Schema<IProject>({
     name: { type: String, required: true },
-    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN', 'COMPONENT', 'PROCESS_FLOW'], default: 'ERD' },
+    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN', 'COMPONENT', 'PROCESS_FLOW', 'WBS'], default: 'ERD' },
     dbType: { type: String, enum: ['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'], required: true },
     description: { type: String },
     author: { type: String, default: '' },
@@ -530,6 +546,7 @@ const ProjectSchema = new Schema<IProject>({
     screenSnapshot: { type: ScreenSnapshotSchema, default: { version: 1, screens: [], flows: [], savedAt: new Date() } },
     componentSnapshot: { type: ComponentSnapshotSchema, default: { version: 1, components: [], flows: [], savedAt: new Date() } },
     processFlowSnapshot: { type: ProcessFlowSnapshotSchema, default: { version: 1, nodes: [], edges: [], sections: [], savedAt: new Date() } },
+    wbsSnapshot: { type: WbsSnapshotSchema, default: { version: 1, menus: [], rows: [], savedAt: new Date() } },
     linkedErdProjectId: { type: String },
     linkedErdProjectIds: [{ type: String }],
     linkedComponentProjectId: { type: String },

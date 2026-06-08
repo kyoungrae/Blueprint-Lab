@@ -145,6 +145,24 @@ export const useProjectStore = create<ProjectStore>()(
                                 } else {
                                     projData = { screens: [], flows: [], sections: [] };
                                 }
+                            } else if (pt === 'WBS') {
+                                // WBS: 서버 wbsSnapshot 사용 (로컬이 더 최신이면 로컬 유지)
+                                const serverTs = new Date(p.updatedAt || 0).getTime();
+                                const localTs = new Date(localProject?.updatedAt || 0).getTime();
+                                const localMenus = (localProject?.data as any)?.menus;
+                                const localHasData = Array.isArray(localMenus) && localMenus.length > 0;
+                                if (localProject?.data && localHasData && localTs > serverTs) {
+                                    projData = localProject.data;
+                                } else if (p.data && (p.data as any).menus) {
+                                    projData = { menus: (p.data as any).menus || [], rows: (p.data as any).rows || [] };
+                                } else if (p.wbsSnapshot) {
+                                    projData = {
+                                        menus: p.wbsSnapshot.menus || [],
+                                        rows: p.wbsSnapshot.rows || [],
+                                    };
+                                } else {
+                                    projData = { menus: [], rows: [] };
+                                }
                             } else {
                                 // ERD: 서버 currentSnapshot 사용
                                 const snap = p.currentSnapshot;
@@ -200,6 +218,8 @@ export const useProjectStore = create<ProjectStore>()(
                                 ? { screens: [], flows: [], sections: [] }
                                 : projectType === 'PROCESS_FLOW'
                                     ? { nodes: [], edges: [], sections: [] }
+                                : projectType === 'WBS'
+                                    ? { menus: [], rows: [] }
                                 : { entities: [], relationships: [], sections: [] },
                         updatedAt: new Date().toISOString()
                     };
@@ -240,6 +260,8 @@ export const useProjectStore = create<ProjectStore>()(
                                 ? { screens: [], flows: [], sections: [] }
                                 : (p.projectType || projectType) === 'PROCESS_FLOW'
                                     ? { nodes: [], edges: [], sections: [] }
+                                    : (p.projectType || projectType) === 'WBS'
+                                        ? { menus: [], rows: [] }
                                     : { entities: [], relationships: [], sections: [] },
                         bugReports: [],
                     };
