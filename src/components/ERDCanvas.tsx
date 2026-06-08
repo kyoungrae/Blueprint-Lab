@@ -1835,11 +1835,36 @@ const ERDCanvasContent: React.FC = () => {
         [updateEntity, user, sendOperation, sections, getViewport, computeInView, paneSizeRef, entitiesRef]
     );
 
-    if (currentProjectId && !isSynced) {
+    // ── 진입 로딩 화면: 데이터 로드 + (원격이면)동기화 + 노드 마운트가 끝날 때까지 표시 ──
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [isCanvasReady, setIsCanvasReady] = useState(false);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useEffect(() => {
+        setIsCanvasReady(false);
+        if (!currentProjectId) return;
+        // 안전장치: 동기화/로드가 지연돼도 최대 8초 후엔 화면을 보여준다.
+        const safety = setTimeout(() => setIsCanvasReady(true), 8000);
+        return () => clearTimeout(safety);
+    }, [currentProjectId]);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useEffect(() => {
+        if (!currentProjectId || isCanvasReady) return;
+        const isLocal = currentProjectId.startsWith('local_');
+        if (!currentProject?.data) return;       // 데이터 아직 없음
+        if (!isLocal && !isSynced) return;       // 원격 프로젝트는 동기화 대기
+        // 데이터 준비 + (로컬 or 동기화 완료): 노드 마운트/센터링 직후 표시
+        const t = setTimeout(() => setIsCanvasReady(true), 150);
+        return () => clearTimeout(t);
+    }, [currentProjectId, currentProject?.id, currentProject?.data, isSynced, isCanvasReady]);
+
+    if (currentProjectId && !isCanvasReady) {
+        const isLocal = currentProjectId.startsWith('local_');
+        const phase = !isLocal && !isSynced ? '서버와 동기화 중...' : '다이어그램을 불러오는 중...';
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50">
                 <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-                <p className="text-gray-500 font-medium">서버와 동기화 중...</p>
+                <p className="text-gray-600 font-bold mb-1">프로젝트를 여는 중입니다</p>
+                <p className="text-gray-400 text-sm">{phase}</p>
             </div>
         );
     }
