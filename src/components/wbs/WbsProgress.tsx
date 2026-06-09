@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Lock, LockOpen, CalendarDays } from 'lucide-react';
+import { ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Lock, LockOpen, CalendarDays, AlertTriangle, X } from 'lucide-react';
 import { useWbsStore, calcMenuProgress, calcOverallProgress } from '../../store/wbsStore';
 import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, type WbsStatus, type WbsMenuNode } from '../../types/wbs';
 import { ASSIGNEE_PALETTE } from './WbsMenuTree';
@@ -70,6 +70,7 @@ const WbsProgress: React.FC = () => {
     const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
 
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const [showOverdueModal, setShowOverdueModal] = useState(false);
 
     // 전체 일정 잠금/편집
     const [schedLocked, setSchedLocked] = useState(true);
@@ -114,6 +115,17 @@ const WbsProgress: React.FC = () => {
         for (const r of visibleRows) c[r.status] = (c[r.status] || 0) + 1;
         return c;
     }, [visibleRows]);
+    const todayStart = useMemo(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return today.getTime();
+    }, []);
+    const overdueRows = useMemo(() => visibleRows
+        .map((r) => ({ row: r, endTime: parseDate(r.endDate) }))
+        .filter((item) => item.endTime !== null && item.endTime < todayStart && item.row.status !== 'DONE')
+        .sort((a, b) => (a.endTime ?? 0) - (b.endTime ?? 0)),
+        [visibleRows, todayStart]
+    );
 
     // 트리
     const tree = useMemo(() => buildTree(visibleMenus), [visibleMenus]);
@@ -213,8 +225,8 @@ const WbsProgress: React.FC = () => {
         <>
         <div className="h-full overflow-auto bg-gray-50 p-6">
             <div className="space-y-4 h-full flex flex-col">
-                {/* 상단 요약 바 — 전체 진행율 + 상태 분포 */}
-                <div className="grid grid-cols-5 gap-4 shrink-0">
+                {/* 상단 요약 바 — 전체 진행율 + 상태 분포 + 기한 초과 */}
+                <div className="grid grid-cols-6 gap-4 shrink-0">
                     {/* 전체 진행율 */}
                     <div className="col-span-1 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col justify-center">
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">전체 진행율</span>
@@ -239,6 +251,25 @@ const WbsProgress: React.FC = () => {
                             <p className="text-[10px] text-gray-400 mt-1.5">건</p>
                         </div>
                     ))}
+                    <button
+                        type="button"
+                        onClick={() => setShowOverdueModal(true)}
+                        className={`col-span-1 text-left bg-white rounded-2xl border shadow-sm p-5 flex flex-col justify-center transition-all active:scale-[0.98] ${
+                            overdueRows.length > 0
+                                ? 'border-red-200 hover:border-red-300 hover:bg-red-50/40'
+                                : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/70'
+                        }`}
+                        title="기한 초과 상세 보기"
+                    >
+                        <div className="flex items-center gap-1.5 mb-2">
+                            <AlertTriangle size={13} className={overdueRows.length > 0 ? 'text-red-500' : 'text-gray-300'} />
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">기한 초과</span>
+                        </div>
+                        <span className={`text-4xl font-black tabular-nums leading-none ${overdueRows.length > 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                            {overdueRows.length}
+                        </span>
+                        <p className="text-[10px] text-gray-400 mt-1.5">건</p>
+                    </button>
                 </div>
 
                 {/* 담당자별 진행율 카드 */}
@@ -571,6 +602,104 @@ const WbsProgress: React.FC = () => {
                                 {WBS_STATUS_LABEL[tooltip.status]}
                             </span>
                         </div>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )}
+        {showOverdueModal && createPortal(
+            <div
+                className="fixed inset-0 z-[9998] bg-gray-900/45 backdrop-blur-sm flex items-center justify-center p-6"
+                role="dialog"
+                aria-modal="true"
+                aria-label="기한 초과 상세"
+                onMouseDown={(e) => {
+                    if (e.target === e.currentTarget) setShowOverdueModal(false);
+                }}
+            >
+                <div className="w-full max-w-5xl max-h-[82vh] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden px-3 py-5">
+                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 shrink-0">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                                <AlertTriangle size={18} />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-base font-black text-gray-900">기한 초과 데이터</h3>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                    종료일이 지났고 완료되지 않은 산출물 {overdueRows.length}건
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowOverdueModal(false)}
+                            className="w-8 h-8 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center transition-colors shrink-0"
+                            title="닫기"
+                        >
+                            <X size={17} />
+                        </button>
+                    </div>
+
+                    <div className="overflow-auto">
+                        {overdueRows.length === 0 ? (
+                            <div className="py-16 text-center">
+                                <p className="text-sm font-bold text-gray-500">기한 초과 항목이 없습니다.</p>
+                                <p className="text-xs text-gray-400 mt-1">종료일이 지난 미완료 산출물이 생기면 여기에 표시됩니다.</p>
+                            </div>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-10">
+                                    <tr className="text-[11px] uppercase tracking-wider text-gray-400">
+                                        <th className="text-left px-4 py-3 font-black">메뉴</th>
+                                        <th className="text-left px-4 py-3 font-black">구분</th>
+                                        <th className="text-left px-4 py-3 font-black">기능명</th>
+                                        <th className="text-left px-4 py-3 font-black">담당자</th>
+                                        <th className="text-left px-4 py-3 font-black">종료일</th>
+                                        <th className="text-right px-4 py-3 font-black">초과</th>
+                                        <th className="text-left px-4 py-3 font-black">상태</th>
+                                        <th className="text-right px-4 py-3 font-black">진행율</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {overdueRows.map(({ row, endTime }) => {
+                                        const overdueDays = endTime === null ? 0 : Math.max(1, Math.floor((todayStart - endTime) / DAY));
+                                        return (
+                                            <tr key={row.id} className="hover:bg-red-50/30 transition-colors">
+                                                <td className="px-4 py-3 text-gray-700">
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="font-bold truncate max-w-[180px]" title={menuNameById.get(row.menuId) ?? ''}>
+                                                            {menuNameById.get(row.menuId) ?? '-'}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-500">{row.category || '-'}</td>
+                                                <td className="px-4 py-3 text-gray-700">
+                                                    <span className="block max-w-[220px] truncate" title={row.featureName || ''}>{row.featureName || '-'}</span>
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-500">{row.assignee || '-'}</td>
+                                                <td className="px-4 py-3 text-gray-500 tabular-nums">{row.endDate}</td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <span className="font-black text-red-600 tabular-nums">{overdueDays}일</span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                        row.status === 'IN_PROGRESS'
+                                                            ? 'bg-blue-50 text-blue-600'
+                                                            : row.status === 'HOLD'
+                                                            ? 'bg-amber-50 text-amber-600'
+                                                            : 'bg-gray-100 text-gray-600'
+                                                    }`}>
+                                                        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLOR[row.status]}`} />
+                                                        {WBS_STATUS_LABEL[row.status]}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-black text-gray-700 tabular-nums">{row.progress || 0}%</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </div>
             </div>,
