@@ -236,12 +236,27 @@ const ProgressSelector: React.FC<{
     );
 };
 
-function formatShortDate(iso: string): string {
+function formatDisplayDate(iso: string, withYear = true): string {
     if (!iso) return '';
     const d = new Date(`${iso}T00:00:00`);
     if (Number.isNaN(d.getTime())) return '';
-    return `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+    const md = `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+    return withYear ? `${d.getFullYear()}.${md}` : md;
 }
+
+function formatDateRangeLabel(startDate: string, endDate: string): string {
+    if (startDate && endDate) {
+        const sameYear = startDate.slice(0, 4) === endDate.slice(0, 4);
+        return sameYear
+            ? `${formatDisplayDate(startDate)}~${formatDisplayDate(endDate, false)}`
+            : `${formatDisplayDate(startDate)}~${formatDisplayDate(endDate)}`;
+    }
+    if (startDate) return formatDisplayDate(startDate);
+    if (endDate) return formatDisplayDate(endDate);
+    return '—';
+}
+
+const DATE_COL_W = 132;
 
 // ─── 기간 편집 패널 ─────────────────────────────────────────────────────────
 
@@ -269,7 +284,7 @@ const DateRangePanel: React.FC<{
         if (!anchor) return;
         const update = () => {
             const r = anchor.getBoundingClientRect();
-            let left = r.right - DATE_PANEL_W;
+            let left = r.left + r.width / 2 - DATE_PANEL_W / 2;
             left = Math.max(8, Math.min(left, window.innerWidth - DATE_PANEL_W - 8));
             const below = r.bottom + 8;
             const panelH = 220;
@@ -365,20 +380,15 @@ const InlineDateRange: React.FC<{
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLSpanElement>(null);
 
-    const label = startDate && endDate
-        ? `${formatShortDate(startDate)}~${formatShortDate(endDate)}`
-        : startDate
-            ? formatShortDate(startDate)
-            : endDate
-                ? formatShortDate(endDate)
-                : '—';
+    const label = formatDateRangeLabel(startDate, endDate);
 
     return (
         <>
             <span
                 ref={anchorRef}
-                className="shrink-0 w-[92px] text-center text-[10px] text-gray-500 tabular-nums cursor-pointer hover:text-blue-600 transition-colors truncate"
-                title="더블클릭하여 기간 수정"
+                className="shrink-0 text-center text-[10px] text-gray-500 tabular-nums cursor-pointer hover:text-blue-600 transition-colors truncate"
+                style={{ width: DATE_COL_W }}
+                title={`${label} — 더블클릭하여 기간 수정`}
                 onDoubleClick={() => setOpen(true)}
             >
                 {label}
@@ -756,9 +766,7 @@ const WbsSchedule: React.FC = () => {
         const width = Math.max(0, 100 - left - right);
         if (width === 0) return null;
 
-        const fmt = (d: Date) =>
-            `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-        const barText = `${fmt(taskStart)} - ${fmt(taskEnd)}`;
+        const barText = formatDateRangeLabel(node.startDate, node.endDate).replace('~', ' - ');
         return { left, width, barText };
     };
 
@@ -920,7 +928,7 @@ const WbsSchedule: React.FC = () => {
                         <div className="border-b border-gray-100 flex items-center px-4 shrink-0 bg-gray-50/80" style={{ height: 56 }}>
                             <span className="text-xs font-bold text-gray-600 flex-1 min-w-0">WBS 항목</span>
                             {displaySettings.showDates && (
-                                <span className="text-[10px] text-gray-400 w-[92px] text-center shrink-0">기간</span>
+                                <span className="text-[10px] text-gray-400 text-center shrink-0" style={{ width: DATE_COL_W }}>기간</span>
                             )}
                             {displaySettings.showProgress && (
                                 <span className="text-[10px] text-gray-400 w-14 text-center shrink-0">진척율</span>
