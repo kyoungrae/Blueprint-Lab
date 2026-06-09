@@ -265,7 +265,7 @@ const AssigneeCell: React.FC<{
 
             {/* 드롭다운 패널 */}
             {open && (
-                <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-100 rounded-xl shadow-lg p-1.5 flex flex-col gap-1 min-w-[130px]">
+                <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-100 rounded-xl shadow-lg p-1.5 flex flex-col gap-2 min-w-[130px]">
                     {/* 멤버 목록 */}
                     {members.map((m, i) => {
                         const pal = ASSIGNEE_PALETTE[i % ASSIGNEE_PALETTE.length];
@@ -283,13 +283,23 @@ const AssigneeCell: React.FC<{
 
                     {/* 직접입력 */}
                     {!isCustom ? (
-                        <button
-                            type="button"
-                            onClick={() => setIsCustom(true)}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold text-gray-500 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors"
-                        >
-                            <PenLine size={11} /> 직접입력
-                        </button>
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setIsCustom(true)}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold text-gray-500 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors"
+                            >
+                                <PenLine size={11} /> 직접입력
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => select('')}
+                                disabled={!value}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold text-gray-500 border-gray-200 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-gray-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <RotateCcw size={11} /> 초기화
+                            </button>
+                        </>
                     ) : (
                         <div className="flex items-center gap-1 px-1.5 pt-1 border-t border-gray-100">
                             <input
@@ -374,6 +384,15 @@ const WbsDevDetail: React.FC = () => {
     }, [allAssignees]);
 
     const [activeAssignees, setActiveAssignees] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        const validAssignees = new Set(allAssignees);
+        setActiveAssignees((prev) => {
+            if (prev.size === 0) return prev;
+            const next = new Set(Array.from(prev).filter((name) => validAssignees.has(name)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [allAssignees]);
+
     const toggleAssignee = (name: string) => {
         setActiveAssignees((prev) => {
             const next = new Set(prev);

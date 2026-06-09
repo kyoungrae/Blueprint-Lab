@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule } from '../types/wbs';
+import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule, WbsDetailSchedule } from '../types/wbs';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from './projectStore';
 
@@ -23,12 +23,15 @@ interface WbsState {
     rows: WbsDevRow[];
     currentProjectId: string | null;
     projectSchedule: WbsProjectSchedule | null;
+    detailSchedules: WbsDetailSchedule[];
 
     /** 프로젝트 진입 시 데이터 로드 */
     loadProject: (projectId: string, data: Partial<WbsData> | undefined | null) => void;
     importData: (data: Partial<WbsData>) => void;
     exportData: () => WbsData;
     setProjectSchedule: (schedule: WbsProjectSchedule | null) => void;
+    addDetailSchedule: (schedule: Omit<WbsDetailSchedule, 'id'>) => void;
+    deleteDetailSchedule: (id: string) => void;
 
     addMenu: (parentId: string | null) => string;
     updateMenu: (id: string, patch: Partial<Omit<WbsMenuNode, 'id'>>) => void;
@@ -54,6 +57,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     rows: [],
     currentProjectId: null,
     projectSchedule: null,
+    detailSchedules: [],
 
     loadProject: (projectId, data) => {
         set({
@@ -61,6 +65,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             menus: Array.isArray(data?.menus) ? (data!.menus as WbsMenuNode[]) : [],
             rows: Array.isArray(data?.rows) ? (data!.rows as WbsDevRow[]) : [],
             projectSchedule: (data as WbsData)?.projectSchedule ?? null,
+            detailSchedules: Array.isArray((data as WbsData)?.detailSchedules) ? ((data as WbsData).detailSchedules as WbsDetailSchedule[]) : [],
         });
     },
 
@@ -69,14 +74,30 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             menus: Array.isArray(data.menus) ? (data.menus as WbsMenuNode[]) : get().menus,
             rows: Array.isArray(data.rows) ? (data.rows as WbsDevRow[]) : get().rows,
             projectSchedule: data.projectSchedule !== undefined ? (data.projectSchedule ?? null) : get().projectSchedule,
+            detailSchedules: Array.isArray(data.detailSchedules) ? (data.detailSchedules as WbsDetailSchedule[]) : get().detailSchedules,
         });
         get().scheduleSave();
     },
 
-    exportData: () => ({ menus: get().menus, rows: get().rows, projectSchedule: get().projectSchedule ?? undefined }),
+    exportData: () => ({
+        menus: get().menus,
+        rows: get().rows,
+        projectSchedule: get().projectSchedule ?? undefined,
+        detailSchedules: get().detailSchedules,
+    }),
 
     setProjectSchedule: (schedule) => {
         set({ projectSchedule: schedule });
+        get().scheduleSave();
+    },
+
+    addDetailSchedule: (schedule) => {
+        set({ detailSchedules: [...get().detailSchedules, { id: uid('schedule'), ...schedule }] });
+        get().scheduleSave();
+    },
+
+    deleteDetailSchedule: (id) => {
+        set({ detailSchedules: get().detailSchedules.filter((s) => s.id !== id) });
         get().scheduleSave();
     },
 
@@ -243,9 +264,9 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     saveNow: async () => {
-        const { currentProjectId, menus, rows, projectSchedule } = get();
+        const { currentProjectId, menus, rows, projectSchedule, detailSchedules } = get();
         if (!currentProjectId) return;
-        const data = { menus, rows, ...(projectSchedule ? { projectSchedule } : {}) };
+        const data = { menus, rows, ...(projectSchedule ? { projectSchedule } : {}), detailSchedules };
         // 전역 프로젝트 캐시 즉시 갱신(새로고침 전까지 데이터 유지)
         useProjectStore.getState().updateProjectData(currentProjectId, data);
         if (currentProjectId.startsWith('local_')) return;

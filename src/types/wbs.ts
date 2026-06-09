@@ -51,10 +51,18 @@ export interface WbsProjectSchedule {
     endDate: string;
 }
 
+export interface WbsDetailSchedule {
+    id: string;
+    title: string;
+    startDate: string;
+    endDate: string;
+}
+
 export interface WbsData {
     menus: WbsMenuNode[];
     rows: WbsDevRow[];
     projectSchedule?: WbsProjectSchedule;
+    detailSchedules?: WbsDetailSchedule[];
 }
 
 export const WBS_DEFAULT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html','Debuging', '기능','직접입력'];

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Lock, LockOpen, CalendarDays, AlertTriangle, X } from 'lucide-react';
+import { ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Lock, LockOpen, CalendarDays, AlertTriangle, X, Plus, Trash2 } from 'lucide-react';
 import { useWbsStore, calcMenuProgress, calcOverallProgress } from '../../store/wbsStore';
 import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, type WbsStatus, type WbsMenuNode } from '../../types/wbs';
 import { ASSIGNEE_PALETTE } from './WbsMenuTree';
@@ -65,12 +65,17 @@ const WbsProgress: React.FC = () => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
     const projectSchedule = useWbsStore((s) => s.projectSchedule);
+    const detailSchedules = useWbsStore((s) => s.detailSchedules);
     const setProjectSchedule = useWbsStore((s) => s.setProjectSchedule);
+    const addDetailSchedule = useWbsStore((s) => s.addDetailSchedule);
+    const deleteDetailSchedule = useWbsStore((s) => s.deleteDetailSchedule);
     const { user } = useAuthStore();
     const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
 
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const [showOverdueModal, setShowOverdueModal] = useState(false);
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [detailDraft, setDetailDraft] = useState({ title: '', startDate: '', endDate: '' });
 
     // 전체 일정 잠금/편집
     const [schedLocked, setSchedLocked] = useState(true);
@@ -93,6 +98,28 @@ const WbsProgress: React.FC = () => {
         if (startDate && endDate) setProjectSchedule({ startDate, endDate });
         else setProjectSchedule(null);
         setSchedLocked(true);
+    };
+
+    const openDetailScheduleModal = () => {
+        if (!isMaster) return;
+        setDetailDraft({
+            title: '',
+            startDate: projectSchedule?.startDate ?? '',
+            endDate: projectSchedule?.endDate ?? '',
+        });
+        setShowScheduleModal(true);
+    };
+
+    const saveDetailSchedule = () => {
+        const title = detailDraft.title.trim();
+        if (!title || !detailDraft.startDate || !detailDraft.endDate) return;
+        addDetailSchedule({
+            title,
+            startDate: detailDraft.startDate,
+            endDate: detailDraft.endDate,
+        });
+        setShowScheduleModal(false);
+        setDetailDraft({ title: '', startDate: '', endDate: '' });
     };
 
     // 비 MASTER: 본인 이름이 담당자인 rows/menu만 표시
@@ -181,10 +208,16 @@ const WbsProgress: React.FC = () => {
             if (s !== null) { min = Math.min(min, s); max = Math.max(max, s); }
             if (e !== null) { min = Math.min(min, e); max = Math.max(max, e); }
         }
+        for (const schedule of detailSchedules) {
+            const s = parseDate(schedule.startDate);
+            const e = parseDate(schedule.endDate);
+            if (s !== null) { min = Math.min(min, s); max = Math.max(max, s); }
+            if (e !== null) { min = Math.min(min, e); max = Math.max(max, e); }
+        }
         if (min === Infinity) return null;
         if (max === min) max = min + DAY;
         return { min, max, span: max - min };
-    }, [visibleRows, projectSchedule]);
+    }, [visibleRows, projectSchedule, detailSchedules]);
 
     const menuNameById = useMemo(() => new Map(visibleMenus.map((m) => [m.id, m.name])), [visibleMenus]);
 
@@ -448,13 +481,22 @@ const WbsProgress: React.FC = () => {
                                             <span className="text-xs text-gray-400 italic">미설정</span>
                                         )}
                                         {isMaster ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => setSchedLocked(false)}
-                                                className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 border border-gray-200 hover:bg-gray-50 hover:text-gray-700 transition-colors shrink-0"
-                                            >
-                                                <Lock size={11} /> 잠금 해제
-                                            </button>
+                                            <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={openDetailScheduleModal}
+                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                                                >
+                                                    <Plus size={11} /> 일정 추가
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSchedLocked(false)}
+                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 border border-gray-200 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                                                >
+                                                    <Lock size={11} /> 잠금 해제
+                                                </button>
+                                            </div>
                                         ) : (
                                             <span className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-300 border border-gray-100 shrink-0 cursor-not-allowed select-none" title="MASTER 등급만 수정할 수 있습니다">
                                                 <Lock size={11} /> 수정 불가
@@ -497,7 +539,7 @@ const WbsProgress: React.FC = () => {
                         </div>
 
                         <div className="flex-1 overflow-auto px-4 py-3 min-h-0">
-                            {!range && !projectSchedule ? (
+                            {!range && !projectSchedule && detailSchedules.length === 0 ? (
                                 <p className="text-sm text-gray-400 py-8 text-center">전체 일정을 설정하거나 산출물에 시작일·종료일을 입력하세요.</p>
                             ) : (
                                 <div className="space-y-1.5">
@@ -527,6 +569,43 @@ const WbsProgress: React.FC = () => {
                                             </div>
                                         );
                                     })()}
+
+                                    {/* 상세 일정 바 */}
+                                    {range && detailSchedules.map((schedule) => {
+                                        const ds = parseDate(schedule.startDate);
+                                        const de = parseDate(schedule.endDate);
+                                        if (ds === null || de === null) return null;
+                                        const left = ((ds - range.min) / range.span) * 100;
+                                        const width = Math.max(((de - ds) / range.span) * 100, 1.5);
+                                        return (
+                                            <div key={schedule.id} className="flex items-center gap-2">
+                                                <div className="w-44 shrink-0 flex items-center gap-1 min-w-0">
+                                                    <span className="w-2 h-2 rounded-full bg-violet-400 shrink-0" />
+                                                    <span className="text-[11px] font-bold text-violet-700 truncate" title={schedule.title}>{schedule.title}</span>
+                                                    {isMaster && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => deleteDetailSchedule(schedule.id)}
+                                                            className="ml-auto p-0.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                                                            title="상세 일정 삭제"
+                                                        >
+                                                            <Trash2 size={10} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="relative flex-1 h-5 bg-violet-50 rounded">
+                                                    <div
+                                                        className="absolute top-0.5 bottom-0.5 rounded bg-violet-500/80 flex items-center px-2"
+                                                        style={{ left: `${left}%`, width: `${width}%` }}
+                                                    >
+                                                        <span className="text-[9px] font-black text-white truncate leading-none">
+                                                            {schedule.startDate} ~ {schedule.endDate}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
 
                                     {/* 산출물 행들 (동일 featureName 통합) */}
                                     {range && ganttRows.map(({ menuId, featureName, s, e, progress, status, count }) => {
@@ -565,6 +644,95 @@ const WbsProgress: React.FC = () => {
                 </div>
             </div>
         </div>
+
+        {showScheduleModal && createPortal(
+            <div
+                className="fixed inset-0 z-[9998] bg-gray-900/45 backdrop-blur-sm flex items-center justify-center p-6"
+                role="dialog"
+                aria-modal="true"
+                aria-label="상세 일정 추가"
+                onMouseDown={(e) => {
+                    if (e.target === e.currentTarget) setShowScheduleModal(false);
+                }}
+            >
+                <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                        <div>
+                            <h3 className="text-base font-black text-gray-900">상세 일정 추가</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">전체 일정 안에서 관리할 세부 구간을 등록합니다.</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowScheduleModal(false)}
+                            className="w-8 h-8 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center transition-colors shrink-0"
+                            title="닫기"
+                        >
+                            <X size={17} />
+                        </button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                        <label className="block">
+                            <span className="block text-xs font-black text-gray-500 mb-1.5">일정명</span>
+                            <input
+                                type="text"
+                                value={detailDraft.title}
+                                onChange={(e) => setDetailDraft((d) => ({ ...d, title: e.target.value }))}
+                                placeholder="예: 화면 설계 검토"
+                                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
+                                autoFocus
+                            />
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                            <label className="block">
+                                <span className="block text-xs font-black text-gray-500 mb-1.5">시작일</span>
+                                <input
+                                    type="date"
+                                    value={detailDraft.startDate}
+                                    min={projectSchedule?.startDate}
+                                    max={projectSchedule?.endDate}
+                                    onChange={(e) => setDetailDraft((d) => ({ ...d, startDate: e.target.value }))}
+                                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="block text-xs font-black text-gray-500 mb-1.5">종료일</span>
+                                <input
+                                    type="date"
+                                    value={detailDraft.endDate}
+                                    min={detailDraft.startDate || projectSchedule?.startDate}
+                                    max={projectSchedule?.endDate}
+                                    onChange={(e) => setDetailDraft((d) => ({ ...d, endDate: e.target.value }))}
+                                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
+                                />
+                            </label>
+                        </div>
+                        {projectSchedule && (
+                            <p className="text-xs text-indigo-500 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                                전체 일정: {projectSchedule.startDate} ~ {projectSchedule.endDate}
+                            </p>
+                        )}
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setShowScheduleModal(false)}
+                                className="px-3 py-2 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="button"
+                                onClick={saveDetailSchedule}
+                                disabled={!detailDraft.title.trim() || !detailDraft.startDate || !detailDraft.endDate}
+                                className="px-3 py-2 rounded-lg text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                추가
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )}
 
         {/* 간트 스마트 툴팁 */}
         {tooltip && createPortal(
