@@ -243,16 +243,17 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     saveNow: async () => {
-        const { currentProjectId, menus, rows } = get();
+        const { currentProjectId, menus, rows, projectSchedule } = get();
         if (!currentProjectId) return;
+        const data = { menus, rows, ...(projectSchedule ? { projectSchedule } : {}) };
         // 전역 프로젝트 캐시 즉시 갱신(새로고침 전까지 데이터 유지)
-        useProjectStore.getState().updateProjectData(currentProjectId, { menus, rows });
+        useProjectStore.getState().updateProjectData(currentProjectId, data);
         if (currentProjectId.startsWith('local_')) return;
         try {
             await fetchWithAuth(`${API_URL}/${currentProjectId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: { menus, rows } }),
+                body: JSON.stringify({ data }),
             });
         } catch {
             // 네트워크 오류는 조용히 무시(다음 변경 시 재시도). 로컬 캐시에는 이미 반영됨.

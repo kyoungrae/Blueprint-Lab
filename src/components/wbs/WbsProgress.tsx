@@ -4,6 +4,7 @@ import { ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Lock, LockOp
 import { useWbsStore, calcMenuProgress, calcOverallProgress } from '../../store/wbsStore';
 import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, type WbsStatus, type WbsMenuNode } from '../../types/wbs';
 import { ASSIGNEE_PALETTE } from './WbsMenuTree';
+import { useAuthStore } from '../../store/authStore';
 
 const STATUS_COLOR: Record<WbsStatus, string> = {
     TODO: 'bg-gray-400',
@@ -50,8 +51,9 @@ const WbsProgress: React.FC = () => {
     const rows = useWbsStore((s) => s.rows);
     const projectSchedule = useWbsStore((s) => s.projectSchedule);
     const setProjectSchedule = useWbsStore((s) => s.setProjectSchedule);
+    const { user } = useAuthStore();
+    const isMaster = user?.tier === 'MASTER';
 
-    const overall = calcOverallProgress(rows);
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
     // 전체 일정 잠금/편집
@@ -77,11 +79,20 @@ const WbsProgress: React.FC = () => {
         setSchedLocked(true);
     };
 
+    // 비 MASTER: 본인 이름이 담당자인 rows만 표시
+    const myName = user?.name ?? '';
+    const visibleRows = useMemo(
+        () => isMaster ? rows : rows.filter((r) => r.assignee === myName),
+        [isMaster, rows, myName]
+    );
+
+    const overall = calcOverallProgress(visibleRows);
+
     const statusCounts = useMemo(() => {
         const c: Record<WbsStatus, number> = { TODO: 0, IN_PROGRESS: 0, DONE: 0, HOLD: 0 };
-        for (const r of rows) c[r.status] = (c[r.status] || 0) + 1;
+        for (const r of visibleRows) c[r.status] = (c[r.status] || 0) + 1;
         return c;
-    }, [rows]);
+    }, [visibleRows]);
 
     // 트리
     const tree = useMemo(() => buildTree(menus), [menus]);
@@ -104,10 +115,10 @@ const WbsProgress: React.FC = () => {
     // 간트 툴팁
     const [tooltip, setTooltip] = useState<{ x: number; y: number; menuId: string; featureName: string; s: number; e: number; progress: number; status: WbsStatus; count: number } | null>(null);
 
-    // 담당자별 통계
+    // 담당자별 통계 (비 MASTER는 본인 카드만)
     const assigneeStats = useMemo(() => {
         const map = new Map<string, { rows: typeof rows }>();
-        for (const r of rows) {
+        for (const r of visibleRows) {
             if (!r.assignee) continue;
             if (!map.has(r.assignee)) map.set(r.assignee, { rows: [] });
             map.get(r.assignee)!.rows.push(r);
@@ -120,12 +131,12 @@ const WbsProgress: React.FC = () => {
                 return { name, progress, total: rs.length, statusCnt, colorIdx: idx % ASSIGNEE_PALETTE.length };
             })
             .sort((a, b) => b.progress - a.progress);
-    }, [rows]);
+    }, [visibleRows]);
 
     // 타임라인 범위 (전체 일정 포함)
     const range = useMemo(() => {
         let min = Infinity, max = -Infinity;
-        for (const r of rows) {
+        for (const r of visibleRows) {
             const s = parseDate(r.startDate);
             const e = parseDate(r.endDate);
             if (s !== null) { min = Math.min(min, s); max = Math.max(max, s); }
@@ -140,13 +151,13 @@ const WbsProgress: React.FC = () => {
         if (min === Infinity) return null;
         if (max === min) max = min + DAY;
         return { min, max, span: max - min };
-    }, [rows, projectSchedule]);
+    }, [visibleRows, projectSchedule]);
 
     const menuNameById = useMemo(() => new Map(menus.map((m) => [m.id, m.name])), [menus]);
 
     // 타임라인용: menuId + featureName이 같은 행들을 하나로 묶어 progress 평균 계산
     const ganttRows = useMemo(() => {
-        const validRows = rows
+        const validRows = visibleRows
             .map((r) => ({ r, s: parseDate(r.startDate), e: parseDate(r.endDate) }))
             .filter((x) => x.s !== null && x.e !== null) as { r: typeof rows[number]; s: number; e: number }[];
 
@@ -193,7 +204,7 @@ const WbsProgress: React.FC = () => {
                         <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
                             <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${overall}%` }} />
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-1.5">{rows.length}개 산출물 · {menus.length}개 메뉴</p>
+                        <p className="text-[10px] text-gray-400 mt-1.5">{visibleRows.length}개 산출물 · {menus.length}개 메뉴</p>
                     </div>
 
                     {/* 상태 분포 — 4칸 */}
@@ -301,8 +312,8 @@ const WbsProgress: React.FC = () => {
                                 <div className="space-y-0.5">
                                     {(function renderNodes(nodes: TreeNode[]): React.ReactNode {
                                         return nodes.map((node) => {
-                                            const progress = calcMenuProgress(menus, rows, node.id);
-                                            const count = rows.filter((r) => r.menuId === node.id && !r.isDebugging).length;
+                                            const progress = calcMenuProgress(menus, visibleRows, node.id);
+                                            const count = visibleRows.filter((r) => r.menuId === node.id && !r.isDebugging).length;
                                             const hasChildren = node.children.length > 0;
                                             const isCollapsed = collapsed.has(node.id);
                                             const isLeaf = !hasChildren;
@@ -382,16 +393,22 @@ const WbsProgress: React.FC = () => {
                                         ) : (
                                             <span className="text-xs text-gray-400 italic">미설정</span>
                                         )}
-                                        <button
-                                            type="button"
-                                            onClick={() => setSchedLocked(false)}
-                                            className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 border border-gray-200 hover:bg-gray-50 hover:text-gray-700 transition-colors shrink-0"
-                                        >
-                                            <Lock size={11} /> 잠금 해제
-                                        </button>
+                                        {isMaster ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSchedLocked(false)}
+                                                className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 border border-gray-200 hover:bg-gray-50 hover:text-gray-700 transition-colors shrink-0"
+                                            >
+                                                <Lock size={11} /> 잠금 해제
+                                            </button>
+                                        ) : (
+                                            <span className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-300 border border-gray-100 shrink-0 cursor-not-allowed select-none" title="MASTER 등급만 수정할 수 있습니다">
+                                                <Lock size={11} /> 수정 불가
+                                            </span>
+                                        )}
                                     </div>
                                 ) : (
-                                    /* 편집 상태: 날짜 입력 */
+                                    /* 편집 상태: 날짜 입력 (MASTER only) */
                                     <div className="flex items-center gap-2 flex-1 min-w-0">
                                         <input
                                             type="date"
@@ -499,7 +516,11 @@ const WbsProgress: React.FC = () => {
         {tooltip && createPortal(
             <div
                 className="pointer-events-none fixed z-[9999]"
-                style={{ left: tooltip.x + 14, top: tooltip.y - 10 }}
+                style={{
+                    // 오른쪽 끝에서 툴팁이 잘리지 않도록: 뷰포트 우측 220px 이내면 왼쪽으로 표시
+                    left: tooltip.x + 220 > window.innerWidth ? tooltip.x - 174 : tooltip.x + 14,
+                    top: tooltip.y - 10,
+                }}
             >
                 <div className="bg-gray-900 text-white text-xs font-medium rounded-xl px-3 py-2 shadow-xl flex flex-col gap-1 min-w-[160px]">
                     {tooltip.featureName && (

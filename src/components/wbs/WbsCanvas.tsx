@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties } from 'lucide-react';
+import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties, Hash, Copy, Check } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsStore } from '../../store/wbsStore';
 import { useAuthStore } from '../../store/authStore';
@@ -13,6 +13,7 @@ import WbsExcelSyncModal from './WbsExcelSyncModal';
 import WbsAdminModal from './WbsAdminModal';
 import { downloadWbsExcel } from './wbsExcel';
 import { downloadWbsJson, parseWbsJson } from './wbsIO';
+import { copyToClipboard } from '../../utils/clipboard';
 
 type WbsTab = 'hierarchy' | 'detail' | 'progress';
 
@@ -41,6 +42,42 @@ const WbsCanvas: React.FC = () => {
     const [panelPos, setPanelPos] = useState({ top: 0, right: 0 });
     const triggerRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
+
+    // 프로젝트 ID 패널
+    const [showIdPanel, setShowIdPanel] = useState(false);
+    const [idPanelPos, setIdPanelPos] = useState({ top: 0, right: 0 });
+    const [copied, setCopied] = useState(false);
+    const idTriggerRef = useRef<HTMLButtonElement>(null);
+    const idPanelRef = useRef<HTMLDivElement>(null);
+
+    const openIdPanel = () => {
+        if (idTriggerRef.current) {
+            const rect = idTriggerRef.current.getBoundingClientRect();
+            setIdPanelPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+        }
+        setShowIdPanel((v) => !v);
+    };
+
+    useEffect(() => {
+        if (!showIdPanel) return;
+        const handler = (e: MouseEvent) => {
+            if (
+                idPanelRef.current && !idPanelRef.current.contains(e.target as Node) &&
+                idTriggerRef.current && !idTriggerRef.current.contains(e.target as Node)
+            ) setShowIdPanel(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showIdPanel]);
+
+    const handleCopyId = async () => {
+        if (!currentProjectId) return;
+        const ok = await copyToClipboard(currentProjectId);
+        if (ok) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
 
     // 관리자 패널
     const [showAdmin, setShowAdmin] = useState(false);
@@ -77,7 +114,6 @@ const WbsCanvas: React.FC = () => {
         setShowActions((v) => !v);
     };
 
-    // 외부 클릭 시 닫기
     useEffect(() => {
         if (!showActions) return;
         const handler = (e: MouseEvent) => {
@@ -154,6 +190,21 @@ const WbsCanvas: React.FC = () => {
                     .genie-item { animation: genieItem 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
                     .genie-trigger-anim { animation: genieTriggerOpen 0.35s ease both; }
                 `}</style>
+
+                {/* 프로젝트 ID 버튼 */}
+                <button
+                    ref={idTriggerRef}
+                    onClick={openIdPanel}
+                    className={`genie-trigger-anim flex items-center justify-center w-9 h-9 rounded-xl transition-colors shadow-sm ${
+                        showIdPanel
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                            : 'bg-indigo-50 text-indigo-500 border border-indigo-200 hover:bg-indigo-100'
+                    }`}
+                    title="프로젝트 ID"
+                >
+                    <Hash size={16} />
+                </button>
+
                 <button
                     ref={triggerRef}
                     key={showActions ? 'open' : 'closed'}
@@ -201,6 +252,42 @@ const WbsCanvas: React.FC = () => {
                 {tab === 'detail' && <WbsDevDetail />}
                 {tab === 'progress' && <WbsProgress />}
             </main>
+
+            {/* 프로젝트 ID 패널 — Portal */}
+            {showIdPanel && createPortal(
+                <div
+                    ref={idPanelRef}
+                    style={{ position: 'fixed', top: idPanelPos.top, right: idPanelPos.right, zIndex: 9999 }}
+                >
+                    <div className="bg-white/95 backdrop-blur-md border border-gray-100 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 w-72">
+                        <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                                <Hash size={13} />
+                            </div>
+                            <span className="text-sm font-black text-gray-800">프로젝트 ID</span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 leading-relaxed">
+                            다른 사용자를 초대하거나 프로젝트를 연결할 때 사용하는 고유 ID입니다.
+                        </p>
+                        <div
+                            className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-200 cursor-pointer group hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+                            onClick={handleCopyId}
+                            title="클릭하여 복사"
+                        >
+                            <span className="flex-1 text-xs font-mono font-bold text-gray-700 truncate select-all">
+                                {currentProjectId}
+                            </span>
+                            <span className={`shrink-0 transition-colors ${copied ? 'text-emerald-500' : 'text-gray-400 group-hover:text-indigo-500'}`}>
+                                {copied ? <Check size={14} /> : <Copy size={14} />}
+                            </span>
+                        </div>
+                        {copied && (
+                            <p className="text-[11px] text-emerald-600 font-bold text-center -mt-1">복사되었습니다!</p>
+                        )}
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {/* 지니 패널 — body에 Portal로 렌더해 stacking context 완전 탈출 */}
             {showActions && createPortal(
@@ -286,12 +373,11 @@ const WbsCanvas: React.FC = () => {
             <WbsUploadModal
                 open={uploadKind === 'json'}
                 title="JSON 업로드"
-                description="‘JSON 다운로드’로 받은 것과 동일한 형식의 .json 파일을 올리면 현재 데이터를 그 내용으로 최신화합니다. (전체 교체 — 적용 직전 현재 데이터가 JSON으로 자동 백업됩니다.)"
+                description="'JSON 다운로드'로 받은 것과 동일한 형식의 .json 파일을 올리면 현재 데이터를 그 내용으로 최신화합니다. (전체 교체 — 적용 직전 현재 데이터가 JSON으로 자동 백업됩니다.)"
                 accept=".json"
                 onFile={async (file) => {
                     const text = await file.text();
                     const data = parseWbsJson(text);
-                    // 적용 직전 현재 데이터를 자동 백업(롤백용)
                     downloadWbsJson({ menus, rows }, `${project?.name ?? 'WBS'}_백업_${new Date().toISOString().slice(0, 10)}`);
                     importData(data);
                     return `메뉴 ${data.menus.length}개, 항목 ${data.rows.length}개로 최신화했습니다. (백업 JSON 자동 다운로드됨)`;

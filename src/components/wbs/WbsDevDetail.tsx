@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Layers, User, CalendarDays, CalendarCheck, Activity, Percent, ChevronLeft, RotateCcw, Lock } from 'lucide-react';
+import { Plus, Trash2, Layers, User, CalendarDays, CalendarCheck, Activity, Percent, ChevronLeft, RotateCcw, Lock, PenLine } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
+import { useProjectStore } from '../../store/projectStore';
 import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, WBS_DEFAULT_CATEGORIES } from '../../types/wbs';
 import type { WbsStatus } from '../../types/wbs';
 import WbsMenuTree, { ASSIGNEE_PALETTE } from './WbsMenuTree';
@@ -208,6 +209,109 @@ const CategoryCell: React.FC<{ value: string; onChange: (v: string) => void; inp
     );
 };
 
+/**
+ * 담당자 셀 — StatusCell과 동일한 절대 위치 드롭다운 패턴
+ */
+const AssigneeCell: React.FC<{
+    value: string;
+    onChange: (v: string) => void;
+    members: { name: string; colorIdx: number }[];
+    inputClass: string;
+}> = ({ value, onChange, members }) => {
+    const [open, setOpen] = useState(false);
+    const [isCustom, setIsCustom] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const colorIdx = members.findIndex((m) => m.name === value);
+    const palette = ASSIGNEE_PALETTE[(colorIdx >= 0 ? colorIdx : 0) % ASSIGNEE_PALETTE.length];
+
+    // 외부 클릭 시 닫기
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) {
+                setOpen(false);
+                setIsCustom(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    // 직접입력 모드 전환 시 input 포커스
+    useEffect(() => {
+        if (isCustom) inputRef.current?.focus();
+    }, [isCustom]);
+
+    const select = (name: string) => {
+        onChange(name);
+        setOpen(false);
+        setIsCustom(false);
+    };
+
+    return (
+        <div ref={ref} className="relative px-1.5 py-1">
+            {/* 뱃지 / 빈 상태 버튼 */}
+            <button
+                type="button"
+                onClick={() => { setOpen((v) => !v); setIsCustom(false); }}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs font-bold transition-all hover:opacity-80 ${
+                    value ? palette.badge : 'bg-gray-50 text-gray-400 border-gray-200 border-dashed'
+                }`}
+            >
+                {value || '담당자'}
+            </button>
+
+            {/* 드롭다운 패널 */}
+            {open && (
+                <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-100 rounded-xl shadow-lg p-1.5 flex flex-col gap-1 min-w-[130px]">
+                    {/* 멤버 목록 */}
+                    {members.map((m, i) => {
+                        const pal = ASSIGNEE_PALETTE[i % ASSIGNEE_PALETTE.length];
+                        return (
+                            <button
+                                key={m.name}
+                                type="button"
+                                onClick={() => select(m.name)}
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-colors hover:opacity-80 ${pal.badge} ${m.name === value ? 'ring-1 ring-offset-1 ring-current' : ''}`}
+                            >
+                                {m.name}
+                            </button>
+                        );
+                    })}
+
+                    {/* 직접입력 */}
+                    {!isCustom ? (
+                        <button
+                            type="button"
+                            onClick={() => setIsCustom(true)}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold text-gray-500 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors"
+                        >
+                            <PenLine size={11} /> 직접입력
+                        </button>
+                    ) : (
+                        <div className="flex items-center gap-1 px-1.5 pt-1 border-t border-gray-100">
+                            <input
+                                ref={inputRef}
+                                value={value}
+                                onChange={(e) => onChange(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && value) { setOpen(false); setIsCustom(false); } if (e.key === 'Escape') { setIsCustom(false); } }}
+                                placeholder="이름 입력"
+                                className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-emerald-300 focus:border-emerald-300"
+                            />
+                            <button type="button" title="목록으로" onClick={() => { setIsCustom(false); onChange(''); }}
+                                className="shrink-0 p-1 text-gray-300 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
+                                <RotateCcw size={11} />
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 type BulkField = 'assignee' | 'startDate' | 'endDate' | 'status' | 'progress';
 
 const BULK_ACTIONS: { field: BulkField; label: string; icon: React.ReactNode }[] = [
@@ -225,6 +329,14 @@ const WbsDevDetail: React.FC = () => {
     const addRows   = useWbsStore((s) => s.addRows);
     const updateRow = useWbsStore((s) => s.updateRow);
     const deleteRow = useWbsStore((s) => s.deleteRow);
+
+    // 프로젝트 참여자 목록
+    const currentProjectId = useProjectStore((s) => s.currentProjectId);
+    const projects = useProjectStore((s) => s.projects);
+    const projectMembers = useMemo(() => {
+        const project = projects.find((p) => p.id === currentProjectId);
+        return (project?.members ?? []).map((m, i) => ({ name: m.name, colorIdx: i }));
+    }, [projects, currentProjectId]);
 
     const [selectedMenuId, setSelectedMenuId] = useState<string | null>(null);
     useEffect(() => {
@@ -585,7 +697,12 @@ const WbsDevDetail: React.FC = () => {
                                                     <input value={r.featureName} onChange={(e) => updateRow(r.id, { featureName: e.target.value })} placeholder="기능명" className={cellInput} />
                                                 </td>
                                                 <td className="align-middle">
-                                                    <input value={r.assignee} onChange={(e) => updateRow(r.id, { assignee: e.target.value })} placeholder="담당자" className={cellInput} />
+                                                    <AssigneeCell
+                                                        value={r.assignee}
+                                                        onChange={(v) => updateRow(r.id, { assignee: v })}
+                                                        members={projectMembers}
+                                                        inputClass={cellInput}
+                                                    />
                                                 </td>
                                                 <td className="align-middle">
                                                     <input type="date" value={r.startDate} onChange={(e) => updateRow(r.id, { startDate: e.target.value })} className={cellInput} />
