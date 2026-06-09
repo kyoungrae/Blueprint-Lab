@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties, Hash, Copy, Check } from 'lucide-react';
+import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties, Hash, Copy, Check, CalendarDays } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsStore } from '../../store/wbsStore';
 import { useAuthStore } from '../../store/authStore';
@@ -8,6 +8,7 @@ import type { WbsData } from '../../types/wbs';
 import WbsMenuTree from './WbsMenuTree';
 import WbsDevDetail from './WbsDevDetail';
 import WbsProgress from './WbsProgress';
+import WbsSchedule from './WbsSchedule';
 import WbsUploadModal from './WbsUploadModal';
 import WbsExcelSyncModal from './WbsExcelSyncModal';
 import WbsAdminModal from './WbsAdminModal';
@@ -15,12 +16,16 @@ import { downloadWbsExcel } from './wbsExcel';
 import { downloadWbsJson, parseWbsJson } from './wbsIO';
 import { copyToClipboard } from '../../utils/clipboard';
 
-type WbsTab = 'hierarchy' | 'detail' | 'progress';
+type WbsTab = 'hierarchy' | 'detail' | 'progress' | 'schedule';
 
-const TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
+const DEV_TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
     { key: 'hierarchy', label: '메뉴 구조도', icon: <Network size={15} /> },
     { key: 'detail', label: '개발 상세', icon: <ListTree size={15} /> },
     { key: 'progress', label: '진척율', icon: <BarChart3 size={15} /> },
+];
+
+const SCHEDULE_TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
+    { key: 'schedule', label: '일정', icon: <CalendarDays size={15} /> },
 ];
 
 const WbsCanvas: React.FC = () => {
@@ -158,19 +163,41 @@ const WbsCanvas: React.FC = () => {
                 </div>
 
                 {/* 탭 */}
-                <nav className="flex items-center gap-1 ml-4 bg-gray-100 rounded-xl p-1">
-                    {TABS.map((t) => (
-                        <button
-                            key={t.key}
-                            onClick={() => setTab(t.key)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${
-                                tab === t.key ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
-                            }`}
-                        >
-                            {t.icon}
-                            <span className="hidden sm:inline">{t.label}</span>
-                        </button>
-                    ))}
+                <nav className="flex items-center gap-2 ml-4">
+                    {/* 개발 그룹 */}
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+                        <span className="text-[10px] font-bold text-gray-400 px-2 select-none">개발</span>
+                        <div className="w-px h-4 bg-gray-300 mx-0.5" />
+                        {DEV_TABS.map((t) => (
+                            <button
+                                key={t.key}
+                                onClick={() => setTab(t.key)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${
+                                    tab === t.key ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                                }`}
+                            >
+                                {t.icon}
+                                <span className="hidden sm:inline">{t.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                    {/* 일정 그룹 */}
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+                        <span className="text-[10px] font-bold text-gray-400 px-2 select-none">일정</span>
+                        <div className="w-px h-4 bg-gray-300 mx-0.5" />
+                        {SCHEDULE_TABS.map((t) => (
+                            <button
+                                key={t.key}
+                                onClick={() => setTab(t.key)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${
+                                    tab === t.key ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                                }`}
+                            >
+                                {t.icon}
+                                <span className="hidden sm:inline">{t.label}</span>
+                            </button>
+                        ))}
+                    </div>
                 </nav>
 
                 <div className="flex-1" />
@@ -251,6 +278,7 @@ const WbsCanvas: React.FC = () => {
                 )}
                 {tab === 'detail' && <WbsDevDetail />}
                 {tab === 'progress' && <WbsProgress />}
+                {tab === 'schedule' && <WbsSchedule />}
             </main>
 
             {/* 프로젝트 ID 패널 — Portal */}

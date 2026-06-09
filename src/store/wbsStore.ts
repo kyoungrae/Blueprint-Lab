@@ -31,6 +31,7 @@ interface WbsState {
     exportData: () => WbsData;
     setProjectSchedule: (schedule: WbsProjectSchedule | null) => void;
     addDetailSchedule: (schedule: Omit<WbsDetailSchedule, 'id'>) => void;
+    updateDetailSchedule: (id: string, patch: Partial<Omit<WbsDetailSchedule, 'id'>>) => void;
     deleteDetailSchedule: (id: string) => void;
 
     addMenu: (parentId: string | null) => string;
@@ -91,13 +92,40 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         get().scheduleSave();
     },
 
-    addDetailSchedule: (schedule) => {
-        set({ detailSchedules: [...get().detailSchedules, { id: uid('schedule'), ...schedule }] });
+    addDetailSchedule: (schedule: Omit<WbsDetailSchedule, 'id'>) => {
+        const existing = get().detailSchedules;
+        const siblings = existing.filter((s) => (s.parentId ?? null) === (schedule.parentId ?? null));
+        const maxOrder = siblings.length ? Math.max(...siblings.map((s) => s.order ?? 0)) + 1 : 0;
+        const newItem: WbsDetailSchedule = {
+            id: uid('schedule'),
+            parentId: null,
+            order: maxOrder,
+            progress: 0,
+            ...schedule,
+        };
+        set({ detailSchedules: [...existing, newItem] });
+        get().scheduleSave();
+    },
+
+    updateDetailSchedule: (id, patch) => {
+        set({ detailSchedules: get().detailSchedules.map((s) => (s.id === id ? { ...s, ...patch } : s)) });
         get().scheduleSave();
     },
 
     deleteDetailSchedule: (id) => {
-        set({ detailSchedules: get().detailSchedules.filter((s) => s.id !== id) });
+        // 자식까지 함께 삭제
+        const toDelete = new Set<string>([id]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const s of get().detailSchedules) {
+                if (s.parentId && toDelete.has(s.parentId) && !toDelete.has(s.id)) {
+                    toDelete.add(s.id);
+                    changed = true;
+                }
+            }
+        }
+        set({ detailSchedules: get().detailSchedules.filter((s) => !toDelete.has(s.id)) });
         get().scheduleSave();
     },
 

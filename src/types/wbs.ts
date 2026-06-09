@@ -53,9 +53,15 @@ export interface WbsProjectSchedule {
 
 export interface WbsDetailSchedule {
     id: string;
+    /** 부모 항목 ID (null이면 최상위) */
+    parentId?: string | null;
+    /** 형제 간 정렬 순서 */
+    order?: number;
     title: string;
     startDate: string;
     endDate: string;
+    /** 진행율 0~100 */
+    progress?: number;
 }
 
 export interface WbsData {
