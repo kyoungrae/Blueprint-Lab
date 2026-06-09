@@ -1,6 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Lock, LockOpen, CalendarDays } from 'lucide-react';
 import { useWbsStore, calcMenuProgress, calcOverallProgress } from '../../store/wbsStore';
-import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, type WbsStatus } from '../../types/wbs';
+import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, type WbsStatus, type WbsMenuNode } from '../../types/wbs';
+import { ASSIGNEE_PALETTE } from './WbsMenuTree';
 
 const STATUS_COLOR: Record<WbsStatus, string> = {
     TODO: 'bg-gray-400',
@@ -8,6 +11,31 @@ const STATUS_COLOR: Record<WbsStatus, string> = {
     DONE: 'bg-emerald-500',
     HOLD: 'bg-amber-500',
 };
+
+/* ── 트리 타입 ──────────────────────────────── */
+interface TreeNode extends WbsMenuNode {
+    children: TreeNode[];
+    depth: number;
+}
+
+function buildTree(menus: WbsMenuNode[]): TreeNode[] {
+    const byParent = new Map<string | null, WbsMenuNode[]>();
+    for (const m of menus) {
+        const key = m.parentId ?? null;
+        if (!byParent.has(key)) byParent.set(key, []);
+        byParent.get(key)!.push(m);
+    }
+    const build = (parentId: string | null, depth: number): TreeNode[] =>
+        (byParent.get(parentId) ?? [])
+            .slice()
+            .sort((a, b) => a.order - b.order)
+            .map((m) => ({ ...m, depth, children: build(m.id, depth + 1) }));
+    return build(null, 0);
+}
+
+function flattenTree(nodes: TreeNode[]): TreeNode[] {
+    return nodes.flatMap((n) => [n, ...flattenTree(n.children)]);
+}
 
 function parseDate(s: string): number | null {
     if (!s) return null;
@@ -20,8 +48,34 @@ const DAY = 86400000;
 const WbsProgress: React.FC = () => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
+    const projectSchedule = useWbsStore((s) => s.projectSchedule);
+    const setProjectSchedule = useWbsStore((s) => s.setProjectSchedule);
 
     const overall = calcOverallProgress(rows);
+    const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+    // 전체 일정 잠금/편집
+    const [schedLocked, setSchedLocked] = useState(true);
+    const [schedDraft, setSchedDraft] = useState({ startDate: '', endDate: '' });
+
+    // 잠금 해제 시 드래프트 초기화
+    const prevLocked = useRef(true);
+    useEffect(() => {
+        if (prevLocked.current && !schedLocked) {
+            setSchedDraft({
+                startDate: projectSchedule?.startDate ?? '',
+                endDate: projectSchedule?.endDate ?? '',
+            });
+        }
+        prevLocked.current = schedLocked;
+    }, [schedLocked, projectSchedule]);
+
+    const saveSchedule = () => {
+        const { startDate, endDate } = schedDraft;
+        if (startDate && endDate) setProjectSchedule({ startDate, endDate });
+        else setProjectSchedule(null);
+        setSchedLocked(true);
+    };
 
     const statusCounts = useMemo(() => {
         const c: Record<WbsStatus, number> = { TODO: 0, IN_PROGRESS: 0, DONE: 0, HOLD: 0 };
@@ -29,13 +83,46 @@ const WbsProgress: React.FC = () => {
         return c;
     }, [rows]);
 
-    // 메뉴별 진행율 (행이 있는 메뉴만)
-    const menuProgress = useMemo(
-        () => menus.map((m) => ({ menu: m, progress: calcMenuProgress(rows, m.id), count: rows.filter((r) => r.menuId === m.id).length })),
-        [menus, rows]
+    // 트리
+    const tree = useMemo(() => buildTree(menus), [menus]);
+    const flatNodes = useMemo(() => flattenTree(tree), [tree]);
+    const allParentIds = useMemo(
+        () => new Set(flatNodes.filter((n) => n.children.length > 0).map((n) => n.id)),
+        [flatNodes]
     );
 
-    // 타임라인 범위
+    const toggleCollapse = (id: string) =>
+        setCollapsed((prev) => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+
+    const collapseAll = () => setCollapsed(new Set(allParentIds));
+    const expandAll   = () => setCollapsed(new Set());
+
+    // 간트 툴팁
+    const [tooltip, setTooltip] = useState<{ x: number; y: number; row: typeof rows[number] } | null>(null);
+
+    // 담당자별 통계
+    const assigneeStats = useMemo(() => {
+        const map = new Map<string, { rows: typeof rows }>();
+        for (const r of rows) {
+            if (!r.assignee) continue;
+            if (!map.has(r.assignee)) map.set(r.assignee, { rows: [] });
+            map.get(r.assignee)!.rows.push(r);
+        }
+        return Array.from(map.entries())
+            .map(([name, { rows: rs }], idx) => {
+                const progress = Math.round(rs.reduce((a, r) => a + (r.progress || 0), 0) / rs.length);
+                const statusCnt: Record<WbsStatus, number> = { TODO: 0, IN_PROGRESS: 0, DONE: 0, HOLD: 0 };
+                for (const r of rs) statusCnt[r.status] = (statusCnt[r.status] || 0) + 1;
+                return { name, progress, total: rs.length, statusCnt, colorIdx: idx % ASSIGNEE_PALETTE.length };
+            })
+            .sort((a, b) => b.progress - a.progress);
+    }, [rows]);
+
+    // 타임라인 범위 (전체 일정 포함)
     const range = useMemo(() => {
         let min = Infinity, max = -Infinity;
         for (const r of rows) {
@@ -44,10 +131,16 @@ const WbsProgress: React.FC = () => {
             if (s !== null) { min = Math.min(min, s); max = Math.max(max, s); }
             if (e !== null) { min = Math.min(min, e); max = Math.max(max, e); }
         }
+        if (projectSchedule) {
+            const s = parseDate(projectSchedule.startDate);
+            const e = parseDate(projectSchedule.endDate);
+            if (s !== null) { min = Math.min(min, s); max = Math.max(max, s); }
+            if (e !== null) { min = Math.min(min, e); max = Math.max(max, e); }
+        }
         if (min === Infinity) return null;
         if (max === min) max = min + DAY;
         return { min, max, span: max - min };
-    }, [rows]);
+    }, [rows, projectSchedule]);
 
     const menuNameById = useMemo(() => new Map(menus.map((m) => [m.id, m.name])), [menus]);
     const ganttRows = useMemo(
@@ -63,98 +156,356 @@ const WbsProgress: React.FC = () => {
     };
 
     return (
+        <>
         <div className="h-full overflow-auto bg-gray-50 p-6">
-            <div className="max-w-6xl mx-auto space-y-6">
-                {/* 전체 진척 + 상태 */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div className="lg:col-span-1 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col justify-center">
-                        <span className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">전체 진행율</span>
-                        <div className="flex items-end gap-2 mb-3">
-                            <span className="text-5xl font-black text-emerald-600 tabular-nums leading-none">{overall}</span>
-                            <span className="text-2xl font-black text-emerald-400 mb-0.5">%</span>
+            <div className="space-y-4 h-full flex flex-col">
+                {/* 상단 요약 바 — 전체 진행율 + 상태 분포 */}
+                <div className="grid grid-cols-5 gap-4 shrink-0">
+                    {/* 전체 진행율 */}
+                    <div className="col-span-1 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col justify-center">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">전체 진행율</span>
+                        <div className="flex items-end gap-1.5 mb-2">
+                            <span className="text-4xl font-black text-emerald-600 tabular-nums leading-none">{overall}</span>
+                            <span className="text-xl font-black text-emerald-400 mb-0.5">%</span>
                         </div>
-                        <div className="h-3 rounded-full bg-gray-100 overflow-hidden">
+                        <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
                             <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${overall}%` }} />
                         </div>
-                        <p className="text-[11px] text-gray-400 mt-2">전체 {rows.length}개 산출물 · 메뉴 {menus.length}개</p>
+                        <p className="text-[10px] text-gray-400 mt-1.5">{rows.length}개 산출물 · {menus.length}개 메뉴</p>
                     </div>
 
-                    <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                        <span className="text-xs font-black text-gray-400 uppercase tracking-wider">상태 분포</span>
-                        <div className="grid grid-cols-4 gap-3 mt-4">
-                            {WBS_STATUS_ORDER.map((s) => (
-                                <div key={s} className="rounded-xl bg-gray-50 p-3 text-center">
-                                    <div className="flex items-center justify-center gap-1.5 mb-1">
-                                        <span className={`w-2.5 h-2.5 rounded-full ${STATUS_COLOR[s]}`} />
-                                        <span className="text-xs font-bold text-gray-500">{WBS_STATUS_LABEL[s]}</span>
-                                    </div>
-                                    <span className="text-2xl font-black text-gray-800 tabular-nums">{statusCounts[s]}</span>
-                                </div>
-                            ))}
+                    {/* 상태 분포 — 4칸 */}
+                    {WBS_STATUS_ORDER.map((s) => (
+                        <div key={s} className="col-span-1 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col justify-center">
+                            <div className="flex items-center gap-1.5 mb-2">
+                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${STATUS_COLOR[s]}`} />
+                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">{WBS_STATUS_LABEL[s]}</span>
+                            </div>
+                            <span className="text-4xl font-black text-gray-800 tabular-nums leading-none">{statusCounts[s]}</span>
+                            <p className="text-[10px] text-gray-400 mt-1.5">건</p>
                         </div>
-                    </div>
+                    ))}
                 </div>
 
-                {/* 메뉴별 진행율 */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                    <h3 className="text-sm font-black text-gray-700 mb-4">메뉴별 진행율</h3>
-                    {menuProgress.length === 0 ? (
-                        <p className="text-sm text-gray-400 py-4 text-center">메뉴가 없습니다.</p>
-                    ) : (
-                        <div className="space-y-3">
-                            {menuProgress.map(({ menu, progress, count }) => (
-                                <div key={menu.id} className="flex items-center gap-3">
-                                    <div className="w-48 shrink-0 truncate text-sm text-gray-700" title={menu.name}>
-                                        <span className="font-mono text-[10px] text-gray-400 mr-1.5">{menu.menuCode}</span>
-                                        {menu.name}
-                                    </div>
-                                    <div className="flex-1 h-3 rounded-full bg-gray-100 overflow-hidden">
-                                        <div className={`h-full rounded-full transition-all ${progress === 100 ? 'bg-emerald-500' : 'bg-emerald-400'}`} style={{ width: `${progress}%` }} />
-                                    </div>
-                                    <span className="w-12 text-right text-sm font-bold text-gray-700 tabular-nums">{progress}%</span>
-                                    <span className="w-12 text-right text-[11px] text-gray-400">{count}건</span>
-                                </div>
-                            ))}
+                {/* 담당자별 진행율 카드 */}
+                {assigneeStats.length > 0 && (
+                    <div className="shrink-0">
+                        <div className="flex items-center gap-2 mb-3">
+                            <h3 className="text-sm font-black text-gray-700">담당자별 진행율</h3>
+                            <span className="text-[11px] text-gray-400">{assigneeStats.length}명</span>
                         </div>
-                    )}
-                </div>
-
-                {/* 간이 간트(타임라인) */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-sm font-black text-gray-700">일정 타임라인</h3>
-                        {range && <span className="text-[11px] text-gray-400">{fmt(range.min)} ~ {fmt(range.max)}</span>}
-                    </div>
-                    {!range || ganttRows.length === 0 ? (
-                        <p className="text-sm text-gray-400 py-4 text-center">시작일·종료일이 입력된 산출물이 없습니다.</p>
-                    ) : (
-                        <div className="space-y-1.5">
-                            {ganttRows.map(({ r, s, e }) => {
-                                const left = ((s - range.min) / range.span) * 100;
-                                const width = Math.max(((e - s) / range.span) * 100, 1.5);
+                        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(assigneeStats.length, 6)}, minmax(0, 1fr))` }}>
+                            {assigneeStats.map(({ name, progress, total, statusCnt, colorIdx }) => {
+                                const palette = ASSIGNEE_PALETTE[colorIdx];
+                                const done = statusCnt.DONE;
+                                const inProgress = statusCnt.IN_PROGRESS;
+                                const hold = statusCnt.HOLD;
+                                const todo = statusCnt.TODO;
                                 return (
-                                    <div key={r.id} className="flex items-center gap-3">
-                                        <div className="w-56 shrink-0 truncate text-xs text-gray-600" title={`${menuNameById.get(r.menuId) ?? ''} · ${r.featureName}`}>
-                                            <span className="text-gray-400">{menuNameById.get(r.menuId) ?? ''}</span>
-                                            {r.featureName ? <span className="text-gray-700"> · {r.featureName}</span> : null}
+                                    <div key={name} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
+                                        {/* 이름 + 진행율 */}
+                                        <div className="flex items-start justify-between gap-2">
+                                            <span className={`px-2 py-0.5 rounded-lg text-xs font-black border ${palette.badge}`}>
+                                                {name}
+                                            </span>
+                                            <span className={`text-xl font-black tabular-nums leading-none ${progress === 100 ? 'text-emerald-600' : 'text-gray-800'}`}>
+                                                {progress}<span className="text-sm font-bold text-gray-400">%</span>
+                                            </span>
                                         </div>
-                                        <div className="relative flex-1 h-5 bg-gray-50 rounded">
+
+                                        {/* 프로그레스 바 */}
+                                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
                                             <div
-                                                className={`absolute top-0.5 bottom-0.5 rounded ${STATUS_COLOR[r.status]} opacity-90`}
-                                                style={{ left: `${left}%`, width: `${width}%` }}
-                                                title={`${r.startDate} ~ ${r.endDate} (${r.progress}%)`}
-                                            >
-                                                <div className="h-full bg-white/30 rounded-l" style={{ width: `${100 - r.progress}%`, marginLeft: 'auto' }} />
+                                                className={`h-full rounded-full transition-all duration-500 ${progress === 100 ? 'bg-emerald-500' : 'bg-blue-400'}`}
+                                                style={{ width: `${progress}%` }}
+                                            />
+                                        </div>
+
+                                        {/* 상태 미니 바 */}
+                                        <div className="flex rounded-full overflow-hidden h-1.5 gap-px">
+                                            {done     > 0 && <div className="bg-emerald-500" style={{ flex: done }} title={`완료 ${done}`} />}
+                                            {inProgress > 0 && <div className="bg-blue-400"   style={{ flex: inProgress }} title={`진행중 ${inProgress}`} />}
+                                            {hold     > 0 && <div className="bg-amber-400"  style={{ flex: hold }} title={`보류 ${hold}`} />}
+                                            {todo     > 0 && <div className="bg-gray-200"   style={{ flex: todo }} title={`대기 ${todo}`} />}
+                                        </div>
+
+                                        {/* 수치 */}
+                                        <div className="flex items-center justify-between text-[10px] text-gray-400">
+                                            <span>총 {total}건</span>
+                                            <div className="flex items-center gap-2">
+                                                {done > 0 && <span className="text-emerald-600 font-bold">완료 {done}</span>}
+                                                {inProgress > 0 && <span className="text-blue-500 font-bold">진행 {inProgress}</span>}
+                                                {hold > 0 && <span className="text-amber-500 font-bold">보류 {hold}</span>}
+                                                {todo > 0 && <span>대기 {todo}</span>}
                                             </div>
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
-                    )}
+                    </div>
+                )}
+
+                {/* 하단 2열 — 메뉴별 진행율(트리) | 일정 타임라인 */}
+                <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
+
+                    {/* ── 메뉴별 진행율 트리 ── */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col min-h-0">
+                        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-50 shrink-0">
+                            <h3 className="text-sm font-black text-gray-700">메뉴별 진행율</h3>
+                            {allParentIds.size > 0 && (
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={expandAll}
+                                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+                                    >
+                                        <ChevronsUpDown size={12} /> 전체 펼치기
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={collapseAll}
+                                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+                                    >
+                                        <ChevronsDownUp size={12} /> 전체 접기
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex-1 overflow-auto px-4 py-3 min-h-0">
+                            {tree.length === 0 ? (
+                                <p className="text-sm text-gray-400 py-8 text-center">메뉴가 없습니다.</p>
+                            ) : (
+                                <div className="space-y-0.5">
+                                    {(function renderNodes(nodes: TreeNode[]): React.ReactNode {
+                                        return nodes.map((node) => {
+                                            const progress = calcMenuProgress(menus, rows, node.id);
+                                            const count = rows.filter((r) => r.menuId === node.id && !r.isDebugging).length;
+                                            const hasChildren = node.children.length > 0;
+                                            const isCollapsed = collapsed.has(node.id);
+                                            const isLeaf = !hasChildren;
+                                            const barColor = progress === 100
+                                                ? 'bg-emerald-500'
+                                                : isLeaf ? 'bg-emerald-400' : 'bg-blue-400';
+
+                                            return (
+                                                <div key={node.id}>
+                                                    <div
+                                                        className="flex items-center gap-2 py-1.5 rounded-lg"
+                                                        style={{ paddingLeft: node.depth * 18 }}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => hasChildren && toggleCollapse(node.id)}
+                                                            className={`shrink-0 w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                                                                hasChildren
+                                                                    ? 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer'
+                                                                    : 'text-transparent cursor-default'
+                                                            }`}
+                                                        >
+                                                            {hasChildren
+                                                                ? (isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />)
+                                                                : <ChevronRight size={13} />}
+                                                        </button>
+                                                        <div className="w-40 shrink-0 flex items-center gap-1 min-w-0 truncate" title={node.name}>
+                                                            <span className="font-mono text-[9px] font-bold text-indigo-400 shrink-0">{node.menuCode}</span>
+                                                            <span className={`truncate text-xs ${hasChildren ? 'font-bold text-gray-800' : 'text-gray-600'}`}>
+                                                                {node.name}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex-1 h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                                                            <div
+                                                                className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                                                                style={{ width: `${progress}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className={`w-10 text-right text-xs font-black tabular-nums shrink-0 ${progress === 100 ? 'text-emerald-600' : 'text-gray-700'}`}>
+                                                            {progress}%
+                                                        </span>
+                                                        <span className="w-8 text-right text-[10px] text-gray-400 tabular-nums shrink-0">
+                                                            {isLeaf ? `${count}건` : `${node.children.length}개`}
+                                                        </span>
+                                                    </div>
+                                                    {hasChildren && !isCollapsed && renderNodes(node.children)}
+                                                </div>
+                                            );
+                                        });
+                                    })(tree)}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ── 일정 타임라인 ── */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col min-h-0">
+                        {/* 헤더: 타이틀 + 전체 일정 입력/잠금 */}
+                        <div className="px-5 pt-4 pb-3 border-b border-gray-50 shrink-0 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-black text-gray-700">일정 타임라인</h3>
+                                {range && <span className="text-[11px] text-gray-400">{fmt(range.min)} ~ {fmt(range.max)}</span>}
+                            </div>
+
+                            {/* 전체 일정 행 */}
+                            <div className="flex items-center gap-2">
+                                <CalendarDays size={13} className="text-indigo-400 shrink-0" />
+                                <span className="text-[11px] font-black text-gray-500 shrink-0">전체 일정</span>
+
+                                {schedLocked ? (
+                                    /* 잠금 상태: 날짜 텍스트 표시 */
+                                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                        {projectSchedule ? (
+                                            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">
+                                                {projectSchedule.startDate} ~ {projectSchedule.endDate}
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs text-gray-400 italic">미설정</span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => setSchedLocked(false)}
+                                            className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 border border-gray-200 hover:bg-gray-50 hover:text-gray-700 transition-colors shrink-0"
+                                        >
+                                            <Lock size={11} /> 잠금 해제
+                                        </button>
+                                    </div>
+                                ) : (
+                                    /* 편집 상태: 날짜 입력 */
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <input
+                                            type="date"
+                                            value={schedDraft.startDate}
+                                            onChange={(e) => setSchedDraft((d) => ({ ...d, startDate: e.target.value }))}
+                                            className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
+                                        />
+                                        <span className="text-gray-400 text-xs shrink-0">~</span>
+                                        <input
+                                            type="date"
+                                            value={schedDraft.endDate}
+                                            onChange={(e) => setSchedDraft((d) => ({ ...d, endDate: e.target.value }))}
+                                            className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={saveSchedule}
+                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shrink-0"
+                                        >
+                                            <LockOpen size={11} /> 저장 · 잠금
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSchedLocked(true)}
+                                            className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                                        >
+                                            취소
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto px-4 py-3 min-h-0">
+                            {!range && !projectSchedule ? (
+                                <p className="text-sm text-gray-400 py-8 text-center">전체 일정을 설정하거나 산출물에 시작일·종료일을 입력하세요.</p>
+                            ) : (
+                                <div className="space-y-1.5">
+                                    {/* 전체 일정 바 */}
+                                    {projectSchedule && range && (() => {
+                                        const ps = parseDate(projectSchedule.startDate);
+                                        const pe = parseDate(projectSchedule.endDate);
+                                        if (ps === null || pe === null) return null;
+                                        const left = ((ps - range.min) / range.span) * 100;
+                                        const width = Math.max(((pe - ps) / range.span) * 100, 1.5);
+                                        return (
+                                            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-dashed border-gray-100">
+                                                <div className="w-44 shrink-0 flex items-center gap-1">
+                                                    <CalendarDays size={11} className="text-indigo-400 shrink-0" />
+                                                    <span className="text-[11px] font-black text-indigo-600 truncate">전체 일정</span>
+                                                </div>
+                                                <div className="relative flex-1 h-5 bg-indigo-50 rounded">
+                                                    <div
+                                                        className="absolute top-0.5 bottom-0.5 rounded bg-indigo-500/80 flex items-center px-2"
+                                                        style={{ left: `${left}%`, width: `${width}%` }}
+                                                    >
+                                                        <span className="text-[9px] font-black text-white truncate leading-none">
+                                                            {projectSchedule.startDate} ~ {projectSchedule.endDate}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {/* 산출물 행들 */}
+                                    {range && ganttRows.map(({ r, s, e }) => {
+                                        const left = ((s - range.min) / range.span) * 100;
+                                        const width = Math.max(((e - s) / range.span) * 100, 1.5);
+                                        return (
+                                            <div key={r.id} className="flex items-center gap-2">
+                                                <div className="w-44 shrink-0 truncate text-xs text-gray-600" title={`${menuNameById.get(r.menuId) ?? ''} · ${r.featureName}`}>
+                                                    <span className="text-gray-400">{menuNameById.get(r.menuId) ?? ''}</span>
+                                                    {r.featureName ? <span className="text-gray-700"> · {r.featureName}</span> : null}
+                                                </div>
+                                                <div className="relative flex-1 h-5 bg-gray-50 rounded">
+                                                    <div
+                                                        className={`absolute top-0.5 bottom-0.5 rounded ${STATUS_COLOR[r.status]} opacity-90 cursor-pointer`}
+                                                        style={{ left: `${left}%`, width: `${width}%` }}
+                                                        onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY, row: r })}
+                                                        onMouseLeave={() => setTooltip(null)}
+                                                    >
+                                                        <div className="h-full bg-white/30 rounded-l" style={{ width: `${100 - r.progress}%`, marginLeft: 'auto' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
+                                    {range && ganttRows.length === 0 && (
+                                        <p className="text-xs text-gray-400 text-center py-4">시작일·종료일이 입력된 산출물이 없습니다.</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
+
+        {/* 간트 스마트 툴팁 */}
+        {tooltip && createPortal(
+            <div
+                className="pointer-events-none fixed z-[9999]"
+                style={{ left: tooltip.x + 14, top: tooltip.y - 10 }}
+            >
+                <div className="bg-gray-900 text-white text-xs font-medium rounded-xl px-3 py-2 shadow-xl flex flex-col gap-1 min-w-[140px]">
+                    {tooltip.row.featureName && (
+                        <span className="font-bold text-white truncate max-w-[200px]">{tooltip.row.featureName}</span>
+                    )}
+                    <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-white/20 overflow-hidden">
+                            <div
+                                className="h-full rounded-full bg-emerald-400"
+                                style={{ width: `${tooltip.row.progress}%` }}
+                            />
+                        </div>
+                        <span className="font-black text-emerald-400 tabular-nums">{tooltip.row.progress}%</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-gray-400 pt-0.5 border-t border-white/10">
+                        <span>{tooltip.row.startDate || '—'} ~ {tooltip.row.endDate || '—'}</span>
+                        <span className={`font-bold ${
+                            tooltip.row.status === 'DONE' ? 'text-emerald-400'
+                            : tooltip.row.status === 'IN_PROGRESS' ? 'text-blue-400'
+                            : tooltip.row.status === 'HOLD' ? 'text-amber-400'
+                            : 'text-gray-400'
+                        }`}>
+                            {WBS_STATUS_LABEL[tooltip.row.status]}
+                        </span>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )}
+        </>
     );
 };
 

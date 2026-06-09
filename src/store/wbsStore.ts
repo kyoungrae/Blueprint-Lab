@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus } from '../types/wbs';
+import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule } from '../types/wbs';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from './projectStore';
 
@@ -22,11 +22,13 @@ interface WbsState {
     menus: WbsMenuNode[];
     rows: WbsDevRow[];
     currentProjectId: string | null;
+    projectSchedule: WbsProjectSchedule | null;
 
     /** 프로젝트 진입 시 데이터 로드 */
     loadProject: (projectId: string, data: Partial<WbsData> | undefined | null) => void;
     importData: (data: Partial<WbsData>) => void;
     exportData: () => WbsData;
+    setProjectSchedule: (schedule: WbsProjectSchedule | null) => void;
 
     addMenu: (parentId: string | null) => string;
     updateMenu: (id: string, patch: Partial<Omit<WbsMenuNode, 'id'>>) => void;
@@ -51,12 +53,14 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     menus: [],
     rows: [],
     currentProjectId: null,
+    projectSchedule: null,
 
     loadProject: (projectId, data) => {
         set({
             currentProjectId: projectId,
             menus: Array.isArray(data?.menus) ? (data!.menus as WbsMenuNode[]) : [],
             rows: Array.isArray(data?.rows) ? (data!.rows as WbsDevRow[]) : [],
+            projectSchedule: (data as WbsData)?.projectSchedule ?? null,
         });
     },
 
@@ -64,11 +68,17 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         set({
             menus: Array.isArray(data.menus) ? (data.menus as WbsMenuNode[]) : get().menus,
             rows: Array.isArray(data.rows) ? (data.rows as WbsDevRow[]) : get().rows,
+            projectSchedule: data.projectSchedule !== undefined ? (data.projectSchedule ?? null) : get().projectSchedule,
         });
         get().scheduleSave();
     },
 
-    exportData: () => ({ menus: get().menus, rows: get().rows }),
+    exportData: () => ({ menus: get().menus, rows: get().rows, projectSchedule: get().projectSchedule ?? undefined }),
+
+    setProjectSchedule: (schedule) => {
+        set({ projectSchedule: schedule });
+        get().scheduleSave();
+    },
 
     addMenu: (parentId) => {
         const { menus } = get();
@@ -165,12 +175,28 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             status: 'TODO' as WbsStatus,
             progress: 0,
         };
-        set({ rows: [...get().rows, row] });
+        // 이미 Debugging 행이 없는 경우에만 함께 추가
+        const existing = get().rows;
+        const hasDebugging = existing.some((r) => r.menuId === menuId && r.isDebugging);
+        const debugRow: WbsDevRow | null = hasDebugging ? null : {
+            id: uid('row'),
+            menuId,
+            category: 'Debuging',
+            featureName: '',
+            assignee: '',
+            startDate: '',
+            endDate: '',
+            status: 'TODO' as WbsStatus,
+            progress: 0,
+            isDebugging: true,
+        };
+        set({ rows: [...existing, row, ...(debugRow ? [debugRow] : [])] });
         get().scheduleSave();
         return id;
     },
 
     addRows: (menuId, categories) => {
+        const existing = get().rows;
         const newRows: WbsDevRow[] = categories.map((category) => ({
             id: uid('row'),
             menuId,
@@ -182,7 +208,20 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             status: 'TODO' as WbsStatus,
             progress: 0,
         }));
-        set({ rows: [...get().rows, ...newRows] });
+        const hasDebugging = existing.some((r) => r.menuId === menuId && r.isDebugging);
+        const debugRow: WbsDevRow | null = hasDebugging ? null : {
+            id: uid('row'),
+            menuId,
+            category: 'Debuging',
+            featureName: '',
+            assignee: '',
+            startDate: '',
+            endDate: '',
+            status: 'TODO' as WbsStatus,
+            progress: 0,
+            isDebugging: true,
+        };
+        set({ rows: [...existing, ...newRows, ...(debugRow ? [debugRow] : [])] });
         get().scheduleSave();
     },
 
@@ -221,8 +260,17 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 }));
 
-/** 메뉴 진행율 = 해당 메뉴 행들의 평균 progress (행 없으면 0) */
-export function calcMenuProgress(rows: WbsDevRow[], menuId: string): number {
+/**
+ * 메뉴 진행율 (재귀)
+ * - 자식 메뉴가 있으면 → 자식들의 진행율 평균 (재귀적으로 적용)
+ * - 자식 메뉴가 없으면(리프) → 해당 메뉴 행들의 평균 progress
+ */
+export function calcMenuProgress(menus: WbsMenuNode[], rows: WbsDevRow[], menuId: string): number {
+    const children = menus.filter((m) => m.parentId === menuId);
+    if (children.length > 0) {
+        const childProgresses = children.map((c) => calcMenuProgress(menus, rows, c.id));
+        return Math.round(childProgresses.reduce((a, v) => a + v, 0) / childProgresses.length);
+    }
     const mine = rows.filter((r) => r.menuId === menuId);
     if (mine.length === 0) return 0;
     return Math.round(mine.reduce((a, r) => a + (r.progress || 0), 0) / mine.length);

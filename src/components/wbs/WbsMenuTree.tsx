@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Pencil, Check } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Pencil, Check, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { useWbsStore, calcMenuProgress } from '../../store/wbsStore';
 import type { WbsMenuNode } from '../../types/wbs';
 
@@ -22,6 +22,29 @@ function buildTree(menus: WbsMenuNode[]): TreeNode[] {
     return build(null);
 }
 
+function flattenTree(nodes: TreeNode[]): TreeNode[] {
+    return nodes.flatMap((n) => [n, ...flattenTree(n.children)]);
+}
+
+/** 담당자 색상 팔레트 */
+export const ASSIGNEE_PALETTE = [
+    { badge: 'bg-purple-100 text-purple-700 border-purple-200', toggle: 'bg-purple-100 text-purple-700 border-purple-300 hover:bg-purple-200', active: 'bg-purple-500 text-white border-purple-500' },
+    { badge: 'bg-pink-100 text-pink-700 border-pink-200',       toggle: 'bg-pink-100 text-pink-700 border-pink-300 hover:bg-pink-200',       active: 'bg-pink-500 text-white border-pink-500' },
+    { badge: 'bg-cyan-100 text-cyan-700 border-cyan-200',       toggle: 'bg-cyan-100 text-cyan-700 border-cyan-300 hover:bg-cyan-200',       active: 'bg-cyan-500 text-white border-cyan-500' },
+    { badge: 'bg-orange-100 text-orange-700 border-orange-200', toggle: 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200', active: 'bg-orange-500 text-white border-orange-500' },
+    { badge: 'bg-indigo-100 text-indigo-700 border-indigo-200', toggle: 'bg-indigo-100 text-indigo-700 border-indigo-300 hover:bg-indigo-200', active: 'bg-indigo-500 text-white border-indigo-500' },
+    { badge: 'bg-teal-100 text-teal-700 border-teal-200',       toggle: 'bg-teal-100 text-teal-700 border-teal-300 hover:bg-teal-200',       active: 'bg-teal-500 text-white border-teal-500' },
+    { badge: 'bg-rose-100 text-rose-700 border-rose-200',       toggle: 'bg-rose-100 text-rose-700 border-rose-300 hover:bg-rose-200',       active: 'bg-rose-500 text-white border-rose-500' },
+    { badge: 'bg-lime-100 text-lime-700 border-lime-200',       toggle: 'bg-lime-100 text-lime-700 border-lime-300 hover:bg-lime-200',       active: 'bg-lime-500 text-white border-lime-500' },
+];
+
+/** 재귀적으로 노드 or 자손에 필터 담당자가 있는지 확인 */
+function nodeMatchesFilter(node: TreeNode, activeAssignees: Set<string>, rowsByMenu: Map<string, string[]>): boolean {
+    const assignees = rowsByMenu.get(node.id) ?? [];
+    if (assignees.some((a) => activeAssignees.has(a))) return true;
+    return node.children.some((c) => nodeMatchesFilter(c, activeAssignees, rowsByMenu));
+}
+
 interface WbsMenuTreeProps {
     selectedId?: string | null;
     onSelect?: (id: string) => void;
@@ -29,17 +52,42 @@ interface WbsMenuTreeProps {
     editable?: boolean;
     /** 메뉴별 진행율 배지 표시 */
     showProgress?: boolean;
+    /** 담당자 뱃지 표시 */
+    showAssignee?: boolean;
+    /** 활성 담당자 필터 (빈 Set = 전체 표시) */
+    activeAssignees?: Set<string>;
+    /** 담당자 → 팔레트 인덱스 맵 */
+    assigneeColorIdx?: Map<string, number>;
 }
 
-const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editable = true, showProgress = false }) => {
+const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
+    selectedId, onSelect, editable = true, showProgress = false,
+    showAssignee = false, activeAssignees, assigneeColorIdx,
+}) => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
+
+    /** menuId → 담당자[] (중복 제거) */
+    const rowsByMenu = useMemo(() => {
+        const map = new Map<string, string[]>();
+        for (const r of rows) {
+            if (!r.assignee) continue;
+            if (!map.has(r.menuId)) map.set(r.menuId, []);
+            const arr = map.get(r.menuId)!;
+            if (!arr.includes(r.assignee)) arr.push(r.assignee);
+        }
+        return map;
+    }, [rows]);
     const addMenu = useWbsStore((s) => s.addMenu);
     const updateMenu = useWbsStore((s) => s.updateMenu);
     const deleteMenu = useWbsStore((s) => s.deleteMenu);
     const moveMenu = useWbsStore((s) => s.moveMenu);
 
     const tree = useMemo(() => buildTree(menus), [menus]);
+    const allParentIds = useMemo(
+        () => new Set(flattenTree(tree).filter((n) => n.children.length > 0).map((n) => n.id)),
+        [tree]
+    );
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const [editingId, setEditingId] = useState<string | null>(null);
     const [draftName, setDraftName] = useState('');
@@ -76,8 +124,16 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
         const showBefore = isActiveTarget && dropPos === 'before';
         const showAfter = isActiveTarget && dropPos === 'after';
         const isInsideTarget = isActiveTarget && dropPos === 'inside';
-        const progress = showProgress ? calcMenuProgress(rows, node.id) : 0;
+        const progress = showProgress ? calcMenuProgress(menus, rows, node.id) : 0;
         const indentStyle = { marginLeft: depth * 16 + 4 } as React.CSSProperties;
+
+        // 담당자 필터: 이 노드(or 자손)에 일치하는 담당자 없으면 숨김
+        if (activeAssignees && activeAssignees.size > 0 && !nodeMatchesFilter(node, activeAssignees, rowsByMenu)) {
+            return null;
+        }
+
+        // 이 메뉴에 직접 등록된 담당자 목록
+        const menuAssignees = showAssignee ? (rowsByMenu.get(node.id) ?? []) : [];
 
         const performDrop = () => {
             const did = dragId;
@@ -175,7 +231,7 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
                         />
                     ) : (
                         <span
-                            className={`flex-1 min-w-0 truncate text-sm text-gray-800 ${editable ? 'cursor-text' : ''}`}
+                            className={`flex-1 min-w-0 flex flex-col gap-0.5 ${editable ? 'cursor-text' : ''}`}
                             title={editable ? '더블클릭하여 이름 수정' : node.name}
                             onDoubleClick={(e) => {
                                 if (!editable) return;
@@ -183,8 +239,26 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
                                 startEdit(node);
                             }}
                         >
-                            {node.name}
-                            <span className="ml-1.5 text-[10px] font-mono text-gray-400">{node.menuCode}</span>
+                            <span className="flex items-center gap-1 min-w-0">
+                                <span className="truncate text-sm text-gray-800">{node.name}</span>
+                                <span className="text-[10px] font-mono text-gray-400 shrink-0">{node.menuCode}</span>
+                            </span>
+                            {/* 담당자 뱃지 — 메뉴명 아래 */}
+                            {menuAssignees.length > 0 && (
+                                <span className="flex flex-wrap gap-1">
+                                    {menuAssignees.map((a) => {
+                                        const idx = (assigneeColorIdx?.get(a) ?? 0) % ASSIGNEE_PALETTE.length;
+                                        return (
+                                            <span
+                                                key={a}
+                                                className={`px-1.5 py-0.5 rounded border text-[10px] font-bold leading-none ${ASSIGNEE_PALETTE[idx].badge}`}
+                                            >
+                                                {a}
+                                            </span>
+                                        );
+                                    })}
+                                </span>
+                            )}
                         </span>
                     )}
 
@@ -237,15 +311,35 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({ selectedId, onSelect, editabl
             }}
         >
             {editable && (
-                <div className="flex items-center justify-between px-1 pb-2 mb-1 border-b border-gray-100">
-                    <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider">메뉴 구조도</span>
-                    <button
-                        type="button"
-                        onClick={() => { const id = addMenu(null); onSelect?.(id); }}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                    >
-                        <Plus size={13} /> 최상위 추가
-                    </button>
+                <div className="flex items-center gap-2 px-1 pb-2 mb-1 border-b border-gray-100">
+                    <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider shrink-0">메뉴 구조도</span>
+                    <div className="flex items-center gap-0.5 ml-auto">
+                        {allParentIds.size > 0 && (<>
+                            <button
+                                type="button"
+                                onClick={() => setCollapsed(new Set())}
+                                title="전체 펼치기"
+                                className="p-1 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                            >
+                                <ChevronsUpDown size={13} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCollapsed(new Set(allParentIds))}
+                                title="전체 접기"
+                                className="p-1 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                            >
+                                <ChevronsDownUp size={13} />
+                            </button>
+                        </>)}
+                        <button
+                            type="button"
+                            onClick={() => { const id = addMenu(null); onSelect?.(id); }}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors ml-1"
+                        >
+                            <Plus size={13} /> 최상위 추가
+                        </button>
+                    </div>
                 </div>
             )}
             <div className="flex-1 overflow-auto pr-1">

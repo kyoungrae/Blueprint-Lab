@@ -1,22 +1,232 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, Trash2, Layers, User, CalendarDays, CalendarCheck, Activity, Percent, ChevronLeft, RotateCcw, Lock } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
 import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, WBS_DEFAULT_CATEGORIES } from '../../types/wbs';
-import WbsMenuTree from './WbsMenuTree';
+import type { WbsStatus } from '../../types/wbs';
+import WbsMenuTree, { ASSIGNEE_PALETTE } from './WbsMenuTree';
 
-/** ‘+ ALL’ 클릭 시 자동 추가되는 산출물 구분 행 */
+/** '+ ALL' 클릭 시 자동 추가되는 산출물 구분 행 */
 const ALL_ARTIFACT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html'];
 
+/** 자물쇠 스마트 툴팁 */
+const LockTooltip: React.FC = () => {
+    const [visible, setVisible] = useState(false);
+    const ref = useRef<HTMLSpanElement>(null);
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+    const show = () => {
+        if (ref.current) {
+            const r = ref.current.getBoundingClientRect();
+            setPos({ top: r.top - 8, left: r.left + r.width / 2 });
+        }
+        setVisible(true);
+    };
+
+    return (
+        <>
+            <span
+                ref={ref}
+                onMouseEnter={show}
+                onMouseLeave={() => setVisible(false)}
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-500 cursor-default"
+            >
+                <Lock size={11} />
+            </span>
+            {visible && pos && createPortal(
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: pos.top,
+                        left: pos.left,
+                        transform: 'translate(-50%, -100%)',
+                        zIndex: 99999,
+                        pointerEvents: 'none',
+                    }}
+                >
+                    <div className="flex flex-col items-center">
+                        <div className="bg-gray-900 text-white text-xs font-medium px-3 py-2 rounded-xl shadow-lg whitespace-nowrap max-w-[220px] text-center leading-snug">
+                            🔒 모든 행의 작업이 완료(100%)되어야<br />잠금이 해제됩니다.
+                        </div>
+                        {/* 말풍선 꼬리 */}
+                        <div className="w-2.5 h-2 overflow-hidden -mt-px">
+                            <div className="w-2.5 h-2.5 bg-gray-900 rotate-45 translate-y-[-55%] translate-x-0 mx-auto" />
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+        </>
+    );
+};
+
+/** 상태별 뱃지 스타일 */
+const STATUS_STYLE: Record<WbsStatus, { badge: string; dot: string }> = {
+    TODO:        { badge: 'bg-gray-100 text-gray-600 border-gray-200',       dot: 'bg-gray-400' },
+    IN_PROGRESS: { badge: 'bg-blue-50 text-blue-700 border-blue-200',        dot: 'bg-blue-500' },
+    DONE:        { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+    HOLD:        { badge: 'bg-amber-50 text-amber-700 border-amber-200',     dot: 'bg-amber-400' },
+};
+
+/** 상태 뱃지 셀 — 클릭하면 드롭다운으로 변경 */
+const StatusCell: React.FC<{ value: WbsStatus; onChange: (v: WbsStatus) => void }> = ({ value, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const style = STATUS_STYLE[value];
+
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    return (
+        <div ref={ref} className="relative px-1.5 py-1">
+            {/* 현재 상태 뱃지 */}
+            <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs font-bold transition-all hover:opacity-80 ${style.badge}`}
+            >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`} />
+                {WBS_STATUS_LABEL[value]}
+            </button>
+
+            {/* 드롭다운 */}
+            {open && (
+                <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-100 rounded-xl shadow-lg p-1.5 flex flex-col gap-1 min-w-[100px]">
+                    {WBS_STATUS_ORDER.map((s) => {
+                        const st = STATUS_STYLE[s];
+                        return (
+                            <button
+                                key={s}
+                                type="button"
+                                onClick={() => { onChange(s); setOpen(false); }}
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-colors hover:opacity-80 ${st.badge} ${s === value ? 'ring-1 ring-offset-1 ring-current' : ''}`}
+                            >
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${st.dot}`} />
+                                {WBS_STATUS_LABEL[s]}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+/** 구분(산출물) 카테고리 색상 맵 */
+const CATEGORY_COLOR: Record<string, string> = {
+    Controller:  'bg-blue-100 text-blue-700 border-blue-200',
+    Service:     'bg-emerald-100 text-emerald-700 border-emerald-200',
+    ServiceImpl: 'bg-teal-100 text-teal-700 border-teal-200',
+    VO:          'bg-purple-100 text-purple-700 border-purple-200',
+    Mapper:      'bg-orange-100 text-orange-700 border-orange-200',
+    Html:        'bg-pink-100 text-pink-700 border-pink-200',
+    '기능':      'bg-indigo-100 text-indigo-700 border-indigo-200',
+    Debuging:    'bg-amber-100 text-amber-700 border-amber-200',
+};
+const CATEGORY_COLOR_DEFAULT = 'bg-gray-100 text-gray-700 border-gray-200';
+
+const PRESET_CATEGORIES = WBS_DEFAULT_CATEGORIES.filter((c) => c !== '직접입력');
+
+/**
+ * 구분(산출물) 셀
+ * - 값이 있으면 컬러 뱃지로 표시, 클릭하면 편집 모드
+ * - 편집 모드: 셀렉트 or 직접입력 텍스트
+ */
+const CategoryCell: React.FC<{ value: string; onChange: (v: string) => void; inputClass: string }> = ({ value, onChange }) => {
+    const [editing, setEditing] = useState(!value);
+    const [isCustom, setIsCustom] = useState(!PRESET_CATEGORIES.includes(value) && value !== '');
+
+    const commit = (v: string) => {
+        onChange(v);
+        if (v) setEditing(false);
+    };
+
+    const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const v = e.target.value;
+        if (v === '__custom__') { setIsCustom(true); onChange(''); }
+        else commit(v);
+    };
+
+    // 뱃지 표시 모드
+    if (!editing && value) {
+        const color = CATEGORY_COLOR[value] ?? CATEGORY_COLOR_DEFAULT;
+        return (
+            <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="w-full px-2 py-1.5 text-left"
+                title="클릭하여 변경"
+            >
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-bold ${color}`}>
+                    {value}
+                </span>
+            </button>
+        );
+    }
+
+    // 편집 모드 — 직접입력
+    if (isCustom) {
+        return (
+            <div className="flex items-center gap-0.5 px-1">
+                <input
+                    autoFocus
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    onBlur={() => { if (value) setEditing(false); }}
+                    placeholder="직접 입력"
+                    className="flex-1 min-w-0 bg-transparent py-1.5 text-sm outline-none focus:bg-emerald-50/50 rounded"
+                />
+                <button type="button" title="목록으로" onClick={() => { setIsCustom(false); onChange(''); }}
+                    className="shrink-0 p-1 text-gray-300 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
+                    <RotateCcw size={11} />
+                </button>
+            </div>
+        );
+    }
+
+    // 편집 모드 — 셀렉트
+    return (
+        <div className="flex items-center gap-0.5 px-1">
+            <select
+                autoFocus
+                value={PRESET_CATEGORIES.includes(value) ? value : ''}
+                onChange={handleSelect}
+                onBlur={() => { if (value) setEditing(false); }}
+                className="flex-1 min-w-0 bg-transparent py-1.5 text-sm outline-none focus:bg-emerald-50/50 rounded cursor-pointer"
+            >
+                <option value="" disabled>선택...</option>
+                {PRESET_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="__custom__">✏️ 직접입력</option>
+            </select>
+        </div>
+    );
+};
+
+type BulkField = 'assignee' | 'startDate' | 'endDate' | 'status' | 'progress';
+
+const BULK_ACTIONS: { field: BulkField; label: string; icon: React.ReactNode }[] = [
+    { field: 'assignee',  label: '담당자 일괄', icon: <User size={13} /> },
+    { field: 'startDate', label: '시작일 일괄', icon: <CalendarDays size={13} /> },
+    { field: 'endDate',   label: '종료일 일괄', icon: <CalendarCheck size={13} /> },
+    { field: 'status',    label: '상태 일괄',   icon: <Activity size={13} /> },
+    { field: 'progress',  label: '진행률 일괄', icon: <Percent size={13} /> },
+];
+
 const WbsDevDetail: React.FC = () => {
-    const menus = useWbsStore((s) => s.menus);
-    const rows = useWbsStore((s) => s.rows);
-    const addRow = useWbsStore((s) => s.addRow);
-    const addRows = useWbsStore((s) => s.addRows);
+    const menus     = useWbsStore((s) => s.menus);
+    const rows      = useWbsStore((s) => s.rows);
+    const addRow    = useWbsStore((s) => s.addRow);
+    const addRows   = useWbsStore((s) => s.addRows);
     const updateRow = useWbsStore((s) => s.updateRow);
     const deleteRow = useWbsStore((s) => s.deleteRow);
 
     const [selectedMenuId, setSelectedMenuId] = useState<string | null>(null);
-    // 첫 메뉴 자동 선택
     useEffect(() => {
         if (!selectedMenuId && menus.length > 0) setSelectedMenuId(menus[0].id);
         if (selectedMenuId && !menus.some((m) => m.id === selectedMenuId)) {
@@ -25,12 +235,46 @@ const WbsDevDetail: React.FC = () => {
     }, [menus, selectedMenuId]);
 
     const selectedMenu = menus.find((m) => m.id === selectedMenuId) || null;
-    const menuRows = rows.filter((r) => r.menuId === selectedMenuId);
+    // Debugging 행은 항상 맨 아래
+    const menuRows = rows
+        .filter((r) => r.menuId === selectedMenuId)
+        .sort((a, b) => (a.isDebugging ? 1 : 0) - (b.isDebugging ? 1 : 0));
+
+    // ── 담당자 필터 ──
+    /** 전체 고유 담당자 (등장 순) */
+    const allAssignees = useMemo(() => {
+        const seen = new Set<string>();
+        const result: string[] = [];
+        for (const r of rows) {
+            if (r.assignee && !seen.has(r.assignee)) {
+                seen.add(r.assignee);
+                result.push(r.assignee);
+            }
+        }
+        return result;
+    }, [rows]);
+
+    /** 담당자 → 팔레트 인덱스 */
+    const assigneeColorIdx = useMemo(() => {
+        const map = new Map<string, number>();
+        allAssignees.forEach((a, i) => map.set(a, i));
+        return map;
+    }, [allAssignees]);
+
+    const [activeAssignees, setActiveAssignees] = useState<Set<string>>(new Set());
+    const toggleAssignee = (name: string) => {
+        setActiveAssignees((prev) => {
+            const next = new Set(prev);
+            if (next.has(name)) next.delete(name);
+            else next.add(name);
+            return next;
+        });
+    };
 
     // ── 좌/우 분할 리사이저 ──
-    const [leftWidth, setLeftWidth] = useState(300);
-    const draggingRef = useRef(false);
-    const containerRef = useRef<HTMLDivElement>(null);
+    const [leftWidth, setLeftWidth]   = useState(300);
+    const draggingRef                  = useRef(false);
+    const containerRef                 = useRef<HTMLDivElement>(null);
     const onResizeDown = useCallback(() => { draggingRef.current = true; }, []);
     useEffect(() => {
         const onMove = (e: MouseEvent) => {
@@ -45,13 +289,178 @@ const WbsDevDetail: React.FC = () => {
         return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
     }, []);
 
+    // ── 지니 패널 ──
+    const [showBulk, setShowBulk]             = useState(false);
+    const [bulkPos, setBulkPos]               = useState({ top: 0, right: 0 });
+    const [bulkField, setBulkField]           = useState<BulkField | null>(null);
+    const [bulkValue, setBulkValue]           = useState('');
+    const bulkTriggerRef                       = useRef<HTMLButtonElement>(null);
+    const bulkPanelRef                         = useRef<HTMLDivElement>(null);
+
+    const openBulkPanel = () => {
+        if (bulkTriggerRef.current) {
+            const rect = bulkTriggerRef.current.getBoundingClientRect();
+            setBulkPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+        }
+        setBulkField(null);
+        setBulkValue('');
+        setShowBulk((v) => !v);
+    };
+
+    useEffect(() => {
+        if (!showBulk) return;
+        const handler = (e: MouseEvent) => {
+            if (
+                bulkPanelRef.current && !bulkPanelRef.current.contains(e.target as Node) &&
+                bulkTriggerRef.current && !bulkTriggerRef.current.contains(e.target as Node)
+            ) {
+                setShowBulk(false);
+                setBulkField(null);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showBulk]);
+
+    // 일괄 적용
+    const applyBulk = () => {
+        if (!selectedMenuId || bulkField === null) return;
+        menuRows.forEach((r) => {
+            if (bulkField === 'progress') {
+                updateRow(r.id, { progress: Math.min(100, Math.max(0, Number(bulkValue) || 0)) });
+            } else if (bulkField === 'status') {
+                const status = bulkValue as typeof r.status;
+                updateRow(r.id, status === 'DONE' ? { status, progress: 100 } : { status });
+            } else {
+                updateRow(r.id, { [bulkField]: bulkValue } as Parameters<typeof updateRow>[1]);
+            }
+        });
+        setShowBulk(false);
+        setBulkField(null);
+        setBulkValue('');
+    };
+
     const cellInput = 'w-full bg-transparent px-2 py-1.5 text-sm outline-none focus:bg-emerald-50/50 rounded';
+
+    // Debugging 행의 상태/진행율 잠금 여부:
+    // 일반 행(isDebugging 아닌) 모두 progress=100 && status=DONE 이면 해제
+    const debugUnlocked = useMemo(() => {
+        const normalRows = menuRows.filter((r) => !r.isDebugging);
+        return normalRows.length > 0 && normalRows.every((r) => r.progress === 100 && r.status === 'DONE');
+    }, [menuRows]);
+
+    // 일괄 입력 컴포넌트
+    const renderBulkInput = () => {
+        if (bulkField === 'status') {
+            return (
+                <select
+                    value={bulkValue}
+                    onChange={(e) => setBulkValue(e.target.value)}
+                    className="w-full mt-2 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-emerald-400"
+                    autoFocus
+                >
+                    <option value="">선택하세요</option>
+                    {WBS_STATUS_ORDER.map((s) => (
+                        <option key={s} value={s}>{WBS_STATUS_LABEL[s]}</option>
+                    ))}
+                </select>
+            );
+        }
+        if (bulkField === 'startDate' || bulkField === 'endDate') {
+            return (
+                <input
+                    type="date"
+                    value={bulkValue}
+                    onChange={(e) => setBulkValue(e.target.value)}
+                    className="w-full mt-2 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-emerald-400"
+                    autoFocus
+                />
+            );
+        }
+        if (bulkField === 'progress') {
+            return (
+                <div className="flex items-center gap-1 mt-2">
+                    <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={bulkValue}
+                        onChange={(e) => setBulkValue(e.target.value)}
+                        placeholder="0"
+                        className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-emerald-400"
+                        autoFocus
+                    />
+                    <span className="text-xs text-gray-400 shrink-0">%</span>
+                </div>
+            );
+        }
+        // assignee
+        return (
+            <input
+                type="text"
+                value={bulkValue}
+                onChange={(e) => setBulkValue(e.target.value)}
+                placeholder="담당자명 입력"
+                className="w-full mt-2 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-emerald-400"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') applyBulk(); }}
+            />
+        );
+    };
 
     return (
         <div ref={containerRef} className="flex h-full min-h-0">
-            {/* 좌: 메뉴 트리(선택 전용) */}
-            <div className="shrink-0 border-r border-gray-200 bg-white p-3 overflow-hidden" style={{ width: leftWidth }}>
-                <WbsMenuTree selectedId={selectedMenuId} onSelect={setSelectedMenuId} editable={false} showProgress />
+            {/* 좌: 메뉴 트리 + 담당자 필터 */}
+            <div className="shrink-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden" style={{ width: leftWidth + 100 }}>
+                {/* 담당자 필터 토글 */}
+                {allAssignees.length > 0 && (
+                    <div className="px-3 pt-3 pb-2 border-b border-gray-100">
+                        <nav className="flex flex-wrap items-center gap-1 bg-gray-100 rounded-xl p-1">
+                            <button
+                                type="button"
+                                onClick={() => setActiveAssignees(new Set())}
+                                className={`flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                                    activeAssignees.size === 0
+                                        ? 'bg-white text-gray-800 shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-800'
+                                }`}
+                            >
+                                ALL
+                            </button>
+                            {allAssignees.map((a) => {
+                                const idx = (assigneeColorIdx.get(a) ?? 0) % ASSIGNEE_PALETTE.length;
+                                const dotColor = ASSIGNEE_PALETTE[idx].active.split(' ')[0]; // bg-xxx-500
+                                const isActive = activeAssignees.has(a);
+                                return (
+                                    <button
+                                        key={a}
+                                        type="button"
+                                        onClick={() => toggleAssignee(a)}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                                            isActive
+                                                ? 'bg-white text-gray-800 shadow-sm'
+                                                : 'text-gray-500 hover:text-gray-800'
+                                        }`}
+                                    >
+                                        <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                                        {a}
+                                    </button>
+                                );
+                            })}
+                        </nav>
+                    </div>
+                )}
+                <div className="flex-1 min-h-0 p-3 overflow-hidden">
+                    <WbsMenuTree
+                        selectedId={selectedMenuId}
+                        onSelect={setSelectedMenuId}
+                        editable={false}
+                        showProgress
+                        showAssignee
+                        activeAssignees={activeAssignees}
+                        assigneeColorIdx={assigneeColorIdx}
+                    />
+                </div>
             </div>
 
             {/* 리사이저 */}
@@ -61,10 +470,11 @@ const WbsDevDetail: React.FC = () => {
             <div className="flex-1 min-w-0 flex flex-col bg-gray-50">
                 {!selectedMenu ? (
                     <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-                        좌측에서 메뉴를 선택하세요. (메뉴는 ‘메뉴 구조도’ 탭에서 추가)
+                        좌측에서 메뉴를 선택하세요. (메뉴는 '메뉴 구조도' 탭에서 추가)
                     </div>
                 ) : (
                     <>
+                        {/* 헤더 */}
                         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white">
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2">
@@ -73,6 +483,7 @@ const WbsDevDetail: React.FC = () => {
                                 </div>
                                 <p className="text-[11px] text-gray-400 mt-0.5">선택한 메뉴의 산출물·기능별 일정을 입력합니다.</p>
                             </div>
+
                             <div className="shrink-0 flex items-center gap-2">
                                 <button
                                     type="button"
@@ -83,15 +494,49 @@ const WbsDevDetail: React.FC = () => {
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => addRows(selectedMenu.id, ALL_ARTIFACT_CATEGORIES)}
+                                    onClick={() => {
+                                        if (window.confirm(`${ALL_ARTIFACT_CATEGORIES.join(', ')} 행을 추가하시겠습니까?`))
+                                            addRows(selectedMenu.id, ALL_ARTIFACT_CATEGORIES);
+                                    }}
                                     title={`산출물 행 일괄 추가: ${ALL_ARTIFACT_CATEGORIES.join(', ')}`}
                                     className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 transition-colors"
                                 >
                                     <Plus size={15} /> ALL
                                 </button>
+
+                                {/* 지니 램프 트리거 */}
+                                <style>{`
+                                    @keyframes genieItem {
+                                        0%   { opacity:0; transform:translateY(10px) scaleX(0.4) scaleY(0.6); filter:blur(3px); }
+                                        60%  { opacity:1; transform:translateY(-3px) scaleX(1.04) scaleY(1.04); filter:blur(0); }
+                                        100% { opacity:1; transform:translateY(0) scaleX(1) scaleY(1); filter:blur(0); }
+                                    }
+                                    @keyframes genieTriggerOpen {
+                                        0%   { transform:scale(1) rotate(0deg); }
+                                        40%  { transform:scale(0.85) rotate(-15deg); }
+                                        100% { transform:scale(1) rotate(0deg); }
+                                    }
+                                    .genie-item { animation:genieItem 0.38s cubic-bezier(0.34,1.56,0.64,1) both; }
+                                    .genie-trigger-anim { animation:genieTriggerOpen 0.35s ease both; }
+                                `}</style>
+                                <button
+                                    ref={bulkTriggerRef}
+                                    key={showBulk ? 'open' : 'closed'}
+                                    type="button"
+                                    onClick={openBulkPanel}
+                                    className={`genie-trigger-anim flex items-center justify-center w-9 h-9 rounded-xl transition-colors shadow-sm ${
+                                        showBulk
+                                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                            : 'bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100'
+                                    }`}
+                                    title="일괄 입력"
+                                >
+                                    <Layers size={16} />
+                                </button>
                             </div>
                         </div>
 
+                        {/* 테이블 */}
                         <div className="flex-1 overflow-auto">
                             <table className="w-full border-collapse text-sm">
                                 <thead className="sticky top-0 z-10">
@@ -111,14 +556,30 @@ const WbsDevDetail: React.FC = () => {
                                     {menuRows.length === 0 ? (
                                         <tr>
                                             <td colSpan={9} className="text-center text-gray-400 py-10 text-sm">
-                                                아직 입력된 산출물이 없습니다. ‘행 추가’로 시작하세요.
+                                                아직 입력된 산출물이 없습니다. '행 추가'로 시작하세요.
                                             </td>
                                         </tr>
                                     ) : (
-                                        menuRows.map((r) => (
-                                            <tr key={r.id} className="bg-white hover:bg-gray-50 border-b border-gray-100">
+                                        menuRows.map((r) => {
+                                            const isDbg = !!r.isDebugging;
+                                            const dbgLocked = isDbg && !debugUnlocked;
+                                            return (
+                                            <tr
+                                                key={r.id}
+                                                className={`border-b border-gray-100 ${
+                                                    isDbg
+                                                        ? 'bg-amber-50/60 hover:bg-amber-50'
+                                                        : 'bg-white hover:bg-gray-50'
+                                                }`}
+                                            >
                                                 <td className="align-middle">
-                                                    <input list="wbs-categories" value={r.category} onChange={(e) => updateRow(r.id, { category: e.target.value })} placeholder="Controller…" className={cellInput} />
+                                                    {isDbg ? (
+                                                        <span className="flex items-center gap-1.5 px-2 py-1.5">
+                                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold">Debuging</span>
+                                                        </span>
+                                                    ) : (
+                                                        <CategoryCell value={r.category} onChange={(v) => updateRow(r.id, { category: v })} inputClass={cellInput} />
+                                                    )}
                                                 </td>
                                                 <td className="align-middle">
                                                     <input value={r.featureName} onChange={(e) => updateRow(r.id, { featureName: e.target.value })} placeholder="기능명" className={cellInput} />
@@ -133,36 +594,110 @@ const WbsDevDetail: React.FC = () => {
                                                     <input type="date" value={r.endDate} onChange={(e) => updateRow(r.id, { endDate: e.target.value })} className={cellInput} />
                                                 </td>
                                                 <td className="align-middle">
-                                                    <select value={r.status} onChange={(e) => updateRow(r.id, { status: e.target.value as typeof r.status })} className={`${cellInput} cursor-pointer`}>
-                                                        {WBS_STATUS_ORDER.map((s) => <option key={s} value={s}>{WBS_STATUS_LABEL[s]}</option>)}
-                                                    </select>
+                                                    {dbgLocked ? (
+                                                        <span className="flex items-center gap-1.5 px-2 py-1.5">
+                                                            <span className="pointer-events-none select-none">
+                                                                <StatusCell value={r.status} onChange={() => {}} />
+                                                            </span>
+                                                            <LockTooltip />
+                                                        </span>
+                                                    ) : (
+                                                        <StatusCell
+                                                            value={r.status}
+                                                            onChange={(status) => updateRow(r.id, status === 'DONE' ? { status, progress: 100 } : { status })}
+                                                        />
+                                                    )}
                                                 </td>
                                                 <td className="align-middle">
-                                                    <div className="flex items-center gap-1 px-2">
-                                                        <input type="number" min={0} max={100} value={r.progress} onChange={(e) => updateRow(r.id, { progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} className="w-12 bg-transparent text-sm outline-none focus:bg-emerald-50/50 rounded text-right" />
-                                                        <span className="text-xs text-gray-400">%</span>
-                                                    </div>
+                                                    {dbgLocked ? (
+                                                        <div className="flex items-center gap-1 px-2 py-1.5 text-gray-400">
+                                                            <span className="w-12 text-right text-sm tabular-nums">{r.progress}</span>
+                                                            <span className="text-xs">%</span>
+                                                            <LockTooltip />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-1 px-2">
+                                                            <input type="number" min={0} max={100} value={r.progress} onChange={(e) => updateRow(r.id, { progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} className="w-12 bg-transparent text-sm outline-none focus:bg-emerald-50/50 rounded text-right" />
+                                                            <span className="text-xs text-gray-400">%</span>
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="align-middle">
                                                     <input value={r.note ?? ''} onChange={(e) => updateRow(r.id, { note: e.target.value })} placeholder="비고" className={cellInput} />
                                                 </td>
                                                 <td className="align-middle text-center">
-                                                    <button type="button" onClick={() => deleteRow(r.id)} className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded" title="행 삭제">
-                                                        <Trash2 size={14} />
-                                                    </button>
+                                                    {(!isDbg || menuRows.filter((row) => !row.isDebugging).length === 0) && (
+                                                        <button type="button" onClick={() => deleteRow(r.id)} className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded" title="행 삭제">
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
-                                        ))
+                                            );
+                                        })
                                     )}
                                 </tbody>
                             </table>
-                            <datalist id="wbs-categories">
-                                {WBS_DEFAULT_CATEGORIES.map((c) => <option key={c} value={c} />)}
-                            </datalist>
                         </div>
                     </>
                 )}
             </div>
+
+            {/* 지니 패널 — Portal로 body에 마운트 */}
+            {showBulk && createPortal(
+                <div
+                    ref={bulkPanelRef}
+                    style={{ position: 'fixed', top: bulkPos.top, right: bulkPos.right, zIndex: 9999, minWidth: 200 }}
+                >
+                    <div className="bg-white/95 backdrop-blur-md border border-gray-100 rounded-2xl shadow-2xl p-2 flex flex-col gap-1">
+                        {bulkField === null ? (
+                            /* 필드 선택 목록 */
+                            BULK_ACTIONS.map((action, i) => (
+                                <button
+                                    key={action.field}
+                                    type="button"
+                                    onClick={() => { setBulkField(action.field); setBulkValue(action.field === 'progress' ? '0' : ''); }}
+                                    style={{ animationDelay: `${i * 55}ms` }}
+                                    className="genie-item flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap text-left
+                                        bg-white text-indigo-700 border border-indigo-100 hover:bg-indigo-50 transition-colors"
+                                >
+                                    {action.icon}
+                                    + {action.label}
+                                </button>
+                            ))
+                        ) : (
+                            /* 값 입력 폼 */
+                            <div className="genie-item px-1 flex flex-col gap-2" style={{ minWidth: 220 }}>
+                                {/* 상단: 뒤로 + 레이블 */}
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setBulkField(null); setBulkValue(''); }}
+                                        className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                    >
+                                        <ChevronLeft size={14} />
+                                    </button>
+                                    <span className="text-xs font-bold text-gray-600">
+                                        {BULK_ACTIONS.find((a) => a.field === bulkField)?.label} 일괄 적용
+                                    </span>
+                                </div>
+
+                                {renderBulkInput()}
+
+                                <button
+                                    type="button"
+                                    onClick={applyBulk}
+                                    disabled={bulkValue === '' || menuRows.length === 0}
+                                    className="mt-1 w-full px-3 py-2 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    전체 {menuRows.length}행 적용
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 };

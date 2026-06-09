@@ -42,11 +42,19 @@ export interface WbsDevRow {
     /** 진행율 0~100 */
     progress: number;
     note?: string;
+    /** Debugging 전용 행 여부 */
+    isDebugging?: boolean;
+}
+
+export interface WbsProjectSchedule {
+    startDate: string;
+    endDate: string;
 }
 
 export interface WbsData {
     menus: WbsMenuNode[];
     rows: WbsDevRow[];
+    projectSchedule?: WbsProjectSchedule;
 }
 
-export const WBS_DEFAULT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html', '기능'];
+export const WBS_DEFAULT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html','Debuging', '기능','직접입력'];

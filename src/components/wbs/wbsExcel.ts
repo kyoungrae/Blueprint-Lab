@@ -1,6 +1,21 @@
-import * as XLSX from 'xlsx';
+// xlsx-js-style: xlsx 호환 + 셀 스타일(fill/font/border) 지원 브라우저 라이브러리
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import XLSXStyle from 'xlsx-js-style';
+import * as XLSX from 'xlsx';   // 업로드 파싱은 기존 xlsx 유지
+import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus } from '../../types/wbs';
 import { WBS_STATUS_LABEL, WBS_STATUS_ORDER } from '../../types/wbs';
+
+// ── xlsx-js-style 타입 헬퍼 ──────────────────────────
+type XStyle = {
+    fill?:      { patternType: 'solid'; fgColor: { rgb: string } };
+    font?:      { bold?: boolean; color?: { rgb: string }; sz?: number; name?: string };
+    border?:    { bottom?: { style: string; color: { rgb: string } }; right?: { style: string; color: { rgb: string } } };
+    alignment?: { vertical?: string; horizontal?: string; wrapText?: boolean };
+};
+type XCell = { v: string | number; t: 's' | 'n'; s?: XStyle };
+type XAoa  = (XCell | null)[][];
 
 const uid = (prefix: string) =>
     `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -81,71 +96,241 @@ function buildMenuTreeSheet(menus: WbsMenuNode[]): { aoa: string[][]; merges: XL
     return { aoa, merges, maxDepth };
 }
 
+/** 산출물 구분 정렬 순서 */
+const CATEGORY_ORDER = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html', 'Debuging', '기능'];
+
+/** 메뉴 트리 전위 순서 id 배열 (DFS) — 메뉴별 행 정렬 기준 */
+function menuDfsOrder(menus: WbsMenuNode[]): Map<string, number> {
+    const byParent = new Map<string | null, WbsMenuNode[]>();
+    for (const m of menus) {
+        const key = m.parentId ?? null;
+        if (!byParent.has(key)) byParent.set(key, []);
+        byParent.get(key)!.push(m);
+    }
+    for (const list of byParent.values()) list.sort((a, b) => a.order - b.order);
+    const order = new Map<string, number>();
+    let idx = 0;
+    const dfs = (parentId: string | null) => {
+        for (const m of byParent.get(parentId) ?? []) {
+            order.set(m.id, idx++);
+            dfs(m.id);
+        }
+    };
+    dfs(null);
+    return order;
+}
+
 /** 현재 WBS 상태를 엑셀(.xlsx)로 다운로드 */
 export function downloadWbsExcel(data: WbsData, projectName: string): void {
     const { menus, rows } = data;
-
     const menuCodeById = new Map(menus.map((m) => [m.id, m.menuCode]));
+    const menuOrder = menuDfsOrder(menus);
 
-    // 시트1: 개발 상세 — 메뉴경로를 뎁스(단계)별 열로 분리해 보기/수정이 쉽게.
-    // (매칭은 'ID(수정금지)'·'메뉴코드'로 하므로 경로 열은 가독용)
-    const pathDepth = Math.max(1, ...rows.map((r) => menuPathParts(menus, r.menuId).length));
-    const detailHeader = [
+    // ── 행 정렬: 메뉴 트리 순 → 산출물 구분 순 → 기능명 순 ──
+    const sortedRows = [...rows].sort((a, b) => {
+        const ma = menuOrder.get(a.menuId) ?? 999999;
+        const mb = menuOrder.get(b.menuId) ?? 999999;
+        if (ma !== mb) return ma - mb;
+        const ca = CATEGORY_ORDER.indexOf(a.category);
+        const cb = CATEGORY_ORDER.indexOf(b.category);
+        if (ca !== cb) return (ca < 0 ? 999 : ca) - (cb < 0 ? 999 : cb);
+        return a.featureName.localeCompare(b.featureName, 'ko');
+    });
+
+    const pathDepth = Math.max(1, ...sortedRows.map((r) => menuPathParts(menus, r.menuId).length));
+
+    // ── 팔레트 (메뉴 그룹 색 — 2색 교대) ──
+    const GROUP_PALETTES = [
+        { base: 'EFF6FF', debug: 'DBEAFE' }, // light blue
+        { base: 'F9FAFB', debug: 'F3F4F6' }, // light gray
+    ];
+    const HEADER_BG  = '1E293B';
+    const HEADER_FG  = 'FFFFFF';
+    const BORDER_CLR = 'E2E8F0';
+
+    const statusFgColors: Record<string, string> = {
+        '완료': '059669', '진행중': '2563EB', '보류': 'D97706', '대기': '6B7280',
+    };
+
+    const hdrStyle = (align: 'center' | 'left' = 'center'): XStyle => ({
+        fill:      { patternType: 'solid', fgColor: { rgb: HEADER_BG } },
+        font:      { bold: true, color: { rgb: HEADER_FG }, sz: 10, name: '맑은 고딕' },
+        border:    { bottom: { style: 'thin', color: { rgb: '334155' } }, right: { style: 'thin', color: { rgb: '334155' } } },
+        alignment: { vertical: 'center', horizontal: align, wrapText: false },
+    });
+
+    const cellStyle = (bg: string, extra?: Partial<XStyle>): XStyle => ({
+        fill:      { patternType: 'solid', fgColor: { rgb: bg } },
+        font:      { name: '맑은 고딕', sz: 9, ...extra?.font },
+        border:    { bottom: { style: 'thin', color: { rgb: BORDER_CLR } }, right: { style: 'thin', color: { rgb: BORDER_CLR } } },
+        alignment: { vertical: 'center', wrapText: false, ...extra?.alignment },
+        ...extra,
+    });
+
+    const sc = (v: string | number, s: XStyle): XCell =>
+        ({ v, t: typeof v === 'number' ? 'n' : 's', s });
+
+    // ─────────────────────────────────────────────
+    // 시트1: 개발 상세
+    // ─────────────────────────────────────────────
+    const detailAoa: XAoa = [];
+
+    // 헤더 행
+    const hdrLabels = [
         'ID(수정금지)',
         ...Array.from({ length: pathDepth }, () => '메뉴경로'),
         '메뉴코드', '구분(산출물)', '기능명', '담당자', '시작일', '종료일', '상태', '진행율(%)', '비고',
     ];
-    const detailBody = rows.map((r) => {
-        const parts = menuPathParts(menus, r.menuId);
-        const pathCols = Array.from({ length: pathDepth }, (_, i) => parts[i] ?? '');
-        return [
-            r.id,
-            ...pathCols,
-            menuCodeById.get(r.menuId) ?? '',
-            r.category, r.featureName, r.assignee, r.startDate, r.endDate,
-            WBS_STATUS_LABEL[r.status], r.progress, r.note ?? '',
+    detailAoa.push(hdrLabels.map((v) => sc(v, hdrStyle())));
+
+    // 데이터
+    let groupColorIdx = -1;
+    let lastMenuId = '';
+
+    for (const r of sortedRows) {
+        if (r.menuId !== lastMenuId) { groupColorIdx = (groupColorIdx + 1) % GROUP_PALETTES.length; lastMenuId = r.menuId; }
+        const palette   = GROUP_PALETTES[groupColorIdx];
+        const bg        = r.isDebugging ? palette.debug : palette.base;
+        const parts     = menuPathParts(menus, r.menuId);
+        const statusLbl = WBS_STATUS_LABEL[r.status];
+        const sfg       = statusFgColors[statusLbl] ?? '6B7280';
+
+        const row: XCell[] = [
+            sc(r.id,   cellStyle(bg, { font: { name: '맑은 고딕', sz: 8, color: { rgb: '94A3B8' } } })),
+            // 메뉴경로 열
+            ...Array.from({ length: pathDepth }, (_, i) =>
+                sc(parts[i] ?? '', cellStyle(bg))
+            ),
+            // 메뉴코드
+            sc(menuCodeById.get(r.menuId) ?? '', cellStyle(bg, { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: '4F46E5' } }, alignment: { horizontal: 'center', vertical: 'center' } })),
+            // 구분
+            sc(r.category,    cellStyle(bg)),
+            // 기능명
+            sc(r.featureName, cellStyle(bg)),
+            // 담당자
+            sc(r.assignee,    cellStyle(bg)),
+            // 시작일·종료일
+            sc(r.startDate,   cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(r.endDate,     cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            // 상태
+            sc(statusLbl, cellStyle(bg, { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: sfg } }, alignment: { horizontal: 'center', vertical: 'center' } })),
+            // 진행율
+            sc(r.progress, cellStyle(bg, { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: r.progress === 100 ? '059669' : '374151' } }, alignment: { horizontal: 'center', vertical: 'center' } })),
+            // 비고
+            sc(r.note ?? '', cellStyle(bg)),
         ];
-    });
+        detailAoa.push(row);
+    }
 
-    const wb = XLSX.utils.book_new();
-
-    // 시트1: 메뉴 구조 (뎁스별 열 + 상위 병합)
-    const { aoa, merges, maxDepth } = buildMenuTreeSheet(menus);
-    const header = Array.from({ length: maxDepth + 1 }, (_, i) => `${i + 1}단계`);
-    const treeAoa: (string | undefined)[][] = aoa.length ? [header, ...aoa] : [header, []];
-    const wsMenu = XLSX.utils.aoa_to_sheet(treeAoa);
-    // 헤더가 0행에 들어갔으므로 병합 좌표를 한 행 아래로 이동
-    wsMenu['!merges'] = merges.map((m) => ({ s: { r: m.s.r + 1, c: m.s.c }, e: { r: m.e.r + 1, c: m.e.c } }));
-    wsMenu['!cols'] = Array.from({ length: maxDepth + 1 }, () => ({ wch: 22 }));
-    XLSX.utils.book_append_sheet(wb, wsMenu, '메뉴구조');
-
-    // 시트2: 개발 상세 (메뉴경로 = 뎁스별 열)
-    const wsDetail = XLSX.utils.aoa_to_sheet([detailHeader, ...detailBody]);
-    wsDetail['!cols'] = [
-        { wch: 20 },
+    const ws1 = XLSXStyle.utils.aoa_to_sheet(detailAoa);
+    ws1['!cols'] = [
+        { wch: 22 },
         ...Array.from({ length: pathDepth }, () => ({ wch: 18 })),
-        { wch: 12 }, { wch: 14 }, { wch: 24 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 24 },
+        { wch: 13 }, { wch: 13 }, { wch: 26 }, { wch: 10 },
+        { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 22 },
     ];
-    XLSX.utils.book_append_sheet(wb, wsDetail, '개발상세');
+    ws1['!rows'] = [{ hpt: 22 }];
+    ws1['!freeze'] = { xSplit: 0, ySplit: 1 };
 
-    // 시트3: 메뉴 데이터 (재업로드용 — 코드/상위코드 보존)
-    const menuData = menus
+    // ─────────────────────────────────────────────
+    // 시트2: 메뉴 구조
+    // ─────────────────────────────────────────────
+    const { aoa, merges, maxDepth } = buildMenuTreeSheet(menus);
+    const treeHdr = Array.from({ length: maxDepth + 1 }, (_, i) => sc(`${i + 1}단계`, hdrStyle()));
+    const treeAoa: XAoa = [treeHdr, ...aoa.map((row) =>
+        Array.from({ length: maxDepth + 1 }, (_, i) =>
+            sc(row[i] ?? '', cellStyle('FFFFFF'))
+        )
+    )];
+    const ws2 = XLSXStyle.utils.aoa_to_sheet(treeAoa);
+    ws2['!cols'] = Array.from({ length: maxDepth + 1 }, () => ({ wch: 22 }));
+    ws2['!merges'] = merges.map((m) => ({ s: { r: m.s.r + 1, c: m.s.c }, e: { r: m.e.r + 1, c: m.e.c } }));
+
+    // ─────────────────────────────────────────────
+    // 시트3: 메뉴 데이터 (재업로드용)
+    // ─────────────────────────────────────────────
+    const menuHdr = ['ID(수정금지)', '메뉴코드', '메뉴명', '전체경로', '상위메뉴코드'].map((v) => sc(v, hdrStyle('left')));
+    const menuBodyAoa: XAoa = [menuHdr, ...menus
         .slice()
-        .sort((a, b) => a.order - b.order)
-        .map((m) => ({
-            'ID(수정금지)': m.id,
-            '메뉴코드': m.menuCode,
-            '메뉴명': m.name,
-            '전체경로': menuPath(menus, m.id),
-            '상위메뉴코드': m.parentId ? (menus.find((x) => x.id === m.parentId)?.menuCode ?? '') : '',
-        }));
-    const wsMenuData = XLSX.utils.json_to_sheet(menuData.length ? menuData : [{ 'ID(수정금지)': '', '메뉴코드': '', '메뉴명': '', '전체경로': '', '상위메뉴코드': '' }]);
-    wsMenuData['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 24 }, { wch: 36 }, { wch: 14 }];
-    XLSX.utils.book_append_sheet(wb, wsMenuData, '메뉴데이터');
+        .sort((a, b) => (menuOrder.get(a.id) ?? 0) - (menuOrder.get(b.id) ?? 0))
+        .map((m) => [
+            sc(m.id, cellStyle('FFFFFF', { font: { name: '맑은 고딕', sz: 8, color: { rgb: '94A3B8' } } })),
+            sc(m.menuCode,  cellStyle('FFFFFF', { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: '4F46E5' } } })),
+            sc(m.name,      cellStyle('FFFFFF')),
+            sc(menuPath(menus, m.id), cellStyle('F8FAFC')),
+            sc(m.parentId ? (menus.find((x) => x.id === m.parentId)?.menuCode ?? '') : '', cellStyle('FFFFFF')),
+        ])
+    ];
+    const ws3 = XLSXStyle.utils.aoa_to_sheet(menuBodyAoa);
+    ws3['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 24 }, { wch: 40 }, { wch: 14 }];
+
+    // ─────────────────────────────────────────────
+    // 워크북 조립
+    // ─────────────────────────────────────────────
+    const wb = XLSXStyle.utils.book_new();
+    XLSXStyle.utils.book_append_sheet(wb, ws1, '개발상세');
+    XLSXStyle.utils.book_append_sheet(wb, ws2, '메뉴구조');
+    XLSXStyle.utils.book_append_sheet(wb, ws3, '메뉴데이터');
 
     const safeName = (projectName || 'WBS').replace(/[\\/:*?"<>|]/g, '_');
     const today = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `${safeName}_WBS_${today}.xlsx`);
+    const fileName = `${safeName}_WBS_${today}.xlsx`;
+
+    // ─────────────────────────────────────────────
+    // xlsx ZIP 조작: 개발상세 시트에 상태 드롭다운 데이터 유효성 추가
+    // xlsx-js-style이 dataValidation을 직접 지원하지 않으므로 XML 직접 삽입
+    // ─────────────────────────────────────────────
+    try {
+        // 열 인덱스(0-based) → Excel 열 문자 변환 (A, B, ..., Z, AA, ...)
+        const colLetter = (idx: number): string => {
+            let s = '';
+            let n = idx + 1;
+            while (n > 0) { s = String.fromCharCode(64 + ((n - 1) % 26 + 1)) + s; n = Math.floor((n - 1) / 26); }
+            return s;
+        };
+
+        // 상태 열 위치: ID(0) + 메뉴경로(pathDepth) + 메뉴코드(1) + 구분(1) + 기능명(1) + 담당자(1) + 시작일(1) + 종료일(1) = pathDepth + 7
+        const statusCol = colLetter(pathDepth + 7);
+        const sqref = `${statusCol}2:${statusCol}1048576`;
+        const dvXml =
+            `<dataValidations count="1">` +
+            `<dataValidation type="list" allowBlank="1" showDropDown="0" sqref="${sqref}">` +
+            `<formula1>"대기,진행중,완료,보류"</formula1>` +
+            `</dataValidation></dataValidations>`;
+
+        // xlsx → Uint8Array 버퍼로 생성
+        const wbArr = XLSXStyle.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+        const files = unzipSync(new Uint8Array(wbArr));
+
+        // sheet1.xml = 개발상세 시트
+        const sheetKey = 'xl/worksheets/sheet1.xml';
+        if (files[sheetKey]) {
+            let xml = strFromU8(files[sheetKey]);
+            // </worksheet> 바로 앞에 삽입 (pageMargins 등 이후 태그 앞)
+            xml = xml.replace(/<(pageMargins|pageSetup|printOptions|headerFooter|rowBreaks|colBreaks|drawing|tableParts|extLst|sheetView[^>]*\/>)\s*<\/worksheet>/, (m) => `${dvXml}${m}`)
+                     .replace(/(<\/sheetData>\s*)(<\/worksheet>)/, `$1${dvXml}$2`);
+            // 혹시 이미 dataValidations가 삽입된 경우 중복 방지는 위 정규식이 처리
+            // 단순 fallback: </worksheet> 앞에 삽입
+            if (!xml.includes('<dataValidations')) {
+                xml = xml.replace('</worksheet>', `${dvXml}</worksheet>`);
+            }
+            files[sheetKey] = strToU8(xml);
+        }
+
+        const rezipped = zipSync(files, { level: 0 });
+        const blob = new Blob([rezipped], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch {
+        // ZIP 조작 실패 시 기본 방식으로 폴백
+        XLSXStyle.writeFile(wb, fileName);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

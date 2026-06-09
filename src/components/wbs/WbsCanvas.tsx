@@ -1,13 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsStore } from '../../store/wbsStore';
+import { useAuthStore } from '../../store/authStore';
 import type { WbsData } from '../../types/wbs';
 import WbsMenuTree from './WbsMenuTree';
 import WbsDevDetail from './WbsDevDetail';
 import WbsProgress from './WbsProgress';
 import WbsUploadModal from './WbsUploadModal';
 import WbsExcelSyncModal from './WbsExcelSyncModal';
+import WbsAdminModal from './WbsAdminModal';
 import { downloadWbsExcel } from './wbsExcel';
 import { downloadWbsJson, parseWbsJson } from './wbsIO';
 
@@ -28,9 +31,66 @@ const WbsCanvas: React.FC = () => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
 
+    const { user } = useAuthStore();
+    const isMaster = user?.tier === 'MASTER';
+
     const project = projects.find((p) => p.id === currentProjectId);
     const [tab, setTab] = useState<WbsTab>('hierarchy');
     const [uploadKind, setUploadKind] = useState<'json' | 'excel' | null>(null);
+    const [showActions, setShowActions] = useState(false);
+    const [panelPos, setPanelPos] = useState({ top: 0, right: 0 });
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+
+    // 관리자 패널
+    const [showAdmin, setShowAdmin] = useState(false);
+    const [adminPanelPos, setAdminPanelPos] = useState({ top: 0, right: 0 });
+    const adminTriggerRef = useRef<HTMLButtonElement>(null);
+    const adminPanelRef = useRef<HTMLDivElement>(null);
+    const [showAdminModal, setShowAdminModal] = useState(false);
+
+    const openAdmin = () => {
+        if (adminTriggerRef.current) {
+            const rect = adminTriggerRef.current.getBoundingClientRect();
+            setAdminPanelPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+        }
+        setShowAdmin((v) => !v);
+    };
+
+    useEffect(() => {
+        if (!showAdmin) return;
+        const handler = (e: MouseEvent) => {
+            if (
+                adminPanelRef.current && !adminPanelRef.current.contains(e.target as Node) &&
+                adminTriggerRef.current && !adminTriggerRef.current.contains(e.target as Node)
+            ) setShowAdmin(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showAdmin]);
+
+    const openActions = () => {
+        if (triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            setPanelPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+        }
+        setShowActions((v) => !v);
+    };
+
+    // 외부 클릭 시 닫기
+    useEffect(() => {
+        if (!showActions) return;
+        const handler = (e: MouseEvent) => {
+            if (
+                panelRef.current && !panelRef.current.contains(e.target as Node) &&
+                triggerRef.current && !triggerRef.current.contains(e.target as Node)
+            ) {
+                setShowActions(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showActions]);
 
     // 프로젝트 진입 시 데이터 로드
     useEffect(() => {
@@ -79,41 +139,49 @@ const WbsCanvas: React.FC = () => {
 
                 <div className="flex-1" />
 
-                <div className="flex items-center gap-1.5">
-                    <button
-                        onClick={() => downloadWbsExcel({ menus, rows }, project?.name ?? 'WBS')}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-sm"
-                        title="현재 WBS를 엑셀로 다운로드"
-                    >
-                        <FileSpreadsheet size={15} />
-                        <span className="hidden lg:inline">엑셀 다운로드</span>
-                    </button>
-                    <button
-                        onClick={() => setUploadKind('excel')}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 transition-colors"
-                        title="엑셀 파일을 업로드하여 현재 데이터에 반영"
-                    >
-                        <FileUp size={15} />
-                        <span className="hidden lg:inline">엑셀 업로드</span>
-                    </button>
-                    <div className="w-px h-6 bg-gray-200 mx-0.5" />
-                    <button
-                        onClick={() => downloadWbsJson({ menus, rows }, project?.name ?? 'WBS')}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
-                        title="현재 WBS 데이터를 JSON으로 다운로드"
-                    >
-                        <FileDown size={15} />
-                        <span className="hidden lg:inline">JSON 다운로드</span>
-                    </button>
-                    <button
-                        onClick={() => setUploadKind('json')}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
-                        title="JSON 파일을 업로드하여 데이터 최신화"
-                    >
-                        <FileJson size={15} />
-                        <span className="hidden lg:inline">JSON 업로드</span>
-                    </button>
-                </div>
+                {/* 지니(Magic Lamp) 트리거 버튼 */}
+                <style>{`
+                    @keyframes genieItem {
+                        0%   { opacity: 0; transform: translateY(10px) scaleX(0.4) scaleY(0.6); filter: blur(3px); }
+                        60%  { opacity: 1; transform: translateY(-3px) scaleX(1.04) scaleY(1.04); filter: blur(0); }
+                        100% { opacity: 1; transform: translateY(0) scaleX(1) scaleY(1); filter: blur(0); }
+                    }
+                    @keyframes genieTriggerOpen {
+                        0%   { transform: scale(1) rotate(0deg); }
+                        40%  { transform: scale(0.85) rotate(-15deg); }
+                        100% { transform: scale(1) rotate(0deg); }
+                    }
+                    .genie-item { animation: genieItem 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+                    .genie-trigger-anim { animation: genieTriggerOpen 0.35s ease both; }
+                `}</style>
+                <button
+                    ref={triggerRef}
+                    key={showActions ? 'open' : 'closed'}
+                    onClick={openActions}
+                    className={`genie-trigger-anim flex items-center justify-center w-9 h-9 rounded-xl transition-colors shadow-sm ${
+                        showActions
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                            : 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                    title="내보내기 / 가져오기"
+                >
+                    <Layers size={16} />
+                </button>
+
+                {/* 관리자 트리거 버튼 — MASTER tier + 개발 상세 탭에서만 표시 */}
+                {isMaster && tab === 'detail' && <button
+                    ref={adminTriggerRef}
+                    key={showAdmin ? 'admin-open' : 'admin-closed'}
+                    onClick={openAdmin}
+                    className={`genie-trigger-anim flex items-center justify-center w-9 h-9 rounded-xl transition-colors shadow-sm ${
+                        showAdmin
+                            ? 'bg-violet-600 text-white hover:bg-violet-700'
+                            : 'bg-violet-50 text-violet-600 border border-violet-200 hover:bg-violet-100'
+                    }`}
+                    title="관리자"
+                >
+                    <ShieldCheck size={16} />
+                </button>}
             </header>
 
             {/* 본문 */}
@@ -133,6 +201,87 @@ const WbsCanvas: React.FC = () => {
                 {tab === 'detail' && <WbsDevDetail />}
                 {tab === 'progress' && <WbsProgress />}
             </main>
+
+            {/* 지니 패널 — body에 Portal로 렌더해 stacking context 완전 탈출 */}
+            {showActions && createPortal(
+                <div
+                    ref={panelRef}
+                    style={{ position: 'fixed', top: panelPos.top, right: panelPos.right, zIndex: 9999 }}
+                >
+                    <div className="bg-white/90 backdrop-blur-md border border-gray-100 rounded-2xl shadow-2xl p-2 flex flex-col gap-1">
+                        {[
+                            {
+                                delay: '0ms',
+                                icon: <FileSpreadsheet size={14} />,
+                                label: '엑셀 다운로드',
+                                className: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
+                                onClick: () => { downloadWbsExcel({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
+                                title: '현재 WBS를 엑셀로 다운로드',
+                            },
+                            {
+                                delay: '55ms',
+                                icon: <FileUp size={14} />,
+                                label: '엑셀 업로드',
+                                className: 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50',
+                                onClick: () => { setUploadKind('excel'); setShowActions(false); },
+                                title: '엑셀 파일을 업로드하여 현재 데이터에 반영',
+                            },
+                            {
+                                delay: '110ms',
+                                icon: <FileDown size={14} />,
+                                label: 'JSON 다운로드',
+                                className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
+                                onClick: () => { downloadWbsJson({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
+                                title: '현재 WBS 데이터를 JSON으로 다운로드',
+                            },
+                            {
+                                delay: '165ms',
+                                icon: <FileJson size={14} />,
+                                label: 'JSON 업로드',
+                                className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
+                                onClick: () => { setUploadKind('json'); setShowActions(false); },
+                                title: 'JSON 파일을 업로드하여 데이터 최신화',
+                            },
+                        ].map((item) => (
+                            <button
+                                key={item.label}
+                                onClick={item.onClick}
+                                title={item.title}
+                                style={{ animationDelay: item.delay }}
+                                className={`genie-item flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${item.className}`}
+                            >
+                                {item.icon}
+                                {item.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* 관리자 패널 — Portal */}
+            {showAdmin && createPortal(
+                <div
+                    ref={adminPanelRef}
+                    style={{ position: 'fixed', top: adminPanelPos.top, right: adminPanelPos.right, zIndex: 9999 }}
+                >
+                    <div className="bg-white/95 backdrop-blur-md border border-gray-100 rounded-2xl shadow-2xl p-2 flex flex-col gap-1">
+                        <button
+                            type="button"
+                            style={{ animationDelay: '0ms' }}
+                            onClick={() => { setShowAdminModal(true); setShowAdmin(false); }}
+                            className="genie-item flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap
+                                bg-white text-violet-700 border border-violet-100 hover:bg-violet-50 transition-colors"
+                        >
+                            <TableProperties size={14} />
+                            기능 Row 수정
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            <WbsAdminModal open={showAdminModal} onClose={() => setShowAdminModal(false)} />
 
             <WbsUploadModal
                 open={uploadKind === 'json'}
