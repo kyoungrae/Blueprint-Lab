@@ -33,7 +33,7 @@ const WbsCanvas: React.FC = () => {
     const rows = useWbsStore((s) => s.rows);
 
     const { user } = useAuthStore();
-    const isMaster = user?.tier === 'MASTER';
+    const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
 
     const project = projects.find((p) => p.id === currentProjectId);
     const [tab, setTab] = useState<WbsTab>('hierarchy');

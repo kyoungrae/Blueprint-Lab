@@ -52,7 +52,7 @@ const WbsProgress: React.FC = () => {
     const projectSchedule = useWbsStore((s) => s.projectSchedule);
     const setProjectSchedule = useWbsStore((s) => s.setProjectSchedule);
     const { user } = useAuthStore();
-    const isMaster = user?.tier === 'MASTER';
+    const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
 
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 

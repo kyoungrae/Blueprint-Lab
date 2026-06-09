@@ -277,7 +277,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                             if (userId && userId !== 'anonymous') {
                                 const userDoc = await User.findById(userId).select('tier').lean();
                                 const tier = userDoc?.tier || 'FREE';
-                                if (tier !== 'PRO' && tier !== 'MASTER') {
+                                if (tier !== 'PRO' && tier !== 'MASTER' && tier !== 'ADMIN') {
                                     socket.emit('operation_rejected', {
                                         reason: 'tier',
                                         message: '컴포넌트 추가 기능은 Pro tier 이상부터 사용할 수 있습니다.'

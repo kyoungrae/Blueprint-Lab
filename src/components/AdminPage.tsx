@@ -215,12 +215,13 @@ function parseExcelToDdl(file: File): Promise<string> {
     });
 }
 
-type UserTier = 'FREE' | 'PRO' | 'MASTER';
+type UserTier = 'FREE' | 'PRO' | 'MASTER' | 'ADMIN';
 
 const TIER_LABELS: Record<UserTier, string> = {
     FREE: 'Free tier',
     PRO: 'Pro tier',
     MASTER: 'Master tier',
+    ADMIN: 'Admin tier',
 };
 
 interface AdminUser {
@@ -286,7 +287,7 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
 }) => {
     const { user, updateUser } = useAuthStore();
     const translationOnlyMode =
-        !embedded && canManageTranslationMemory(user?.tier) && user?.isAdmin !== true;
+        !embedded && canManageTranslationMemory(user?.tier) && user?.tier !== 'ADMIN';
     const [activeTab, setActiveTab] = useState<AdminTab>(
         translationOnlyMode ? 'translation' : initialTab
     );
@@ -1007,6 +1008,7 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                                 <option value="FREE">{TIER_LABELS.FREE}</option>
                                                 <option value="PRO">{TIER_LABELS.PRO}</option>
                                                 <option value="MASTER">{TIER_LABELS.MASTER}</option>
+                                                <option value="ADMIN">{TIER_LABELS.ADMIN}</option>
                                             </select>
                                         </td>
                                         <td className="px-4 py-3 text-gray-500 text-sm">{formatDate(u.createdAt)}</td>

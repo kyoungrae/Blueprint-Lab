@@ -43,8 +43,8 @@ export const updateUserTier = async (req: AuthRequest, res: Response) => {
         if (!id) {
             return res.status(400).json({ message: '회원 ID가 필요합니다.' });
         }
-        if (!['FREE', 'PRO', 'MASTER'].includes(tier)) {
-            return res.status(400).json({ message: '유효한 티어를 선택해 주세요. (FREE, PRO, MASTER)' });
+        if (!['FREE', 'PRO', 'MASTER', 'ADMIN'].includes(tier)) {
+            return res.status(400).json({ message: '유효한 티어를 선택해 주세요. (FREE, PRO, MASTER, ADMIN)' });
         }
 
         const user = await User.findByIdAndUpdate(id, { tier }, { new: true });

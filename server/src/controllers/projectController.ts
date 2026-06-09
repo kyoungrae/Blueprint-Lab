@@ -22,7 +22,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
         if (pt === 'COMPONENT') {
             const user = await User.findById(userId).select('tier').lean();
             const tier = user?.tier || 'FREE';
-            if (tier !== 'PRO' && tier !== 'MASTER') {
+            if (tier !== 'PRO' && tier !== 'MASTER' && tier !== 'ADMIN') {
                 return res.status(403).json({ message: '컴포넌트 프로젝트는 Pro tier 이상부터 생성할 수 있습니다.' });
             }
         }
@@ -178,7 +178,7 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
             if (newCount > prevCount) {
                 const userDoc = await User.findById(userId).select('tier').lean();
                 const tier = userDoc?.tier || 'FREE';
-                if (tier !== 'PRO' && tier !== 'MASTER') {
+                if (tier !== 'PRO' && tier !== 'MASTER' && tier !== 'ADMIN') {
                     return res.status(403).json({
                         message: '컴포넌트 추가 기능은 Pro tier 이상부터 사용할 수 있습니다.'
                     });

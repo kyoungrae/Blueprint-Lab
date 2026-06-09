@@ -6,7 +6,6 @@ import { User } from '../models/User';
 import { config } from '../config';
 import { redis } from '../config/redis';
 import { sendVerificationEmail } from '../services/EmailService';
-import { isAdminEmail } from '../utils/adminEmails';
 
 const VERIFICATION_CODE_EXPIRY = 300; // 5 minutes
 
@@ -74,7 +73,7 @@ export const signup = async (req: Request, res: Response) => {
                 name: user.name,
                 picture: user.picture,
                 tier: user.tier || 'FREE',
-                isAdmin: isAdminEmail(user.email),
+                isAdmin: user.tier === 'ADMIN',
             },
         });
     } catch (error) {
@@ -112,7 +111,7 @@ export const login = async (req: Request, res: Response) => {
                 name: user.name,
                 picture: user.picture,
                 tier: user.tier || 'FREE',
-                isAdmin: isAdminEmail(user.email),
+                isAdmin: user.tier === 'ADMIN',
             },
         });
     } catch (error) {
@@ -139,7 +138,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
             name: user.name,
             picture: user.picture,
             tier: user.tier || 'FREE',
-            isAdmin: isAdminEmail(user.email),
+            isAdmin: user.tier === 'ADMIN',
         });
     } catch (error) {
         // console.error('Get me error:', error);

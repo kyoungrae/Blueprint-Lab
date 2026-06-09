@@ -31,7 +31,7 @@ const safeStateStorage: StateStorage<void> = {
     },
 };
 
-export type UserTier = 'FREE' | 'PRO' | 'MASTER';
+export type UserTier = 'FREE' | 'PRO' | 'MASTER' | 'ADMIN';
 
 interface User {
     id: string;
@@ -39,7 +39,7 @@ interface User {
     name: string;
     picture?: string;
     tier?: UserTier;
-    /** ADMIN_EMAILS에 등록된 시스템 관리자 */
+    /** Admin tier가 부여된 시스템 관리자 */
     isAdmin?: boolean;
 }
 

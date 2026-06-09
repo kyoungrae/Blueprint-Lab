@@ -271,7 +271,7 @@ const ComponentPickerButton: React.FC<ComponentPickerButtonProps> = ({
 }) => {
     const { user } = useAuthStore();
     const tier = user?.tier || 'FREE';
-    const canUseComponentPicker = tier === 'PRO' || tier === 'MASTER';
+    const canUseComponentPicker = tier === 'PRO' || tier === 'MASTER' || tier === 'ADMIN';
     const [hoveredSub, setHoveredSub] = useState<{ componentId: string; subId: string } | null>(null);
 
     const handleHeaderMouseDown = useCallback(

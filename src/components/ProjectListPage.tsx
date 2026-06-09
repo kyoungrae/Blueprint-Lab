@@ -384,7 +384,7 @@ const ProjectListPage: React.FC = () => {
                             <img src={user?.picture} alt="" className="w-8 h-8 rounded-full border-2 border-white shadow-sm" />
                             <span className="text-sm font-bold text-gray-700 hidden sm:block">{user?.name}</span>
                         </div>
-                        {user?.isAdmin && (
+                        {user?.tier === 'ADMIN' && (
                             <button
                                 onClick={() => setShowAdminPage(true)}
                                 className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all active:scale-95"
@@ -947,23 +947,23 @@ const ProjectListPage: React.FC = () => {
                                     <p className="text-xs text-gray-500 text-center font-medium">업무/사용자 흐름을 도형과 연결선으로 설계합니다</p>
                                 </button>
                                 <PremiumTooltip
-                                    label={(user?.tier === 'PRO' || user?.tier === 'MASTER')
+                                    label={(user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN')
                                         ? '컴포넌트 프로젝트 생성'
                                         : 'Pro tier 이상부터 사용 가능합니다. 관리자에게 문의해 주세요.'}
-                                    dotColor={(user?.tier === 'PRO' || user?.tier === 'MASTER') ? '#14b8a6' : undefined}
+                                    dotColor={(user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN') ? '#14b8a6' : undefined}
                                 >
                                     <div className="relative">
                                         <button
                                             onClick={() => {
                                                 const tier = user?.tier || 'FREE';
-                                                if (tier !== 'PRO' && tier !== 'MASTER') return;
+                                                if (tier !== 'PRO' && tier !== 'MASTER' && tier !== 'ADMIN') return;
                                                 handleSelectProjectType('COMPONENT');
                                             }}
-                                            className={`group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 transition-all duration-300 w-full ${(user?.tier === 'PRO' || user?.tier === 'MASTER')
+                                            className={`group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 transition-all duration-300 w-full ${(user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN')
                                                 ? 'bg-gray-50/50 hover:border-teal-400 hover:bg-teal-50/80 active:scale-[0.97]'
                                                 : 'cursor-not-allowed opacity-75'}`}
                                         >
-                                            {(user?.tier !== 'PRO' && user?.tier !== 'MASTER') && (
+                                            {(user?.tier !== 'PRO' && user?.tier !== 'MASTER' && user?.tier !== 'ADMIN') && (
                                                 <div className="absolute top-1 left-4 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
                                                     <Crown size={14} className="text-amber-600" />
                                                     <span className="text-xs font-bold">Pro tier</span>
