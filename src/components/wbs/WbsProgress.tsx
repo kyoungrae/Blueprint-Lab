@@ -102,7 +102,7 @@ const WbsProgress: React.FC = () => {
     const expandAll   = () => setCollapsed(new Set());
 
     // 간트 툴팁
-    const [tooltip, setTooltip] = useState<{ x: number; y: number; row: typeof rows[number] } | null>(null);
+    const [tooltip, setTooltip] = useState<{ x: number; y: number; menuId: string; featureName: string; s: number; e: number; progress: number; status: WbsStatus; count: number } | null>(null);
 
     // 담당자별 통계
     const assigneeStats = useMemo(() => {
@@ -143,12 +143,34 @@ const WbsProgress: React.FC = () => {
     }, [rows, projectSchedule]);
 
     const menuNameById = useMemo(() => new Map(menus.map((m) => [m.id, m.name])), [menus]);
-    const ganttRows = useMemo(
-        () => rows
+
+    // 타임라인용: menuId + featureName이 같은 행들을 하나로 묶어 progress 평균 계산
+    const ganttRows = useMemo(() => {
+        const validRows = rows
             .map((r) => ({ r, s: parseDate(r.startDate), e: parseDate(r.endDate) }))
-            .filter((x) => x.s !== null && x.e !== null) as { r: typeof rows[number]; s: number; e: number }[],
-        [rows]
-    );
+            .filter((x) => x.s !== null && x.e !== null) as { r: typeof rows[number]; s: number; e: number }[];
+
+        const groupMap = new Map<string, { rs: typeof validRows; menuId: string; featureName: string }>();
+        for (const item of validRows) {
+            const key = `${item.r.menuId}|${item.r.featureName}`;
+            if (!groupMap.has(key)) {
+                groupMap.set(key, { rs: [], menuId: item.r.menuId, featureName: item.r.featureName });
+            }
+            groupMap.get(key)!.rs.push(item);
+        }
+
+        return Array.from(groupMap.values()).map(({ rs, menuId, featureName }) => {
+            const s = Math.min(...rs.map((x) => x.s));
+            const e = Math.max(...rs.map((x) => x.e));
+            const progress = Math.round(rs.reduce((acc, x) => acc + x.r.progress, 0) / rs.length);
+            const statusPriority: Record<WbsStatus, number> = { DONE: 3, IN_PROGRESS: 2, HOLD: 1, TODO: 0 };
+            const status = rs.reduce((best, x) =>
+                statusPriority[x.r.status] > statusPriority[best] ? x.r.status : best,
+                rs[0].r.status
+            );
+            return { menuId, featureName, s, e, progress, status, count: rs.length };
+        });
+    }, [rows]);
 
     const fmt = (t: number) => {
         const d = new Date(t);
@@ -435,26 +457,28 @@ const WbsProgress: React.FC = () => {
                                         );
                                     })()}
 
-                                    {/* 산출물 행들 */}
-                                    {range && ganttRows.map(({ r, s, e }) => {
+                                    {/* 산출물 행들 (동일 featureName 통합) */}
+                                    {range && ganttRows.map(({ menuId, featureName, s, e, progress, status, count }) => {
+                                        const key = `${menuId}|${featureName}`;
                                         const left = ((s - range.min) / range.span) * 100;
                                         const width = Math.max(((e - s) / range.span) * 100, 1.5);
                                         return (
-                                            <div key={r.id} className="flex items-center gap-2">
-                                                <div className="w-44 shrink-0 truncate text-xs text-gray-600" title={`${menuNameById.get(r.menuId) ?? ''} · ${r.featureName}`}>
-                                                    <span className="text-gray-400">{menuNameById.get(r.menuId) ?? ''}</span>
-                                                    {r.featureName ? <span className="text-gray-700"> · {r.featureName}</span> : null}
+                                            <div key={key} className="flex items-center gap-2">
+                                                <div className="w-44 shrink-0 truncate text-xs text-gray-600" title={`${menuNameById.get(menuId) ?? ''} · ${featureName}`}>
+                                                    <span className="text-gray-400">{menuNameById.get(menuId) ?? ''}</span>
+                                                    {featureName ? <span className="text-gray-700"> · {featureName}</span> : null}
                                                 </div>
                                                 <div className="relative flex-1 h-5 bg-gray-50 rounded">
                                                     <div
-                                                        className={`absolute top-0.5 bottom-0.5 rounded ${STATUS_COLOR[r.status]} opacity-90 cursor-pointer`}
+                                                        className={`absolute top-0.5 bottom-0.5 rounded ${STATUS_COLOR[status]} opacity-90 cursor-pointer`}
                                                         style={{ left: `${left}%`, width: `${width}%` }}
-                                                        onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY, row: r })}
+                                                        onMouseMove={(ev) => setTooltip({ x: ev.clientX, y: ev.clientY, menuId, featureName, s, e, progress, status, count })}
                                                         onMouseLeave={() => setTooltip(null)}
                                                     >
-                                                        <div className="h-full bg-white/30 rounded-l" style={{ width: `${100 - r.progress}%`, marginLeft: 'auto' }} />
+                                                        <div className="h-full bg-white/30 rounded-l" style={{ width: `${100 - progress}%`, marginLeft: 'auto' }} />
                                                     </div>
                                                 </div>
+                                                <span className="text-[10px] font-black tabular-nums shrink-0 w-8 text-right text-gray-500">{progress}%</span>
                                             </div>
                                         );
                                     })}
@@ -477,29 +501,32 @@ const WbsProgress: React.FC = () => {
                 className="pointer-events-none fixed z-[9999]"
                 style={{ left: tooltip.x + 14, top: tooltip.y - 10 }}
             >
-                <div className="bg-gray-900 text-white text-xs font-medium rounded-xl px-3 py-2 shadow-xl flex flex-col gap-1 min-w-[140px]">
-                    {tooltip.row.featureName && (
-                        <span className="font-bold text-white truncate max-w-[200px]">{tooltip.row.featureName}</span>
+                <div className="bg-gray-900 text-white text-xs font-medium rounded-xl px-3 py-2 shadow-xl flex flex-col gap-1 min-w-[160px]">
+                    {tooltip.featureName && (
+                        <span className="font-bold text-white truncate max-w-[200px]">{tooltip.featureName}</span>
                     )}
                     <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 rounded-full bg-white/20 overflow-hidden">
                             <div
                                 className="h-full rounded-full bg-emerald-400"
-                                style={{ width: `${tooltip.row.progress}%` }}
+                                style={{ width: `${tooltip.progress}%` }}
                             />
                         </div>
-                        <span className="font-black text-emerald-400 tabular-nums">{tooltip.row.progress}%</span>
+                        <span className="font-black text-emerald-400 tabular-nums">{tooltip.progress}%</span>
                     </div>
                     <div className="flex items-center justify-between text-[10px] text-gray-400 pt-0.5 border-t border-white/10">
-                        <span>{tooltip.row.startDate || '—'} ~ {tooltip.row.endDate || '—'}</span>
-                        <span className={`font-bold ${
-                            tooltip.row.status === 'DONE' ? 'text-emerald-400'
-                            : tooltip.row.status === 'IN_PROGRESS' ? 'text-blue-400'
-                            : tooltip.row.status === 'HOLD' ? 'text-amber-400'
-                            : 'text-gray-400'
-                        }`}>
-                            {WBS_STATUS_LABEL[tooltip.row.status]}
-                        </span>
+                        <span>{fmt(tooltip.s)} ~ {fmt(tooltip.e)}</span>
+                        <div className="flex items-center gap-1.5">
+                            {tooltip.count > 1 && <span className="text-gray-500">{tooltip.count}건 평균</span>}
+                            <span className={`font-bold ${
+                                tooltip.status === 'DONE' ? 'text-emerald-400'
+                                : tooltip.status === 'IN_PROGRESS' ? 'text-blue-400'
+                                : tooltip.status === 'HOLD' ? 'text-amber-400'
+                                : 'text-gray-400'
+                            }`}>
+                                {WBS_STATUS_LABEL[tooltip.status]}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>,
