@@ -38,6 +38,21 @@ function flattenTree(nodes: TreeNode[]): TreeNode[] {
     return nodes.flatMap((n) => [n, ...flattenTree(n.children)]);
 }
 
+function collectMenuIdsWithAncestors(menus: WbsMenuNode[], menuIds: Set<string>): Set<string> {
+    const byId = new Map(menus.map((m) => [m.id, m]));
+    const result = new Set<string>();
+
+    for (const menuId of menuIds) {
+        let current: WbsMenuNode | undefined = byId.get(menuId);
+        while (current && !result.has(current.id)) {
+            result.add(current.id);
+            current = current.parentId ? byId.get(current.parentId) : undefined;
+        }
+    }
+
+    return result;
+}
+
 function parseDate(s: string): number | null {
     if (!s) return null;
     const t = new Date(s + 'T00:00:00').getTime();
@@ -79,12 +94,18 @@ const WbsProgress: React.FC = () => {
         setSchedLocked(true);
     };
 
-    // 비 MASTER: 본인 이름이 담당자인 rows만 표시
-    const myName = user?.name ?? '';
+    // 비 MASTER: 본인 이름이 담당자인 rows/menu만 표시
+    const myName = (user?.name ?? '').trim();
     const visibleRows = useMemo(
-        () => isMaster ? rows : rows.filter((r) => r.assignee === myName),
+        () => isMaster ? rows : rows.filter((r) => r.assignee.trim() === myName),
         [isMaster, rows, myName]
     );
+    const visibleMenus = useMemo(() => {
+        if (isMaster) return menus;
+        const assignedMenuIds = new Set(visibleRows.map((r) => r.menuId));
+        const visibleMenuIds = collectMenuIdsWithAncestors(menus, assignedMenuIds);
+        return menus.filter((m) => visibleMenuIds.has(m.id));
+    }, [isMaster, menus, visibleRows]);
 
     const overall = calcOverallProgress(visibleRows);
 
@@ -95,7 +116,7 @@ const WbsProgress: React.FC = () => {
     }, [visibleRows]);
 
     // 트리
-    const tree = useMemo(() => buildTree(menus), [menus]);
+    const tree = useMemo(() => buildTree(visibleMenus), [visibleMenus]);
     const flatNodes = useMemo(() => flattenTree(tree), [tree]);
     const allParentIds = useMemo(
         () => new Set(flatNodes.filter((n) => n.children.length > 0).map((n) => n.id)),
@@ -153,7 +174,7 @@ const WbsProgress: React.FC = () => {
         return { min, max, span: max - min };
     }, [visibleRows, projectSchedule]);
 
-    const menuNameById = useMemo(() => new Map(menus.map((m) => [m.id, m.name])), [menus]);
+    const menuNameById = useMemo(() => new Map(visibleMenus.map((m) => [m.id, m.name])), [visibleMenus]);
 
     // 타임라인용: menuId + featureName이 같은 행들을 하나로 묶어 progress 평균 계산
     const ganttRows = useMemo(() => {
@@ -181,7 +202,7 @@ const WbsProgress: React.FC = () => {
             );
             return { menuId, featureName, s, e, progress, status, count: rs.length };
         });
-    }, [rows]);
+    }, [visibleRows]);
 
     const fmt = (t: number) => {
         const d = new Date(t);
@@ -204,7 +225,7 @@ const WbsProgress: React.FC = () => {
                         <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
                             <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${overall}%` }} />
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-1.5">{visibleRows.length}개 산출물 · {menus.length}개 메뉴</p>
+                        <p className="text-[10px] text-gray-400 mt-1.5">{visibleRows.length}개 산출물 · {visibleMenus.length}개 메뉴</p>
                     </div>
 
                     {/* 상태 분포 — 4칸 */}
@@ -307,12 +328,14 @@ const WbsProgress: React.FC = () => {
                         </div>
                         <div className="flex-1 overflow-auto px-4 py-3 min-h-0">
                             {tree.length === 0 ? (
-                                <p className="text-sm text-gray-400 py-8 text-center">메뉴가 없습니다.</p>
+                                <p className="text-sm text-gray-400 py-8 text-center">
+                                    {isMaster ? '메뉴가 없습니다.' : '담당한 메뉴가 없습니다.'}
+                                </p>
                             ) : (
                                 <div className="space-y-0.5">
                                     {(function renderNodes(nodes: TreeNode[]): React.ReactNode {
                                         return nodes.map((node) => {
-                                            const progress = calcMenuProgress(menus, visibleRows, node.id);
+                                            const progress = calcMenuProgress(visibleMenus, visibleRows, node.id);
                                             const count = visibleRows.filter((r) => r.menuId === node.id && !r.isDebugging).length;
                                             const hasChildren = node.children.length > 0;
                                             const isCollapsed = collapsed.has(node.id);
