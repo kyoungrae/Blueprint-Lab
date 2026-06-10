@@ -13,12 +13,13 @@ import WbsUploadModal from './WbsUploadModal';
 import WbsExcelSyncModal from './WbsExcelSyncModal';
 import WbsAdminModal from './WbsAdminModal';
 import WbsScheduleImportModal from './WbsScheduleImportModal';
+import WbsScheduleTable from './WbsScheduleTable';
 import { downloadWbsExcel } from './wbsExcel';
 import { downloadWbsJson, parseWbsJson } from './wbsIO';
 import { downloadScheduleExcel, downloadScheduleJson } from './wbsScheduleIO';
 import { copyToClipboard } from '../../utils/clipboard';
 
-type WbsTab = 'hierarchy' | 'detail' | 'progress' | 'schedule';
+type WbsTab = 'hierarchy' | 'detail' | 'progress' | 'schedule' | 'schedule-table';
 
 const DEV_TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
     { key: 'hierarchy', label: '메뉴 구조도', icon: <Network size={15} /> },
@@ -28,6 +29,7 @@ const DEV_TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
 
 const SCHEDULE_TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
     { key: 'schedule', label: 'GANTT CHART', icon: <CalendarDays size={15} /> },
+    { key: 'schedule-table', label: '일정', icon: <TableProperties size={15} /> },
 ];
 
 const WbsCanvas: React.FC = () => {
@@ -284,6 +286,7 @@ const WbsCanvas: React.FC = () => {
                 {tab === 'detail' && <WbsDevDetail />}
                 {tab === 'progress' && <WbsProgress />}
                 {tab === 'schedule' && <WbsSchedule />}
+                {tab === 'schedule-table' && <WbsScheduleTable />}
             </main>
 
             {/* 프로젝트 ID 패널 — Portal */}
@@ -330,7 +333,7 @@ const WbsCanvas: React.FC = () => {
                 >
                     <div className="bg-white/90 backdrop-blur-md border border-gray-100 rounded-2xl shadow-2xl p-2 flex flex-col gap-1 min-w-[200px]">
                         {/* 어떤 데이터인지 레이블 */}
-                        {tab === 'schedule' ? (
+                        {(tab === 'schedule' || tab === 'schedule-table') ? (
                             <div className="flex items-center gap-1.5 px-2 pb-1.5 pt-0.5">
                                 <CalendarDays size={11} className="text-blue-500" />
                                 <span className="text-[10px] font-black text-blue-600 tracking-wide">일정 WBS 데이터</span>
@@ -345,7 +348,7 @@ const WbsCanvas: React.FC = () => {
                         )}
                         <div className="h-px bg-gray-100 mx-1 mb-1" />
 
-                        {tab === 'schedule' ? (
+                        {(tab === 'schedule' || tab === 'schedule-table') ? (
                             // ── 일정 탭 전용 버튼 ──
                             <>
                                 {[

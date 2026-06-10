@@ -51,6 +51,8 @@ export interface WbsProjectSchedule {
     endDate: string;
 }
 
+export type ScheduleStatus = '완료' | '진행중' | '대기';
+
 export interface WbsDetailSchedule {
     id: string;
     /** 부모 항목 ID (null이면 최상위) */
@@ -58,10 +60,19 @@ export interface WbsDetailSchedule {
     /** 형제 간 정렬 순서 */
     order?: number;
     title: string;
+    /** 계획 시작일 (YYYY.MM.DD) — 간트차트 기준 */
     startDate: string;
+    /** 계획 종료일 (YYYY.MM.DD) — 간트차트 기준 */
     endDate: string;
     /** 진행율 0~100 */
     progress?: number;
+    // ── 일정 상세 테이블 전용 ──────────────────────────
+    worker?: string;               // 작업자
+    deliverable?: string;          // 산출물명
+    completionCriteria?: string;   // 완료기준
+    status?: ScheduleStatus;       // 상태
+    actualStartDate?: string;      // 실적 시작일
+    actualEndDate?: string;        // 실적 종료일
 }
 
 export interface WbsData {
