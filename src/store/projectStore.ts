@@ -154,11 +154,18 @@ export const useProjectStore = create<ProjectStore>()(
                                 if (localProject?.data && localHasData && localTs > serverTs) {
                                     projData = localProject.data;
                                 } else if (p.data && (p.data as any).menus) {
-                                    projData = { menus: (p.data as any).menus || [], rows: (p.data as any).rows || [] };
+                                    projData = {
+                                        menus: (p.data as any).menus || [],
+                                        rows: (p.data as any).rows || [],
+                                        projectSchedule: (p.data as any).projectSchedule ?? (p.wbsSnapshot as any)?.projectSchedule ?? undefined,
+                                        detailSchedules: (p.data as any).detailSchedules ?? (p.wbsSnapshot as any)?.detailSchedules ?? [],
+                                    };
                                 } else if (p.wbsSnapshot) {
                                     projData = {
                                         menus: p.wbsSnapshot.menus || [],
                                         rows: p.wbsSnapshot.rows || [],
+                                        projectSchedule: (p.wbsSnapshot as any).projectSchedule ?? undefined,
+                                        detailSchedules: (p.wbsSnapshot as any).detailSchedules || [],
                                     };
                                 } else {
                                     projData = { menus: [], rows: [] };

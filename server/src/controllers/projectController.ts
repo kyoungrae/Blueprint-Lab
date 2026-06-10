@@ -222,11 +222,13 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                     sections: Array.isArray(data.sections) ? data.sections : (project.processFlowSnapshot?.sections ?? []),
                     savedAt: new Date()
                 };
-            } else if (project.projectType === 'WBS' && (data.menus !== undefined || data.rows !== undefined)) {
+            } else if (project.projectType === 'WBS' && (data.menus !== undefined || data.rows !== undefined || data.detailSchedules !== undefined || data.projectSchedule !== undefined)) {
                 project.wbsSnapshot = {
                     version: (project.wbsSnapshot?.version || 0) + 1,
                     menus: Array.isArray(data.menus) ? data.menus : (project.wbsSnapshot?.menus ?? []),
                     rows: Array.isArray(data.rows) ? data.rows : (project.wbsSnapshot?.rows ?? []),
+                    projectSchedule: data.projectSchedule !== undefined ? data.projectSchedule : (project.wbsSnapshot?.projectSchedule ?? null),
+                    detailSchedules: Array.isArray(data.detailSchedules) ? data.detailSchedules : (project.wbsSnapshot?.detailSchedules ?? []),
                     savedAt: new Date()
                 };
             } else {
