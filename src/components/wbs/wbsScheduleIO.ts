@@ -70,7 +70,6 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
         '작업자', '산출물명',
         '실적시작일', '실적종료일',
     ];
-    const headerRow = headers.map(headerCell);
 
     // 실적 투입일 계산 헬퍼
     function calcActualDays(start?: string, end?: string): number {

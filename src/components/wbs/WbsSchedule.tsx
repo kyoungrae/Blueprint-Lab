@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import {
     Filter, Settings, Plus, AlertCircle, Flag, Trash2, X, ChevronDown, ChevronRight,
-    Edit2, Search
+    Search
 } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
 import type { WbsDetailSchedule } from '../../types/wbs';
@@ -102,7 +102,6 @@ function getTimelineAll(items: { startDate: string; endDate: string }[]): Timeli
     while (cursor <= end) {
         const qStart = new Date(cursor);
         const qEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 3, 1);
-        const totalMs = end.getTime() - start.getTime();
         headers.push({
             label: `${qStart.getFullYear()}년`,
             subLabel: `${Math.floor(qStart.getMonth() / 3) + 1}Q`,
@@ -343,8 +342,6 @@ function formatDateRangeLabel(startDate: string, endDate: string): string {
     if (endDate) return formatDisplayDate(endDate);
     return '—';
 }
-
-const DATE_COL_W = 132;
 
 // ─── 기간 편집 패널 ─────────────────────────────────────────────────────────
 
@@ -926,11 +923,6 @@ const WbsSchedule: React.FC = () => {
         const barText = formatDateRangeLabel(node.startDate, node.endDate).replace('~', ' - ');
         return { left, width, barText };
     };
-
-    const hasChildren = useCallback(
-        (id: string) => detailSchedules.some((s) => s.parentId === id),
-        [detailSchedules]
-    );
 
     // ── 렌더 ────────────────────────────────────────────────────────────────
 

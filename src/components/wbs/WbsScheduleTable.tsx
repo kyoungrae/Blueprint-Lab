@@ -195,13 +195,6 @@ const WbsScheduleTable: React.FC = () => {
         return { planDays, actualDays, avgProgress };
     }, [detailSchedules]);
 
-    const DEPTH_COLORS = [
-        'bg-blue-50 font-bold text-blue-900',
-        'bg-gray-50 font-semibold text-gray-800',
-        'bg-white font-normal text-gray-700',
-        'bg-white font-normal text-gray-600',
-    ];
-
     return (
         <div className="flex flex-col h-full overflow-hidden">
             {/* 상단 액션 바 */}
