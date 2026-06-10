@@ -164,6 +164,15 @@ const WbsScheduleTable: React.FC = () => {
     const updateDetailSchedule = useWbsStore((s) => s.updateDetailSchedule);
     const addDetailSchedule = useWbsStore((s) => s.addDetailSchedule);
     const deleteDetailSchedule = useWbsStore((s) => s.deleteDetailSchedule);
+    const applySeedData = useWbsStore((s) => s.applySeedData);
+
+    // 최초 마운트 시 seed 데이터 적용 (작업자·산출물·실적일·진척도 일괄 반영)
+    const seedApplied = useRef(false);
+    useEffect(() => {
+        if (seedApplied.current) return;
+        seedApplied.current = true;
+        applySeedData();
+    }, [applySeedData]);
 
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -202,10 +211,10 @@ const WbsScheduleTable: React.FC = () => {
                     <p className="text-[11px] text-gray-400">항목을 더블클릭하여 편집 · 진척율은 하위 항목 평균으로 자동 계산</p>
                 </div>
                 <button
-                    onClick={() => addDetailSchedule({ parentId: null, order: 9999, title: '새 항목', startDate: '', endDate: '', progress: 0 })}
+                    onClick={() => addDetailSchedule({ parentId: null, order: 9999, title: '새 대분류', startDate: '', endDate: '', progress: 0 })}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
                 >
-                    <Plus size={13} /> 항목 추가
+                    <Plus size={13} /> 최상위 항목 추가
                 </button>
             </div>
 
@@ -426,19 +435,33 @@ const WbsScheduleTable: React.FC = () => {
                                         </div>
                                     </td>
 
-                                    {/* 삭제 */}
+                                    {/* 추가/삭제 */}
                                     <td className="border border-gray-100 px-1 py-1.5 text-center align-top">
-                                        <button
-                                            onClick={() => {
-                                                if (window.confirm(`"${node.title}" 항목을 삭제하시겠습니까?${hasChildren(node.id) ? '\n\n하위 항목도 함께 삭제됩니다.' : ''}`)) {
-                                                    deleteDetailSchedule(node.id);
-                                                }
-                                            }}
-                                            className="p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                                            title="항목 삭제"
-                                        >
-                                            <Trash2 size={12} />
-                                        </button>
+                                        <div className="flex items-center justify-center gap-0.5">
+                                            <button
+                                                onClick={() => {
+                                                    const siblings = detailSchedules.filter((s) => (s.parentId ?? null) === node.id);
+                                                    const maxOrder = siblings.length ? Math.max(...siblings.map((s) => s.order ?? 0)) + 1 : 0;
+                                                    addDetailSchedule({ parentId: node.id, order: maxOrder, title: '새 항목', startDate: node.startDate, endDate: node.endDate, progress: 0 });
+                                                    setCollapsed((prev) => { const next = new Set(prev); next.delete(node.id); return next; });
+                                                }}
+                                                className="p-1 rounded text-gray-300 hover:text-blue-500 hover:bg-blue-50 transition-all"
+                                                title="하위 항목 추가"
+                                            >
+                                                <Plus size={12} />
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (window.confirm(`"${node.title}" 항목을 삭제하시겠습니까?${hasChildren(node.id) ? '\n\n하위 항목도 함께 삭제됩니다.' : ''}`)) {
+                                                        deleteDetailSchedule(node.id);
+                                                    }
+                                                }}
+                                                className="p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                                                title="항목 삭제"
+                                            >
+                                                <Trash2 size={12} />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             );

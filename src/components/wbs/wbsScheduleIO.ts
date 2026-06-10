@@ -64,8 +64,22 @@ function flattenDfs(items: WbsDetailSchedule[]): WbsDetailSchedule[] {
 export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: string): void {
     const flat = flattenDfs(items);
 
-    const headers = ['ID', '부모ID', '순서', '항목명', '시작일', '종료일', '진행율(%)'];
+    const headers = [
+        'ID', '부모ID', '순서', '항목명',
+        '계획시작일', '계획종료일', '진행율(%)',
+        '작업자', '산출물명',
+        '실적시작일', '실적종료일',
+    ];
     const headerRow = headers.map(headerCell);
+
+    // 실적 투입일 계산 헬퍼
+    function calcActualDays(start?: string, end?: string): number {
+        if (!start || !end) return 0;
+        const s = new Date(start.replace(/\./g, '-'));
+        const e = new Date(end.replace(/\./g, '-'));
+        if (isNaN(s.getTime()) || isNaN(e.getTime())) return 0;
+        return Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000) + 1);
+    }
 
     const dataRows = flat.map((item, i) => {
         const depth = getDepth(items, item.id);
@@ -81,6 +95,8 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
             border: thinBorder,
         });
 
+        const actualDays = calcActualDays(item.actualStartDate, item.actualEndDate);
+
         return [
             sc(item.id, cellStyle('center')),
             sc(item.parentId ?? '', cellStyle('center')),
@@ -89,14 +105,23 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
             sc(item.startDate, cellStyle('center')),
             sc(item.endDate, cellStyle('center')),
             sc(item.progress ?? 0, cellStyle('center')),
+            sc(item.worker ?? '', cellStyle('center')),
+            sc(item.deliverable ?? '', cellStyle('left')),
+            sc(item.actualStartDate ?? '', cellStyle('center')),
+            sc(item.actualEndDate ?? '', cellStyle('center')),
+            sc(actualDays > 0 ? actualDays : '', cellStyle('center')),
         ];
     });
 
-    const aoa = [headerRow, ...dataRows];
+    // 실적 투입일 헤더 추가 (읽기전용 안내)
+    const allHeaders = [...headers, '실적투입일(자동)'];
+    const aoa = [allHeaders.map(headerCell), ...dataRows];
     const ws = XLSXStyle.utils.aoa_to_sheet(aoa);
     ws['!cols'] = [
-        { wch: 26 }, { wch: 26 }, { wch: 6 }, { wch: 52 },
+        { wch: 26 }, { wch: 26 }, { wch: 6 }, { wch: 40 },
         { wch: 14 }, { wch: 14 }, { wch: 10 },
+        { wch: 12 }, { wch: 30 },
+        { wch: 14 }, { wch: 14 }, { wch: 12 },
     ];
     ws['!rows'] = [{ hpt: 22 }, ...dataRows.map(() => ({ hpt: 16 }))];
 
@@ -107,15 +132,20 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
         [sc('부모ID'), sc('부모 항목의 ID (최상위면 빈 값)'), sc('')],
         [sc('순서'), sc('같은 부모 내 정렬 순서 (숫자)'), sc('1')],
         [sc('항목명'), sc('WBS 항목명 (들여쓰기는 표시용 — 실제 계층은 부모ID로 결정)'), sc('사업관리')],
-        [sc('시작일'), sc('시작일 (YYYY.MM.DD 형식)'), sc('2025.10.15')],
-        [sc('종료일'), sc('종료일 (YYYY.MM.DD 형식)'), sc('2027.12.31')],
+        [sc('계획시작일'), sc('계획 시작일 (YYYY.MM.DD 형식)'), sc('2025.10.15')],
+        [sc('계획종료일'), sc('계획 종료일 (YYYY.MM.DD 형식)'), sc('2027.12.31')],
         [sc('진행율(%)'), sc('진행율 0~100 숫자'), sc('0')],
+        [sc('작업자'), sc('담당 작업자명'), sc('홍길동')],
+        [sc('산출물명'), sc('작업 결과 산출물 이름'), sc('설계서')],
+        [sc('실적시작일'), sc('실제 시작일 (YYYY.MM.DD 형식)'), sc('2025.11.01')],
+        [sc('실적종료일'), sc('실제 종료일 (YYYY.MM.DD 형식)'), sc('2025.11.30')],
+        [sc('실적투입일(자동)'), sc('실적시작일~종료일 기간 자동 계산 (입력 불필요)'), sc('30')],
         [sc('')],
         [sc('※ 신규 항목 추가 시 ID 열을 비워두면 자동 생성됩니다.')],
         [sc('※ ID가 있으면 기존 항목을 업데이트하고, 없으면 신규 추가합니다.')],
     ];
     const wsGuide = XLSXStyle.utils.aoa_to_sheet(guideAoa);
-    wsGuide['!cols'] = [{ wch: 14 }, { wch: 60 }, { wch: 20 }];
+    wsGuide['!cols'] = [{ wch: 18 }, { wch: 60 }, { wch: 20 }];
 
     const wb = XLSXStyle.utils.book_new();
     XLSXStyle.utils.book_append_sheet(wb, ws, '일정_WBS');
@@ -169,12 +199,16 @@ export async function parseScheduleExcel(
     const colParent = colFirst('부모ID', '부모 ID', 'parentId');
     const colOrder = colFirst('순서', 'order', 'No.');
     const colTitle = colFirst('항목명', 'WBS 항목명', '항목', 'title', '작업명');
-    const colStart = colFirst('시작일', '시작', 'startDate', 'start');
-    const colEnd = colFirst('종료일', '종료', 'endDate', 'end');
+    const colStart = colFirst('계획시작일', '시작일', '시작', 'startDate', 'start');
+    const colEnd = colFirst('계획종료일', '종료일', '종료', 'endDate', 'end');
     const colProgress = colFirst('진행율(%)', '진행율', '진행률(%)', '진행률', 'progress');
+    const colWorker = colFirst('작업자', 'worker');
+    const colDeliverable = colFirst('산출물명', 'deliverable');
+    const colActualStart = colFirst('실적시작일', 'actualStartDate');
+    const colActualEnd = colFirst('실적종료일', 'actualEndDate');
 
     if (colTitle === -1 || colStart === -1 || colEnd === -1) {
-        throw new Error(`필수 열을 찾을 수 없습니다.\n인식된 헤더: [${header.filter(Boolean).join(', ')}]\n필요한 열: 항목명(또는 WBS 항목명), 시작일, 종료일`);
+        throw new Error(`필수 열을 찾을 수 없습니다.\n인식된 헤더: [${header.filter(Boolean).join(', ')}]\n필요한 열: 항목명(또는 WBS 항목명), 계획시작일, 계획종료일`);
     }
 
     const currentMap = new Map(current.map((x) => [x.id, x]));
@@ -201,10 +235,18 @@ export async function parseScheduleExcel(
         const parentId = colParent !== -1 ? String(row[colParent] ?? '').trim() || undefined : undefined;
         const order = colOrder !== -1 ? Number(row[colOrder] ?? 0) : 0;
         const progress = colProgress !== -1 ? Math.min(100, Math.max(0, Number(row[colProgress] ?? 0))) : 0;
+        const worker = colWorker !== -1 ? String(row[colWorker] ?? '').trim() || undefined : undefined;
+        const deliverable = colDeliverable !== -1 ? String(row[colDeliverable] ?? '').trim() || undefined : undefined;
+        const actualStartDate = colActualStart !== -1 ? String(row[colActualStart] ?? '').trim() || undefined : undefined;
+        const actualEndDate = colActualEnd !== -1 ? String(row[colActualEnd] ?? '').trim() || undefined : undefined;
 
         if (rawId && currentMap.has(rawId)) {
             const prev = currentMap.get(rawId)!;
-            const next: WbsDetailSchedule = { ...prev, title, startDate, endDate, progress, order, parentId: parentId ?? null };
+            const next: WbsDetailSchedule = {
+                ...prev, title, startDate, endDate, progress, order,
+                parentId: parentId ?? null,
+                worker, deliverable, actualStartDate, actualEndDate,
+            };
             const changed = JSON.stringify(prev) !== JSON.stringify(next);
             if (changed) updated.push(next);
             else unchanged.push(next);
@@ -217,6 +259,10 @@ export async function parseScheduleExcel(
                 startDate,
                 endDate,
                 progress,
+                worker,
+                deliverable,
+                actualStartDate,
+                actualEndDate,
             });
         }
     }
@@ -249,5 +295,11 @@ export function parseScheduleJson(text: string): WbsDetailSchedule[] {
         startDate: String(x.startDate ?? ''),
         endDate: String(x.endDate ?? ''),
         progress: Math.min(100, Math.max(0, Number(x.progress ?? 0))),
+        ...(x.worker !== undefined ? { worker: x.worker } : {}),
+        ...(x.deliverable !== undefined ? { deliverable: x.deliverable } : {}),
+        ...(x.completionCriteria !== undefined ? { completionCriteria: x.completionCriteria } : {}),
+        ...(x.status !== undefined ? { status: x.status } : {}),
+        ...(x.actualStartDate !== undefined ? { actualStartDate: x.actualStartDate } : {}),
+        ...(x.actualEndDate !== undefined ? { actualEndDate: x.actualEndDate } : {}),
     }));
 }

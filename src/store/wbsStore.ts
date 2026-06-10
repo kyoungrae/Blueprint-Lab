@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule, WbsDetailSchedule } from '../types/wbs';
+import { SCHEDULE_SEED, deriveStatus } from '../data/scheduleSeedData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from './projectStore';
 
@@ -33,6 +34,8 @@ interface WbsState {
     addDetailSchedule: (schedule: Omit<WbsDetailSchedule, 'id'>) => void;
     updateDetailSchedule: (id: string, patch: Partial<Omit<WbsDetailSchedule, 'id'>>) => void;
     deleteDetailSchedule: (id: string) => void;
+    /** title 기준으로 seed 데이터(작업자, 산출물명, 실적일, progress) 일괄 적용 */
+    applySeedData: () => void;
 
     addMenu: (parentId: string | null) => string;
     updateMenu: (id: string, patch: Partial<Omit<WbsMenuNode, 'id'>>) => void;
@@ -108,8 +111,11 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     updateDetailSchedule: (id, patch) => {
-        // 1. 해당 항목 업데이트
-        let updated = get().detailSchedules.map((s) => (s.id === id ? { ...s, ...patch } : s));
+        // 1. 해당 항목 업데이트 (progress 변경 시 status 자동 반영)
+        const patchWithStatus = 'progress' in patch
+            ? { ...patch, status: deriveStatus(patch.progress as number) }
+            : patch;
+        let updated = get().detailSchedules.map((s) => (s.id === id ? { ...s, ...patchWithStatus } : s));
 
         // 2. progress가 변경된 경우, 조상 항목들의 progress를 자동 재계산 (leaf → root 방향)
         if ('progress' in patch) {
@@ -120,13 +126,55 @@ export const useWbsStore = create<WbsState>((set, get) => ({
                 const children = items.filter((s) => s.parentId === parentId);
                 if (children.length === 0) return items;
                 const avg = Math.round(children.reduce((sum, c) => sum + (c.progress ?? 0), 0) / children.length);
-                const next = items.map((s) => (s.id === parentId ? { ...s, progress: avg } : s));
+                const next = items.map((s) => (s.id === parentId ? { ...s, progress: avg, status: deriveStatus(avg) } : s));
                 return recalcParent(next, parentId);
             };
             updated = recalcParent(updated, id);
         }
 
         set({ detailSchedules: updated });
+        get().scheduleSave();
+    },
+
+    applySeedData: () => {
+        const items = get().detailSchedules;
+        const updated = items.map((s) => {
+            const seed = SCHEDULE_SEED[s.title];
+            if (!seed) return s;
+            const progress = seed.progress ?? s.progress ?? 0;
+            return {
+                ...s,
+                worker: seed.worker ?? s.worker,
+                deliverable: seed.deliverable ?? s.deliverable,
+                actualStartDate: seed.actualStartDate ?? s.actualStartDate,
+                actualEndDate: seed.actualEndDate ?? s.actualEndDate,
+                progress,
+                status: deriveStatus(progress),
+            };
+        });
+
+        // 부모 progress 재계산 (leaf → root)
+        let result = updated;
+        const recalcAll = () => {
+            let changed = true;
+            while (changed) {
+                changed = false;
+                const parentIds = new Set(result.filter((s) => s.parentId).map((s) => s.parentId as string));
+                for (const parentId of parentIds) {
+                    const children = result.filter((s) => s.parentId === parentId);
+                    if (children.length === 0) continue;
+                    const avg = Math.round(children.reduce((sum, c) => sum + (c.progress ?? 0), 0) / children.length);
+                    const parent = result.find((s) => s.id === parentId);
+                    if (parent && parent.progress !== avg) {
+                        result = result.map((s) => s.id === parentId ? { ...s, progress: avg, status: deriveStatus(avg) } : s);
+                        changed = true;
+                    }
+                }
+            }
+        };
+        recalcAll();
+
+        set({ detailSchedules: result });
         get().scheduleSave();
     },
 
