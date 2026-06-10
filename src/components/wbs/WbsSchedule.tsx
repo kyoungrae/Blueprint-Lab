@@ -9,6 +9,36 @@ import type { WbsDetailSchedule } from '../../types/wbs';
 
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────────────
 
+/** YYYY.MM.DD 또는 YYYY-MM-DD 모두 안전하게 파싱 (한 자리 월/일 자동 패딩) */
+const parseDate = (iso: string): Date => {
+    if (!iso) return new Date(NaN);
+    // 2025.11.3 → 2025-11-03, 2025.1.5 → 2025-01-05
+    const parts = iso.replace(/\./g, '-').split('-');
+    if (parts.length === 3) {
+        const [y, m, d] = parts;
+        const normalized = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        return new Date(`${normalized}T00:00:00`);
+    }
+    return new Date(`${iso}T00:00:00`);
+};
+
+/** YYYY.MM.DD → YYYY-MM-DD (date input용) */
+const toInputDate = (iso: string): string => {
+    if (!iso) return '';
+    const parts = iso.replace(/\./g, '-').split('-');
+    if (parts.length === 3) {
+        const [y, m, d] = parts;
+        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return iso;
+};
+
+/** YYYY-MM-DD → YYYY.MM.DD (저장용) */
+const fromInputDate = (input: string): string => {
+    if (!input) return '';
+    return input.replace(/-/g, '.');
+};
+
 const addDays = (date: Date, days: number): Date => {
     const d = new Date(date);
     d.setDate(d.getDate() + days);
@@ -42,6 +72,47 @@ interface TimelineInfo {
     start: Date;
     end: Date;
     headers: HeaderItem[];
+    colMinWidth: number;   // 컬럼당 최소 픽셀 너비
+    initialScrollCol: number; // 현재 날짜 컬럼 인덱스 (초기 scrollLeft 기준)
+}
+
+function getTimelineAll(items: { startDate: string; endDate: string }[]): TimelineInfo {
+    const dates = items.flatMap((x) => [parseDate(x.startDate), parseDate(x.endDate)]).filter((d) => !isNaN(d.getTime()));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (dates.length === 0) {
+        // fallback: 현재 연도 전체
+        const start = new Date(today.getFullYear(), 0, 1);
+        const end = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+        return { start, end, headers: [], colMinWidth: 160, initialScrollCol: 0 };
+    }
+
+    const minTime = Math.min(...dates.map((d) => d.getTime()));
+    const maxTime = Math.max(...dates.map((d) => d.getTime()));
+    const start = new Date(minTime);
+    start.setDate(1); // 월 시작으로 정렬
+    const end = new Date(maxTime);
+    end.setMonth(end.getMonth() + 1, 0); // 월 말로 정렬
+    end.setHours(23, 59, 59, 999);
+
+    // 헤더: 전체 기간을 연도별 분기로 나눔
+    const headers: HeaderItem[] = [];
+    const cursor = new Date(start.getFullYear(), Math.floor(start.getMonth() / 3) * 3, 1);
+    while (cursor <= end) {
+        const qStart = new Date(cursor);
+        const qEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 3, 1);
+        const totalMs = end.getTime() - start.getTime();
+        headers.push({
+            label: `${qStart.getFullYear()}년`,
+            subLabel: `${Math.floor(qStart.getMonth() / 3) + 1}Q`,
+            isToday: today >= qStart && today < qEnd,
+            date: qStart,
+        });
+        cursor.setMonth(cursor.getMonth() + 3);
+        if (headers.length > 40) break; // 안전장치
+    }
+    return { start, end, headers, colMinWidth: 160, initialScrollCol: 0 };
 }
 
 function getTimeline(viewMode: '일' | '주' | '월' | '분기', currentDate: Date): TimelineInfo {
@@ -49,27 +120,37 @@ function getTimeline(viewMode: '일' | '주' | '월' | '분기', currentDate: Da
     today.setHours(0, 0, 0, 0);
 
     if (viewMode === '일') {
-        const start = startOfWeek(currentDate);
-        const end = endOfWeek(currentDate);
+        // 42일 (6주): 현재 주 포함, 앞 2주 + 뒤 3주
+        const colMinWidth = 64;
+        const PAST_WEEKS = 14; // 14일 앞
+        const TOTAL_DAYS = 42;
+        const curWeekStart = startOfWeek(currentDate);
+        const start = addDays(curWeekStart, -PAST_WEEKS);
+        const end = addDays(start, TOTAL_DAYS - 1);
+        end.setHours(23, 59, 59, 999);
         const days = ['일', '월', '화', '수', '목', '금', '토'];
-        const headers: HeaderItem[] = Array.from({ length: 7 }, (_, i) => {
+        const headers: HeaderItem[] = Array.from({ length: TOTAL_DAYS }, (_, i) => {
             const d = addDays(start, i);
             return {
-                label: days[i],
+                label: days[d.getDay()],
                 subLabel: String(d.getDate()),
                 isToday: d.toDateString() === today.toDateString(),
                 date: d,
             };
         });
-        return { start, end, headers };
+        return { start, end, headers, colMinWidth, initialScrollCol: PAST_WEEKS };
     }
 
     if (viewMode === '주') {
+        // 26주: 앞 8주 + 뒤 18주
+        const colMinWidth = 100;
+        const PAST_WEEKS = 8;
+        const TOTAL_WEEKS = 26;
         const baseStart = startOfWeek(currentDate);
-        const start = addDays(baseStart, -21);
-        const end = addDays(baseStart, 34);
+        const start = addDays(baseStart, -PAST_WEEKS * 7);
+        const end = addDays(start, TOTAL_WEEKS * 7 - 1);
         end.setHours(23, 59, 59, 999);
-        const headers: HeaderItem[] = Array.from({ length: 8 }, (_, i) => {
+        const headers: HeaderItem[] = Array.from({ length: TOTAL_WEEKS }, (_, i) => {
             const weekStart = addDays(start, i * 7);
             const weekEnd = addDays(weekStart, 6);
             const weekNum = Math.ceil(weekStart.getDate() / 7);
@@ -80,14 +161,18 @@ function getTimeline(viewMode: '일' | '주' | '월' | '분기', currentDate: Da
                 date: weekStart,
             };
         });
-        return { start, end, headers };
+        return { start, end, headers, colMinWidth, initialScrollCol: PAST_WEEKS };
     }
 
     if (viewMode === '월') {
-        const startMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() - 2, 1);
-        const endMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 4, 0);
+        // 24개월: 앞 6개월 + 뒤 18개월
+        const colMinWidth = 120;
+        const PAST_MONTHS = 6;
+        const TOTAL_MONTHS = 24;
+        const startMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() - PAST_MONTHS, 1);
+        const endMonth = new Date(startMonth.getFullYear(), startMonth.getMonth() + TOTAL_MONTHS, 0);
         endMonth.setHours(23, 59, 59, 999);
-        const headers: HeaderItem[] = Array.from({ length: 6 }, (_, i) => {
+        const headers: HeaderItem[] = Array.from({ length: TOTAL_MONTHS }, (_, i) => {
             const d = new Date(startMonth.getFullYear(), startMonth.getMonth() + i, 1);
             return {
                 label: `${d.getFullYear()}년`,
@@ -96,18 +181,21 @@ function getTimeline(viewMode: '일' | '주' | '월' | '분기', currentDate: Da
                 date: d,
             };
         });
-        return { start: startMonth, end: endMonth, headers };
+        return { start: startMonth, end: endMonth, headers, colMinWidth, initialScrollCol: PAST_MONTHS };
     }
 
-    // 분기
+    // 분기: 12분기 (3년), 앞 3분기
+    const colMinWidth = 180;
+    const PAST_QUARTERS = 3;
+    const TOTAL_QUARTERS = 12;
     const currentQ = Math.floor(currentDate.getMonth() / 3);
-    const startQ = currentDate.getFullYear() * 4 + currentQ - 1;
-    const startYear = Math.floor(startQ / 4);
-    const startQNum = ((startQ % 4) + 4) % 4;
+    const startQIdx = currentDate.getFullYear() * 4 + currentQ - PAST_QUARTERS;
+    const startYear = Math.floor(startQIdx / 4);
+    const startQNum = ((startQIdx % 4) + 4) % 4;
     const start = new Date(startYear, startQNum * 3, 1);
-    const end = new Date(start.getFullYear(), start.getMonth() + 12, 0);
+    const end = new Date(start.getFullYear(), start.getMonth() + TOTAL_QUARTERS * 3, 0);
     end.setHours(23, 59, 59, 999);
-    const headers: HeaderItem[] = Array.from({ length: 4 }, (_, i) => {
+    const headers: HeaderItem[] = Array.from({ length: TOTAL_QUARTERS }, (_, i) => {
         const qStart = new Date(start.getFullYear(), start.getMonth() + i * 3, 1);
         const qEnd = new Date(qStart.getFullYear(), qStart.getMonth() + 3, 1);
         return {
@@ -117,7 +205,7 @@ function getTimeline(viewMode: '일' | '주' | '월' | '분기', currentDate: Da
             date: qStart,
         };
     });
-    return { start, end, headers };
+    return { start, end, headers, colMinWidth, initialScrollCol: PAST_QUARTERS };
 }
 
 // ─── 색상 테마 ──────────────────────────────────────────────────────────────
@@ -238,7 +326,7 @@ const ProgressSelector: React.FC<{
 
 function formatDisplayDate(iso: string, withYear = true): string {
     if (!iso) return '';
-    const d = new Date(`${iso}T00:00:00`);
+    const d = parseDate(iso);
     if (Number.isNaN(d.getTime())) return '';
     const md = `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
     return withYear ? `${d.getFullYear()}.${md}` : md;
@@ -270,13 +358,13 @@ const DateRangePanel: React.FC<{
     onClose: () => void;
 }> = ({ startDate, endDate, anchorRef, onSave, onClose }) => {
     const panelRef = useRef<HTMLDivElement>(null);
-    const [draftStart, setDraftStart] = useState(startDate);
-    const [draftEnd, setDraftEnd] = useState(endDate);
+    const [draftStart, setDraftStart] = useState(toInputDate(startDate));
+    const [draftEnd, setDraftEnd] = useState(toInputDate(endDate));
     const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
     useEffect(() => {
-        setDraftStart(startDate);
-        setDraftEnd(endDate);
+        setDraftStart(toInputDate(startDate));
+        setDraftEnd(toInputDate(endDate));
     }, [startDate, endDate]);
 
     useEffect(() => {
@@ -312,9 +400,9 @@ const DateRangePanel: React.FC<{
     }, [onClose, anchorRef]);
 
     const commit = () => {
-        let s = draftStart || startDate;
-        let e = draftEnd || endDate;
-        if (s && e && new Date(`${e}T00:00:00`) < new Date(`${s}T00:00:00`)) e = s;
+        let s = fromInputDate(draftStart) || startDate;
+        let e = fromInputDate(draftEnd) || endDate;
+        if (s && e && parseDate(e) < parseDate(s)) e = s;
         onSave(s, e);
         onClose();
     };
@@ -386,8 +474,7 @@ const InlineDateRange: React.FC<{
         <>
             <span
                 ref={anchorRef}
-                className="shrink-0 text-center text-[10px] text-gray-500 tabular-nums cursor-pointer hover:text-blue-600 transition-colors truncate"
-                style={{ width: DATE_COL_W }}
+                className="text-[10px] text-gray-400 tabular-nums cursor-pointer hover:text-blue-600 transition-colors"
                 title={`${label} — 더블클릭하여 기간 수정`}
                 onDoubleClick={() => setOpen(true)}
             >
@@ -443,8 +530,7 @@ const InlineTitle: React.FC<{
 
     return (
         <span
-            className="flex-1 text-[13px] font-semibold text-gray-900 truncate cursor-pointer hover:text-blue-600 transition-colors"
-            title="더블클릭하여 수정"
+            className="block w-full text-[13px] font-semibold text-gray-900 whitespace-normal break-keep leading-snug cursor-pointer hover:text-blue-600 transition-colors"
             onDoubleClick={() => { setDraft(value); setEditing(true); }}
         >
             {value}
@@ -594,7 +680,7 @@ const WbsSchedule: React.FC = () => {
     const updateDetailSchedule = useWbsStore((s) => s.updateDetailSchedule);
     const deleteDetailSchedule = useWbsStore((s) => s.deleteDetailSchedule);
 
-    const [viewMode, setViewMode] = useState<'월' | '주' | '일' | '분기'>('일');
+    const [viewMode, setViewMode] = useState<'월' | '주' | '일' | '분기' | 'ALL'>('ALL');
     const [currentDate, setCurrentDate] = useState<Date>(new Date());
 
     // 트리 상태
@@ -603,6 +689,26 @@ const WbsSchedule: React.FC = () => {
     // 진척율 셀렉터 오픈 id
     const [progressOpenId, setProgressOpenId] = useState<string | null>(null);
     const progressAnchorRef = useRef<HTMLButtonElement | null>(null);
+
+    // 스크롤 동기화 (왼쪽 WBS 목록 ↔ 오른쪽 간트 바디)
+    const listScrollRef = useRef<HTMLDivElement>(null);
+    const ganttScrollRef = useRef<HTMLDivElement>(null);
+    const ganttXScrollRef = useRef<HTMLDivElement>(null);
+    const syncingRef = useRef(false);
+    const handleListScroll = useCallback(() => {
+        if (syncingRef.current) return;
+        syncingRef.current = true;
+        if (ganttScrollRef.current && listScrollRef.current)
+            ganttScrollRef.current.scrollTop = listScrollRef.current.scrollTop;
+        syncingRef.current = false;
+    }, []);
+    const handleGanttScroll = useCallback(() => {
+        if (syncingRef.current) return;
+        syncingRef.current = true;
+        if (listScrollRef.current && ganttScrollRef.current)
+            listScrollRef.current.scrollTop = ganttScrollRef.current.scrollTop;
+        syncingRef.current = false;
+    }, []);
 
     // 필터
     const [showFilter, setShowFilter] = useState(false);
@@ -628,6 +734,23 @@ const WbsSchedule: React.FC = () => {
     // 행 높이 계산
     const rowHeight = displaySettings.rowHeight === 'compact' ? 36 : displaySettings.rowHeight === 'comfortable' ? 52 : 44;
 
+    // 왼쪽 패널 행 실제 높이 측정 → 간트 행 동기화
+    const leftRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const [measuredRowHeights, setMeasuredRowHeights] = useState<Record<string, number>>({});
+
+    useEffect(() => {
+        const newHeights: Record<string, number> = {};
+        let changed = false;
+        for (const [id, el] of Object.entries(leftRowRefs.current)) {
+            if (el) {
+                const h = Math.round(el.getBoundingClientRect().height);
+                if (h > 0 && h !== measuredRowHeights[id]) changed = true;
+                newHeights[id] = h > 0 ? h : rowHeight;
+            }
+        }
+        if (changed) setMeasuredRowHeights(newHeights);
+    });
+
     // ── 통계 ────────────────────────────────────────────────────────────────
 
     const overallProgress = useMemo(() => {
@@ -643,7 +766,7 @@ const WbsSchedule: React.FC = () => {
         const now = new Date();
         return detailSchedules.filter((ds) => {
             if (!ds.endDate) return false;
-            return new Date(ds.endDate) < now && (ds.progress ?? 0) < 100;
+            return parseDate(ds.endDate) < now && (ds.progress ?? 0) < 100;
         }).length;
     }, [detailSchedules]);
 
@@ -653,7 +776,7 @@ const WbsSchedule: React.FC = () => {
         const endW = endOfWeek(now);
         return detailSchedules.filter((ds) => {
             if (!ds.endDate) return false;
-            const d = new Date(ds.endDate);
+            const d = parseDate(ds.endDate);
             return d >= startW && d <= endW;
         }).length;
     }, [detailSchedules]);
@@ -676,7 +799,10 @@ const WbsSchedule: React.FC = () => {
 
     // ── 타임라인 ────────────────────────────────────────────────────────────
 
-    const timeline = useMemo(() => getTimeline(viewMode, currentDate), [viewMode, currentDate]);
+    const timeline = useMemo(() => {
+        if (viewMode === 'ALL') return getTimelineAll(detailSchedules);
+        return getTimeline(viewMode, currentDate);
+    }, [viewMode, currentDate, detailSchedules]);
 
     const todayLineLeft = useMemo(() => {
         const today = new Date();
@@ -685,28 +811,59 @@ const WbsSchedule: React.FC = () => {
         return ((today.getTime() - timeline.start.getTime()) / dur) * 100;
     }, [timeline]);
 
-    const headerDateText = useMemo(() => {
-        if (viewMode === '분기') return `${currentDate.getFullYear()}년`;
-        return `${currentDate.getFullYear()}년 ${currentDate.getMonth() + 1}월`;
-    }, [currentDate, viewMode]);
-
     // ── 네비게이션 ──────────────────────────────────────────────────────────
 
-    const handlePrev = () => setCurrentDate((prev) => {
-        if (viewMode === '일') return addDays(prev, -7);
-        if (viewMode === '주') return addDays(prev, -56);
-        const d = new Date(prev);
-        d.setMonth(d.getMonth() - (viewMode === '월' ? 6 : 12));
-        return d;
-    });
+    // 스크롤 위치 → 헤더 날짜 텍스트 동기화 (useState를 headerDateText useMemo보다 먼저 선언)
+    const [visibleColIndex, setVisibleColIndex] = useState(0);
 
-    const handleNext = () => setCurrentDate((prev) => {
-        if (viewMode === '일') return addDays(prev, 7);
-        if (viewMode === '주') return addDays(prev, 56);
-        const d = new Date(prev);
-        d.setMonth(d.getMonth() + (viewMode === '월' ? 6 : 12));
-        return d;
-    });
+    const headerDateText = useMemo(() => {
+        if (viewMode === 'ALL') {
+            const s = timeline.start, e = timeline.end;
+            return `${s.getFullYear()}.${s.getMonth() + 1} ~ ${e.getFullYear()}.${e.getMonth() + 1}`;
+        }
+        const h = timeline.headers[visibleColIndex];
+        if (!h) return '';
+        const d = h.date;
+        if (viewMode === '분기') return `${d.getFullYear()}년 ${Math.floor(d.getMonth() / 3) + 1}분기`;
+        if (viewMode === '월') return `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+        if (viewMode === '주') return `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+        return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+    }, [visibleColIndex, viewMode, timeline]);
+    const handleXScroll = useCallback(() => {
+        const el = ganttXScrollRef.current;
+        if (!el || viewMode === 'ALL') return;
+        const col = Math.floor(el.scrollLeft / timeline.colMinWidth);
+        setVisibleColIndex(Math.min(col, timeline.headers.length - 1));
+    }, [timeline, viewMode]);
+
+    // 타임라인 변경 시 현재 날짜 위치로 초기 X 스크롤 + visibleColIndex 초기화
+    useEffect(() => {
+        if (viewMode === 'ALL') return;
+        const el = ganttXScrollRef.current;
+        if (!el) return;
+        const scrollTo = timeline.initialScrollCol * timeline.colMinWidth;
+        el.scrollLeft = scrollTo;
+        setVisibleColIndex(timeline.initialScrollCol);
+    }, [timeline, viewMode]);
+
+    // 스크롤 단위: 컬럼 수로 이동
+    const scrollByColumns = (cols: number) => {
+        const el = ganttXScrollRef.current;
+        if (!el) return;
+        el.scrollBy({ left: cols * timeline.colMinWidth, behavior: 'smooth' });
+    };
+
+    const handlePrev = () => {
+        if (viewMode === 'ALL') return;
+        const cols = viewMode === '일' ? 7 : viewMode === '주' ? 4 : viewMode === '월' ? 3 : 2;
+        scrollByColumns(-cols);
+    };
+
+    const handleNext = () => {
+        if (viewMode === 'ALL') return;
+        const cols = viewMode === '일' ? 7 : viewMode === '주' ? 4 : viewMode === '월' ? 3 : 2;
+        scrollByColumns(cols);
+    };
 
     // ── 아이템 조작 ─────────────────────────────────────────────────────────
 
@@ -750,8 +907,8 @@ const WbsSchedule: React.FC = () => {
 
     const calcBar = (node: FlatNode): { left: number; width: number; barText: string } | null => {
         if (!node.startDate || !node.endDate) return null;
-        const taskStart = new Date(node.startDate);
-        const taskEnd = new Date(node.endDate);
+        const taskStart = parseDate(node.startDate);
+        const taskEnd = parseDate(node.endDate);
         taskStart.setHours(0, 0, 0, 0);
         taskEnd.setHours(23, 59, 59, 999);
 
@@ -789,11 +946,22 @@ const WbsSchedule: React.FC = () => {
                 <div className="flex items-center gap-3">
                     {/* 날짜 네비게이터 */}
                     <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-                        <button onClick={() => setCurrentDate(new Date())} className="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 border-r border-gray-200">
-                            오늘
-                        </button>
-                        <button onClick={handlePrev} className="px-3 py-1.5 text-gray-500 hover:bg-gray-50 border-r border-gray-200 font-bold">{'<'}</button>
-                        <button onClick={handleNext} className="px-3 py-1.5 text-gray-500 hover:bg-gray-50 border-r border-gray-200 font-bold">{'>'}</button>
+                        {viewMode !== 'ALL' && <>
+                            <button
+                                onClick={() => {
+                                    setCurrentDate(new Date());
+                                    setTimeout(() => {
+                                        const el = ganttXScrollRef.current;
+                                        if (el) el.scrollLeft = timeline.initialScrollCol * timeline.colMinWidth;
+                                    }, 0);
+                                }}
+                                className="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 border-r border-gray-200"
+                            >
+                                오늘
+                            </button>
+                            <button onClick={handlePrev} className="px-3 py-1.5 text-gray-500 hover:bg-gray-50 border-r border-gray-200 font-bold">{'<'}</button>
+                            <button onClick={handleNext} className="px-3 py-1.5 text-gray-500 hover:bg-gray-50 border-r border-gray-200 font-bold">{'>'}</button>
+                        </>}
                         <span className="px-4 py-1.5 text-sm font-medium text-gray-700">{headerDateText}</span>
                     </div>
 
@@ -909,11 +1077,15 @@ const WbsSchedule: React.FC = () => {
                 {/* 뷰 모드 탭 */}
                 <div className="flex justify-end p-3 border-b border-gray-100 bg-white z-10 shrink-0">
                     <div className="flex bg-gray-50 border border-gray-200 rounded-lg p-0.5">
-                        {(['월', '주', '일', '분기'] as const).map((m) => (
+                        {(['ALL', '분기', '월', '주', '일'] as const).map((m) => (
                             <button
                                 key={m}
                                 onClick={() => setViewMode(m)}
-                                className={`px-4 py-1.5 text-xs font-bold rounded-md transition-colors ${viewMode === m ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                className={`px-4 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                                    viewMode === m
+                                        ? m === 'ALL' ? 'bg-white text-indigo-600 shadow-sm' : 'bg-white text-blue-600 shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                }`}
                             >
                                 {m}
                             </button>
@@ -923,20 +1095,17 @@ const WbsSchedule: React.FC = () => {
 
                 <div className="flex flex-1 overflow-hidden relative">
                     {/* ── 왼쪽: WBS 목록 ──────────────────────────────── */}
-                    <div className="w-[360px] flex flex-col border-r border-gray-100 shrink-0 bg-white z-10 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.08)]">
+                    <div className="w-[415px] flex flex-col border-r border-gray-100 shrink-0 bg-white z-10 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.08)]">
                         {/* 컬럼 헤더 */}
                         <div className="border-b border-gray-100 flex items-center px-4 shrink-0 bg-gray-50/80" style={{ height: 56 }}>
                             <span className="text-xs font-bold text-gray-600 flex-1 min-w-0">WBS 항목</span>
-                            {displaySettings.showDates && (
-                                <span className="text-[10px] text-gray-400 text-center shrink-0" style={{ width: DATE_COL_W }}>기간</span>
-                            )}
                             {displaySettings.showProgress && (
                                 <span className="text-[10px] text-gray-400 w-14 text-center shrink-0">진척율</span>
                             )}
                         </div>
 
                         {/* 행 목록 */}
-                        <div className="flex-1 overflow-y-auto">
+                        <div ref={listScrollRef} onScroll={handleListScroll} className="flex-1 overflow-y-auto">
                             {flatRows.length === 0 ? (
                                 <div className="text-center text-xs text-gray-400 py-12 px-6 leading-relaxed">
                                     등록된 WBS 항목이 없습니다.<br />
@@ -951,53 +1120,57 @@ const WbsSchedule: React.FC = () => {
                                     const isCollapsed = collapsed.has(node.id);
                                     const isDelayed = displaySettings.showDelayBadge &&
                                         node.endDate &&
-                                        new Date(node.endDate) < new Date() &&
+                                        parseDate(node.endDate) < new Date() &&
                                         (node.progress ?? 0) < 100;
 
                                     return (
                                         <div
                                             key={node.id}
-                                            className={`flex items-center border-b border-gray-50 group shrink-0 hover:bg-gray-50/70 transition-colors`}
+                                            ref={(el) => { leftRowRefs.current[node.id] = el; }}
+                                            className={`flex items-start border-b border-gray-50 group shrink-0 hover:bg-sky-50/60 transition-colors duration-100`}
                                             style={{
-                                                height: rowHeight,
+                                                minHeight: rowHeight,
                                                 paddingLeft: `${8 + node.depth * 20}px`,
                                                 paddingRight: 8,
+                                                paddingTop: 6,
+                                                paddingBottom: 6,
                                             }}
                                         >
                                             {/* 토글 버튼 */}
                                             {childCount > 0 ? (
                                                 <button
                                                     onClick={() => toggleCollapse(node.id)}
-                                                    className="w-5 h-5 shrink-0 flex items-center justify-center text-gray-400 hover:text-gray-700 rounded transition-colors"
+                                                    className="w-5 h-5 mt-0.5 shrink-0 flex items-center justify-center text-gray-400 hover:text-gray-700 rounded transition-colors"
                                                 >
                                                     {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                                                 </button>
                                             ) : (
-                                                <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                                                <div className="w-5 h-5 mt-0.5 shrink-0 flex items-center justify-center">
                                                     <div className={`w-1.5 h-1.5 rounded-full ${node.depth === 0 ? theme.dot : 'bg-gray-300'}`} />
                                                 </div>
                                             )}
 
-                                            {/* 제목 (더블클릭 편집) */}
-                                            <div className="flex-1 min-w-0 px-1.5">
+                                            {/* 제목 + 기간 (2줄 레이아웃) */}
+                                            <div className="flex-1 min-w-0 px-1.5 flex flex-col gap-0.5">
                                                 <InlineTitle
                                                     value={node.title}
                                                     onSave={(v) => updateDetailSchedule(node.id, { title: v })}
                                                 />
+                                                {/* 기간 — 제목 아래 */}
+                                                {displaySettings.showDates && (
+                                                    <div>
+                                                        <InlineDateRange
+                                                            startDate={node.startDate}
+                                                            endDate={node.endDate}
+                                                            onSave={(start, end) => updateDetailSchedule(node.id, { startDate: start, endDate: end })}
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
-
-                                            {/* 기간 (더블클릭 편집) */}
-                                            {displaySettings.showDates && (
-                                                <InlineDateRange
-                                                    startDate={node.startDate}
-                                                    endDate={node.endDate}
-                                                    onSave={(start, end) => updateDetailSchedule(node.id, { startDate: start, endDate: end })}
-                                                />
-                                            )}
 
                                             {/* 지연 배지 */}
                                             {isDelayed && (
-                                                <span className="text-[9px] font-bold bg-red-50 text-red-500 border border-red-200 rounded px-1 py-0.5 shrink-0 mr-1">
+                                                <span className="text-[9px] font-bold bg-red-50 text-red-500 border border-red-200 rounded px-1 py-0.5 shrink-0 mt-0.5 mr-1">
                                                     지연
                                                 </span>
                                             )}
@@ -1053,15 +1226,15 @@ const WbsSchedule: React.FC = () => {
                     </div>
 
                     {/* ── 오른쪽: 간트 차트 ───────────────────────────── */}
-                    <div className="flex-1 flex flex-col overflow-x-auto overflow-y-hidden bg-white">
+                    <div ref={ganttXScrollRef} onScroll={handleXScroll} className="flex-1 flex flex-col overflow-x-auto overflow-y-hidden bg-white">
                         {/* 날짜 헤더 */}
                         <div
-                            className="border-b border-gray-100 flex shrink-0 relative bg-white min-w-[600px]"
-                            style={{ height: 56 }}
+                            className="border-b border-gray-100 flex shrink-0 relative bg-white"
+                            style={{ height: 56, minWidth: timeline.headers.length * timeline.colMinWidth }}
                         >
                             <div
                                 className="flex-1 grid"
-                                style={{ gridTemplateColumns: `repeat(${timeline.headers.length}, minmax(0, 1fr))` }}
+                                style={{ gridTemplateColumns: `repeat(${timeline.headers.length}, minmax(${timeline.colMinWidth}px, 1fr))` }}
                             >
                                 {timeline.headers.map((h, i) => (
                                     <div key={i} className="border-r border-gray-100 flex flex-col items-center justify-center text-[11px] h-full">
@@ -1081,7 +1254,7 @@ const WbsSchedule: React.FC = () => {
                         </div>
 
                         {/* 차트 바디 */}
-                        <div className="flex-1 overflow-y-auto relative min-w-[600px] select-none">
+                        <div ref={ganttScrollRef} onScroll={handleGanttScroll} className="flex-1 overflow-y-auto relative select-none" style={{ minWidth: timeline.headers.length * timeline.colMinWidth }}>
                             {/* 격자 배경 */}
                             <div
                                 className="absolute inset-0 grid pointer-events-none"
@@ -1112,38 +1285,56 @@ const WbsSchedule: React.FC = () => {
                                     flatRows.map((node) => {
                                         const bar = calcBar(node);
                                         const theme = THEMES[node.themeIndex];
+                                        const isZero = (node.progress ?? 0) === 0;
 
                                         return (
                                             <div
                                                 key={node.id}
-                                                className="flex items-center relative border-b border-gray-50 w-full"
-                                                style={{ height: rowHeight }}
+                                                className="flex items-center relative border-b border-gray-50 w-full group/gantt hover:bg-sky-50/60 transition-colors duration-100"
+                                                style={{ height: measuredRowHeights[node.id] ?? rowHeight, flexShrink: 0 }}
                                             >
                                                 {bar && (
-                                                    <div
-                                                        className={`absolute rounded-full flex items-center px-3 border shadow-sm transition-all duration-300 ${theme.bar} ${theme.border}`}
-                                                        style={{
-                                                            left: `${bar.left}%`,
-                                                            width: `${bar.width}%`,
-                                                            height: rowHeight * 0.6,
-                                                        }}
-                                                    >
-                                                        {displaySettings.showDates && (
-                                                            <span className={`text-[10px] font-bold truncate mr-2 ${theme.text}`}>
-                                                                {bar.barText}
-                                                            </span>
-                                                        )}
-                                                        {displaySettings.showProgress && (
-                                                            <span className={`ml-auto text-[10px] font-black shrink-0 ${theme.label}`}>
-                                                                {node.progress ?? 0}%
-                                                            </span>
-                                                        )}
-                                                        {/* 진척율 내부 채움 */}
+                                                    <>
+                                                        {/* 바 배경 + 진척 채움 */}
                                                         <div
-                                                            className={`absolute left-0 top-0 h-full rounded-full opacity-30 ${theme.dot}`}
-                                                            style={{ width: `${node.progress ?? 0}%` }}
-                                                        />
-                                                    </div>
+                                                            className={`absolute rounded-full border shadow-sm transition-all duration-300 ${isZero ? 'bg-gray-100/80 border-gray-200/60' : `${theme.bar} ${theme.border}`}`}
+                                                            style={{
+                                                                left: `${bar.left}%`,
+                                                                width: `${bar.width}%`,
+                                                                height: rowHeight * 0.6,
+                                                                top: '50%',
+                                                                transform: 'translateY(-50%)',
+                                                            }}
+                                                        >
+                                                            <div
+                                                                className={`absolute left-0 top-0 h-full rounded-full opacity-30 ${theme.dot}`}
+                                                                style={{ width: `${node.progress ?? 0}%` }}
+                                                            />
+                                                        </div>
+                                                        {/* 텍스트 레이블: 바 시작점에서 오른쪽으로 자유롭게 */}
+                                                        {(displaySettings.showDates || displaySettings.showProgress) && (
+                                                            <div
+                                                                className="absolute flex items-center gap-1.5 pointer-events-none z-10"
+                                                                style={{
+                                                                    left: `calc(${bar.left}% + 10px)`,
+                                                                    top: '50%',
+                                                                    transform: 'translateY(-50%)',
+                                                                    whiteSpace: 'nowrap',
+                                                                }}
+                                                            >
+                                                                {displaySettings.showDates && (
+                                                                    <span className={`text-[10px] font-bold ${isZero ? 'text-gray-400' : theme.text}`}>
+                                                                        {bar.barText}
+                                                                    </span>
+                                                                )}
+                                                                {displaySettings.showProgress && (
+                                                                    <span className={`text-[10px] font-black ${isZero ? 'text-gray-400' : theme.label}`}>
+                                                                        {node.progress ?? 0}%
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         );

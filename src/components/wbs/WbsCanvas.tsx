@@ -4,7 +4,7 @@ import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJso
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsStore } from '../../store/wbsStore';
 import { useAuthStore } from '../../store/authStore';
-import type { WbsData } from '../../types/wbs';
+import type { WbsData, WbsDetailSchedule } from '../../types/wbs';
 import WbsMenuTree from './WbsMenuTree';
 import WbsDevDetail from './WbsDevDetail';
 import WbsProgress from './WbsProgress';
@@ -12,8 +12,10 @@ import WbsSchedule from './WbsSchedule';
 import WbsUploadModal from './WbsUploadModal';
 import WbsExcelSyncModal from './WbsExcelSyncModal';
 import WbsAdminModal from './WbsAdminModal';
+import WbsScheduleImportModal from './WbsScheduleImportModal';
 import { downloadWbsExcel } from './wbsExcel';
 import { downloadWbsJson, parseWbsJson } from './wbsIO';
+import { downloadScheduleExcel, downloadScheduleJson } from './wbsScheduleIO';
 import { copyToClipboard } from '../../utils/clipboard';
 
 type WbsTab = 'hierarchy' | 'detail' | 'progress' | 'schedule';
@@ -25,7 +27,7 @@ const DEV_TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
 ];
 
 const SCHEDULE_TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
-    { key: 'schedule', label: '일정', icon: <CalendarDays size={15} /> },
+    { key: 'schedule', label: 'GANTT CHART', icon: <CalendarDays size={15} /> },
 ];
 
 const WbsCanvas: React.FC = () => {
@@ -36,6 +38,7 @@ const WbsCanvas: React.FC = () => {
     const importData = useWbsStore((s) => s.importData);
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
+    const detailSchedules = useWbsStore((s) => s.detailSchedules);
 
     const { user } = useAuthStore();
     const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
@@ -43,6 +46,8 @@ const WbsCanvas: React.FC = () => {
     const project = projects.find((p) => p.id === currentProjectId);
     const [tab, setTab] = useState<WbsTab>('hierarchy');
     const [uploadKind, setUploadKind] = useState<'json' | 'excel' | null>(null);
+    // 일정 탭 전용 업로드 모달
+    const [scheduleUploadKind, setScheduleUploadKind] = useState<'excel' | 'json' | null>(null);
     const [showActions, setShowActions] = useState(false);
     const [panelPos, setPanelPos] = useState({ top: 0, right: 0 });
     const triggerRef = useRef<HTMLButtonElement>(null);
@@ -317,58 +322,128 @@ const WbsCanvas: React.FC = () => {
                 document.body
             )}
 
-            {/* 지니 패널 — body에 Portal로 렌더해 stacking context 완전 탈출 */}
+            {/* 지니 패널 — 탭별 컨텍스트 분리 */}
             {showActions && createPortal(
                 <div
                     ref={panelRef}
                     style={{ position: 'fixed', top: panelPos.top, right: panelPos.right, zIndex: 9999 }}
                 >
-                    <div className="bg-white/90 backdrop-blur-md border border-gray-100 rounded-2xl shadow-2xl p-2 flex flex-col gap-1">
-                        {[
-                            {
-                                delay: '0ms',
-                                icon: <FileSpreadsheet size={14} />,
-                                label: '엑셀 다운로드',
-                                className: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
-                                onClick: () => { downloadWbsExcel({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
-                                title: '현재 WBS를 엑셀로 다운로드',
-                            },
-                            {
-                                delay: '55ms',
-                                icon: <FileUp size={14} />,
-                                label: '엑셀 업로드',
-                                className: 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50',
-                                onClick: () => { setUploadKind('excel'); setShowActions(false); },
-                                title: '엑셀 파일을 업로드하여 현재 데이터에 반영',
-                            },
-                            {
-                                delay: '110ms',
-                                icon: <FileDown size={14} />,
-                                label: 'JSON 다운로드',
-                                className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
-                                onClick: () => { downloadWbsJson({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
-                                title: '현재 WBS 데이터를 JSON으로 다운로드',
-                            },
-                            {
-                                delay: '165ms',
-                                icon: <FileJson size={14} />,
-                                label: 'JSON 업로드',
-                                className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
-                                onClick: () => { setUploadKind('json'); setShowActions(false); },
-                                title: 'JSON 파일을 업로드하여 데이터 최신화',
-                            },
-                        ].map((item) => (
-                            <button
-                                key={item.label}
-                                onClick={item.onClick}
-                                title={item.title}
-                                style={{ animationDelay: item.delay }}
-                                className={`genie-item flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${item.className}`}
-                            >
-                                {item.icon}
-                                {item.label}
-                            </button>
-                        ))}
+                    <div className="bg-white/90 backdrop-blur-md border border-gray-100 rounded-2xl shadow-2xl p-2 flex flex-col gap-1 min-w-[200px]">
+                        {/* 어떤 데이터인지 레이블 */}
+                        {tab === 'schedule' ? (
+                            <div className="flex items-center gap-1.5 px-2 pb-1.5 pt-0.5">
+                                <CalendarDays size={11} className="text-blue-500" />
+                                <span className="text-[10px] font-black text-blue-600 tracking-wide">일정 WBS 데이터</span>
+                                <span className="ml-auto text-[10px] text-gray-400">{detailSchedules.length}개 항목</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1.5 px-2 pb-1.5 pt-0.5">
+                                <ListTree size={11} className="text-emerald-500" />
+                                <span className="text-[10px] font-black text-emerald-600 tracking-wide">개발 WBS 데이터</span>
+                                <span className="ml-auto text-[10px] text-gray-400">{menus.length}메뉴 · {rows.length}행</span>
+                            </div>
+                        )}
+                        <div className="h-px bg-gray-100 mx-1 mb-1" />
+
+                        {tab === 'schedule' ? (
+                            // ── 일정 탭 전용 버튼 ──
+                            <>
+                                {[
+                                    {
+                                        delay: '0ms',
+                                        icon: <FileSpreadsheet size={14} />,
+                                        label: '엑셀 다운로드',
+                                        className: 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm',
+                                        onClick: () => { downloadScheduleExcel(detailSchedules, project?.name ?? 'WBS'); setShowActions(false); },
+                                        title: '일정 WBS를 엑셀로 다운로드',
+                                    },
+                                    {
+                                        delay: '55ms',
+                                        icon: <FileUp size={14} />,
+                                        label: '엑셀 업로드',
+                                        className: 'bg-white text-blue-700 border border-blue-200 hover:bg-blue-50',
+                                        onClick: () => { setScheduleUploadKind('excel'); setShowActions(false); },
+                                        title: '엑셀 파일로 일정 데이터 업데이트',
+                                    },
+                                    {
+                                        delay: '110ms',
+                                        icon: <FileDown size={14} />,
+                                        label: 'JSON 다운로드',
+                                        className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
+                                        onClick: () => { downloadScheduleJson(detailSchedules, project?.name ?? 'WBS'); setShowActions(false); },
+                                        title: '일정 WBS 데이터를 JSON으로 다운로드',
+                                    },
+                                    {
+                                        delay: '165ms',
+                                        icon: <FileJson size={14} />,
+                                        label: 'JSON 업로드',
+                                        className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
+                                        onClick: () => { setScheduleUploadKind('json'); setShowActions(false); },
+                                        title: 'JSON 파일로 일정 데이터 업데이트',
+                                    },
+                                ].map((item) => (
+                                    <button
+                                        key={item.label}
+                                        onClick={item.onClick}
+                                        title={item.title}
+                                        style={{ animationDelay: item.delay }}
+                                        className={`genie-item flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${item.className}`}
+                                    >
+                                        {item.icon}
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </>
+                        ) : (
+                            // ── 개발 탭 버튼 ──
+                            <>
+                                {[
+                                    {
+                                        delay: '0ms',
+                                        icon: <FileSpreadsheet size={14} />,
+                                        label: '엑셀 다운로드',
+                                        className: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
+                                        onClick: () => { downloadWbsExcel({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
+                                        title: '현재 WBS를 엑셀로 다운로드',
+                                    },
+                                    {
+                                        delay: '55ms',
+                                        icon: <FileUp size={14} />,
+                                        label: '엑셀 업로드',
+                                        className: 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50',
+                                        onClick: () => { setUploadKind('excel'); setShowActions(false); },
+                                        title: '엑셀 파일을 업로드하여 현재 데이터에 반영',
+                                    },
+                                    {
+                                        delay: '110ms',
+                                        icon: <FileDown size={14} />,
+                                        label: 'JSON 다운로드',
+                                        className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
+                                        onClick: () => { downloadWbsJson({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
+                                        title: '현재 WBS 데이터를 JSON으로 다운로드',
+                                    },
+                                    {
+                                        delay: '165ms',
+                                        icon: <FileJson size={14} />,
+                                        label: 'JSON 업로드',
+                                        className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
+                                        onClick: () => { setUploadKind('json'); setShowActions(false); },
+                                        title: 'JSON 파일을 업로드하여 데이터 최신화',
+                                    },
+                                ].map((item) => (
+                                    <button
+                                        key={item.label}
+                                        onClick={item.onClick}
+                                        title={item.title}
+                                        style={{ animationDelay: item.delay }}
+                                        className={`genie-item flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${item.className}`}
+                                    >
+                                        {item.icon}
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </>
+                        )}
                     </div>
                 </div>,
                 document.body
@@ -419,6 +494,18 @@ const WbsCanvas: React.FC = () => {
                 onApply={(data) => importData(data)}
                 onClose={() => setUploadKind(null)}
             />
+
+            {/* 일정 탭 전용 업로드 모달 */}
+            {scheduleUploadKind && (
+                <WbsScheduleImportModal
+                    open={true}
+                    kind={scheduleUploadKind}
+                    current={detailSchedules}
+                    projectName={project?.name ?? 'WBS'}
+                    onApply={(next: WbsDetailSchedule[]) => importData({ detailSchedules: next })}
+                    onClose={() => setScheduleUploadKind(null)}
+                />
+            )}
         </div>
     );
 };

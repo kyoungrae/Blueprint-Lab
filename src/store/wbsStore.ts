@@ -108,7 +108,25 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     updateDetailSchedule: (id, patch) => {
-        set({ detailSchedules: get().detailSchedules.map((s) => (s.id === id ? { ...s, ...patch } : s)) });
+        // 1. 해당 항목 업데이트
+        let updated = get().detailSchedules.map((s) => (s.id === id ? { ...s, ...patch } : s));
+
+        // 2. progress가 변경된 경우, 조상 항목들의 progress를 자동 재계산 (leaf → root 방향)
+        if ('progress' in patch) {
+            const recalcParent = (items: typeof updated, childId: string): typeof updated => {
+                const child = items.find((s) => s.id === childId);
+                if (!child?.parentId) return items;
+                const parentId = child.parentId;
+                const children = items.filter((s) => s.parentId === parentId);
+                if (children.length === 0) return items;
+                const avg = Math.round(children.reduce((sum, c) => sum + (c.progress ?? 0), 0) / children.length);
+                const next = items.map((s) => (s.id === parentId ? { ...s, progress: avg } : s));
+                return recalcParent(next, parentId);
+            };
+            updated = recalcParent(updated, id);
+        }
+
+        set({ detailSchedules: updated });
         get().scheduleSave();
     },
 
