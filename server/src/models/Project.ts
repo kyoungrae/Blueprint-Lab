@@ -272,6 +272,7 @@ export interface IProject extends Document {
     description?: string;
     /** 프로젝트 생성자 표시명 (미설정 시 members OWNER의 name 사용) */
     author?: string;
+    groupLabel?: string;
     members: IProjectMember[];
     currentSnapshot: IERDSnapshot;
     createdAt: Date;
@@ -547,6 +548,7 @@ const ProjectSchema = new Schema<IProject>({
     dbType: { type: String, enum: ['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'], required: true },
     description: { type: String },
     author: { type: String, default: '' },
+    groupLabel: { type: String },
     members: [ProjectMemberSchema],
     currentSnapshot: { type: ERDSnapshotSchema, default: { version: 1, entities: [], relationships: [], savedAt: new Date() } },
     screenSnapshot: { type: ScreenSnapshotSchema, default: { version: 1, screens: [], flows: [], savedAt: new Date() } },

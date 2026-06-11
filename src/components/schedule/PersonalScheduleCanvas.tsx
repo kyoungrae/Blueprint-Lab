@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
     ChevronLeft, ChevronRight, Plus, X, Check, Trash2,
-    Calendar,
+    Calendar, Pencil,
     ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
@@ -10,7 +10,7 @@ import { useProjectStore } from '../../store/projectStore';
 type ViewMode = 'day' | 'week' | 'month';
 type TabMode = 'calendar' | 'gantt' | 'todo';
 type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
-type CategoryKey = 'work' | 'personal' | 'meeting' | 'deadline';
+type CategoryKey = string;
 
 interface ScheduleEvent {
     id: string;
@@ -49,12 +49,22 @@ interface TodoItem {
 }
 
 // ── 상수 ──────────────────────────────────────────────────────────────────
-const CATEGORY: Record<CategoryKey, { label: string; color: string; bg: string; light: string }> = {
-    work:     { label: '업무 일정', color: '#3b82f6', bg: 'bg-blue-500',   light: 'bg-blue-100 text-blue-700 border-blue-200' },
-    personal: { label: '개인 일정', color: '#10b981', bg: 'bg-emerald-500', light: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-    meeting:  { label: '회의',      color: '#8b5cf6', bg: 'bg-violet-500',  light: 'bg-violet-100 text-violet-700 border-violet-200' },
-    deadline: { label: '마감일',    color: '#ef4444', bg: 'bg-red-500',     light: 'bg-red-100 text-red-700 border-red-200' },
+type CategoryDef = { label: string; color: string };
+
+const DEFAULT_CATEGORIES: Record<string, CategoryDef> = {
+    work:     { label: '업무 일정', color: '#3b82f6' },
+    personal: { label: '개인 일정', color: '#10b981' },
+    meeting:  { label: '회의',      color: '#8b5cf6' },
+    deadline: { label: '마감일',    color: '#ef4444' },
 };
+
+const PRESET_COLORS = [
+    '#3b82f6','#10b981','#8b5cf6','#ef4444','#f59e0b',
+    '#ec4899','#06b6d4','#84cc16','#f97316','#6366f1',
+];
+
+// 헥스 색상에서 light 스타일 생성 (inline style 사용)
+const getCatStyle = (color: string) => ({ backgroundColor: color + '20', color, border: `1px solid ${color}40` });
 
 const GANTT_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -144,10 +154,22 @@ const EventForm: React.FC<{
     onDelete: (id: string) => void;
     onClose: () => void;
     projects: { id: string; name: string }[];
-}> = ({ event, onSave, onDelete, onClose, projects }) => {
+    categories: Record<string, CategoryDef>;
+    onAddCategory: (label: string, color: string) => void;
+    onEditCategory: (key: string, label: string, color: string) => void;
+    onDeleteCategory: (key: string) => void;
+}> = ({ event, onSave, onDelete, onClose, projects, categories, onAddCategory, onEditCategory, onDeleteCategory }) => {
     const isNew = !event?.id;
     const [title, setTitle] = useState(event?.title || '');
-    const [category, setCategory] = useState<CategoryKey>(event?.category || 'work');
+    const [category, setCategory] = useState<CategoryKey>(event?.category || Object.keys(categories)[0] || 'work');
+
+    // 카테고리 관리 UI state
+    const [catMode, setCatMode] = useState<'select' | 'manage' | 'add' | 'edit'>('select');
+    const [newCatLabel, setNewCatLabel] = useState('');
+    const [newCatColor, setNewCatColor] = useState(PRESET_COLORS[0]);
+    const [editKey, setEditKey] = useState('');
+    const [editLabel, setEditLabel] = useState('');
+    const [editColor, setEditColor] = useState('');
     const [startDate, setStartDate] = useState(event?.startDate || toYMD(new Date()));
     const [startTime, setStartTime] = useState(event?.startTime || '09:00');
     const [endDate] = useState(event?.endDate || toYMD(new Date()));
@@ -190,15 +212,89 @@ const EventForm: React.FC<{
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
                 </div>
 
-                {/* 구분 */}
+                {/* 구분 + 카테고리 관리 */}
                 <div>
-                    <label className="block text-xs font-bold text-gray-600 mb-1">구분</label>
-                    <select value={category} onChange={e => setCategory(e.target.value as CategoryKey)}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
-                        {(Object.entries(CATEGORY) as [CategoryKey, typeof CATEGORY[CategoryKey]][]).map(([k, v]) => (
-                            <option key={k} value={k}>{v.label}</option>
-                        ))}
-                    </select>
+                    <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-gray-600">구분</label>
+                        <button onClick={() => setCatMode(m => m === 'select' ? 'manage' : 'select')}
+                            className="text-[10px] text-rose-500 font-bold hover:underline">
+                            {catMode === 'select' ? '관리' : '닫기'}
+                        </button>
+                    </div>
+
+                    {catMode === 'select' && (
+                        <select value={category} onChange={e => setCategory(e.target.value as CategoryKey)}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
+                            {Object.entries(categories).map(([k, v]) => (
+                                <option key={k} value={k}>{v.label}</option>
+                            ))}
+                        </select>
+                    )}
+
+                    {catMode === 'manage' && (
+                        <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+                            {Object.entries(categories).map(([k, v]) => (
+                                <div key={k} className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-0">
+                                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: v.color }} />
+                                    <span className="flex-1 text-xs text-gray-700">{v.label}</span>
+                                    <button onClick={() => { setEditKey(k); setEditLabel(v.label); setEditColor(v.color); setCatMode('edit'); }}
+                                        className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-blue-500">
+                                        <Pencil size={11} />
+                                    </button>
+                                    <button onClick={() => onDeleteCategory(k)}
+                                        className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-red-500">
+                                        <X size={11} />
+                                    </button>
+                                </div>
+                            ))}
+                            <button onClick={() => { setNewCatLabel(''); setNewCatColor(PRESET_COLORS[0]); setCatMode('add'); }}
+                                className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-rose-500 font-bold hover:bg-rose-50">
+                                <Plus size={12} /> 카테고리 추가
+                            </button>
+                        </div>
+                    )}
+
+                    {catMode === 'add' && (
+                        <div className="border border-gray-200 rounded-xl p-3 bg-gray-50 space-y-2">
+                            <input value={newCatLabel} onChange={e => setNewCatLabel(e.target.value)}
+                                placeholder="카테고리 이름"
+                                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-rose-400 bg-white" />
+                            <div className="flex flex-wrap gap-1.5">
+                                {PRESET_COLORS.map(c => (
+                                    <button key={c} onClick={() => setNewCatColor(c)}
+                                        className={`w-5 h-5 rounded-full border-2 transition-all ${newCatColor === c ? 'border-gray-700 scale-110' : 'border-transparent'}`}
+                                        style={{ backgroundColor: c }} />
+                                ))}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setCatMode('manage')}
+                                    className="flex-1 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-100">취소</button>
+                                <button onClick={() => { if (newCatLabel.trim()) { onAddCategory(newCatLabel.trim(), newCatColor); setCatMode('manage'); } }}
+                                    className="flex-1 py-1.5 text-xs bg-rose-500 text-white rounded-lg hover:bg-rose-600">추가</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {catMode === 'edit' && (
+                        <div className="border border-gray-200 rounded-xl p-3 bg-gray-50 space-y-2">
+                            <input value={editLabel} onChange={e => setEditLabel(e.target.value)}
+                                placeholder="카테고리 이름"
+                                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-rose-400 bg-white" />
+                            <div className="flex flex-wrap gap-1.5">
+                                {PRESET_COLORS.map(c => (
+                                    <button key={c} onClick={() => setEditColor(c)}
+                                        className={`w-5 h-5 rounded-full border-2 transition-all ${editColor === c ? 'border-gray-700 scale-110' : 'border-transparent'}`}
+                                        style={{ backgroundColor: c }} />
+                                ))}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setCatMode('manage')}
+                                    className="flex-1 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-100">취소</button>
+                                <button onClick={() => { if (editLabel.trim()) { onEditCategory(editKey, editLabel.trim(), editColor); setCatMode('manage'); } }}
+                                    className="flex-1 py-1.5 text-xs bg-rose-500 text-white rounded-lg hover:bg-rose-600">저장</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* 일정 */}
@@ -294,7 +390,8 @@ const WeekView: React.FC<{
     events: ScheduleEvent[];
     onSelectEvent: (e: ScheduleEvent) => void;
     onSlotClick: (date: string, time: string) => void;
-}> = ({ weekStart, events, onSelectEvent, onSlotClick }) => {
+    categories: Record<string, CategoryDef>;
+}> = ({ weekStart, events, onSelectEvent, onSlotClick, categories }) => {
     const hours = Array.from({ length: 14 }, (_, i) => i + 7); // 07:00 ~ 20:00
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     const DAY_LABELS = ['일','월','화','수','목','금','토'];
@@ -341,7 +438,7 @@ const WeekView: React.FC<{
                             {ae.map(e => (
                                 <div key={e.id} onClick={() => onSelectEvent(e)}
                                     className="text-[10px] font-bold px-1 py-0.5 rounded cursor-pointer truncate text-white"
-                                    style={{ backgroundColor: CATEGORY[e.category].color }}>
+                                    style={{ backgroundColor: (categories[e.category]?.color ?? '#94a3b8') }}>
                                     {e.title}
                                 </div>
                             ))}
@@ -362,7 +459,7 @@ const WeekView: React.FC<{
                                     {slotEvents.map(e => (
                                         <div key={e.id} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
                                             className="absolute inset-x-0.5 top-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white cursor-pointer z-10 overflow-hidden"
-                                            style={{ backgroundColor: CATEGORY[e.category].color, minHeight: 28 }}>
+                                            style={{ backgroundColor: (categories[e.category]?.color ?? '#94a3b8'), minHeight: 28 }}>
                                             <div className="truncate">{e.startTime} - {e.endTime}</div>
                                             <div className="truncate">{e.title}</div>
                                         </div>
@@ -383,7 +480,8 @@ const MonthView: React.FC<{
     events: ScheduleEvent[];
     onSelectEvent: (e: ScheduleEvent) => void;
     onDayClick: (date: string) => void;
-}> = ({ month, events, onSelectEvent, onDayClick }) => {
+    categories: Record<string, CategoryDef>;
+}> = ({ month, events, onSelectEvent, onDayClick, categories }) => {
     const year = month.getFullYear(); const m = month.getMonth();
     const firstDay = new Date(year, m, 1).getDay();
     const daysInMonth = new Date(year, m + 1, 0).getDate();
@@ -414,7 +512,7 @@ const MonthView: React.FC<{
                                 {dayEvents.slice(0, 3).map(e => (
                                     <div key={e.id} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
                                         className="text-[10px] font-bold px-1.5 py-0.5 rounded text-white truncate cursor-pointer"
-                                        style={{ backgroundColor: CATEGORY[e.category].color }}>
+                                        style={{ backgroundColor: (categories[e.category]?.color ?? '#94a3b8') }}>
                                         {e.startTime && `${e.startTime} `}{e.title}
                                     </div>
                                 ))}
@@ -434,7 +532,8 @@ const DayView: React.FC<{
     events: ScheduleEvent[];
     onSelectEvent: (e: ScheduleEvent) => void;
     onSlotClick: (date: string, time: string) => void;
-}> = ({ date, events, onSelectEvent, onSlotClick }) => {
+    categories: Record<string, CategoryDef>;
+}> = ({ date, events, onSelectEvent, onSlotClick, categories }) => {
     const hours = Array.from({ length: 17 }, (_, i) => i + 6);
     const ymd = toYMD(date);
     const dayEvents = events.filter(e => e.startDate === ymd && !e.allDay);
@@ -451,7 +550,7 @@ const DayView: React.FC<{
                             {slotEvents.map(e => (
                                 <div key={e.id} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
                                     className="rounded-lg px-3 py-2 text-white cursor-pointer"
-                                    style={{ backgroundColor: CATEGORY[e.category].color }}>
+                                    style={{ backgroundColor: (categories[e.category]?.color ?? '#94a3b8') }}>
                                     <div className="text-xs font-black">{e.title}</div>
                                     <div className="text-[10px] opacity-80">{e.startTime} ~ {e.endTime}</div>
                                 </div>
@@ -594,9 +693,10 @@ const TodoView: React.FC<{
     onToggle: (id: string) => void;
     onAdd: (item: Omit<TodoItem, 'id'>) => void;
     onDelete: (id: string) => void;
-}> = ({ todos, onToggle, onAdd, onDelete }) => {
+    categories: Record<string, CategoryDef>;
+}> = ({ todos, onToggle, onAdd, onDelete, categories }) => {
     const [newTitle, setNewTitle] = useState('');
-    const [newCategory, setNewCategory] = useState<CategoryKey>('work');
+    const [newCategory, setNewCategory] = useState<CategoryKey>(Object.keys(categories)[0] || 'work');
     const [newDue, setNewDue] = useState('');
 
     const handleAdd = () => {
@@ -616,9 +716,9 @@ const TodoView: React.FC<{
                     onKeyDown={e => e.key === 'Enter' && handleAdd()}
                     placeholder="할 일 입력..."
                     className="flex-1 bg-transparent text-sm outline-none text-gray-700" />
-                <select value={newCategory} onChange={e => setNewCategory(e.target.value as CategoryKey)}
+                <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
                     className="text-xs border border-gray-200 rounded-xl px-2 py-1 bg-white outline-none">
-                    {(Object.entries(CATEGORY) as [CategoryKey, typeof CATEGORY[CategoryKey]][]).map(([k, v]) => (
+                    {Object.entries(categories).map(([k, v]) => (
                         <option key={k} value={k}>{v.label}</option>
                     ))}
                 </select>
@@ -631,17 +731,20 @@ const TodoView: React.FC<{
             <div>
                 <div className="text-xs font-black text-gray-500 mb-2">할 일 ({pending.length})</div>
                 <div className="space-y-1.5">
-                    {pending.map(t => (
+                    {pending.map(t => {
+                        const cat = categories[t.category];
+                        return (
                         <div key={t.id} className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl hover:border-gray-200 transition-colors group">
                             <button onClick={() => onToggle(t.id)} className="w-5 h-5 rounded-full border-2 border-gray-300 hover:border-rose-400 transition-colors shrink-0 flex items-center justify-center" />
                             <div className="flex-1 min-w-0">
                                 <div className="text-sm font-bold text-gray-800 truncate">{t.title}</div>
                                 {t.dueDate && <div className="text-[10px] text-gray-400">{t.dueDate}</div>}
                             </div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${CATEGORY[t.category].light}`}>{CATEGORY[t.category].label}</span>
+                            {cat && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border" style={getCatStyle(cat.color)}>{cat.label}</span>}
                             <button onClick={() => onDelete(t.id)} className="p-1 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={12} /></button>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 
@@ -683,9 +786,25 @@ const PersonalScheduleCanvas: React.FC = () => {
     const [tasks, setTasks]   = useState<GanttTask[]>(SEED_TASKS);
     const [todos, setTodos]   = useState<TodoItem[]>(SEED_TODOS);
 
-    // 카테고리 필터
-    const [visibleCats, setVisibleCats] = useState<Set<CategoryKey>>(new Set(['work','personal','meeting','deadline']));
+    // 카테고리 관리
+    const [categories, setCategories] = useState<Record<string, CategoryDef>>(DEFAULT_CATEGORIES);
+    const [visibleCats, setVisibleCats] = useState<Set<CategoryKey>>(new Set(Object.keys(DEFAULT_CATEGORIES)));
     const [myOnly, setMyOnly] = useState(false);
+
+    const handleAddCategory = (label: string, color: string) => {
+        const key = `cat_${Date.now()}`;
+        setCategories(prev => ({ ...prev, [key]: { label, color } }));
+        setVisibleCats(prev => new Set([...prev, key]));
+    };
+
+    const handleDeleteCategory = (key: string) => {
+        setCategories(prev => { const n = { ...prev }; delete n[key]; return n; });
+        setVisibleCats(prev => { const n = new Set(prev); n.delete(key); return n; });
+    };
+
+    const handleEditCategory = (key: string, label: string, color: string) => {
+        setCategories(prev => ({ ...prev, [key]: { label, color } }));
+    };
 
     // 우측 패널
     const [panelEvent, setPanelEvent] = useState<Partial<ScheduleEvent> | null>(null);
@@ -771,17 +890,19 @@ const PersonalScheduleCanvas: React.FC = () => {
                     </div>
 
                     <div className="px-4 pb-3">
-                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">캘린더 색상</div>
-                        <div className="space-y-1.5">
-                            {(Object.entries(CATEGORY) as [CategoryKey, typeof CATEGORY[CategoryKey]][]).map(([k, v]) => (
+                        <div className="mb-2">
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">캘린더 색상</span>
+                        </div>
+                        <div className="space-y-1">
+                            {Object.entries(categories).map(([k, v]) => (
                                 <button key={k} onClick={() => setVisibleCats(prev => {
                                     const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n;
                                 })} className="flex items-center gap-2 w-full text-left">
-                                    <div className={`w-4 h-4 rounded flex items-center justify-center transition-colors ${visibleCats.has(k) ? '' : 'opacity-30'}`}
+                                    <div className={`w-4 h-4 rounded flex items-center justify-center transition-opacity ${visibleCats.has(k) ? '' : 'opacity-30'}`}
                                         style={{ backgroundColor: v.color }}>
                                         {visibleCats.has(k) && <Check size={10} className="text-white" />}
                                     </div>
-                                    <span className="text-xs font-bold text-gray-700">{v.label}</span>
+                                    <span className="text-xs font-bold text-gray-700 truncate">{v.label}</span>
                                 </button>
                             ))}
                         </div>
@@ -823,17 +944,20 @@ const PersonalScheduleCanvas: React.FC = () => {
                             {tab === 'calendar' && viewMode === 'week' && (
                                 <WeekView weekStart={weekStart} events={filteredEvents}
                                     onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
-                                    onSlotClick={(date, time) => openNewEvent(date, time)} />
+                                    onSlotClick={(date, time) => openNewEvent(date, time)}
+                                    categories={categories} />
                             )}
                             {tab === 'calendar' && viewMode === 'month' && (
                                 <MonthView month={selectedDate} events={filteredEvents}
                                     onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
-                                    onDayClick={ymd => { setSelectedDate(parseDate(ymd)); setViewMode('day'); }} />
+                                    onDayClick={ymd => { setSelectedDate(parseDate(ymd)); setViewMode('day'); }}
+                                    categories={categories} />
                             )}
                             {tab === 'calendar' && viewMode === 'day' && (
                                 <DayView date={selectedDate} events={filteredEvents}
                                     onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
-                                    onSlotClick={(date, time) => openNewEvent(date, time)} />
+                                    onSlotClick={(date, time) => openNewEvent(date, time)}
+                                    categories={categories} />
                             )}
                             {tab === 'gantt' && (
                                 <GanttView tasks={tasks} onAddTask={handleAddTask}
@@ -844,7 +968,8 @@ const PersonalScheduleCanvas: React.FC = () => {
                                 <TodoView todos={todos}
                                     onToggle={id => setTodos(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t))}
                                     onAdd={item => setTodos(prev => [...prev, { ...item, id: genId() }])}
-                                    onDelete={id => setTodos(prev => prev.filter(t => t.id !== id))} />
+                                    onDelete={id => setTodos(prev => prev.filter(t => t.id !== id))}
+                                    categories={categories} />
                             )}
                         </div>
 
@@ -857,6 +982,10 @@ const PersonalScheduleCanvas: React.FC = () => {
                                     onDelete={handleDeleteEvent}
                                     onClose={() => setPanelOpen(false)}
                                     projects={projects.map(p => ({ id: p.id, name: p.name }))}
+                                    categories={categories}
+                                    onAddCategory={handleAddCategory}
+                                    onEditCategory={handleEditCategory}
+                                    onDeleteCategory={handleDeleteCategory}
                                 />
                             </div>
                         )}

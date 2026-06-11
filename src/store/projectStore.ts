@@ -493,6 +493,7 @@ export const useProjectStore = create<ProjectStore>()(
                             dbType: p.dbType,
                             description: p.description,
                             author: p.author,
+                            groupLabel: p.groupLabel,
                             updatedAt: p.updatedAt,
                             linkedErdProjectIds: p.linkedErdProjectIds,
                             linkedErdProjectId: p.linkedErdProjectId,
