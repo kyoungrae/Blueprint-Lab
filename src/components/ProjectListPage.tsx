@@ -464,7 +464,7 @@ const ProjectListPage: React.FC = () => {
             <div
                 key={group[0]?.id ?? groupIndex}
                 data-group-id={group[0]?.id}
-                className="project-group-box rounded-2xl border border-gray-200/70 bg-white p-6 shadow-sm animate-project-group-in"
+                className="project-group-box rounded-2xl border border-gray-200/70 bg-white p-6 shadow-sm animate-project-group-in w-fit"
                 style={{ animationDelay: `${groupIndex * 120}ms` }}
             >
                 {/* 그룹 헤더 */}
@@ -489,11 +489,7 @@ const ProjectListPage: React.FC = () => {
                         const erdCount = getLinkedErdIds(project).length;
                         return (
                             <React.Fragment key={project.id}>
-                                {cardIdx > 0 && (
-                                    <svg width="40" height="16" className="shrink-0 self-center">
-                                        <line x1="2" y1="8" x2="38" y2="8" stroke="#CBD5E1" strokeWidth="2" strokeDasharray="5,3" strokeLinecap="round" />
-                                    </svg>
-                                )}
+                                {cardIdx > 0 && <div className="w-10 shrink-0" />}
                                 <div
                                     data-project-id={project.id}
                                     className="project-card group relative bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col items-center gap-1.5 cursor-pointer hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-0.5 transition-all animate-project-card-in shrink-0"
@@ -648,68 +644,61 @@ const ProjectListPage: React.FC = () => {
                     </div>
                 ) : (
                     <div ref={containerRef} className="relative flex flex-col gap-6">
-                        {/* SVG: screen design → 독립 컴포넌트 노드 곡선 연결선 */}
-                        <svg className="connection-svg absolute inset-0 w-full h-full pointer-events-none z-10" style={{ minHeight: '100%', overflow: 'visible' }}>
-                            <defs>
-                                <marker id="arrow-blue" markerWidth="0" markerHeight="0" refX="0" refY="0" />
-                            </defs>
+                        {/* SVG: 프로젝트→프로젝트 연결선 */}
+                        <svg className="connection-svg absolute inset-0 w-full h-full pointer-events-none z-50" style={{ minHeight: '100%', overflow: 'visible' }}>
                             {(() => {
-                                // 타겟 컴포넌트별로 링크를 모아 인덱스 부여 → 선 겹침 방지 오프셋 계산
+                                const paths: React.ReactNode[] = [];
+
+                                // ── 1) 그룹 내 프로젝트→ERD 연결선 (수평 베지어) ──
+                                groupingConnections.forEach((link, idx) => {
+                                    const from = cardPositions[link.fromId];
+                                    const to = cardPositions[link.toId];
+                                    if (!from || !to) return;
+                                    const gi = groupIdByProjectId.get(link.fromId) ?? 0;
+                                    const palette = GROUP_PALETTE[gi % GROUP_PALETTE.length];
+                                    const sx = from.x + from.w / 2;
+                                    const sy = from.y + from.h;
+                                    const tx = to.x + to.w / 2;
+                                    const ty = to.y + to.h;
+                                    const drop = 22 + idx * 6;
+                                    const d = `M ${sx} ${sy} C ${sx} ${sy + drop} ${tx} ${ty + drop} ${tx} ${ty}`;
+                                    paths.push(
+                                        <g key={`gc-${link.fromId}-${link.toId}`} opacity="0.7">
+                                            <path d={d} fill="none" stroke={palette.text} strokeWidth="1.5" strokeDasharray="5,3" strokeLinecap="round" />
+                                            <circle cx={sx} cy={sy} r="3.5" fill={palette.text} />
+                                            <circle cx={tx} cy={ty} r="3.5" fill={palette.text} />
+                                        </g>
+                                    );
+                                });
+
+                                // ── 2) SCREEN_DESIGN → 독립 COMPONENT 연결선 (S-curve 베지어) ──
                                 const byTarget = new Map<string, { fromId: string; toId: string }[]>();
                                 componentLinks.forEach((l) => {
                                     if (!byTarget.has(l.toId)) byTarget.set(l.toId, []);
                                     byTarget.get(l.toId)!.push(l);
                                 });
-                                const paths: React.ReactNode[] = [];
                                 byTarget.forEach((links, toId) => {
                                     const to = cardPositions[toId];
                                     if (!to) return;
                                     const n = links.length;
-                                    // 출발 카드 x좌표 순으로 정렬해 선이 교차하지 않게 진입점 배분
                                     const sorted = [...links].sort((a, b) => (cardPositions[a.fromId]?.x ?? 0) - (cardPositions[b.fromId]?.x ?? 0));
                                     sorted.forEach((link, i) => {
                                         const from = cardPositions[link.fromId];
                                         if (!from) return;
                                         const gi = groupIdByProjectId.get(link.fromId) ?? 0;
                                         const palette = GROUP_PALETTE[gi % GROUP_PALETTE.length];
-                                        const groupRect = groupPositions[orderedGroups[gi]?.[0]?.id ?? ''];
-
-                                        const sx = from.x + from.w / 2;          // 출발: 카드 하단 중앙
+                                        const sx = from.x + from.w / 2;
                                         const sy = from.y + from.h;
-                                        const cx = to.x + to.w / 2;              // 컴포넌트 중앙 (그리드 컬럼 사이 통로와 일치)
-                                        const ty = to.y;                          // 도착: 컴포넌트 상단
-                                        const off = i - (n - 1) / 2;
-
-                                        // 좁은 중앙 통로로 내려온 뒤, 컴포넌트 위 여유 공간에서 부채꼴로 분기해 진입
-                                        const corridorX = cx + off * 7;
-                                        const entryX = Math.min(Math.max(cx + off * 18, to.x + 16), to.x + to.w - 16);
-                                        const fanY = ty - 14 - i * 6;
-
-                                        // 1차 꺾임 높이: 출발 그룹 박스 바로 아래 행 간격 안 (그룹을 가로지르지 않음)
-                                        const y1Base = groupRect ? groupRect.y + groupRect.h : sy + 28;
-                                        const y1 = Math.min(y1Base + 12 + i * 6, fanY - 8);
-
-                                        const d = roundedOrthoPath([
-                                            { x: sx, y: sy },
-                                            { x: sx, y: y1 },
-                                            { x: corridorX, y: y1 },
-                                            { x: corridorX, y: fanY },
-                                            { x: entryX, y: fanY },
-                                            { x: entryX, y: ty },
-                                        ]);
-
+                                        const off = n === 1 ? 0 : (i - (n - 1) / 2) * 16;
+                                        const tx = Math.min(Math.max(to.x + to.w / 2 + off, to.x + 12), to.x + to.w - 12);
+                                        const ty = to.y;
+                                        const dy = ty - sy;
+                                        const d = `M ${sx} ${sy} C ${sx} ${sy + dy * 0.55} ${tx} ${ty - dy * 0.55} ${tx} ${ty}`;
                                         paths.push(
-                                            <g key={`cl-${link.fromId}-${toId}`} opacity="0.6">
-                                                <path
-                                                    d={d}
-                                                    fill="none"
-                                                    stroke={palette.text}
-                                                    strokeWidth="1.5"
-                                                    strokeDasharray="6,4"
-                                                    strokeLinecap="round"
-                                                />
-                                                <circle cx={sx} cy={sy} r="3" fill={palette.text} />
-                                                <circle cx={entryX} cy={ty} r="3" fill={palette.text} />
+                                            <g key={`cl-${link.fromId}-${toId}`} opacity="0.7">
+                                                <path d={d} fill="none" stroke={palette.text} strokeWidth="1.5" strokeDasharray="6,4" strokeLinecap="round" />
+                                                <circle cx={sx} cy={sy} r="3.5" fill={palette.text} />
+                                                <circle cx={tx} cy={ty} r="3.5" fill={palette.text} />
                                             </g>
                                         );
                                     });
@@ -719,7 +708,7 @@ const ProjectListPage: React.FC = () => {
                         </svg>
 
                         {/* 상단 그룹 (공유 컴포넌트와 연결된 그룹) */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
+                        <div className="flex flex-wrap gap-6 relative z-10">
                             {topGroups.map((group) => renderProjectGroup(group))}
                         </div>
 
@@ -769,7 +758,7 @@ const ProjectListPage: React.FC = () => {
 
                         {/* 하단 그룹 (공유 컴포넌트와 연결되지 않은 그룹) */}
                         {bottomGroups.length > 0 && (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
+                            <div className="flex flex-wrap gap-6 relative z-10">
                                 {bottomGroups.map((group) => renderProjectGroup(group))}
                             </div>
                         )}
