@@ -3,6 +3,7 @@ import ScreenDesignCanvas from './components/ScreenDesignCanvas';
 import ComponentCanvas from './components/ComponentCanvas';
 import ProcessFlowCanvas from './components/processFlow/ProcessFlowCanvas';
 import WbsCanvas from './components/wbs/WbsCanvas';
+import PersonalScheduleCanvas from './components/schedule/PersonalScheduleCanvas';
 import LoginPage from './components/LoginPage';
 import ProjectListPage from './components/ProjectListPage';
 import { useAuthStore } from './store/authStore';
@@ -140,6 +141,14 @@ function App() {
     return (
       <div className="w-full h-screen">
         <WbsCanvas />
+      </div>
+    );
+  }
+
+  if (projectType === 'PERSONAL_SCHEDULE') {
+    return (
+      <div className="w-full h-screen">
+        <PersonalScheduleCanvas />
       </div>
     );
   }

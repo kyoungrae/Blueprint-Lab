@@ -530,3 +530,85 @@ export const joinProjectById = async (req: AuthRequest, res: Response) => {
         res.status(500).json({ message: '프로젝트 참여 중 오류가 발생했습니다.' });
     }
 };
+
+/** 관리자가 기존 가입 유저를 프로젝트에 직접 추가 */
+export const addMemberDirect = async (req: AuthRequest, res: Response) => {
+    try {
+        const requesterId = req.user?.id;
+        const { id } = req.params;
+        const { email } = req.body;
+
+        if (!requesterId) return res.status(401).json({ message: '인증이 필요합니다.' });
+        if (!email) return res.status(400).json({ message: '이메일이 필요합니다.' });
+
+        const project = await Project.findById(id).populate('members.userId', 'name email picture');
+        if (!project) return res.status(404).json({ message: '프로젝트를 찾을 수 없습니다.' });
+
+        // 요청자가 OWNER인지 확인 (populate 후 userId는 객체이므로 _id로 비교)
+        const requester = project.members.find(m => {
+            const uid = (m.userId as any)?._id ?? m.userId;
+            return uid.toString() === requesterId;
+        });
+        if (!requester || requester.role !== 'OWNER') {
+            return res.status(403).json({ message: '프로젝트 소유자만 멤버를 추가할 수 있습니다.' });
+        }
+
+        // 추가할 유저 찾기
+        const targetUser = await User.findOne({ email });
+        if (!targetUser) return res.status(404).json({ message: '해당 이메일로 가입된 사용자가 없습니다.' });
+
+        // 이미 멤버인지 확인
+        const alreadyMember = project.members.some(m => {
+            const uid = (m.userId as any)?._id ?? m.userId;
+            return uid.toString() === (targetUser._id as Types.ObjectId).toString();
+        });
+        if (alreadyMember) return res.status(409).json({ message: '이미 프로젝트 멤버입니다.' });
+
+        project.members.push({ userId: targetUser._id as Types.ObjectId, role: 'EDITOR', joinedAt: new Date() });
+        await project.save();
+
+        res.json({
+            message: '멤버가 추가되었습니다.',
+            member: {
+                id: (targetUser._id as Types.ObjectId).toString(),
+                name: targetUser.name,
+                email: targetUser.email,
+                picture: targetUser.picture,
+                role: 'EDITOR',
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: '멤버 추가 중 오류가 발생했습니다.' });
+    }
+};
+
+/** 멤버 직접 제거 */
+export const removeMemberDirect = async (req: AuthRequest, res: Response) => {
+    try {
+        const requesterId = req.user?.id;
+        const { id, memberId } = req.params;
+
+        if (!requesterId) return res.status(401).json({ message: '인증이 필요합니다.' });
+
+        const project = await Project.findById(id);
+        if (!project) return res.status(404).json({ message: '프로젝트를 찾을 수 없습니다.' });
+
+        // 요청자가 OWNER인지 확인
+        const requester = project.members.find(m => m.userId.toString() === requesterId);
+        if (!requester || requester.role !== 'OWNER') {
+            return res.status(403).json({ message: '프로젝트 소유자만 멤버를 제거할 수 있습니다.' });
+        }
+
+        // OWNER는 제거 불가
+        const target = project.members.find(m => m.userId.toString() === memberId);
+        if (!target) return res.status(404).json({ message: '해당 멤버를 찾을 수 없습니다.' });
+        if (target.role === 'OWNER') return res.status(400).json({ message: '소유자는 제거할 수 없습니다.' });
+
+        project.members = project.members.filter(m => m.userId.toString() !== memberId) as typeof project.members;
+        await project.save();
+
+        res.json({ message: '멤버가 제거되었습니다.' });
+    } catch (error) {
+        res.status(500).json({ message: '멤버 제거 중 오류가 발생했습니다.' });
+    }
+};

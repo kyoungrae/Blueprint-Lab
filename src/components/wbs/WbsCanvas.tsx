@@ -142,10 +142,20 @@ const WbsCanvas: React.FC = () => {
     }, [showActions]);
 
     // 프로젝트 진입 시 데이터 로드
+    // project.data가 서버에서 실제 로드된 데이터일 때만 wbsStore에 반영
+    // (menus 또는 rows가 있을 때만 → localStorage 빈 캐시로 서버 데이터를 덮어쓰는 것 방지)
     useEffect(() => {
         if (!currentProjectId) return;
-        const data = (project?.data as Partial<WbsData> | undefined) ?? { menus: [], rows: [] };
-        loadProject(currentProjectId, data);
+        const data = project?.data as Partial<WbsData> | undefined;
+        const hasData = Array.isArray(data?.menus) && data!.menus.length > 0
+            || Array.isArray((data as any)?.rows) && (data as any).rows.length > 0
+            || (data as any)?.projectSchedule != null
+            || Array.isArray((data as any)?.detailSchedules) && (data as any).detailSchedules.length > 0;
+        // 데이터가 있거나, wbsStore에 아직 이 프로젝트가 로드되지 않은 경우에만 로드
+        const wbsProjectId = useWbsStore.getState().currentProjectId;
+        if (hasData || wbsProjectId !== currentProjectId) {
+            loadProject(currentProjectId, data ?? { menus: [], rows: [] });
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentProjectId, project?.id]);
 

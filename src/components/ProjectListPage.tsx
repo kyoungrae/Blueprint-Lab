@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, UserPlus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil, GanttChartSquare, MoreHorizontal } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, UserPlus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil, GanttChartSquare, MoreHorizontal, CalendarDays } from 'lucide-react';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 import './ProjectListPage.css';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
@@ -9,7 +10,7 @@ import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 import AdminPage from './AdminPage';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 
-const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2, PROCESS_FLOW: 3, WBS: 4 };
+const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2, PROCESS_FLOW: 3, WBS: 4, PERSONAL_SCHEDULE: 5 };
 
 const GROUP_PALETTE = [
     { letter: 'A', border: '#BFDBFE', bg: 'rgba(239,246,255,0.6)', text: '#2563EB', badgeBg: '#DBEAFE', badgeText: '#1D4ED8' },
@@ -25,7 +26,8 @@ function getProjectTypeInfo(project: Project) {
         case 'SCREEN_DESIGN': return { icon: <Monitor size={22} />, bg: 'bg-violet-100', color: 'text-violet-500', label: '화면설계' };
         case 'COMPONENT':     return { icon: <Box size={22} />,     bg: 'bg-teal-100',   color: 'text-teal-500',   label: '컴포넌트' };
         case 'PROCESS_FLOW':  return { icon: <Users size={22} />,   bg: 'bg-amber-100',  color: 'text-amber-500',  label: '프로세스흐름' };
-        case 'WBS':           return { icon: <GanttChartSquare size={22} />, bg: 'bg-emerald-100', color: 'text-emerald-500', label: 'WBS' };
+        case 'WBS':               return { icon: <GanttChartSquare size={22} />, bg: 'bg-emerald-100', color: 'text-emerald-500', label: 'WBS' };
+        case 'PERSONAL_SCHEDULE': return { icon: <CalendarDays size={22} />,    bg: 'bg-rose-100',    color: 'text-rose-500',    label: '개인일정' };
         default: {
             const isOracle = project.dbType === 'Oracle';
             const isPg     = project.dbType === 'PostgreSQL';
@@ -338,14 +340,25 @@ const ProjectListPage: React.FC = () => {
         setMemberInput('');
     };
 
-    const handleRemoveMember = (id: string, isEditing: boolean = false) => {
+    const handleRemoveMember = async (id: string, isEditing: boolean = false) => {
         if (isEditing) {
             const memberToRemove = tempMembers.find(m => m.id === id);
             if (memberToRemove?.role === 'OWNER') {
                 alert('소유자는 삭제할 수 없습니다.');
                 return;
             }
-            setTempMembers(tempMembers.filter(m => m.id !== id));
+            // 즉시 서버에서 제거
+            const token = localStorage.getItem('auth-token');
+            const res = await fetch(`${API_URL}/${editingMembersProject}/members/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                alert(body.message || '멤버 제거에 실패했습니다.');
+                return;
+            }
+            setTempMembers(prev => prev.filter(m => m.id !== id));
         } else {
             setNewProjectMembers(newProjectMembers.filter(m => m.id !== id));
         }
@@ -406,7 +419,7 @@ const ProjectListPage: React.FC = () => {
         try {
             const project = await addProject(
                 newProjectName,
-                (selectedProjectType === 'PROCESS_FLOW' || selectedProjectType === 'WBS') ? 'MySQL' : newProjectDbType, // Process Flow·WBS don't need DB but API requires it
+                (selectedProjectType === 'PROCESS_FLOW' || selectedProjectType === 'WBS' || selectedProjectType === 'PERSONAL_SCHEDULE') ? 'MySQL' : newProjectDbType,
                 [],
                 newProjectDesc,
                 selectedProjectType
@@ -877,6 +890,7 @@ const ProjectListPage: React.FC = () => {
                             <LegendItem icon={<Box size={13} className="text-teal-500" />}                 label="컴포넌트" />
                             <LegendItem icon={<Users size={13} className="text-amber-500" />}              label="프로세스흐름" />
                             <LegendItem icon={<GanttChartSquare size={13} className="text-emerald-500" />} label="WBS" />
+                            <LegendItem icon={<CalendarDays size={13} className="text-rose-500" />}        label="개인일정" />
                             <div className="flex items-center gap-2 text-gray-500">
                                 <svg width="38" height="10"><line x1="1" y1="5" x2="37" y2="5" stroke="#CBD5E1" strokeWidth="2" strokeDasharray="5,3" strokeLinecap="round"/></svg>
                                 <span className="text-[11px] font-bold">그룹 내부 관계</span>
@@ -1100,7 +1114,7 @@ const ProjectListPage: React.FC = () => {
 
             {isTypeSelectionOpen && (
                 <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-[32px] w-full max-w-6xl shadow-2xl overflow-hidden scale-in">
+                    <div className="bg-white rounded-[32px] w-full shadow-2xl overflow-hidden scale-in" style={{ maxWidth: 1100 }}>
                         <div className="p-8 border-b border-gray-100 flex items-center justify-between">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-900 mb-2">프로젝트 유형 선택</h3>
@@ -1110,29 +1124,31 @@ const ProjectListPage: React.FC = () => {
                                 <X size={24} />
                             </button>
                         </div>
-                        <div className="p-8">
-                            <div className="grid grid-cols-5 gap-4">
-                                <button onClick={() => handleSelectProjectType('ERD')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-blue-400 hover:bg-blue-50/80 transition-all duration-300 active:scale-[0.97]">
-                                    <div className="w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-5 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                        <Database size={28} />
+                        <div className="p-6">
+                            <div className="grid grid-cols-3 gap-4">
+                                {/* 1행 */}
+                                <button onClick={() => handleSelectProjectType('ERD')} className="group relative flex flex-col items-center p-6 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-blue-400 hover:bg-blue-50/80 transition-all duration-300 active:scale-[0.97]">
+                                    <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                        <Database size={26} />
                                     </div>
-                                    <h4 className="text-lg font-black text-gray-900 mb-2">ERD 프로젝트</h4>
+                                    <h4 className="text-base font-black text-gray-900 mb-1 whitespace-nowrap">ERD 프로젝트</h4>
                                     <p className="text-xs text-gray-500 text-center font-medium">데이터베이스 엔티티 관계를 설계하고 관리합니다</p>
                                 </button>
-                                <button onClick={() => handleSelectProjectType('SCREEN_DESIGN')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-violet-400 hover:bg-violet-50/80 transition-all duration-300 active:scale-[0.97]">
-                                    <div className="w-16 h-16 rounded-2xl bg-violet-100 text-violet-600 flex items-center justify-center mb-5 group-hover:bg-violet-600 group-hover:text-white transition-all">
-                                        <Monitor size={28} />
+                                <button onClick={() => handleSelectProjectType('SCREEN_DESIGN')} className="group relative flex flex-col items-center p-6 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-violet-400 hover:bg-violet-50/80 transition-all duration-300 active:scale-[0.97]">
+                                    <div className="w-14 h-14 rounded-2xl bg-violet-100 text-violet-600 flex items-center justify-center mb-4 group-hover:bg-violet-600 group-hover:text-white transition-all">
+                                        <Monitor size={26} />
                                     </div>
-                                    <h4 className="text-lg font-black text-gray-900 mb-2">화면 설계서</h4>
+                                    <h4 className="text-base font-black text-gray-900 mb-1 whitespace-nowrap">화면 설계서</h4>
                                     <p className="text-xs text-gray-500 text-center font-medium">UI/UX 화면 구조를 설계하고 관리합니다</p>
                                 </button>
-                                <button onClick={() => handleSelectProjectType('PROCESS_FLOW')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-amber-400 hover:bg-amber-50/80 transition-all duration-300 active:scale-[0.97]">
-                                    <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-5 group-hover:bg-amber-600 group-hover:text-white transition-all">
-                                        <Users size={28} />
+                                <button onClick={() => handleSelectProjectType('PROCESS_FLOW')} className="group relative flex flex-col items-center p-6 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-amber-400 hover:bg-amber-50/80 transition-all duration-300 active:scale-[0.97]">
+                                    <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-4 group-hover:bg-amber-600 group-hover:text-white transition-all">
+                                        <Users size={26} />
                                     </div>
-                                    <h4 className="text-lg font-black text-gray-900 mb-2">프로세스 흐름도</h4>
+                                    <h4 className="text-base font-black text-gray-900 mb-1 whitespace-nowrap">프로세스 흐름도</h4>
                                     <p className="text-xs text-gray-500 text-center font-medium">업무/사용자 흐름을 도형과 연결선으로 설계합니다</p>
                                 </button>
+                                {/* 2행 */}
                                 <PremiumTooltip
                                     label={(user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN')
                                         ? '컴포넌트 프로젝트 생성'
@@ -1146,7 +1162,7 @@ const ProjectListPage: React.FC = () => {
                                                 if (tier !== 'PRO' && tier !== 'MASTER' && tier !== 'ADMIN') return;
                                                 handleSelectProjectType('COMPONENT');
                                             }}
-                                            className={`group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 transition-all duration-300 w-full ${(user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN')
+                                            className={`group relative flex flex-col items-center p-6 rounded-3xl border-2 border-gray-100 transition-all duration-300 w-full ${(user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN')
                                                 ? 'bg-gray-50/50 hover:border-teal-400 hover:bg-teal-50/80 active:scale-[0.97]'
                                                 : 'cursor-not-allowed opacity-75'}`}
                                         >
@@ -1156,20 +1172,27 @@ const ProjectListPage: React.FC = () => {
                                                     <span className="text-xs font-bold">Pro tier</span>
                                                 </div>
                                             )}
-                                            <div className="w-16 h-16 rounded-2xl bg-teal-100 text-teal-600 flex items-center justify-center mb-5 group-hover:bg-teal-600 group-hover:text-white transition-all">
-                                                <Box size={28} />
+                                            <div className="w-14 h-14 rounded-2xl bg-teal-100 text-teal-600 flex items-center justify-center mb-4 group-hover:bg-teal-600 group-hover:text-white transition-all">
+                                                <Box size={26} />
                                             </div>
-                                            <h4 className="text-lg font-black text-gray-900 mb-2">컴포넌트 프로젝트</h4>
+                                            <h4 className="text-base font-black text-gray-900 mb-1 whitespace-nowrap">컴포넌트 프로젝트</h4>
                                             <p className="text-xs text-gray-500 text-center font-medium">재사용 가능한 UI 컴포넌트를 설계하고 관리합니다</p>
                                         </button>
                                     </div>
                                 </PremiumTooltip>
-                                <button onClick={() => handleSelectProjectType('WBS')} className="group relative flex flex-col items-center p-8 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-emerald-400 hover:bg-emerald-50/80 transition-all duration-300 active:scale-[0.97]">
-                                    <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-5 group-hover:bg-emerald-600 group-hover:text-white transition-all">
-                                        <GanttChartSquare size={28} />
+                                <button onClick={() => handleSelectProjectType('WBS')} className="group relative flex flex-col items-center p-6 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-emerald-400 hover:bg-emerald-50/80 transition-all duration-300 active:scale-[0.97]">
+                                    <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                                        <GanttChartSquare size={26} />
                                     </div>
-                                    <h4 className="text-lg font-black text-gray-900 mb-2">WBS 일정관리</h4>
+                                    <h4 className="text-base font-black text-gray-900 mb-1 whitespace-nowrap">WBS 일정관리</h4>
                                     <p className="text-xs text-gray-500 text-center font-medium">메뉴 구조·개발 상세·진척율로 일정을 관리합니다</p>
+                                </button>
+                                <button onClick={() => handleSelectProjectType('PERSONAL_SCHEDULE')} className="group relative flex flex-col items-center p-6 rounded-3xl border-2 border-gray-100 bg-gray-50/50 hover:border-rose-400 hover:bg-rose-50/80 transition-all duration-300 active:scale-[0.97]">
+                                    <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mb-4 group-hover:bg-rose-600 group-hover:text-white transition-all">
+                                        <CalendarDays size={26} />
+                                    </div>
+                                    <h4 className="text-base font-black text-gray-900 mb-1 whitespace-nowrap">개인일정 관리</h4>
+                                    <p className="text-xs text-gray-500 text-center font-medium">캘린더·간트차트·할일목록으로 개인 일정을 관리합니다</p>
                                 </button>
                             </div>
                         </div>
@@ -1201,6 +1224,8 @@ const ProjectListPage: React.FC = () => {
                                                     ? '프로세스 흐름도 생성'
                                                     : selectedProjectType === 'WBS'
                                                         ? 'WBS 일정관리 생성'
+                                                        : selectedProjectType === 'PERSONAL_SCHEDULE'
+                                                            ? '개인일정 관리 생성'
                                                     : 'ERD 프로젝트 생성'}
                                     </h3>
                                 </div>
@@ -1380,9 +1405,29 @@ const ProjectListPage: React.FC = () => {
                                                     </div>
                                                     <button
                                                         onClick={async () => {
-                                                            await inviteMember(editingMembersProject!, u.email);
-                                                            const updatedProject = useProjectStore.getState().projects.find(p => p.id === editingMembersProject);
-                                                            if (updatedProject) setTempMembers(updatedProject.members || []);
+                                                            const token = localStorage.getItem('auth-token');
+                                                            const res = await fetch(`${API_URL}/${editingMembersProject}/members`, {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                                                body: JSON.stringify({ email: u.email }),
+                                                            });
+                                                            if (!res.ok) {
+                                                                const body = await res.json().catch(() => ({}));
+                                                                alert(body.message || '멤버 추가에 실패했습니다.');
+                                                                return;
+                                                            }
+                                                            // 추가 성공 — 직접 응답에서 멤버 정보 갱신
+                                                            const data = await res.json().catch(() => null);
+                                                            if (data?.member) {
+                                                                setTempMembers(prev => [...prev, {
+                                                                    id: data.member.id,
+                                                                    name: data.member.name,
+                                                                    email: data.member.email,
+                                                                    picture: data.member.picture,
+                                                                    role: data.member.role,
+                                                                }]);
+                                                            }
+                                                            fetchProjects().catch(() => {});
                                                         }}
                                                         className="p-1.5 text-gray-400 hover:text-emerald-500 transition-colors"
                                                         title="프로젝트에 추가"

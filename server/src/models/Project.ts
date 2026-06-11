@@ -267,7 +267,7 @@ export interface IBugReport {
 
 export interface IProject extends Document {
     name: string;
-    projectType: 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT' | 'PROCESS_FLOW' | 'WBS';
+    projectType: 'ERD' | 'SCREEN_DESIGN' | 'COMPONENT' | 'PROCESS_FLOW' | 'WBS' | 'PERSONAL_SCHEDULE';
     dbType: 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';
     description?: string;
     /** 프로젝트 생성자 표시명 (미설정 시 members OWNER의 name 사용) */
@@ -543,7 +543,7 @@ const BugReportSchema = new Schema<IBugReport>({
 
 const ProjectSchema = new Schema<IProject>({
     name: { type: String, required: true },
-    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN', 'COMPONENT', 'PROCESS_FLOW', 'WBS'], default: 'ERD' },
+    projectType: { type: String, enum: ['ERD', 'SCREEN_DESIGN', 'COMPONENT', 'PROCESS_FLOW', 'WBS', 'PERSONAL_SCHEDULE'], default: 'ERD' },
     dbType: { type: String, enum: ['MySQL', 'PostgreSQL', 'Oracle', 'MSSQL'], required: true },
     description: { type: String },
     author: { type: String, default: '' },

@@ -214,6 +214,8 @@ export const useProjectStore = create<ProjectStore>()(
                                     ? { nodes: [], edges: [], sections: [] }
                                 : projectType === 'WBS'
                                     ? { menus: [], rows: [] }
+                                : projectType === 'PERSONAL_SCHEDULE'
+                                    ? { events: [], tasks: [], todos: [] }
                                 : { entities: [], relationships: [], sections: [] },
                         updatedAt: new Date().toISOString()
                     };
@@ -506,7 +508,11 @@ export const useProjectStore = create<ProjectStore>()(
                                             ? { screens: [], flows: [], sections: [] }
                                             : p.projectType === 'PROCESS_FLOW'
                                                 ? { nodes: [], edges: [], sections: [] }
-                                                : { components: [], flows: [] },
+                                                : p.projectType === 'WBS'
+                                                    ? { menus: [], rows: [], projectSchedule: undefined, detailSchedules: [] }
+                                                    : p.projectType === 'PERSONAL_SCHEDULE'
+                                                        ? { events: [], tasks: [], todos: [] }
+                                                        : { components: [], flows: [] },
                             bugReports: [],
                         };
                         return base as Project;
@@ -540,7 +546,11 @@ export const useProjectStore = create<ProjectStore>()(
                                             ? { screens: [], flows: [], sections: [] }
                                             : p.projectType === 'PROCESS_FLOW'
                                                 ? { nodes: [], edges: [], sections: [] }
-                                                : { components: [], flows: [] },
+                                                : p.projectType === 'WBS'
+                                                    ? { menus: [], rows: [], projectSchedule: undefined, detailSchedules: [] }
+                                                    : p.projectType === 'PERSONAL_SCHEDULE'
+                                                        ? { events: [], tasks: [], todos: [] }
+                                                        : { components: [], flows: [] },
                             bugReports: [],
                         };
                     }),
