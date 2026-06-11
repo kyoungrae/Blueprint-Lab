@@ -392,8 +392,15 @@ const WeekView: React.FC<{
     onSlotClick: (date: string, time: string) => void;
     categories: Record<string, CategoryDef>;
 }> = ({ weekStart, events, onSelectEvent, onSlotClick, categories }) => {
-    const hours = Array.from({ length: 14 }, (_, i) => i + 7); // 07:00 ~ 20:00
+    const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            const currentHour = new Date().getHours();
+            scrollRef.current.scrollTop = Math.max(0, (currentHour - 1)) * 56;
+        }
+    }, []);
     const DAY_LABELS = ['일','월','화','수','목','금','토'];
 
     const getEventsForSlot = (date: Date, hour: number) => {
@@ -412,9 +419,9 @@ const WeekView: React.FC<{
     };
 
     return (
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col h-full overflow-hidden">
             {/* 헤더 */}
-            <div className="grid border-b border-gray-100" style={{ gridTemplateColumns: '56px repeat(7,1fr)' }}>
+            <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '56px repeat(7,1fr)' }}>
                 <div />
                 {days.map((d, i) => {
                     const isToday = toYMD(d) === toYMD(new Date());
@@ -429,7 +436,7 @@ const WeekView: React.FC<{
                 })}
             </div>
             {/* 종일 이벤트 행 */}
-            <div className="grid border-b border-gray-100 min-h-[28px]" style={{ gridTemplateColumns: '56px repeat(7,1fr)' }}>
+            <div className="grid shrink-0 border-b border-gray-100 min-h-[28px]" style={{ gridTemplateColumns: '56px repeat(7,1fr)' }}>
                 <div className="text-[10px] text-gray-400 px-1 pt-1 text-right">종일</div>
                 {days.map((d, i) => {
                     const ae = getAllDayEvents(d);
@@ -447,10 +454,10 @@ const WeekView: React.FC<{
                 })}
             </div>
             {/* 시간 그리드 */}
-            <div className="flex-1 overflow-y-auto">
+            <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
                 {hours.map(h => (
                     <div key={h} className="grid" style={{ gridTemplateColumns: '56px repeat(7,1fr)', height: 56 }}>
-                        <div className="text-[10px] text-gray-400 text-right pr-2 -mt-2 shrink-0">{pad(h)}:00</div>
+                        <div className="text-[10px] text-gray-400 text-right pr-2 pt-1 shrink-0">{pad(h)}:00</div>
                         {days.map((d, i) => {
                             const slotEvents = getEventsForSlot(d, h);
                             return (
@@ -489,7 +496,7 @@ const MonthView: React.FC<{
     while (cells.length % 7 !== 0) cells.push(null);
 
     return (
-        <div className="flex-1 overflow-auto">
+        <div className="h-full overflow-auto">
             <div className="grid grid-cols-7 border-b border-gray-100">
                 {['일','월','화','수','목','금','토'].map((d, i) => (
                     <div key={d} className={`text-center py-2 text-xs font-bold ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'}`}>{d}</div>
@@ -534,12 +541,12 @@ const DayView: React.FC<{
     onSlotClick: (date: string, time: string) => void;
     categories: Record<string, CategoryDef>;
 }> = ({ date, events, onSelectEvent, onSlotClick, categories }) => {
-    const hours = Array.from({ length: 17 }, (_, i) => i + 6);
+    const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
     const ymd = toYMD(date);
     const dayEvents = events.filter(e => e.startDate === ymd && !e.allDay);
 
     return (
-        <div className="flex-1 overflow-y-auto">
+        <div className="h-full min-h-0 overflow-y-auto">
             {hours.map(h => {
                 const slotEvents = dayEvents.filter(e => parseInt(e.startTime?.split(':')[0] || '0') === h);
                 return (
@@ -569,28 +576,91 @@ const GanttView: React.FC<{
     onAddTask: () => void;
     onUpdateTask?: (id: string, patch: Partial<GanttTask>) => void;
     onDeleteTask?: (id: string) => void;
-}> = ({ tasks, onAddTask }) => {
+    weekStart: Date;
+    onWeekChange: (d: Date) => void;
+}> = ({ tasks, onAddTask, weekStart, onWeekChange }) => {
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const leftRef        = React.useRef<HTMLDivElement>(null);
+    const rightRef       = React.useRef<HTMLDivElement>(null);
+    const syncingV       = React.useRef(false);  // 세로 스크롤 루프 방지
+    const ganttIsSource  = React.useRef(false);  // 간트가 weekStart 변경 원인일 때 true
+    const scrollTimer    = React.useRef<ReturnType<typeof setTimeout>>();
 
-    const allDates = tasks.flatMap(t => [t.startDate, t.endDate]).sort();
-    const chartStart = allDates[0] ? addDays(parseDate(allDates[0]), -3) : addDays(new Date(), -3);
-    const chartEnd   = allDates[allDates.length - 1] ? addDays(parseDate(allDates[allDates.length - 1]), 5) : addDays(new Date(), 30);
+    // ±90일 고정 범위
+    const chartStart = React.useMemo(() => addDays(new Date(), -90), []);
+    const chartEnd   = React.useMemo(() => addDays(new Date(),  90), []);
     const totalDays  = diffDays(toYMD(chartStart), toYMD(chartEnd));
-    const DAY_W = 20;
+    const DAY_W = 24;
 
-    const flatTasks = tasks.filter(t => {
-        if (!t.parentId) return true;
-        return !collapsed.has(t.parentId);
-    });
+    const flatTasks = tasks.filter(t => !t.parentId || !collapsed.has(t.parentId));
 
-    const getLeft = (date: string) => diffDays(toYMD(chartStart), date) * DAY_W;
-    const getWidth = (start: string, end: string) => Math.max(DAY_W, diffDays(start, end) * DAY_W);
+    // diffDays 는 +1 보정이 있으므로 날짜 간격 계산은 직접 처리
+    const daysBetween = (a: Date, b: Date) =>
+        Math.round((b.getTime() - a.getTime()) / 86400000);
+    const getLeft  = (date: string) => Math.max(0, daysBetween(chartStart, parseDate(date))) * DAY_W;
+    const getWidth = (s: string, e: string) => Math.max(DAY_W, (daysBetween(parseDate(s), parseDate(e)) + 1) * DAY_W);
 
     const dateHeaders: Date[] = [];
     for (let i = 0; i < totalDays; i++) dateHeaders.push(addDays(chartStart, i));
 
+    // ── 휠 → 가로 스크롤 변환 (passive:false 필요) ───────────
+    React.useEffect(() => {
+        const el = rightRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => {
+            const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+            e.preventDefault();
+            el.scrollLeft += delta;
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, []);
+
+    // ── 캘린더 → 간트 동기화 (간트가 원인이면 건너뜀) ────────
+    React.useEffect(() => {
+        if (ganttIsSource.current) {
+            ganttIsSource.current = false;
+            return;
+        }
+        if (!rightRef.current) return;
+        const target = Math.max(0, daysBetween(chartStart, weekStart) * DAY_W - 60);
+        rightRef.current.scrollLeft = target;
+    }, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── 간트 가로 스크롤 → 캘린더 동기화 (디바운스 150ms) ────
+    const handleTimelineScroll = React.useCallback(() => {
+        clearTimeout(scrollTimer.current);
+        scrollTimer.current = setTimeout(() => {
+            if (!rightRef.current) return;
+            const offset = Math.floor(rightRef.current.scrollLeft / DAY_W);
+            const visibleDate = addDays(chartStart, offset);
+            const dow = visibleDate.getDay();
+            const newWS = addDays(visibleDate, -dow);
+            ganttIsSource.current = true;
+            onWeekChange(newWS);
+        }, 150);
+    }, [chartStart, onWeekChange]);
+
+    // ── 세로 스크롤 동기화 ────────────────────────────────────
+    const handleLeftScroll = React.useCallback(() => {
+        if (syncingV.current || !rightRef.current || !leftRef.current) return;
+        syncingV.current = true;
+        rightRef.current.scrollTop = leftRef.current.scrollTop;
+        syncingV.current = false;
+    }, []);
+
+    const handleRightScroll = React.useCallback(() => {
+        if (!rightRef.current) return;
+        if (!syncingV.current && leftRef.current) {
+            syncingV.current = true;
+            leftRef.current.scrollTop = rightRef.current.scrollTop;
+            syncingV.current = false;
+        }
+        handleTimelineScroll();
+    }, [handleTimelineScroll]);
+
     return (
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col h-full overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 shrink-0">
                 <span className="text-xs font-black text-gray-700">간트 차트</span>
                 <button onClick={onAddTask}
@@ -598,90 +668,111 @@ const GanttView: React.FC<{
                     <Plus size={12} /> 작업 추가
                 </button>
             </div>
+
             <div className="flex flex-1 overflow-hidden">
                 {/* 좌측 작업 목록 */}
-                <div className="w-[420px] shrink-0 border-r border-gray-200 overflow-auto">
-                    <div className="grid text-[11px] font-black text-gray-500 bg-gray-50 border-b border-gray-200 sticky top-0 z-10"
-                        style={{ gridTemplateColumns: '1fr 80px 90px 90px 60px' }}>
-                        <div className="px-3 py-2">작업 이름</div>
-                        <div className="px-2 py-2 text-center">담당자</div>
-                        <div className="px-2 py-2 text-center">시작일</div>
-                        <div className="px-2 py-2 text-center">종료일</div>
-                        <div className="px-2 py-2 text-center">진행률</div>
-                    </div>
-                    {flatTasks.map(task => {
-                        const isParent = tasks.some(t => t.parentId === task.id);
-                        const isCollapsed = collapsed.has(task.id);
-                        return (
-                            <div key={task.id} className={`grid border-b border-gray-100 hover:bg-gray-50 transition-colors text-xs group`}
-                                style={{ gridTemplateColumns: '1fr 80px 90px 90px 60px' }}>
-                                <div className="px-3 py-2 flex items-center gap-1" style={{ paddingLeft: task.parentId ? 24 : 12 }}>
-                                    {isParent && (
-                                        <button onClick={() => setCollapsed(prev => {
-                                            const n = new Set(prev); n.has(task.id) ? n.delete(task.id) : n.add(task.id); return n;
-                                        })} className="shrink-0 text-gray-400 hover:text-gray-700">
-                                            {isCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
-                                        </button>
-                                    )}
-                                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || '#6366f1' }} />
-                                    <span className={`truncate font-bold text-gray-800 ${isParent ? '' : 'font-medium'}`}>{task.title}</span>
-                                </div>
-                                <div className="px-2 py-2 text-center text-gray-600 truncate">{task.assignee}</div>
-                                <div className="px-2 py-2 text-center text-gray-500">{task.startDate}</div>
-                                <div className="px-2 py-2 text-center text-gray-500">{task.endDate}</div>
-                                <div className="px-2 py-2 text-center font-black" style={{ color: task.color || '#6366f1' }}>{task.progress}%</div>
-                            </div>
-                        );
-                    })}
+                <div ref={leftRef} onScroll={handleLeftScroll}
+                    className="w-[480px] shrink-0 border-r border-gray-200 overflow-auto">
+                    <table className="w-full border-collapse text-xs">
+                        <colgroup>
+                            <col style={{ width: '180px' }} />
+                            <col style={{ width: '64px' }} />
+                            <col style={{ width: '92px' }} />
+                            <col style={{ width: '92px' }} />
+                            <col style={{ width: '52px' }} />
+                        </colgroup>
+                        <thead className="sticky top-0 z-10 bg-gray-50">
+                            <tr className="border-b border-gray-200 text-[11px] font-black text-gray-500">
+                                <th className="px-3 py-2 text-left font-black">작업 이름</th>
+                                <th className="px-2 py-2 text-center font-black">담당자</th>
+                                <th className="px-2 py-2 text-center font-black">시작일</th>
+                                <th className="px-2 py-2 text-center font-black">종료일</th>
+                                <th className="px-2 py-2 text-center font-black">진행률</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {flatTasks.map(task => {
+                                const isParent = tasks.some(t => t.parentId === task.id);
+                                const isCollapsed = collapsed.has(task.id);
+                                return (
+                                    <tr key={task.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                                        <td className="py-2" style={{ paddingLeft: task.parentId ? 24 : 10 }}>
+                                            <div className="flex items-center gap-1.5">
+                                                {isParent ? (
+                                                    <button onClick={() => setCollapsed(prev => {
+                                                        const n = new Set(prev); n.has(task.id) ? n.delete(task.id) : n.add(task.id); return n;
+                                                    })} className="shrink-0 text-gray-400 hover:text-gray-700">
+                                                        {isCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+                                                    </button>
+                                                ) : (
+                                                    <span className="w-[11px] shrink-0" />
+                                                )}
+                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || '#6366f1' }} />
+                                                <span className={`truncate text-gray-800 ${isParent ? 'font-bold' : 'font-medium'}`}>{task.title}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-2 py-2 text-center text-gray-600 truncate">{task.assignee}</td>
+                                        <td className="px-2 py-2 text-center text-gray-500 whitespace-nowrap">{task.startDate}</td>
+                                        <td className="px-2 py-2 text-center text-gray-500 whitespace-nowrap">{task.endDate}</td>
+                                        <td className="px-2 py-2 text-center font-black whitespace-nowrap" style={{ color: task.color || '#6366f1' }}>{task.progress}%</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
+
                 {/* 우측 타임라인 */}
-                <div className="flex-1 overflow-auto">
-                    {/* 날짜 헤더 */}
-                    <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
-                        {dateHeaders.map((d, i) => {
-                            const isToday = toYMD(d) === toYMD(new Date());
-                            return (
-                                <div key={i} className={`text-center text-[9px] font-bold border-l border-gray-100 shrink-0 py-1
-                                    ${isToday ? 'bg-rose-50 text-rose-500' : d.getDay() === 0 ? 'text-red-400 bg-red-50/30' : d.getDay() === 6 ? 'text-blue-400 bg-blue-50/30' : 'text-gray-400'}`}
-                                    style={{ width: DAY_W }}>
-                                    {d.getDate()}
-                                </div>
-                            );
-                        })}
-                    </div>
-                    {/* 바 */}
-                    {flatTasks.map(task => (
-                        <div key={task.id} className="relative border-b border-gray-100 hover:bg-gray-50/50"
-                            style={{ height: 33, width: totalDays * DAY_W }}>
-                            {/* 오늘 선 */}
-                            <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-10 opacity-40"
-                                style={{ left: diffDays(toYMD(chartStart), toYMD(new Date())) * DAY_W }} />
-                            <div className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden"
-                                style={{
-                                    left: getLeft(task.startDate),
-                                    width: getWidth(task.startDate, task.endDate),
-                                    height: 18,
-                                    backgroundColor: (task.color || '#6366f1') + '30',
-                                    border: `1px solid ${task.color || '#6366f1'}60`,
-                                }}>
-                                <div className="h-full rounded-l-md transition-all"
-                                    style={{ width: `${task.progress}%`, backgroundColor: task.color || '#6366f1' }} />
-                                <span className="absolute left-1 text-[9px] font-black text-gray-700 truncate" style={{ maxWidth: getWidth(task.startDate, task.endDate) - 8 }}>
-                                    {task.progress}%
-                                </span>
-                            </div>
+                <div ref={rightRef} onScroll={handleRightScroll}
+                    className="flex-1 overflow-auto">
+                    <div style={{ width: totalDays * DAY_W, minWidth: '100%' }}>
+                        {/* 날짜 헤더 */}
+                        <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
+                            {dateHeaders.map((d, i) => {
+                                const ymd = toYMD(d);
+                                const isToday = ymd === toYMD(new Date());
+                                const isWeekStart = d.getDay() === 0;
+                                return (
+                                    <div key={i} className={`text-center text-[9px] font-bold border-l border-gray-100 shrink-0 py-1 select-none
+                                        ${isToday ? 'bg-rose-50 text-rose-500' : d.getDay() === 0 ? 'text-red-400 bg-red-50/30' : d.getDay() === 6 ? 'text-blue-400 bg-blue-50/30' : 'text-gray-400'}`}
+                                        style={{ width: DAY_W }}>
+                                        {isWeekStart ? <span className="block text-[8px] leading-none">{d.getMonth()+1}/{d.getDate()}</span> : d.getDate()}
+                                    </div>
+                                );
+                            })}
                         </div>
-                    ))}
-                </div>
-            </div>
-            {/* 범례 */}
-            <div className="flex items-center gap-4 px-4 py-2 border-t border-gray-100 shrink-0">
-                {GANTT_COLORS.map((c, i) => (
-                    <div key={i} className="flex items-center gap-1">
-                        <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: c }} />
-                        <span className="text-[10px] text-gray-500 font-bold">카테고리 {i + 1}</span>
+                        {/* 바 */}
+                        {flatTasks.map(task => (
+                            <div key={task.id} className="relative border-b border-gray-100 hover:bg-gray-50/50"
+                                style={{ height: 33 }}>
+                                {/* 오늘 선 */}
+                                <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-10 opacity-40"
+                                    style={{ left: diffDays(toYMD(chartStart), toYMD(new Date())) * DAY_W }} />
+                                {/* 현재 주 하이라이트 */}
+                                <div className="absolute top-0 bottom-0 opacity-10 bg-rose-300"
+                                    style={{
+                                        left: Math.max(0, getLeft(toYMD(weekStart))),
+                                        width: 7 * DAY_W,
+                                    }} />
+                                <div className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden"
+                                    style={{
+                                        left: getLeft(task.startDate),
+                                        width: getWidth(task.startDate, task.endDate),
+                                        height: 20,
+                                        backgroundColor: (task.color || '#6366f1') + '30',
+                                        border: `1px solid ${task.color || '#6366f1'}60`,
+                                    }}>
+                                    <div className="h-full rounded-l-md transition-all"
+                                        style={{ width: `${task.progress}%`, backgroundColor: task.color || '#6366f1' }} />
+                                    <span className="absolute left-1 text-[9px] font-black text-gray-700 truncate"
+                                        style={{ maxWidth: getWidth(task.startDate, task.endDate) - 8 }}>
+                                        {task.progress}%
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                ))}
+                </div>
             </div>
         </div>
     );
@@ -930,7 +1021,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                 <div className="flex-1 flex flex-col overflow-hidden">
                     {/* 탭 */}
                     <div className="flex items-center gap-1 px-4 pt-3 pb-0 border-b border-gray-100 bg-white shrink-0">
-                        {([['calendar','캘린더'], ['gantt','간트 차트'], ['todo','할 일 목록']] as [TabMode, string][]).map(([t, label]) => (
+                        {([['calendar','캘린더'], ['todo','할 일 목록']] as [TabMode, string][]).map(([t, label]) => (
                             <button key={t} onClick={() => setTab(t)}
                                 className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${tab === t ? 'border-rose-500 text-rose-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                                 {label}
@@ -940,36 +1031,55 @@ const PersonalScheduleCanvas: React.FC = () => {
 
                     {/* 탭 콘텐츠 */}
                     <div className="flex-1 overflow-hidden flex">
-                        <div className="flex-1 overflow-hidden flex flex-col bg-white">
-                            {tab === 'calendar' && viewMode === 'week' && (
-                                <WeekView weekStart={weekStart} events={filteredEvents}
-                                    onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
-                                    onSlotClick={(date, time) => openNewEvent(date, time)}
-                                    categories={categories} />
+                        <div className="flex-1 overflow-hidden flex flex-col">
+
+                            {/* 캘린더 탭: 위=캘린더 / 아래=간트 */}
+                            {tab === 'calendar' && (
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                    {/* 캘린더 뷰 (상단 60%) */}
+                                    <div className="flex flex-col bg-white" style={{ flex: '0 0 50%', minHeight: 0, overflow: 'hidden' }}>
+                                        {viewMode === 'week' && (
+                                            <WeekView weekStart={weekStart} events={filteredEvents}
+                                                onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
+                                                onSlotClick={(date, time) => openNewEvent(date, time)}
+                                                categories={categories} />
+                                        )}
+                                        {viewMode === 'month' && (
+                                            <MonthView month={selectedDate} events={filteredEvents}
+                                                onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
+                                                onDayClick={ymd => { setSelectedDate(parseDate(ymd)); setViewMode('day'); }}
+                                                categories={categories} />
+                                        )}
+                                        {viewMode === 'day' && (
+                                            <DayView date={selectedDate} events={filteredEvents}
+                                                onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
+                                                onSlotClick={(date, time) => openNewEvent(date, time)}
+                                                categories={categories} />
+                                        )}
+                                    </div>
+
+                                    {/* 구분선 */}
+                                    <div className="shrink-0 h-px bg-gray-200" />
+
+                                    {/* 간트 차트 (하단 40%) */}
+                                    <div className="flex flex-col bg-white" style={{ flex: '0 0 50%', minHeight: 0, overflow: 'hidden' }}>
+                                        <GanttView tasks={tasks} onAddTask={handleAddTask}
+                                            onUpdateTask={(id, p) => setTasks(prev => prev.map(t => t.id === id ? { ...t, ...p } : t))}
+                                            onDeleteTask={id => setTasks(prev => prev.filter(t => t.id !== id))}
+                                            weekStart={weekStart}
+                                            onWeekChange={ws => { setWeekStart(ws); setSelectedDate(ws); }} />
+                                    </div>
+                                </div>
                             )}
-                            {tab === 'calendar' && viewMode === 'month' && (
-                                <MonthView month={selectedDate} events={filteredEvents}
-                                    onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
-                                    onDayClick={ymd => { setSelectedDate(parseDate(ymd)); setViewMode('day'); }}
-                                    categories={categories} />
-                            )}
-                            {tab === 'calendar' && viewMode === 'day' && (
-                                <DayView date={selectedDate} events={filteredEvents}
-                                    onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
-                                    onSlotClick={(date, time) => openNewEvent(date, time)}
-                                    categories={categories} />
-                            )}
-                            {tab === 'gantt' && (
-                                <GanttView tasks={tasks} onAddTask={handleAddTask}
-                                    onUpdateTask={(id, p) => setTasks(prev => prev.map(t => t.id === id ? { ...t, ...p } : t))}
-                                    onDeleteTask={id => setTasks(prev => prev.filter(t => t.id !== id))} />
-                            )}
+
                             {tab === 'todo' && (
-                                <TodoView todos={todos}
-                                    onToggle={id => setTodos(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t))}
-                                    onAdd={item => setTodos(prev => [...prev, { ...item, id: genId() }])}
-                                    onDelete={id => setTodos(prev => prev.filter(t => t.id !== id))}
-                                    categories={categories} />
+                                <div className="flex-1 overflow-hidden bg-white">
+                                    <TodoView todos={todos}
+                                        onToggle={id => setTodos(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t))}
+                                        onAdd={item => setTodos(prev => [...prev, { ...item, id: genId() }])}
+                                        onDelete={id => setTodos(prev => prev.filter(t => t.id !== id))}
+                                        categories={categories} />
+                                </div>
                             )}
                         </div>
 
