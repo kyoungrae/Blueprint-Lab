@@ -119,7 +119,6 @@ const ProjectListPage: React.FC = () => {
     // Connection States
     const containerRef = useRef<HTMLDivElement>(null);
     const [cardPositions, setCardPositions] = useState<Record<string, { x: number, y: number, w: number, h: number }>>({});
-    const [groupPositions, setGroupPositions] = useState<Record<string, { x: number, y: number, w: number, h: number }>>({});
 
     const updatePositions = () => {
         const container = containerRef.current;
@@ -149,30 +148,6 @@ const ProjectListPage: React.FC = () => {
         if (Object.keys(newPositions).length > 0) {
             setCardPositions(prev => {
                 const merged = { ...prev, ...newPositions };
-                if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
-                return merged;
-            });
-        }
-
-        // 그룹 박스 위치 측정 (연결선이 그룹을 가로지르지 않도록 라우팅에 사용)
-        const newGroupPositions: Record<string, { x: number, y: number, w: number, h: number }> = {};
-        container.querySelectorAll('.project-group-box').forEach((el) => {
-            const id = (el as HTMLElement).dataset.groupId;
-            if (id) {
-                const rect = el.getBoundingClientRect();
-                if (rect.width > 0) {
-                    newGroupPositions[id] = {
-                        x: rect.left - containerRect.left,
-                        y: rect.top - containerRect.top,
-                        w: rect.width,
-                        h: rect.height
-                    };
-                }
-            }
-        });
-        if (Object.keys(newGroupPositions).length > 0) {
-            setGroupPositions(prev => {
-                const merged = { ...prev, ...newGroupPositions };
                 if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
                 return merged;
             });

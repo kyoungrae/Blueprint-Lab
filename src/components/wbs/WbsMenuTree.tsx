@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Pencil, Check, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { useWbsStore, calcMenuProgress } from '../../store/wbsStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
