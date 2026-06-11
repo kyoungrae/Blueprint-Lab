@@ -453,8 +453,8 @@ const WeekView: React.FC<{
                 {days.map((d, i) => {
                     const isToday = toYMD(d) === toYMD(new Date());
                     return (
-                        <div key={i} className={`text-center py-2 border-l border-gray-100 ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-700'}`}>
-                            <div className="text-[10px] font-bold text-gray-400">{DAY_LABELS[i]}</div>
+                        <div key={i} className={`text-center py-2 border-l border-gray-100 ${d.getDay() === 0 ? 'text-red-500' : d.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}`}>
+                            <div className="text-[10px] font-bold text-gray-400">{DAY_LABELS[d.getDay()]}</div>
                             <div className={`text-sm font-black w-7 h-7 mx-auto flex items-center justify-center rounded-full ${isToday ? 'bg-rose-500 text-white' : ''}`}>
                                 {d.getDate()}
                             </div>
@@ -685,9 +685,9 @@ const GanttView: React.FC<{
         const el = rightRef.current;
         if (!el) return;
         const onWheel = (e: WheelEvent) => {
-            const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
             e.preventDefault();
-            el.scrollLeft += delta;
+            el.scrollLeft += e.deltaX;
         };
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
@@ -727,8 +727,8 @@ const GanttView: React.FC<{
         const newN = Math.round(rawN);
         const oldN = weekStartIdx.current;
 
-        // 자석: 3일 미만 이동이면 원래 위치로 복귀
-        const snapN = Math.abs(newN - oldN) < 3 ? oldN : newN;
+        // 자석: 현재 위치에서 가장 가까운 날 경계로 스냅
+        const snapN = newN;
 
         const target = Math.max(0, snapN * DAY_W + 3.5 * DAY_W - viewWidth / 2);
 
@@ -997,9 +997,7 @@ const PersonalScheduleCanvas: React.FC = () => {
     const [viewMode, setViewMode] = useState<ViewMode>('week');
     const [tab, setTab] = useState<TabMode>('calendar');
     const [selectedDate, setSelectedDate] = useState(new Date());
-    const [weekStart, setWeekStart] = useState(() => {
-        const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d;
-    });
+    const [weekStart, setWeekStart] = useState(() => new Date());
     const [events, setEvents] = useState<ScheduleEvent[]>(SEED_EVENTS);
     const [tasks, setTasks]   = useState<GanttTask[]>(SEED_TASKS);
     const [todos, setTodos]   = useState<TodoItem[]>(SEED_TODOS);
@@ -1104,7 +1102,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                 {/* 좌측 사이드바 */}
                 <div className="w-52 shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-y-auto">
                     <div className="p-4">
-                        <MiniCalendar current={selectedDate} selected={selectedDate} onSelect={d => { setSelectedDate(d); const ws = new Date(d); ws.setDate(d.getDate() - d.getDay()); setWeekStart(ws); }} eventDates={eventDates} />
+                        <MiniCalendar current={selectedDate} selected={selectedDate} onSelect={d => { setSelectedDate(d); setWeekStart(new Date(d)); }} eventDates={eventDates} />
                     </div>
 
                     <div className="px-4 pb-3">
@@ -1170,7 +1168,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                                                 onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
                                                 onSlotClick={(date, time) => openNewEvent(date, time)}
                                                 categories={categories}
-                                                onNavigate={dir => { dir === 'prev' ? prevWeek() : nextWeek(); }} />
+                                                onNavigate={dir => { setWeekStart(d => addDays(d, dir === 'next' ? 1 : -1)); }} />
                                         )}
                                         {viewMode === 'month' && (
                                             <MonthView month={selectedDate} events={filteredEvents}
