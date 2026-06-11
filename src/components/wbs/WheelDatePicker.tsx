@@ -27,7 +27,6 @@ const WheelColumn: React.FC<WheelColumnProps> = ({ items, selected, onSelect, fo
     const startY = useRef(0);
     const startOffset = useRef(0);
     const [offset, setOffset] = useState(0); // drag offset in px
-    const animRef = useRef<number | null>(null);
 
     // selected 변경 시 스크롤 위치 동기화
     const selectedIndex = items.indexOf(selected);
@@ -42,6 +41,7 @@ const WheelColumn: React.FC<WheelColumnProps> = ({ items, selected, onSelect, fo
     // wheel 이벤트
     const onWheel = useCallback((e: WheelEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         const delta = e.deltaY > 0 ? 1 : -1;
         const newIdx = Math.max(0, Math.min(items.length - 1, selectedIndex + delta));
         onSelect(items[newIdx]);
@@ -214,7 +214,8 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
             {/* 팝업 */}
             {open && (
                 <div className="absolute z-[100] mt-1 bg-white border border-gray-100 rounded-2xl shadow-xl p-4 flex flex-col gap-3"
-                    style={{ minWidth: 260 }}>
+                    style={{ minWidth: 260 }}
+                    onWheel={(e) => e.stopPropagation()}>
                     {/* 컬럼 레이블 */}
                     <div className="flex justify-around text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2">
                         <span style={{ width: 72, textAlign: 'center' }}>년</span>
