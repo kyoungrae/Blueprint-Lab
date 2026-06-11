@@ -12,6 +12,20 @@ type TabMode = 'calendar' | 'gantt' | 'todo';
 type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 type CategoryKey = string;
 
+interface SubEvent {
+    id: string;
+    title: string;
+    category: CategoryKey;
+    startDate: string;
+    startTime?: string;
+    endDate: string;
+    endTime?: string;
+    allDay?: boolean;
+    repeat: RepeatType;
+    alarm?: string;
+    description?: string;
+}
+
 interface ScheduleEvent {
     id: string;
     title: string;
@@ -25,6 +39,7 @@ interface ScheduleEvent {
     alarm?: string;
     description?: string;
     projectId?: string;
+    subEvents?: SubEvent[];
 }
 
 interface GanttTask {
@@ -201,9 +216,33 @@ const EventForm: React.FC<{
     const [description, setDescription] = useState(event?.description || '');
     const [projectId, setProjectId] = useState(event?.projectId || '');
 
+    // 하위 일정
+    const [subEvents, setSubEvents] = useState<SubEvent[]>(event?.subEvents || []);
+    const [activeTab, setActiveTab] = useState<'main' | number>('main');
+
+    const addSubEvent = () => {
+        const sub: SubEvent = {
+            id: genId(), title: '', category: Object.keys(categories)[0] || 'work',
+            startDate: startDate, startTime: startTime,
+            endDate: startDate,   endTime: endTime,
+            allDay: false, repeat: 'none', alarm: '15분 전', description: '',
+        };
+        setSubEvents(prev => [...prev, sub]);
+        setActiveTab(subEvents.length); // 새 탭으로 이동
+    };
+
+    const updateSubEvent = (idx: number, patch: Partial<SubEvent>) => {
+        setSubEvents(prev => prev.map((s, i) => i === idx ? { ...s, ...patch } : s));
+    };
+
+    const removeSubEvent = (idx: number) => {
+        setSubEvents(prev => prev.filter((_, i) => i !== idx));
+        setActiveTab('main');
+    };
+
     const handleSave = () => {
         if (!title.trim()) return;
-        onSave({ id: event?.id || genId(), title: title.trim(), category, startDate, startTime, endDate, endTime, allDay, repeat, alarm, description, projectId: projectId || undefined });
+        onSave({ id: event?.id || genId(), title: title.trim(), category, startDate, startTime, endDate, endTime, allDay, repeat, alarm, description, projectId: projectId || undefined, subEvents: subEvents.length ? subEvents : undefined });
     };
 
     return (
@@ -214,11 +253,25 @@ const EventForm: React.FC<{
             </div>
 
             {/* 탭 */}
-            <div className="flex border-b border-gray-100">
-                <div className="flex-1 py-2.5 text-xs font-bold text-center border-b-2 border-rose-500 text-rose-600">일정 정보</div>
+            <div className="flex border-b border-gray-100 overflow-x-auto shrink-0">
+                <button onClick={() => setActiveTab('main')}
+                    className={`shrink-0 px-3 py-2.5 text-xs font-bold transition-colors ${activeTab === 'main' ? 'border-b-2 border-rose-500 text-rose-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                    일정 정보
+                </button>
+                {subEvents.map((s, i) => (
+                    <button key={s.id} onClick={() => setActiveTab(i)}
+                        className={`shrink-0 flex items-center gap-1 px-3 py-2.5 text-xs font-bold transition-colors ${activeTab === i ? 'border-b-2 border-rose-500 text-rose-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                        {s.title || `하위 일정 ${i + 1}`}
+                        <span onClick={e => { e.stopPropagation(); removeSubEvent(i); }}
+                            className="ml-0.5 hover:text-red-400 text-gray-300 leading-none">✕</span>
+                    </button>
+                ))}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+            {/* ── 메인 탭 ── */}
+            {activeTab === 'main' && <>
                 {/* 제목 */}
                 <div>
                     <label className="block text-xs font-bold text-gray-600 mb-1">제목 *</label>
@@ -315,17 +368,14 @@ const EventForm: React.FC<{
                 {/* 일정 */}
                 <div>
                     <label className="block text-xs font-bold text-gray-600 mb-1">일정</label>
-                    <div className="flex items-center gap-2">
-                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                            className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
-                        {!allDay && <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
-                            className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />}
-                    </div>
+                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50 mb-1.5" />
                     {!allDay && (
-                        <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-gray-400 w-4">~</span>
+                        <div className="grid grid-cols-2 gap-2">
+                            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+                                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
                             <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
-                                className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
+                                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
                         </div>
                     )}
                 </div>
@@ -339,28 +389,28 @@ const EventForm: React.FC<{
                     <span className="text-xs font-bold text-gray-600">종일</span>
                 </div>
 
-                {/* 반복 */}
-                <div>
-                    <label className="block text-xs font-bold text-gray-600 mb-1">반복</label>
-                    <select value={repeat} onChange={e => setRepeat(e.target.value as RepeatType)}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
-                        <option value="none">반복 안함</option>
-                        <option value="daily">매일</option>
-                        <option value="weekly">매주</option>
-                        <option value="monthly">매월</option>
-                        <option value="yearly">매년</option>
-                    </select>
-                </div>
-
-                {/* 알림 */}
-                <div>
-                    <label className="block text-xs font-bold text-gray-600 mb-1">알림</label>
-                    <select value={alarm} onChange={e => setAlarm(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
-                        {['5분 전','10분 전','15분 전','30분 전','1시간 전','1일 전'].map(v => (
-                            <option key={v} value={v}>{v}</option>
-                        ))}
-                    </select>
+                {/* 반복 / 알림 */}
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">반복</label>
+                        <select value={repeat} onChange={e => setRepeat(e.target.value as RepeatType)}
+                            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
+                            <option value="none">반복 안함</option>
+                            <option value="daily">매일</option>
+                            <option value="weekly">매주</option>
+                            <option value="monthly">매월</option>
+                            <option value="yearly">매년</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">알림</label>
+                        <select value={alarm} onChange={e => setAlarm(e.target.value)}
+                            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
+                            {['5분 전','10분 전','15분 전','30분 전','1시간 전','1일 전'].map(v => (
+                                <option key={v} value={v}>{v}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
                 {/* 프로젝트 연결 */}
@@ -382,6 +432,91 @@ const EventForm: React.FC<{
                         className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50 resize-none" />
                     <div className="text-right text-[10px] text-gray-400">{description.length}/200</div>
                 </div>
+
+                {/* 하위 일정 추가 버튼 */}
+                <button onClick={addSubEvent}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold text-rose-500 border border-dashed border-rose-300 rounded-xl hover:bg-rose-50 transition-colors">
+                    <Plus size={13} /> 하위 일정 추가
+                </button>
+            </>}
+
+            {/* ── 하위 일정 탭 ── */}
+            {typeof activeTab === 'number' && subEvents[activeTab] && (() => {
+                const s = subEvents[activeTab];
+                const idx = activeTab;
+                return <>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">제목</label>
+                        <input value={s.title} onChange={e => updateSubEvent(idx, { title: e.target.value })}
+                            placeholder="하위 일정 제목 입력"
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">구분</label>
+                        <select value={s.category} onChange={e => updateSubEvent(idx, { category: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
+                            {Object.entries(categories).map(([k, v]) => (
+                                <option key={k} value={k}>{v.label}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">일정</label>
+                        <input type="date" value={s.startDate} onChange={e => updateSubEvent(idx, { startDate: e.target.value })}
+                            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50 mb-1.5" />
+                        {!s.allDay && (
+                            <div className="grid grid-cols-2 gap-2">
+                                <input type="time" value={s.startTime} onChange={e => updateSubEvent(idx, { startTime: e.target.value })}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
+                                <input type="time" value={s.endTime} onChange={e => updateSubEvent(idx, { endTime: e.target.value })}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => updateSubEvent(idx, { allDay: !s.allDay })}
+                            className={`w-9 h-5 rounded-full transition-colors ${s.allDay ? 'bg-rose-500' : 'bg-gray-200'}`}>
+                            <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform mx-0.5 ${s.allDay ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </button>
+                        <span className="text-xs font-bold text-gray-600">종일</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">반복</label>
+                            <select value={s.repeat} onChange={e => updateSubEvent(idx, { repeat: e.target.value as RepeatType })}
+                                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
+                                <option value="none">반복 안함</option>
+                                <option value="daily">매일</option>
+                                <option value="weekly">매주</option>
+                                <option value="monthly">매월</option>
+                                <option value="yearly">매년</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">알림</label>
+                            <select value={s.alarm} onChange={e => updateSubEvent(idx, { alarm: e.target.value })}
+                                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50">
+                                {['5분 전','10분 전','15분 전','30분 전','1시간 전','1일 전'].map(v => (
+                                    <option key={v} value={v}>{v}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">설명</label>
+                        <textarea value={s.description} onChange={e => updateSubEvent(idx, { description: e.target.value })}
+                            rows={3} maxLength={200} placeholder="메모를 입력하세요"
+                            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50 resize-none" />
+                        <div className="text-right text-[10px] text-gray-400">{(s.description || '').length}/200</div>
+                    </div>
+                </>;
+            })()}
+
             </div>
 
             {/* 버튼 */}
