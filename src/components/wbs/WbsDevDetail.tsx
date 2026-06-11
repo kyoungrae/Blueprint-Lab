@@ -213,6 +213,64 @@ const CategoryCell: React.FC<{ value: string; onChange: (v: string) => void; inp
 };
 
 /**
+ * 담당자 일괄 적용 입력 — 멤버 선택 버튼 + 직접입력 토글
+ */
+const BulkAssigneeInput: React.FC<{
+    value: string;
+    onChange: (v: string) => void;
+    onApply: () => void;
+    members: { name: string; colorIdx: number }[];
+}> = ({ value, onChange, onApply, members }) => {
+    const [isCustom, setIsCustom] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isCustom) inputRef.current?.focus();
+    }, [isCustom]);
+
+    return (
+        <div className="mt-2 flex flex-col gap-1.5">
+            {/* 멤버 버튼 목록 */}
+            <div className="flex flex-wrap gap-1">
+                {members.map((m, i) => {
+                    const pal = ASSIGNEE_PALETTE[i % ASSIGNEE_PALETTE.length];
+                    return (
+                        <button
+                            key={m.name}
+                            type="button"
+                            onClick={() => { onChange(m.name); setIsCustom(false); }}
+                            className={`px-2.5 py-1 rounded-full border text-xs font-bold transition-colors hover:opacity-80 ${pal.badge} ${value === m.name ? 'ring-2 ring-offset-1 ring-current' : ''}`}
+                        >
+                            {m.name}
+                        </button>
+                    );
+                })}
+                {/* 직접입력 토글 버튼 */}
+                <button
+                    type="button"
+                    onClick={() => { setIsCustom((v) => !v); if (!isCustom) onChange(''); }}
+                    className={`px-2.5 py-1 rounded-full border text-xs font-bold transition-colors ${isCustom ? 'bg-emerald-50 text-emerald-600 border-emerald-300' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                >
+                    <span className="flex items-center gap-1"><PenLine size={10} /> 직접입력</span>
+                </button>
+            </div>
+            {/* 직접입력 input */}
+            {isCustom && (
+                <input
+                    ref={inputRef}
+                    type="text"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder="담당자명 입력"
+                    className="w-full px-2 py-1.5 text-sm border border-emerald-300 rounded-lg outline-none focus:border-emerald-400"
+                    onKeyDown={(e) => { if (e.key === 'Enter') onApply(); if (e.key === 'Escape') { setIsCustom(false); onChange(''); } }}
+                />
+            )}
+        </div>
+    );
+};
+
+/**
  * 담당자 셀 — StatusCell과 동일한 절대 위치 드롭다운 패턴
  */
 const AssigneeCell: React.FC<{
@@ -534,16 +592,13 @@ const WbsDevDetail: React.FC = () => {
                 </div>
             );
         }
-        // assignee
+        // assignee — 멤버 선택 + 직접입력
         return (
-            <input
-                type="text"
+            <BulkAssigneeInput
                 value={bulkValue}
-                onChange={(e) => setBulkValue(e.target.value)}
-                placeholder="담당자명 입력"
-                className="w-full mt-2 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-emerald-400"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === 'Enter') applyBulk(); }}
+                onChange={setBulkValue}
+                onApply={applyBulk}
+                members={projectMembers}
             />
         );
     };
@@ -838,7 +893,7 @@ const WbsDevDetail: React.FC = () => {
                                         <ChevronLeft size={14} />
                                     </button>
                                     <span className="text-xs font-bold text-gray-600">
-                                        {BULK_ACTIONS.find((a) => a.field === bulkField)?.label} 일괄 적용
+                                        {BULK_ACTIONS.find((a) => a.field === bulkField)?.label} 적용
                                     </span>
                                 </div>
 
