@@ -105,6 +105,7 @@ const EditCell: React.FC<{
                 onChange={(v) => onSave(fromInputDate(v))}
                 className="w-full"
                 placeholder={placeholder || '-'}
+                variant="ghost"
             />
         );
     }

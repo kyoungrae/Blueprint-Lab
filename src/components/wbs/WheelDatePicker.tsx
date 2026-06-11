@@ -127,6 +127,7 @@ interface WheelDatePickerProps {
     onChange: (v: string) => void;
     className?: string;
     placeholder?: string;
+    variant?: 'default' | 'ghost';
 }
 
 const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
@@ -134,6 +135,7 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     onChange,
     className = '',
     placeholder = '날짜 선택',
+    variant = 'default',
 }) => {
     const today = new Date();
     const parseValue = (v: string) => {
@@ -201,7 +203,10 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
-                className="w-full text-left px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white hover:border-emerald-300 transition-colors outline-none focus:border-emerald-400"
+                className={variant === 'ghost'
+                    ? "w-full text-center text-sm outline-none bg-transparent border-none p-0 cursor-pointer"
+                    : "w-full text-left px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white hover:border-emerald-300 transition-colors outline-none focus:border-emerald-400"
+                }
             >
                 {displayValue || <span className="text-gray-400">{placeholder}</span>}
             </button>
