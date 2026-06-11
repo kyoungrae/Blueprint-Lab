@@ -710,22 +710,57 @@ const GanttView: React.FC<{
         syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 400);
     }, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── 간트 가로 스크롤 → 캘린더 동기화 ────────────────────
+    // 현재 weekStart의 day index (chartStart 기준)
+    const weekStartIdx = React.useRef(daysBetween(chartStart, weekStart));
+    React.useEffect(() => {
+        weekStartIdx.current = daysBetween(chartStart, weekStart);
+    }, [weekStart, chartStart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── 스크롤 멈춤 후 스냅 ──────────────────────────────────
+    const snapTimer = React.useRef<ReturnType<typeof setTimeout>>();
+    const snap = React.useCallback(() => {
+        if (!rightRef.current || calSyncing.current) return;
+        const viewWidth = rightRef.current.clientWidth;
+        const S = rightRef.current.scrollLeft;
+        // 빨간 영역 왼쪽 경계가 위치한 day index
+        const rawN = (S + viewWidth / 2 - 3.5 * DAY_W) / DAY_W;
+        const newN = Math.round(rawN);
+        const oldN = weekStartIdx.current;
+
+        // 자석: 3일 미만 이동이면 원래 위치로 복귀
+        const snapN = Math.abs(newN - oldN) < 3 ? oldN : newN;
+
+        const target = Math.max(0, snapN * DAY_W + 3.5 * DAY_W - viewWidth / 2);
+
+        calSyncing.current = true;
+        clearTimeout(syncClearTimer.current);
+        // smooth scroll for snap feel
+        rightRef.current.style.scrollBehavior = 'smooth';
+        rightRef.current.scrollLeft = target;
+        rightRef.current.style.scrollBehavior = '';
+
+        const newWeekStart = addDays(chartStart, snapN);
+        weekStartIdx.current = snapN;
+        ganttIsSource.current = true;
+        onWeekChange(newWeekStart);
+        syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 500);
+    }, [chartStart, onWeekChange]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── 간트 가로 스크롤 → 캘린더 실시간 동기화 ─────────────
     const handleTimelineScroll = React.useCallback(() => {
-        if (calSyncing.current) return;  // 캘린더 sync가 유발한 스크롤이면 무시
-        clearTimeout(scrollTimer.current);
-        scrollTimer.current = setTimeout(() => {
-            if (!rightRef.current || calSyncing.current) return;
-            // 뷰포트 중앙 기준으로 현재 날짜 계산
-            const centerX = rightRef.current.scrollLeft + rightRef.current.clientWidth / 2;
-            const offset = Math.floor(centerX / DAY_W);
-            const visibleDate = addDays(chartStart, offset);
-            const dow = visibleDate.getDay();
-            const newWS = addDays(visibleDate, -dow);
-            ganttIsSource.current = true;
-            onWeekChange(newWS);
-        }, 200);
-    }, [chartStart, onWeekChange]);
+        if (calSyncing.current) return;
+        // 실시간: 뷰포트 중앙 기준으로 weekStart 업데이트
+        const viewWidth = rightRef.current?.clientWidth ?? 0;
+        const S = rightRef.current?.scrollLeft ?? 0;
+        const rawN = (S + viewWidth / 2 - 3.5 * DAY_W) / DAY_W;
+        const N = Math.round(rawN);
+        const newWeekStart = addDays(chartStart, N);
+        ganttIsSource.current = true;
+        onWeekChange(newWeekStart);
+        // 스크롤 멈추면 스냅
+        clearTimeout(snapTimer.current);
+        snapTimer.current = setTimeout(snap, 300);
+    }, [chartStart, onWeekChange, snap]);
 
     // ── 세로 스크롤 동기화 ────────────────────────────────────
     const handleLeftScroll = React.useCallback(() => {
@@ -1017,7 +1052,7 @@ const PersonalScheduleCanvas: React.FC = () => {
     // 주 이동
     const prevWeek = () => setWeekStart(d => addDays(d, -7));
     const nextWeek = () => setWeekStart(d => addDays(d, 7));
-    const goToday  = () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); setWeekStart(d); setSelectedDate(new Date()); };
+    const goToday  = () => { setWeekStart(new Date()); setSelectedDate(new Date()); };
 
     const weekEnd = addDays(weekStart, 6);
 
@@ -1046,7 +1081,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                     <button onClick={prevWeek} className="p-1.5 hover:bg-gray-100 rounded-xl text-gray-400 transition-colors"><ChevronLeft size={16} /></button>
                     <button onClick={nextWeek} className="p-1.5 hover:bg-gray-100 rounded-xl text-gray-400 transition-colors"><ChevronRight size={16} /></button>
                     <span className="text-sm font-bold text-gray-700 min-w-[260px] text-center">
-                        {weekStart.getFullYear()}.{pad(weekStart.getMonth()+1)}.{pad(weekStart.getDate())} (일) ~ {pad(weekEnd.getMonth()+1)}.{pad(weekEnd.getDate())} (토)
+                        {weekStart.getFullYear()}.{pad(weekStart.getMonth()+1)}.{pad(weekStart.getDate())} ~ {pad(weekEnd.getMonth()+1)}.{pad(weekEnd.getDate())}
                     </span>
                     {/* 뷰 모드 */}
                     <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
