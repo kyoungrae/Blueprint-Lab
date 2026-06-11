@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import WheelDatePicker from './WheelDatePicker';
 import { useWbsStore } from '../../store/wbsStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
 import { useSyncStore } from '../../store/syncStore';
@@ -94,10 +95,24 @@ const EditCell: React.FC<{
 
     useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
+    // date 타입: WheelDatePicker 사용 (YYYY.MM.DD ↔ YYYY-MM-DD 변환)
+    if (type === 'date') {
+        // 저장 포맷: YYYY.MM.DD → WheelDatePicker 포맷: YYYY-MM-DD
+        const pickerValue = toInputDate(value);
+        return (
+            <WheelDatePicker
+                value={pickerValue}
+                onChange={(v) => onSave(fromInputDate(v))}
+                className="w-full"
+                placeholder={placeholder || '-'}
+            />
+        );
+    }
+
     const commit = () => {
-        const trimmed = type === 'date' ? draft : draft.trim();
-        if (type !== 'date' && !trimmed) setDraft(value);
-        else onSave(type === 'date' ? fromInputDate(trimmed) : trimmed);
+        const trimmed = draft.trim();
+        if (!trimmed) setDraft(value);
+        else onSave(trimmed);
         setEditing(false);
     };
 
@@ -105,13 +120,13 @@ const EditCell: React.FC<{
         return (
             <input
                 ref={inputRef}
-                type={type}
+                type="text"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={commit}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') commit();
-                    if (e.key === 'Escape') { setDraft(type === 'date' ? toInputDate(value) : value); setEditing(false); }
+                    if (e.key === 'Escape') { setDraft(value); setEditing(false); }
                 }}
                 className={`w-full bg-transparent border-b-2 border-blue-400 outline-none py-0.5 ${className}`}
             />
@@ -120,7 +135,7 @@ const EditCell: React.FC<{
 
     return (
         <span
-            onDoubleClick={() => { setDraft(type === 'date' ? toInputDate(value) : value); setEditing(true); }}
+            onDoubleClick={() => { setDraft(value); setEditing(true); }}
             className={`block w-full min-h-[18px] cursor-pointer hover:text-blue-600 transition-colors whitespace-normal break-keep leading-snug ${className}`}
             title="더블클릭하여 편집"
         >

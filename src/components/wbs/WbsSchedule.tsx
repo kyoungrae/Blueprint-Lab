@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import WheelDatePicker from './WheelDatePicker';
 import { createPortal } from 'react-dom';
 import {
     Filter, Settings, Plus, Trash2, X, ChevronDown, ChevronRight,
@@ -415,21 +416,11 @@ const DateRangePanel: React.FC<{
             <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
                     <label className="text-[11px] font-bold text-gray-500">시작일</label>
-                    <input
-                        type="date"
-                        value={draftStart}
-                        onChange={(ev) => setDraftStart(ev.target.value)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    />
+                    <WheelDatePicker value={draftStart} onChange={setDraftStart} className="w-full" placeholder="시작일 선택" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                     <label className="text-[11px] font-bold text-gray-500">종료일</label>
-                    <input
-                        type="date"
-                        value={draftEnd}
-                        onChange={(ev) => setDraftEnd(ev.target.value)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    />
+                    <WheelDatePicker value={draftEnd} onChange={setDraftEnd} className="w-full" placeholder="종료일 선택" />
                 </div>
             </div>
             <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-gray-50">
@@ -1461,23 +1452,11 @@ const WbsSchedule: React.FC = () => {
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="flex flex-col gap-1.5">
                                         <label className="text-xs font-bold text-gray-500">시작일</label>
-                                        <input
-                                            type="date"
-                                            required
-                                            value={newStartDate}
-                                            onChange={(e) => setNewStartDate(e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
-                                        />
+                                        <WheelDatePicker value={newStartDate} onChange={setNewStartDate} className="w-full" placeholder="시작일 선택" />
                                     </div>
                                     <div className="flex flex-col gap-1.5">
                                         <label className="text-xs font-bold text-gray-500">종료일</label>
-                                        <input
-                                            type="date"
-                                            required
-                                            value={newEndDate}
-                                            onChange={(e) => setNewEndDate(e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
-                                        />
+                                        <WheelDatePicker value={newEndDate} onChange={setNewEndDate} className="w-full" placeholder="종료일 선택" />
                                     </div>
                                 </div>
                                 <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600">

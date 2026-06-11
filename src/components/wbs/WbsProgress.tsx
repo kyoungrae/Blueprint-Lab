@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
+import WheelDatePicker from './WheelDatePicker';
 import { createPortal } from 'react-dom';
 import { ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Lock, LockOpen, CalendarDays, AlertTriangle, X, Plus, Trash2 } from 'lucide-react';
 import { useWbsStore, calcMenuProgress, calcOverallProgress } from '../../store/wbsStore';
@@ -506,19 +507,9 @@ const WbsProgress: React.FC = () => {
                                 ) : (
                                     /* 편집 상태: 날짜 입력 (MASTER only) */
                                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                                        <input
-                                            type="date"
-                                            value={schedDraft.startDate}
-                                            onChange={(e) => setSchedDraft((d) => ({ ...d, startDate: e.target.value }))}
-                                            className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
-                                        />
+                                        <WheelDatePicker value={schedDraft.startDate} onChange={(v) => setSchedDraft((d) => ({ ...d, startDate: v }))} className="flex-1 min-w-0" placeholder="시작일" />
                                         <span className="text-gray-400 text-xs shrink-0">~</span>
-                                        <input
-                                            type="date"
-                                            value={schedDraft.endDate}
-                                            onChange={(e) => setSchedDraft((d) => ({ ...d, endDate: e.target.value }))}
-                                            className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
-                                        />
+                                        <WheelDatePicker value={schedDraft.endDate} onChange={(v) => setSchedDraft((d) => ({ ...d, endDate: v }))} className="flex-1 min-w-0" placeholder="종료일" />
                                         <button
                                             type="button"
                                             onClick={saveSchedule}
@@ -685,25 +676,11 @@ const WbsProgress: React.FC = () => {
                         <div className="grid grid-cols-2 gap-3">
                             <label className="block">
                                 <span className="block text-xs font-black text-gray-500 mb-1.5">시작일</span>
-                                <input
-                                    type="date"
-                                    value={detailDraft.startDate}
-                                    min={projectSchedule?.startDate}
-                                    max={projectSchedule?.endDate}
-                                    onChange={(e) => setDetailDraft((d) => ({ ...d, startDate: e.target.value }))}
-                                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
-                                />
+                                <WheelDatePicker value={detailDraft.startDate} onChange={(v) => setDetailDraft((d) => ({ ...d, startDate: v }))} className="w-full" placeholder="시작일 선택" />
                             </label>
                             <label className="block">
                                 <span className="block text-xs font-black text-gray-500 mb-1.5">종료일</span>
-                                <input
-                                    type="date"
-                                    value={detailDraft.endDate}
-                                    min={detailDraft.startDate || projectSchedule?.startDate}
-                                    max={projectSchedule?.endDate}
-                                    onChange={(e) => setDetailDraft((d) => ({ ...d, endDate: e.target.value }))}
-                                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
-                                />
+                                <WheelDatePicker value={detailDraft.endDate} onChange={(v) => setDetailDraft((d) => ({ ...d, endDate: v }))} className="w-full" placeholder="종료일 선택" />
                             </label>
                         </div>
                         {projectSchedule && (

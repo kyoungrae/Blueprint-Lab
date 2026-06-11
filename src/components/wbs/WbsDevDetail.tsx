@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, Layers, User, CalendarDays, CalendarCheck, Activity, Percent, ChevronLeft, RotateCcw, Lock, PenLine } from 'lucide-react';
+import WheelDatePicker from './WheelDatePicker';
 import { useWbsStore } from '../../store/wbsStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
@@ -566,12 +567,11 @@ const WbsDevDetail: React.FC = () => {
         }
         if (bulkField === 'startDate' || bulkField === 'endDate') {
             return (
-                <input
-                    type="date"
+                <WheelDatePicker
                     value={bulkValue}
-                    onChange={(e) => setBulkValue(e.target.value)}
-                    className="w-full mt-2 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-emerald-400"
-                    autoFocus
+                    onChange={setBulkValue}
+                    className="w-full mt-2"
+                    placeholder="날짜 선택"
                 />
             );
         }
@@ -794,10 +794,10 @@ const WbsDevDetail: React.FC = () => {
                                                     />
                                                 </td>
                                                 <td className="align-middle">
-                                                    <input type="date" value={r.startDate} onChange={(e) => updateRow(r.id, { startDate: e.target.value })} className={cellInput} />
+                                                    <WheelDatePicker value={r.startDate} onChange={(v) => updateRow(r.id, { startDate: v })} className="w-full" />
                                                 </td>
                                                 <td className="align-middle">
-                                                    <input type="date" value={r.endDate} onChange={(e) => updateRow(r.id, { endDate: e.target.value })} className={cellInput} />
+                                                    <WheelDatePicker value={r.endDate} onChange={(v) => updateRow(r.id, { endDate: v })} className="w-full" />
                                                 </td>
                                                 <td className="align-middle">
                                                     {dbgLocked ? (
