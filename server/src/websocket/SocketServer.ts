@@ -509,6 +509,11 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                 // Release all locks held by this user
                 await lockManager.releaseAllUserLocks(socketData.projectId, socketData.user.id);
 
+                // WBS 수정중 표시 전체 해제 (탭 닫기 등으로 blur 이벤트 누락 시 정리)
+                socket.to(`project:${socketData.projectId}`).emit('wbs_user_disconnected', {
+                    userId: socketData.user.id,
+                });
+
                 // Notify others (clientId로 커서 제거 - 같은 사람 여러 커서 방지)
                 socket.to(`project:${socketData.projectId}`).emit('user_left', {
                     userId: socketData.user.id,

@@ -14,6 +14,7 @@ interface WbsEditingState {
 
     setEditing: (elementId: string, userId: string, userName: string) => void;
     clearEditing: (elementId: string, userId: string) => void;
+    clearByUser: (userId: string) => void;
     clearAll: () => void;
 }
 
@@ -51,6 +52,22 @@ export const useWbsEditingStore = create<WbsEditingState>((set, get) => ({
             const t = _timers.get(elementId);
             if (t) clearTimeout(t);
             _timers.delete(elementId);
+            return { editing, _timers };
+        });
+    },
+
+    clearByUser: (userId) => {
+        set((s) => {
+            const editing = new Map(s.editing);
+            const _timers = new Map(s._timers);
+            for (const [elementId, entry] of editing) {
+                if (entry.userId === userId) {
+                    editing.delete(elementId);
+                    const t = _timers.get(elementId);
+                    if (t) clearTimeout(t);
+                    _timers.delete(elementId);
+                }
+            }
             return { editing, _timers };
         });
     },

@@ -276,15 +276,19 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
         // WBS 수정중 인디케이터 수신
         socket.on('wbs_field_focus', (data: { elementId: string; userId: string; userName: string }) => {
-            console.log('[WBS] wbs_field_focus 수신:', data);
             import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
                 useWbsEditingStore.getState().setEditing(data.elementId, data.userId, data.userName);
             });
         });
         socket.on('wbs_field_blur', (data: { elementId: string; userId: string }) => {
-            console.log('[WBS] wbs_field_blur 수신:', data);
             import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
                 useWbsEditingStore.getState().clearEditing(data.elementId, data.userId);
+            });
+        });
+        // 연결 끊김 시 해당 유저의 모든 수정중 표시 제거
+        socket.on('wbs_user_disconnected', (data: { userId: string }) => {
+            import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
+                useWbsEditingStore.getState().clearByUser(data.userId);
             });
         });
 
@@ -294,15 +298,21 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             updatedBy: string;
             wbsSnapshot: { menus: any[]; rows: any[]; projectSchedule: any; detailSchedules: any[] };
         }) => {
-            import('./wbsStore').then(({ useWbsStore }) => {
-                const wbs = useWbsStore.getState();
-                if (wbs.currentProjectId !== data.projectId) return;
-                const snap = data.wbsSnapshot;
-                wbs.loadProject(data.projectId, {
-                    menus: snap.menus,
-                    rows: snap.rows,
-                    projectSchedule: snap.projectSchedule ?? undefined,
-                    detailSchedules: snap.detailSchedules,
+            // 내가 저장한 것은 이미 로컬에 반영됨 → 무시해서 편집 중 데이터 덮어씌워지는 것 방지
+            import('./authStore').then(({ useAuthStore }) => {
+                const myUserId = useAuthStore.getState().user?.id;
+                if (myUserId && data.updatedBy === myUserId) return;
+
+                import('./wbsStore').then(({ useWbsStore }) => {
+                    const wbs = useWbsStore.getState();
+                    if (wbs.currentProjectId !== data.projectId) return;
+                    const snap = data.wbsSnapshot;
+                    wbs.loadProject(data.projectId, {
+                        menus: snap.menus,
+                        rows: snap.rows,
+                        projectSchedule: snap.projectSchedule ?? undefined,
+                        detailSchedules: snap.detailSchedules,
+                    });
                 });
             });
         });
@@ -351,6 +361,10 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
         if (socket && currentProjectId) {
             socket.emit('leave_project', { projectId: currentProjectId });
             set({ currentProjectId: null, onlineUsers: [], cursors: new Map(), locks: new Map() });
+            // 프로젝트 전환 시 수정중 표시 초기화
+            import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
+                useWbsEditingStore.getState().clearAll();
+            });
         }
     },
 
@@ -423,7 +437,6 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
     emitWbsFieldFocus: (elementId) => {
         const { socket, currentProjectId } = get();
-        console.log('[WBS] emitWbsFieldFocus:', elementId, '| socket:', !!socket, '| projectId:', currentProjectId);
         if (socket && currentProjectId && !currentProjectId.startsWith('local_')) {
             socket.emit('wbs_field_focus', { elementId });
         }
