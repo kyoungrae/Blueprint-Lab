@@ -44,6 +44,7 @@ const WbsCanvas: React.FC = () => {
 
     const { user } = useAuthStore();
     const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
+    const isAdmin = user?.tier === 'ADMIN';
 
     const project = projects.find((p) => p.id === currentProjectId);
     const [tab, setTab] = useState<WbsTab>('hierarchy');
@@ -188,8 +189,8 @@ const WbsCanvas: React.FC = () => {
                             </button>
                         ))}
                     </div>
-                    {/* 일정 그룹 */}
-                    <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+                    {/* 일정 그룹 — MASTER 이상만 표시 */}
+                    {isMaster && <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
                         <span className="text-[10px] font-bold text-gray-400 px-2 select-none">일정</span>
                         <div className="w-px h-4 bg-gray-300 mx-0.5" />
                         {SCHEDULE_TABS.map((t) => (
@@ -204,7 +205,7 @@ const WbsCanvas: React.FC = () => {
                                 <span className="hidden sm:inline">{t.label}</span>
                             </button>
                         ))}
-                    </div>
+                    </div>}
                 </nav>
 
                 <div className="flex-1" />
@@ -285,8 +286,8 @@ const WbsCanvas: React.FC = () => {
                 )}
                 {tab === 'detail' && <WbsDevDetail />}
                 {tab === 'progress' && <WbsProgress />}
-                {tab === 'schedule' && <WbsSchedule />}
-                {tab === 'schedule-table' && <WbsScheduleTable />}
+                {tab === 'schedule' && isMaster && <WbsSchedule />}
+                {tab === 'schedule-table' && isMaster && <WbsScheduleTable />}
             </main>
 
             {/* 프로젝트 ID 패널 — Portal */}
@@ -360,14 +361,14 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadScheduleExcel(detailSchedules, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '일정 WBS를 엑셀로 다운로드',
                                     },
-                                    {
+                                    ...(isAdmin ? [{
                                         delay: '55ms',
                                         icon: <FileUp size={14} />,
                                         label: '엑셀 업로드',
                                         className: 'bg-white text-blue-700 border border-blue-200 hover:bg-blue-50',
                                         onClick: () => { setScheduleUploadKind('excel'); setShowActions(false); },
                                         title: '엑셀 파일로 일정 데이터 업데이트',
-                                    },
+                                    }] : []),
                                     {
                                         delay: '110ms',
                                         icon: <FileDown size={14} />,
@@ -376,14 +377,14 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadScheduleJson(detailSchedules, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '일정 WBS 데이터를 JSON으로 다운로드',
                                     },
-                                    {
+                                    ...(isAdmin ? [{
                                         delay: '165ms',
                                         icon: <FileJson size={14} />,
                                         label: 'JSON 업로드',
                                         className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
                                         onClick: () => { setScheduleUploadKind('json'); setShowActions(false); },
                                         title: 'JSON 파일로 일정 데이터 업데이트',
-                                    },
+                                    }] : []),
                                 ].map((item) => (
                                     <button
                                         key={item.label}
@@ -409,14 +410,14 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadWbsExcel({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '현재 WBS를 엑셀로 다운로드',
                                     },
-                                    {
+                                    ...(isAdmin ? [{
                                         delay: '55ms',
                                         icon: <FileUp size={14} />,
                                         label: '엑셀 업로드',
                                         className: 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50',
                                         onClick: () => { setUploadKind('excel'); setShowActions(false); },
                                         title: '엑셀 파일을 업로드하여 현재 데이터에 반영',
-                                    },
+                                    }] : []),
                                     {
                                         delay: '110ms',
                                         icon: <FileDown size={14} />,
@@ -425,14 +426,14 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadWbsJson({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '현재 WBS 데이터를 JSON으로 다운로드',
                                     },
-                                    {
+                                    ...(isAdmin ? [{
                                         delay: '165ms',
                                         icon: <FileJson size={14} />,
                                         label: 'JSON 업로드',
                                         className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
                                         onClick: () => { setUploadKind('json'); setShowActions(false); },
                                         title: 'JSON 파일을 업로드하여 데이터 최신화',
-                                    },
+                                    }] : []),
                                 ].map((item) => (
                                     <button
                                         key={item.label}
