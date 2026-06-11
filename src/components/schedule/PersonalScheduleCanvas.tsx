@@ -112,6 +112,9 @@ const MiniCalendar: React.FC<{
     rangeEnd?: Date;
 }> = ({ current, selected, onSelect, eventDates, rangeStart, rangeEnd }) => {
     const [view, setView] = useState(new Date(current.getFullYear(), current.getMonth(), 1));
+    React.useEffect(() => {
+        setView(new Date(current.getFullYear(), current.getMonth(), 1));
+    }, [current.getFullYear(), current.getMonth()]);
     const year = view.getFullYear(); const month = view.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -197,7 +200,6 @@ const EventForm: React.FC<{
     const [alarm, setAlarm] = useState(event?.alarm || '15분 전');
     const [description, setDescription] = useState(event?.description || '');
     const [projectId, setProjectId] = useState(event?.projectId || '');
-    const [activeTab, setActiveTab] = useState<'schedule' | 'task'>('schedule');
 
     const handleSave = () => {
         if (!title.trim()) return;
@@ -207,18 +209,13 @@ const EventForm: React.FC<{
     return (
         <div className="flex flex-col h-full">
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
-                <span className="text-sm font-black text-gray-800">일정 / 작업 정보</span>
+                <span className="text-sm font-black text-gray-800">일정정보</span>
                 <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full text-gray-400"><X size={16} /></button>
             </div>
 
             {/* 탭 */}
             <div className="flex border-b border-gray-100">
-                {(['schedule', 'task'] as const).map(t => (
-                    <button key={t} onClick={() => setActiveTab(t)}
-                        className={`flex-1 py-2.5 text-xs font-bold transition-colors ${activeTab === t ? 'border-b-2 border-rose-500 text-rose-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                        {t === 'schedule' ? '일정 정보' : '작업 정보'}
-                    </button>
-                ))}
+                <div className="flex-1 py-2.5 text-xs font-bold text-center border-b-2 border-rose-500 text-rose-600">일정 정보</div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -415,8 +412,6 @@ const WeekView: React.FC<{
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     const scrollRef    = React.useRef<HTMLDivElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
-    const accRef       = React.useRef(0);
-    const lastNavRef   = React.useRef(0);
     React.useEffect(() => {
         if (scrollRef.current) {
             const currentHour = new Date().getHours();
@@ -678,8 +673,7 @@ const GanttView: React.FC<{
     const syncingV       = React.useRef(false);  // 세로 스크롤 루프 방지
     const ganttIsSource  = React.useRef(false);  // 간트가 weekStart 변경 원인일 때 true
     const calSyncing     = React.useRef(false);  // 캘린더→간트 sync 중 스크롤 무시
-    const scrollTimer    = React.useRef<ReturnType<typeof setTimeout>>();
-    const syncClearTimer = React.useRef<ReturnType<typeof setTimeout>>();
+    const syncClearTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     // ±90일 고정 범위
     const chartStart = React.useMemo(() => addDays(new Date(), -90), []);
@@ -735,18 +729,14 @@ const GanttView: React.FC<{
     }, [weekStart, chartStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── 스크롤 멈춤 후 스냅 ──────────────────────────────────
-    const snapTimer = React.useRef<ReturnType<typeof setTimeout>>();
+    const snapTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const snap = React.useCallback(() => {
         if (!rightRef.current || calSyncing.current) return;
         const viewWidth = rightRef.current.clientWidth;
         const S = rightRef.current.scrollLeft;
         // 빨간 영역 왼쪽 경계가 위치한 day index
         const rawN = (S + viewWidth / 2 - 3.5 * DAY_W) / DAY_W;
-        const newN = Math.round(rawN);
-        const oldN = weekStartIdx.current;
-
-        // 자석: 현재 위치에서 가장 가까운 날 경계로 스냅
-        const snapN = newN;
+        const snapN = Math.round(rawN);
 
         const target = Math.max(0, snapN * DAY_W + 3.5 * DAY_W - viewWidth / 2);
 
@@ -1186,7 +1176,11 @@ const PersonalScheduleCanvas: React.FC = () => {
                                                 onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
                                                 onSlotClick={(date, time) => openNewEvent(date, time)}
                                                 categories={categories}
-                                                onNavigate={dir => { setWeekStart(d => addDays(d, dir === 'next' ? 1 : -1)); }} />
+                                                onNavigate={dir => {
+    const delta = dir === 'next' ? 1 : -1;
+    setWeekStart(d => addDays(d, delta));
+    setSelectedDate(d => addDays(d, delta));
+}} />
                                         )}
                                         {viewMode === 'month' && (
                                             <MonthView month={selectedDate} events={filteredEvents}
