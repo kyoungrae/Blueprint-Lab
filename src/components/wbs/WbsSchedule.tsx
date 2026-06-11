@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import {
     Filter, Settings, Plus, AlertCircle, Flag, Trash2, X, ChevronDown, ChevronRight,
-    Search
+    Search, CheckCircle2, Loader2, Clock
 } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
@@ -543,10 +543,14 @@ const InlineTitle: React.FC<{
 
 // ─── 필터 패널 ──────────────────────────────────────────────────────────────
 
+type ScheduleFilterStatus = 'done' | 'inProgress' | 'delayed';
+
 interface FilterState {
     search: string;
     progressMin: number;
     progressMax: number;
+    /** 빈 Set = 전체 표시 */
+    statusFilter: Set<ScheduleFilterStatus>;
 }
 
 const FilterPanel: React.FC<{
@@ -601,8 +605,35 @@ const FilterPanel: React.FC<{
                 </div>
             </div>
 
+            <div className="flex flex-col gap-1.5 mb-4">
+                <label className="text-[11px] font-bold text-gray-500">상태 필터 <span className="font-normal text-gray-400">(중복 선택 가능)</span></label>
+                <div className="flex gap-2">
+                    {([
+                        { key: 'done'       as ScheduleFilterStatus, label: '완료', active: 'bg-emerald-500 text-white border-emerald-500', idle: 'bg-white text-emerald-600 border-emerald-300 hover:bg-emerald-50' },
+                        { key: 'inProgress' as ScheduleFilterStatus, label: '진행', active: 'bg-blue-500 text-white border-blue-500',     idle: 'bg-white text-blue-600 border-blue-300 hover:bg-blue-50' },
+                        { key: 'delayed'    as ScheduleFilterStatus, label: '지연', active: 'bg-red-500 text-white border-red-500',       idle: 'bg-white text-red-600 border-red-300 hover:bg-red-50' },
+                    ] as const).map(({ key, label, active, idle }) => {
+                        const selected = filter.statusFilter.has(key);
+                        return (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => {
+                                    const next = new Set(filter.statusFilter);
+                                    if (next.has(key)) next.delete(key); else next.add(key);
+                                    onChange({ ...filter, statusFilter: next });
+                                }}
+                                className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-colors ${selected ? active : idle}`}
+                            >
+                                {label}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
             <button
-                onClick={() => onChange({ search: '', progressMin: 0, progressMax: 100 })}
+                onClick={() => onChange({ search: '', progressMin: 0, progressMax: 100, statusFilter: new Set() })}
                 className="w-full text-xs font-bold text-gray-500 hover:text-gray-700 border border-gray-200 rounded-xl py-1.5 hover:bg-gray-50 transition-colors"
             >
                 필터 초기화
@@ -721,8 +752,8 @@ const WbsSchedule: React.FC = () => {
 
     // 필터
     const [showFilter, setShowFilter] = useState(false);
-    const [filter, setFilter] = useState<FilterState>({ search: '', progressMin: 0, progressMax: 100 });
-    const isFiltered = filter.search || filter.progressMin > 0 || filter.progressMax < 100;
+    const [filter, setFilter] = useState<FilterState>({ search: '', progressMin: 0, progressMax: 100, statusFilter: new Set() });
+    const isFiltered = filter.search || filter.progressMin > 0 || filter.progressMax < 100 || filter.statusFilter.size > 0;
 
     // 설정
     const [showSettings, setShowSettings] = useState(false);
@@ -763,31 +794,39 @@ const WbsSchedule: React.FC = () => {
     // ── 통계 ────────────────────────────────────────────────────────────────
 
     const overallProgress = useMemo(() => {
-        const roots = detailSchedules.filter((s) => !s.parentId);
-        if (roots.length === 0) return 0;
-        const sum = roots.reduce((acc, s) => acc + (s.progress ?? 0), 0);
-        return Math.round(sum / roots.length);
+        const all = detailSchedules;
+        if (all.length === 0) return 0;
+        const sum = all.reduce((acc, s) => acc + (s.progress ?? 0), 0);
+        return Math.round(sum / all.length);
     }, [detailSchedules]);
 
-    const totalWbs = useMemo(() => detailSchedules.filter((s) => !s.parentId).length, [detailSchedules]);
+    // 완료: progress === 100
+    const doneItems = useMemo(() =>
+        detailSchedules.filter((ds) => (ds.progress ?? 0) === 100),
+    [detailSchedules]);
 
-    const delayedItems = useMemo(() => {
+    // 진행: 0 < progress < 100
+    const inProgressItems = useMemo(() =>
+        detailSchedules.filter((ds) => { const p = ds.progress ?? 0; return p > 0 && p < 100; }),
+    [detailSchedules]);
+
+    // 지연: 종료일 경과 + 미완료
+    const delayedItemsList = useMemo(() => {
         const now = new Date();
         return detailSchedules.filter((ds) => {
             if (!ds.endDate) return false;
             return parseDate(ds.endDate) < now && (ds.progress ?? 0) < 100;
-        }).length;
+        });
     }, [detailSchedules]);
 
-    const weekMilestones = useMemo(() => {
-        const now = new Date();
-        const startW = startOfWeek(now);
-        const endW = endOfWeek(now);
-        return detailSchedules.filter((ds) => {
-            if (!ds.endDate) return false;
-            const d = parseDate(ds.endDate);
-            return d >= startW && d <= endW;
-        }).length;
+    // 팝업 상태
+    const [statModal, setStatModal] = useState<'done' | 'inProgress' | 'delayed' | null>(null);
+
+    // 부모 제목 조회용 맵
+    const titleById = useMemo(() => {
+        const m = new Map<string, string>();
+        detailSchedules.forEach((ds) => m.set(ds.id, ds.title));
+        return m;
     }, [detailSchedules]);
 
     // ── 트리 구성 & 필터링 ──────────────────────────────────────────────────
@@ -798,11 +837,25 @@ const WbsSchedule: React.FC = () => {
 
         if (!isFiltered) return tree;
 
+        const now = new Date();
         return tree.filter((node) => {
             const matchSearch = !filter.search || node.title.toLowerCase().includes(filter.search.toLowerCase());
             const p = node.progress ?? 0;
             const matchProgress = p >= filter.progressMin && p <= filter.progressMax;
-            return matchSearch && matchProgress;
+
+            let matchStatus = true;
+            if (filter.statusFilter.size > 0) {
+                const isDone      = p === 100;
+                const isDelayed   = !isDone && !!node.endDate && parseDate(node.endDate) < now;
+                const isInProgress = p > 0 && p < 100;
+                matchStatus = (
+                    (filter.statusFilter.has('done')       && isDone)      ||
+                    (filter.statusFilter.has('inProgress') && isInProgress) ||
+                    (filter.statusFilter.has('delayed')    && isDelayed)
+                );
+            }
+
+            return matchSearch && matchProgress && matchStatus;
         });
     }, [detailSchedules, collapsed, filter, isFiltered]);
 
@@ -939,6 +992,7 @@ const WbsSchedule: React.FC = () => {
     // ── 렌더 ────────────────────────────────────────────────────────────────
 
     return (
+        <>
         <div className="h-full overflow-auto bg-gray-50/50 p-6 flex flex-col gap-6 font-sans">
 
             {/* ── 헤더 ──────────────────────────────────────────────────── */}
@@ -1019,61 +1073,70 @@ const WbsSchedule: React.FC = () => {
                                 className="h-full rounded-full transition-all duration-500"
                                 style={{
                                     width: `${overallProgress}%`,
-                                    background: overallProgress < 30
-                                        ? '#ef4444'
-                                        : overallProgress < 70
-                                        ? '#f59e0b'
-                                        : overallProgress < 100
-                                        ? '#3b82f6'
+                                    background: overallProgress < 30 ? '#ef4444'
+                                        : overallProgress < 70 ? '#f59e0b'
+                                        : overallProgress < 100 ? '#3b82f6'
                                         : '#10b981',
                                 }}
                             />
                         </div>
                     </div>
-                    <div className="text-[11px] text-gray-500">최상위 항목 진척율 평균</div>
+                    <div className="text-[11px] text-gray-500">전체 항목 진척율 평균</div>
                 </div>
 
-                {/* 전체 WBS */}
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-col justify-between">
+                {/* 완료 */}
+                <button
+                    type="button"
+                    onClick={() => setStatModal('done')}
+                    className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-col justify-between text-left hover:border-emerald-300 hover:shadow-md transition-all group cursor-pointer"
+                >
                     <div>
                         <div className="flex justify-between items-start mb-2">
-                            <span className="text-xs font-semibold text-gray-500">최상위 항목 수</span>
-                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
-                                <Plus size={15} className="text-blue-500" />
+                            <span className="text-xs font-semibold text-gray-500">완료</span>
+                            <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+                                <CheckCircle2 size={15} className="text-emerald-500" />
                             </div>
                         </div>
-                        <div className="text-3xl font-bold text-gray-900 mb-3">{totalWbs}</div>
+                        <div className="text-3xl font-bold text-emerald-600 mb-1">{doneItems.length}</div>
                     </div>
-                    <div className="text-[11px] text-gray-500">전체 {detailSchedules.length}개 항목 (하위 포함)</div>
-                </div>
+                    <div className="text-[11px] text-gray-400">진행율 100% 항목 · 클릭하여 상세 보기</div>
+                </button>
 
-                {/* 지연 항목 */}
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-col justify-between">
+                {/* 진행 */}
+                <button
+                    type="button"
+                    onClick={() => setStatModal('inProgress')}
+                    className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-col justify-between text-left hover:border-blue-300 hover:shadow-md transition-all group cursor-pointer"
+                >
                     <div>
                         <div className="flex justify-between items-start mb-2">
-                            <span className="text-xs font-semibold text-gray-500">지연 항목</span>
-                            <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center">
-                                <AlertCircle size={15} className="text-red-500" />
+                            <span className="text-xs font-semibold text-gray-500">진행</span>
+                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+                                <Loader2 size={15} className="text-blue-500" />
                             </div>
                         </div>
-                        <div className="text-3xl font-bold text-red-500 mb-3">{delayedItems}</div>
+                        <div className="text-3xl font-bold text-blue-600 mb-1">{inProgressItems.length}</div>
                     </div>
-                    <div className="text-[11px] text-gray-500">종료일 경과 후 미완료 건</div>
-                </div>
+                    <div className="text-[11px] text-gray-400">진행율 1~99% 항목 · 클릭하여 상세 보기</div>
+                </button>
 
-                {/* 이번 주 완료 대상 */}
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-col justify-between">
+                {/* 지연 */}
+                <button
+                    type="button"
+                    onClick={() => setStatModal('delayed')}
+                    className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-col justify-between text-left hover:border-red-300 hover:shadow-md transition-all group cursor-pointer"
+                >
                     <div>
                         <div className="flex justify-between items-start mb-2">
-                            <span className="text-xs font-semibold text-gray-500">이번 주 완료 대상</span>
-                            <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center">
-                                <Flag size={15} className="text-purple-500" />
+                            <span className="text-xs font-semibold text-gray-500">지연</span>
+                            <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center group-hover:bg-red-100 transition-colors">
+                                <Clock size={15} className="text-red-500" />
                             </div>
                         </div>
-                        <div className="text-3xl font-bold text-purple-600 mb-3">{weekMilestones}</div>
+                        <div className="text-3xl font-bold text-red-500 mb-1">{delayedItemsList.length}</div>
                     </div>
-                    <div className="text-[11px] text-gray-500">이번 주 내 종료 예정 일정 수</div>
-                </div>
+                    <div className="text-[11px] text-gray-400">종료일 경과 미완료 · 클릭하여 상세 보기</div>
+                </button>
             </div>
 
             {/* ── 간트 영역 ─────────────────────────────────────────────── */}
@@ -1449,6 +1512,129 @@ const WbsSchedule: React.FC = () => {
                 </div>
             )}
         </div>
+
+        {/* ── 통계 팝업 ────────────────────────────────────────────────────── */}
+        {statModal !== null && createPortal(
+            <div
+                className="fixed inset-0 z-[9998] bg-gray-900/45 backdrop-blur-sm flex items-center justify-center p-6"
+                role="dialog"
+                aria-modal="true"
+                onMouseDown={(e) => { if (e.target === e.currentTarget) setStatModal(null); }}
+            >
+                <div className="w-full max-w-3xl max-h-[80vh] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
+                    {/* 헤더 */}
+                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                statModal === 'done'       ? 'bg-emerald-50 text-emerald-600'
+                                : statModal === 'inProgress' ? 'bg-blue-50 text-blue-600'
+                                : 'bg-red-50 text-red-600'
+                            }`}>
+                                {statModal === 'done'        ? <CheckCircle2 size={18} />
+                                : statModal === 'inProgress' ? <Loader2 size={18} />
+                                : <Clock size={18} />}
+                            </div>
+                            <div>
+                                <h3 className="text-base font-black text-gray-900">
+                                    {statModal === 'done' ? '완료 항목'
+                                    : statModal === 'inProgress' ? '진행 항목'
+                                    : '지연 항목'}
+                                </h3>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                    {statModal === 'done'
+                                        ? `진행율 100% 항목 ${doneItems.length}건`
+                                        : statModal === 'inProgress'
+                                        ? `진행율 1~99% 항목 ${inProgressItems.length}건`
+                                        : `종료일 경과 미완료 항목 ${delayedItemsList.length}건`}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setStatModal(null)}
+                            className="w-8 h-8 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center transition-colors"
+                        >
+                            <X size={17} />
+                        </button>
+                    </div>
+
+                    {/* 테이블 */}
+                    <div className="overflow-auto">
+                        {(() => {
+                            const items = statModal === 'done' ? doneItems
+                                : statModal === 'inProgress' ? inProgressItems
+                                : delayedItemsList;
+                            const now = new Date();
+
+                            if (items.length === 0) {
+                                return (
+                                    <div className="py-16 text-center">
+                                        <p className="text-sm font-bold text-gray-500">해당 항목이 없습니다.</p>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <table className="w-full text-sm">
+                                    <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-10">
+                                        <tr className="text-[11px] uppercase tracking-wider text-gray-400">
+                                            <th className="text-left px-4 py-3 font-black">항목명</th>
+                                            <th className="text-left px-4 py-3 font-black">상위 항목</th>
+                                            <th className="text-left px-4 py-3 font-black">작업자</th>
+                                            <th className="text-left px-4 py-3 font-black">시작일</th>
+                                            <th className="text-left px-4 py-3 font-black">종료일</th>
+                                            {statModal === 'delayed' && (
+                                                <th className="text-right px-4 py-3 font-black">초과</th>
+                                            )}
+                                            <th className="text-right px-4 py-3 font-black">진행율</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {items.map((item) => {
+                                            const parentTitle = item.parentId ? titleById.get(item.parentId) : null;
+                                            const overdueDays = statModal === 'delayed' && item.endDate
+                                                ? Math.max(1, Math.floor((now.getTime() - parseDate(item.endDate).getTime()) / 86400000))
+                                                : 0;
+                                            return (
+                                                <tr key={item.id} className={`transition-colors ${
+                                                    statModal === 'done' ? 'hover:bg-emerald-50/30'
+                                                    : statModal === 'inProgress' ? 'hover:bg-blue-50/30'
+                                                    : 'hover:bg-red-50/30'
+                                                }`}>
+                                                    <td className="px-4 py-3 font-semibold text-gray-800 max-w-[200px]">
+                                                        <span className="block truncate" title={item.title}>{item.title}</span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-gray-500 max-w-[160px]">
+                                                        <span className="block truncate" title={parentTitle ?? ''}>{parentTitle ?? <span className="text-gray-300">—</span>}</span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-gray-500">{item.worker || <span className="text-gray-300">—</span>}</td>
+                                                    <td className="px-4 py-3 text-gray-500 tabular-nums whitespace-nowrap">{item.startDate || <span className="text-gray-300">—</span>}</td>
+                                                    <td className="px-4 py-3 text-gray-500 tabular-nums whitespace-nowrap">{item.endDate || <span className="text-gray-300">—</span>}</td>
+                                                    {statModal === 'delayed' && (
+                                                        <td className="px-4 py-3 text-right">
+                                                            <span className="font-black text-red-600 tabular-nums">{overdueDays}일</span>
+                                                        </td>
+                                                    )}
+                                                    <td className="px-4 py-3 text-right">
+                                                        <span className={`font-black tabular-nums ${
+                                                            statModal === 'done' ? 'text-emerald-600'
+                                                            : statModal === 'inProgress' ? 'text-blue-600'
+                                                            : 'text-red-500'
+                                                        }`}>{item.progress ?? 0}%</span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            );
+                        })()}
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )}
+        </>
     );
 };
 
