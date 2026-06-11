@@ -391,16 +391,43 @@ const WeekView: React.FC<{
     onSelectEvent: (e: ScheduleEvent) => void;
     onSlotClick: (date: string, time: string) => void;
     categories: Record<string, CategoryDef>;
-}> = ({ weekStart, events, onSelectEvent, onSlotClick, categories }) => {
+    onNavigate: (dir: 'prev' | 'next') => void;
+}> = ({ weekStart, events, onSelectEvent, onSlotClick, categories, onNavigate }) => {
     const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-    const scrollRef = React.useRef<HTMLDivElement>(null);
+    const scrollRef    = React.useRef<HTMLDivElement>(null);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const accRef       = React.useRef(0);
+    const lastNavRef   = React.useRef(0);
     React.useEffect(() => {
         if (scrollRef.current) {
             const currentHour = new Date().getHours();
             scrollRef.current.scrollTop = Math.max(0, (currentHour - 1)) * 56;
         }
     }, []);
+
+    React.useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        let accumulated = 0;
+        let lastNav = 0;
+        const THRESHOLD = 50;   // px
+        const COOLDOWN  = 500;  // ms — 이동 후 재입력 차단
+        const onWheel = (e: WheelEvent) => {
+            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+            e.preventDefault();
+            const now = Date.now();
+            if (now - lastNav < COOLDOWN) { accumulated = 0; return; }
+            accumulated += e.deltaX;
+            if (Math.abs(accumulated) >= THRESHOLD) {
+                onNavigate(accumulated > 0 ? 'next' : 'prev');
+                accumulated = 0;
+                lastNav = now;
+            }
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => { el.removeEventListener('wheel', onWheel); };
+    }, [onNavigate]);
     const DAY_LABELS = ['일','월','화','수','목','금','토'];
 
     const getEventsForSlot = (date: Date, hour: number) => {
@@ -419,7 +446,7 @@ const WeekView: React.FC<{
     };
 
     return (
-        <div className="flex flex-col h-full overflow-hidden">
+        <div ref={containerRef} className="flex flex-col h-full overflow-hidden">
             {/* 헤더 */}
             <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '56px repeat(7,1fr)' }}>
                 <div />
@@ -488,15 +515,39 @@ const MonthView: React.FC<{
     onSelectEvent: (e: ScheduleEvent) => void;
     onDayClick: (date: string) => void;
     categories: Record<string, CategoryDef>;
-}> = ({ month, events, onSelectEvent, onDayClick, categories }) => {
+    onNavigate: (dir: 'prev' | 'next') => void;
+}> = ({ month, events, onSelectEvent, onDayClick, categories, onNavigate }) => {
     const year = month.getFullYear(); const m = month.getMonth();
     const firstDay = new Date(year, m, 1).getDay();
     const daysInMonth = new Date(year, m + 1, 0).getDate();
     const cells: (Date | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => new Date(year, m, i + 1))];
     while (cells.length % 7 !== 0) cells.push(null);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const accRef       = React.useRef(0);
+    const lastNavRef   = React.useRef(0);
+    React.useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const THRESHOLD = 50;
+        const COOLDOWN  = 600;
+        const onWheel = (e: WheelEvent) => {
+            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+            e.preventDefault();
+            const now = Date.now();
+            if (now - lastNavRef.current < COOLDOWN) { accRef.current = 0; return; }
+            accRef.current += e.deltaX;
+            if (Math.abs(accRef.current) >= THRESHOLD) {
+                onNavigate(accRef.current > 0 ? 'next' : 'prev');
+                accRef.current = 0;
+                lastNavRef.current = now;
+            }
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => { el.removeEventListener('wheel', onWheel); };
+    }, [onNavigate]);
 
     return (
-        <div className="h-full overflow-auto">
+        <div ref={containerRef} className="h-full overflow-auto">
             <div className="grid grid-cols-7 border-b border-gray-100">
                 {['일','월','화','수','목','금','토'].map((d, i) => (
                     <div key={d} className={`text-center py-2 text-xs font-bold ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'}`}>{d}</div>
@@ -540,13 +591,37 @@ const DayView: React.FC<{
     onSelectEvent: (e: ScheduleEvent) => void;
     onSlotClick: (date: string, time: string) => void;
     categories: Record<string, CategoryDef>;
-}> = ({ date, events, onSelectEvent, onSlotClick, categories }) => {
+    onNavigate: (dir: 'prev' | 'next') => void;
+}> = ({ date, events, onSelectEvent, onSlotClick, categories, onNavigate }) => {
     const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
     const ymd = toYMD(date);
     const dayEvents = events.filter(e => e.startDate === ymd && !e.allDay);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const accRef       = React.useRef(0);
+    const lastNavRef   = React.useRef(0);
+    React.useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const THRESHOLD = 50;
+        const COOLDOWN  = 600;
+        const onWheel = (e: WheelEvent) => {
+            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+            e.preventDefault();
+            const now = Date.now();
+            if (now - lastNavRef.current < COOLDOWN) { accRef.current = 0; return; }
+            accRef.current += e.deltaX;
+            if (Math.abs(accRef.current) >= THRESHOLD) {
+                onNavigate(accRef.current > 0 ? 'next' : 'prev');
+                accRef.current = 0;
+                lastNavRef.current = now;
+            }
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => { el.removeEventListener('wheel', onWheel); };
+    }, [onNavigate]);
 
     return (
-        <div className="h-full min-h-0 overflow-y-auto">
+        <div ref={containerRef} className="h-full min-h-0 overflow-y-auto">
             {hours.map(h => {
                 const slotEvents = dayEvents.filter(e => parseInt(e.startTime?.split(':')[0] || '0') === h);
                 return (
@@ -584,7 +659,9 @@ const GanttView: React.FC<{
     const rightRef       = React.useRef<HTMLDivElement>(null);
     const syncingV       = React.useRef(false);  // 세로 스크롤 루프 방지
     const ganttIsSource  = React.useRef(false);  // 간트가 weekStart 변경 원인일 때 true
+    const calSyncing     = React.useRef(false);  // 캘린더→간트 sync 중 스크롤 무시
     const scrollTimer    = React.useRef<ReturnType<typeof setTimeout>>();
+    const syncClearTimer = React.useRef<ReturnType<typeof setTimeout>>();
 
     // ±90일 고정 범위
     const chartStart = React.useMemo(() => addDays(new Date(), -90), []);
@@ -623,22 +700,31 @@ const GanttView: React.FC<{
             return;
         }
         if (!rightRef.current) return;
-        const target = Math.max(0, daysBetween(chartStart, weekStart) * DAY_W - 60);
+        // 현재 주(7일)를 뷰포트 가운데에 오도록 스크롤
+        clearTimeout(syncClearTimer.current);
+        calSyncing.current = true;
+        const weekPos   = daysBetween(chartStart, weekStart) * DAY_W;
+        const viewWidth = rightRef.current.clientWidth;
+        const target    = Math.max(0, weekPos - viewWidth / 2 + (7 * DAY_W) / 2);
         rightRef.current.scrollLeft = target;
+        syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 400);
     }, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── 간트 가로 스크롤 → 캘린더 동기화 (디바운스 150ms) ────
+    // ── 간트 가로 스크롤 → 캘린더 동기화 ────────────────────
     const handleTimelineScroll = React.useCallback(() => {
+        if (calSyncing.current) return;  // 캘린더 sync가 유발한 스크롤이면 무시
         clearTimeout(scrollTimer.current);
         scrollTimer.current = setTimeout(() => {
-            if (!rightRef.current) return;
-            const offset = Math.floor(rightRef.current.scrollLeft / DAY_W);
+            if (!rightRef.current || calSyncing.current) return;
+            // 뷰포트 중앙 기준으로 현재 날짜 계산
+            const centerX = rightRef.current.scrollLeft + rightRef.current.clientWidth / 2;
+            const offset = Math.floor(centerX / DAY_W);
             const visibleDate = addDays(chartStart, offset);
             const dow = visibleDate.getDay();
             const newWS = addDays(visibleDate, -dow);
             ganttIsSource.current = true;
             onWeekChange(newWS);
-        }, 150);
+        }, 200);
     }, [chartStart, onWeekChange]);
 
     // ── 세로 스크롤 동기화 ────────────────────────────────────
@@ -723,8 +809,19 @@ const GanttView: React.FC<{
                 </div>
 
                 {/* 우측 타임라인 */}
+                <div className="flex-1 overflow-hidden relative">
+                    {/* 현재 주 고정 하이라이트 오버레이 */}
+                    <div className="absolute inset-y-0 pointer-events-none z-20"
+                        style={{
+                            left: '50%',
+                            transform: `translateX(-50%)`,
+                            width: 7 * DAY_W,
+                            backgroundColor: 'rgba(251,113,133,0.10)',
+                            borderLeft:  '1px solid rgba(251,113,133,0.3)',
+                            borderRight: '1px solid rgba(251,113,133,0.3)',
+                        }} />
                 <div ref={rightRef} onScroll={handleRightScroll}
-                    className="flex-1 overflow-auto">
+                    className="h-full overflow-auto">
                     <div style={{ width: totalDays * DAY_W, minWidth: '100%' }}>
                         {/* 날짜 헤더 */}
                         <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
@@ -748,12 +845,6 @@ const GanttView: React.FC<{
                                 {/* 오늘 선 */}
                                 <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-10 opacity-40"
                                     style={{ left: diffDays(toYMD(chartStart), toYMD(new Date())) * DAY_W }} />
-                                {/* 현재 주 하이라이트 */}
-                                <div className="absolute top-0 bottom-0 opacity-10 bg-rose-300"
-                                    style={{
-                                        left: Math.max(0, getLeft(toYMD(weekStart))),
-                                        width: 7 * DAY_W,
-                                    }} />
                                 <div className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden"
                                     style={{
                                         left: getLeft(task.startDate),
@@ -773,6 +864,7 @@ const GanttView: React.FC<{
                         ))}
                     </div>
                 </div>
+                </div>{/* 우측 타임라인 래퍼 끝 */}
             </div>
         </div>
     );
@@ -1042,19 +1134,28 @@ const PersonalScheduleCanvas: React.FC = () => {
                                             <WeekView weekStart={weekStart} events={filteredEvents}
                                                 onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
                                                 onSlotClick={(date, time) => openNewEvent(date, time)}
-                                                categories={categories} />
+                                                categories={categories}
+                                                onNavigate={dir => { dir === 'prev' ? prevWeek() : nextWeek(); }} />
                                         )}
                                         {viewMode === 'month' && (
                                             <MonthView month={selectedDate} events={filteredEvents}
                                                 onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
                                                 onDayClick={ymd => { setSelectedDate(parseDate(ymd)); setViewMode('day'); }}
-                                                categories={categories} />
+                                                categories={categories}
+                                                onNavigate={dir => {
+                                                    const d = new Date(selectedDate);
+                                                    d.setMonth(d.getMonth() + (dir === 'next' ? 1 : -1));
+                                                    setSelectedDate(d);
+                                                }} />
                                         )}
                                         {viewMode === 'day' && (
                                             <DayView date={selectedDate} events={filteredEvents}
                                                 onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
                                                 onSlotClick={(date, time) => openNewEvent(date, time)}
-                                                categories={categories} />
+                                                categories={categories}
+                                                onNavigate={dir => {
+                                                    setSelectedDate(d => addDays(d, dir === 'next' ? 1 : -1));
+                                                }} />
                                         )}
                                     </div>
 
