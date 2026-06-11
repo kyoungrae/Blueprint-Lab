@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil, GanttChartSquare, MoreHorizontal } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, UserPlus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil, GanttChartSquare, MoreHorizontal } from 'lucide-react';
 import './ProjectListPage.css';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { useProjectStore } from '../store/projectStore';
@@ -94,6 +94,7 @@ const ProjectListPage: React.FC = () => {
     const [newProjectMembers, setNewProjectMembers] = useState<ProjectMember[]>([]);
     const [tempMembers, setTempMembers] = useState<ProjectMember[]>([]);
     const [memberInput, setMemberInput] = useState('');
+    const [allUsers, setAllUsers] = useState<{ id: string; name: string; email: string; picture?: string }[]>([]);
     const [joinMode, setJoinMode] = useState<'CODE' | 'ID'>('CODE');
     const [joinCode, setJoinCode] = useState('');
 
@@ -432,6 +433,16 @@ const ProjectListPage: React.FC = () => {
     };
 
     const targetProject = projects.find(p => p.id === editingMembersProject);
+
+    // 팀원 관리 팝업 열릴 때 전체 유저 목록 로드
+    useEffect(() => {
+        if (!editingMembersProject) return;
+        const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace('/api/projects', '/api');
+        fetchWithAuth(`${API_BASE}/admin/users`)
+            .then(res => res.ok ? res.json() : Promise.reject())
+            .then(data => setAllUsers(Array.isArray(data) ? data : []))
+            .catch(() => setAllUsers([]));
+    }, [editingMembersProject]);
 
     // 그룹 카드 렌더링 (흰 배경 그룹 + 아이콘/컬러 라벨/이름 카드)
     const renderProjectGroup = (group: Project[]) => {
@@ -1346,6 +1357,43 @@ const ProjectListPage: React.FC = () => {
                                     />
                                     <button onClick={() => handleAddMember(true)} className="px-4 bg-gray-900 text-white rounded-2xl font-bold">초대</button>
                                 </div>
+                                {/* 미참여 회원 목록 */}
+                                {(() => {
+                                    const nonMembers = allUsers.filter(u =>
+                                        !tempMembers.some(m => m.email === u.email || m.id === u.id)
+                                    );
+                                    if (nonMembers.length === 0) return null;
+                                    return (
+                                        <div className="mt-3 space-y-1 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+                                            {nonMembers.map(u => (
+                                                <div key={u.id} className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-xs font-bold shrink-0">
+                                                            {u.picture
+                                                                ? <img src={u.picture} alt="" className="w-full h-full rounded-full object-cover" />
+                                                                : (u.name || '?').charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-xs font-bold text-gray-800">{u.name}</div>
+                                                            <div className="text-[10px] text-gray-400">{u.email}</div>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={async () => {
+                                                            await inviteMember(editingMembersProject!, u.email);
+                                                            const updatedProject = useProjectStore.getState().projects.find(p => p.id === editingMembersProject);
+                                                            if (updatedProject) setTempMembers(updatedProject.members || []);
+                                                        }}
+                                                        className="p-1.5 text-gray-400 hover:text-emerald-500 transition-colors"
+                                                        title="프로젝트에 추가"
+                                                    >
+                                                        <UserPlus size={15} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <button onClick={handleUpdateMembers} className="w-full py-4 px-6 bg-blue-600 text-white rounded-2xl font-bold">저장하기</button>
                         </div>
