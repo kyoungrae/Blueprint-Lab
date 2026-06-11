@@ -650,28 +650,51 @@ const ProjectListPage: React.FC = () => {
                                 const paths: React.ReactNode[] = [];
 
                                 // ── 1) 그룹 내 프로젝트→ERD 연결선 (수평 베지어) ──
-                                groupingConnections.forEach((link, idx) => {
-                                    const from = cardPositions[link.fromId];
-                                    const to = cardPositions[link.toId];
-                                    if (!from || !to) return;
-                                    const gi = groupIdByProjectId.get(link.fromId) ?? 0;
-                                    const palette = GROUP_PALETTE[gi % GROUP_PALETTE.length];
+                                // 연결선 전용 고유 색상 팔레트
+                                const EDGE_COLORS = [
+                                    '#6366f1','#f59e0b','#10b981','#ef4444',
+                                    '#3b82f6','#8b5cf6','#ec4899','#14b8a6',
+                                    '#f97316','#84cc16',
+                                ];
+
+                                // ── 1) 그룹 내 프로젝트→ERD 연결선 ──
+                                // 스팬이 짧은 연결은 얕게, 넓은 연결은 깊게 → 카드 관통 없이 하단 아치
+                                const validGC = groupingConnections.filter(
+                                    (l) => cardPositions[l.fromId] && cardPositions[l.toId]
+                                );
+                                // 수평 스팬 오름차순 정렬 → 짧은 것(index 0)이 얕은 arc, 긴 것이 깊은 arc
+                                const gcSorted = [...validGC].sort((a, b) => {
+                                    const spanA = Math.abs((cardPositions[a.fromId]!.x + cardPositions[a.fromId]!.w / 2) - (cardPositions[a.toId]!.x + cardPositions[a.toId]!.w / 2));
+                                    const spanB = Math.abs((cardPositions[b.fromId]!.x + cardPositions[b.fromId]!.w / 2) - (cardPositions[b.toId]!.x + cardPositions[b.toId]!.w / 2));
+                                    return spanA - spanB;
+                                });
+
+                                gcSorted.forEach((link, idx) => {
+                                    const from = cardPositions[link.fromId]!;
+                                    const to = cardPositions[link.toId]!;
+                                    const color = EDGE_COLORS[idx % EDGE_COLORS.length];
+
                                     const sx = from.x + from.w / 2;
                                     const sy = from.y + from.h;
                                     const tx = to.x + to.w / 2;
                                     const ty = to.y + to.h;
-                                    const drop = 22 + idx * 6;
-                                    const d = `M ${sx} ${sy} C ${sx} ${sy + drop} ${tx} ${ty + drop} ${tx} ${ty}`;
+
+                                    // 카드 하단 기준으로 내려가는 깊이: 짧은 연결=얕음, 긴 연결=깊음
+                                    const drop = 18 + idx * 16;
+                                    const midY = Math.max(sy, ty) + drop;
+                                    const d = `M ${sx} ${sy} C ${sx} ${midY} ${tx} ${midY} ${tx} ${ty}`;
+
                                     paths.push(
-                                        <g key={`gc-${link.fromId}-${link.toId}`} opacity="0.7">
-                                            <path d={d} fill="none" stroke={palette.text} strokeWidth="1.5" strokeDasharray="5,3" strokeLinecap="round" />
-                                            <circle cx={sx} cy={sy} r="3.5" fill={palette.text} />
-                                            <circle cx={tx} cy={ty} r="3.5" fill={palette.text} />
+                                        <g key={`gc-${link.fromId}-${link.toId}`} opacity="0.8">
+                                            <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="5,3" strokeLinecap="round" />
+                                            <circle cx={sx} cy={sy} r="3" fill={color} />
+                                            <circle cx={tx} cy={ty} r="3" fill={color} />
                                         </g>
                                     );
                                 });
 
-                                // ── 2) SCREEN_DESIGN → 독립 COMPONENT 연결선 (S-curve 베지어) ──
+                                // ── 2) SCREEN_DESIGN → 독립 COMPONENT 연결선 ──
+                                // 출발 카드의 x 좌표 순으로 정렬 → 도착점을 카드 폭 전체에 균등 분배
                                 const byTarget = new Map<string, { fromId: string; toId: string }[]>();
                                 componentLinks.forEach((l) => {
                                     if (!byTarget.has(l.toId)) byTarget.set(l.toId, []);
@@ -682,6 +705,8 @@ const ProjectListPage: React.FC = () => {
                                     if (!to) return;
                                     const n = links.length;
                                     const sorted = [...links].sort((a, b) => (cardPositions[a.fromId]?.x ?? 0) - (cardPositions[b.fromId]?.x ?? 0));
+                                    const margin = 16;
+                                    const step = n === 1 ? 0 : (to.w - margin * 2) / (n - 1);
                                     sorted.forEach((link, i) => {
                                         const from = cardPositions[link.fromId];
                                         if (!from) return;
@@ -689,16 +714,15 @@ const ProjectListPage: React.FC = () => {
                                         const palette = GROUP_PALETTE[gi % GROUP_PALETTE.length];
                                         const sx = from.x + from.w / 2;
                                         const sy = from.y + from.h;
-                                        const off = n === 1 ? 0 : (i - (n - 1) / 2) * 16;
-                                        const tx = Math.min(Math.max(to.x + to.w / 2 + off, to.x + 12), to.x + to.w - 12);
+                                        const tx = n === 1 ? to.x + to.w / 2 : to.x + margin + step * i;
                                         const ty = to.y;
                                         const dy = ty - sy;
                                         const d = `M ${sx} ${sy} C ${sx} ${sy + dy * 0.55} ${tx} ${ty - dy * 0.55} ${tx} ${ty}`;
                                         paths.push(
-                                            <g key={`cl-${link.fromId}-${toId}`} opacity="0.7">
+                                            <g key={`cl-${link.fromId}-${toId}`} opacity="0.75">
                                                 <path d={d} fill="none" stroke={palette.text} strokeWidth="1.5" strokeDasharray="6,4" strokeLinecap="round" />
-                                                <circle cx={sx} cy={sy} r="3.5" fill={palette.text} />
-                                                <circle cx={tx} cy={ty} r="3.5" fill={palette.text} />
+                                                <circle cx={sx} cy={sy} r="3" fill={palette.text} />
+                                                <circle cx={tx} cy={ty} r="3" fill={palette.text} />
                                             </g>
                                         );
                                     });
