@@ -649,40 +649,68 @@ const ProjectListPage: React.FC = () => {
                             {(() => {
                                 const paths: React.ReactNode[] = [];
 
-                                // ── 1) 그룹 내 프로젝트→ERD 연결선 (수평 베지어) ──
-                                // 연결선 전용 고유 색상 팔레트
                                 const EDGE_COLORS = [
                                     '#6366f1','#f59e0b','#10b981','#ef4444',
                                     '#3b82f6','#8b5cf6','#ec4899','#14b8a6',
                                     '#f97316','#84cc16',
                                 ];
+                                const POINT_STEP = 10;
 
-                                // ── 1) 그룹 내 프로젝트→ERD 연결선 (직교선 + 레인 분리) ──
+                                // ── 모든 연결을 하나의 목록으로 통합 ──
+                                type EdgeEntry = { fromId: string; toId: string; kind: 'erd' | 'comp' };
                                 const validGC = groupingConnections.filter(
                                     (l) => cardPositions[l.fromId] && cardPositions[l.toId]
                                 );
-                                // 스팬 오름차순 → 짧은 연결이 얕은 레인, 긴 연결이 깊은 레인
+                                // ERD 연결: 스팬 오름차순
                                 const gcSorted = [...validGC].sort((a, b) => {
                                     const spanA = Math.abs((cardPositions[a.fromId]!.x + cardPositions[a.fromId]!.w / 2) - (cardPositions[a.toId]!.x + cardPositions[a.toId]!.w / 2));
                                     const spanB = Math.abs((cardPositions[b.fromId]!.x + cardPositions[b.fromId]!.w / 2) - (cardPositions[b.toId]!.x + cardPositions[b.toId]!.w / 2));
                                     return spanA - spanB;
                                 });
+                                const clValid = componentLinks.filter(
+                                    (l) => cardPositions[l.fromId] && cardPositions[l.toId]
+                                );
 
+                                const allEdges: EdgeEntry[] = [
+                                    ...gcSorted.map((l) => ({ ...l, kind: 'erd' as const })),
+                                    ...clValid.map((l) => ({ ...l, kind: 'comp' as const })),
+                                ];
+
+                                // 카드별 연결점 목록 수집 (from·to 통합)
+                                const cardEdgesFrom = new Map<string, EdgeEntry[]>();
+                                const cardEdgesTo   = new Map<string, EdgeEntry[]>();
+                                allEdges.forEach((e) => {
+                                    if (!cardEdgesFrom.has(e.fromId)) cardEdgesFrom.set(e.fromId, []);
+                                    cardEdgesFrom.get(e.fromId)!.push(e);
+                                    if (!cardEdgesTo.has(e.toId))   cardEdgesTo.set(e.toId, []);
+                                    cardEdgesTo.get(e.toId)!.push(e);
+                                });
+
+                                // 카드 중앙 기준 균등 분산 x 좌표
+                                const spreadX = (cardX: number, cardW: number, total: number, i: number) => {
+                                    const cx = cardX + cardW / 2;
+                                    if (total === 1) return cx;
+                                    return cx - ((total - 1) * POINT_STEP) / 2 + i * POINT_STEP;
+                                };
+
+                                // ── 1) ERD 연결선 (직교 + 레인) ──
                                 gcSorted.forEach((link, idx) => {
                                     const from = cardPositions[link.fromId]!;
-                                    const to = cardPositions[link.toId]!;
+                                    const to   = cardPositions[link.toId]!;
                                     const color = EDGE_COLORS[idx % EDGE_COLORS.length];
+                                    const edge  = allEdges.find((e) => e.kind === 'erd' && e.fromId === link.fromId && e.toId === link.toId)!;
 
-                                    const sx = from.x + from.w / 2;
+                                    const fi = cardEdgesFrom.get(link.fromId)!.indexOf(edge);
+                                    const fn = cardEdgesFrom.get(link.fromId)!.length;
+                                    const sx = spreadX(from.x, from.w, fn, fi);
                                     const sy = from.y + from.h;
-                                    const tx = to.x + to.w / 2;
+
+                                    const ti = cardEdgesTo.get(link.toId)!.indexOf(edge);
+                                    const tn = cardEdgesTo.get(link.toId)!.length;
+                                    const tx = spreadX(to.x, to.w, tn, ti);
                                     const ty = to.y + to.h;
 
-                                    // 각 연결마다 고유 레인 Y: 카드 하단 + (14px × 레인 인덱스)
-                                    const groupBottom = Math.max(sy, ty);
-                                    const laneY = groupBottom + 12 + idx * 14;
-
-                                    // 직교선: 하단 수직 → 레인 수평 → 상단 수직 (둥근 모서리)
+                                    const laneY = Math.max(sy, ty) + 12 + idx * 14;
                                     const d = roundedOrthoPath([
                                         { x: sx, y: sy },
                                         { x: sx, y: laneY },
@@ -699,33 +727,37 @@ const ProjectListPage: React.FC = () => {
                                     );
                                 });
 
-                                // ── 2) SCREEN_DESIGN → 독립 COMPONENT 연결선 ──
-                                // 출발 카드의 x 좌표 순으로 정렬 → 도착점을 카드 폭 전체에 균등 분배
-                                const byTarget = new Map<string, { fromId: string; toId: string }[]>();
-                                componentLinks.forEach((l) => {
+                                // ── 2) COMPONENT 연결선 (S-curve 베지어) ──
+                                const byTarget = new Map<string, EdgeEntry[]>();
+                                clValid.forEach((l) => {
+                                    const e = allEdges.find((e) => e.kind === 'comp' && e.fromId === l.fromId && e.toId === l.toId)!;
                                     if (!byTarget.has(l.toId)) byTarget.set(l.toId, []);
-                                    byTarget.get(l.toId)!.push(l);
+                                    byTarget.get(l.toId)!.push(e);
                                 });
-                                byTarget.forEach((links, toId) => {
+                                byTarget.forEach((edges, toId) => {
                                     const to = cardPositions[toId];
                                     if (!to) return;
-                                    const n = links.length;
-                                    const sorted = [...links].sort((a, b) => (cardPositions[a.fromId]?.x ?? 0) - (cardPositions[b.fromId]?.x ?? 0));
-                                    const margin = 16;
-                                    const step = n === 1 ? 0 : (to.w - margin * 2) / (n - 1);
-                                    sorted.forEach((link, i) => {
-                                        const from = cardPositions[link.fromId];
+                                    const sorted = [...edges].sort((a, b) => (cardPositions[a.fromId]?.x ?? 0) - (cardPositions[b.fromId]?.x ?? 0));
+                                    sorted.forEach((edge) => {
+                                        const from = cardPositions[edge.fromId];
                                         if (!from) return;
-                                        const gi = groupIdByProjectId.get(link.fromId) ?? 0;
+                                        const gi = groupIdByProjectId.get(edge.fromId) ?? 0;
                                         const palette = GROUP_PALETTE[gi % GROUP_PALETTE.length];
-                                        const sx = from.x + from.w / 2;
+
+                                        const fi = cardEdgesFrom.get(edge.fromId)!.indexOf(edge);
+                                        const fn = cardEdgesFrom.get(edge.fromId)!.length;
+                                        const sx = spreadX(from.x, from.w, fn, fi);
                                         const sy = from.y + from.h;
-                                        const tx = n === 1 ? to.x + to.w / 2 : to.x + margin + step * i;
+
+                                        const ti = cardEdgesTo.get(toId)!.indexOf(edge);
+                                        const tn = cardEdgesTo.get(toId)!.length;
+                                        const tx = spreadX(to.x, to.w, tn, ti);
                                         const ty = to.y;
+
                                         const dy = ty - sy;
                                         const d = `M ${sx} ${sy} C ${sx} ${sy + dy * 0.55} ${tx} ${ty - dy * 0.55} ${tx} ${ty}`;
                                         paths.push(
-                                            <g key={`cl-${link.fromId}-${toId}`} opacity="0.75">
+                                            <g key={`cl-${edge.fromId}-${toId}`} opacity="0.75">
                                                 <path d={d} fill="none" stroke={palette.text} strokeWidth="1.5" strokeDasharray="6,4" strokeLinecap="round" />
                                                 <circle cx={sx} cy={sy} r="3" fill={palette.text} />
                                                 <circle cx={tx} cy={ty} r="3" fill={palette.text} />
