@@ -768,7 +768,8 @@ const ProjectListPage: React.FC = () => {
                                     );
                                 });
 
-                                // ── 2) COMPONENT 연결선 (S-curve 베지어) ──
+                                // ── 2) COMPONENT 연결선 (직교선 + 레인) ──
+                                // x좌표 순 정렬 → 스팬 오름차순으로 레인 배정 (ERD와 동일 로직)
                                 const byTarget = new Map<string, EdgeEntry[]>();
                                 clValid.forEach((l) => {
                                     const e = allEdges.find((e) => e.kind === 'comp' && e.fromId === l.fromId && e.toId === l.toId)!;
@@ -778,28 +779,44 @@ const ProjectListPage: React.FC = () => {
                                 byTarget.forEach((edges, toId) => {
                                     const to = cardPositions[toId];
                                     if (!to) return;
-                                    const sorted = [...edges].sort((a, b) => (cardPositions[a.fromId]?.x ?? 0) - (cardPositions[b.fromId]?.x ?? 0));
-                                    sorted.forEach((edge) => {
+                                    const n = edges.length;
+
+                                    // 소스 카드 x 좌표 오름차순 → 왼쪽 소스 = 왼쪽 연결점 = 얕은 레인
+                                    const sortedByX = [...edges].sort((a, b) =>
+                                        (cardPositions[a.fromId]?.x ?? 0) - (cardPositions[b.fromId]?.x ?? 0)
+                                    );
+
+                                    const baseLaneY = to.y - 12;
+
+                                    sortedByX.forEach((edge, i) => {
                                         const from = cardPositions[edge.fromId];
                                         if (!from) return;
                                         const gi = groupIdByProjectId.get(edge.fromId) ?? 0;
                                         const palette = GROUP_PALETTE[gi % GROUP_PALETTE.length];
 
+                                        // 출발점: 소스 카드에서 이 edge의 순서로 분산
                                         const fi = cardEdgesFrom.get(edge.fromId)!.indexOf(edge);
                                         const fn = cardEdgesFrom.get(edge.fromId)!.length;
                                         const sx = spreadX(from.x, from.w, fn, fi);
                                         const sy = from.y + from.h;
 
-                                        const ti = cardEdgesTo.get(toId)!.indexOf(edge);
-                                        const tn = cardEdgesTo.get(toId)!.length;
-                                        const tx = spreadX(to.x, to.w, tn, ti);
+                                        // 도착점: x 정렬 순서(i)로 컴포넌트 카드 상단 균등 분산
+                                        const tx = spreadX(to.x, to.w, n, i);
                                         const ty = to.y;
 
-                                        const dy = ty - sy;
-                                        const d = `M ${sx} ${sy} C ${sx} ${sy + dy * 0.55} ${tx} ${ty - dy * 0.55} ${tx} ${ty}`;
+                                        // 레인: x 정렬 순서 그대로 → 선끼리 교차 없음
+                                        const laneY = baseLaneY - i * 14;
+
+                                        const d = roundedOrthoPath([
+                                            { x: sx, y: sy },
+                                            { x: sx, y: laneY },
+                                            { x: tx, y: laneY },
+                                            { x: tx, y: ty },
+                                        ], 5);
+
                                         paths.push(
-                                            <g key={`cl-${edge.fromId}-${toId}`} opacity="0.75">
-                                                <path d={d} fill="none" stroke={palette.text} strokeWidth="1.5" strokeDasharray="6,4" strokeLinecap="round" />
+                                            <g key={`cl-${edge.fromId}-${toId}`} opacity="0.85">
+                                                <path d={d} fill="none" stroke={palette.text} strokeWidth="1.5" strokeDasharray="5,3" strokeLinecap="round" />
                                                 <circle cx={sx} cy={sy} r="3" fill={palette.text} />
                                                 <circle cx={tx} cy={ty} r="3" fill={palette.text} />
                                             </g>
