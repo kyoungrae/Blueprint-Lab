@@ -295,6 +295,24 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
 
         await project.save();
         await touchProjectMemberLastEditedAt(id, userId);
+
+        // WBS 변경 시 같은 프로젝트 룸의 다른 세션에 브로드캐스트
+        if (project.projectType === 'WBS' && data) {
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`project:${id}`).emit('wbs_updated', {
+                    projectId: id,
+                    updatedBy: userId,
+                    wbsSnapshot: {
+                        menus: project.wbsSnapshot?.menus ?? [],
+                        rows: project.wbsSnapshot?.rows ?? [],
+                        projectSchedule: (project.wbsSnapshot as any)?.projectSchedule ?? null,
+                        detailSchedules: (project.wbsSnapshot as any)?.detailSchedules ?? [],
+                    },
+                });
+            }
+        }
+
         res.json(project);
     } catch (error: any) {
         // console.error('Update project error:', error);

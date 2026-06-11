@@ -146,21 +146,8 @@ export const useProjectStore = create<ProjectStore>()(
                                     projData = { screens: [], flows: [], sections: [] };
                                 }
                             } else if (pt === 'WBS') {
-                                // WBS: 서버 wbsSnapshot 사용 (로컬이 더 최신이면 로컬 유지)
-                                const serverTs = new Date(p.updatedAt || 0).getTime();
-                                const localTs = new Date(localProject?.updatedAt || 0).getTime();
-                                const localMenus = (localProject?.data as any)?.menus;
-                                const localHasData = Array.isArray(localMenus) && localMenus.length > 0;
-                                if (localProject?.data && localHasData && localTs > serverTs) {
-                                    projData = localProject.data;
-                                } else if (p.data && (p.data as any).menus) {
-                                    projData = {
-                                        menus: (p.data as any).menus || [],
-                                        rows: (p.data as any).rows || [],
-                                        projectSchedule: (p.data as any).projectSchedule ?? (p.wbsSnapshot as any)?.projectSchedule ?? undefined,
-                                        detailSchedules: (p.data as any).detailSchedules ?? (p.wbsSnapshot as any)?.detailSchedules ?? [],
-                                    };
-                                } else if (p.wbsSnapshot) {
+                                // WBS: 항상 서버 wbsSnapshot을 정본으로 사용 (다중 세션 동기화 보장)
+                                if (p.wbsSnapshot) {
                                     projData = {
                                         menus: p.wbsSnapshot.menus || [],
                                         rows: p.wbsSnapshot.rows || [],

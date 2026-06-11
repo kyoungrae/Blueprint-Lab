@@ -3,7 +3,7 @@
 // @ts-ignore
 import XLSXStyle from 'xlsx-js-style';
 import * as XLSX from 'xlsx';   // 업로드 파싱은 기존 xlsx 유지
-import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
+
 import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus } from '../../types/wbs';
 import { WBS_STATUS_LABEL, WBS_STATUS_ORDER } from '../../types/wbs';
 
@@ -276,61 +276,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
     const today = new Date().toISOString().slice(0, 10);
     const fileName = `${safeName}_WBS_${today}.xlsx`;
 
-    // ─────────────────────────────────────────────
-    // xlsx ZIP 조작: 개발상세 시트에 상태 드롭다운 데이터 유효성 추가
-    // xlsx-js-style이 dataValidation을 직접 지원하지 않으므로 XML 직접 삽입
-    // ─────────────────────────────────────────────
-    try {
-        // 열 인덱스(0-based) → Excel 열 문자 변환 (A, B, ..., Z, AA, ...)
-        const colLetter = (idx: number): string => {
-            let s = '';
-            let n = idx + 1;
-            while (n > 0) { s = String.fromCharCode(64 + ((n - 1) % 26 + 1)) + s; n = Math.floor((n - 1) / 26); }
-            return s;
-        };
-
-        // 상태 열 위치: ID(0) + 메뉴경로(pathDepth) + 메뉴코드(1) + 구분(1) + 기능명(1) + 담당자(1) + 시작일(1) + 종료일(1) = pathDepth + 7
-        const statusCol = colLetter(pathDepth + 7);
-        const sqref = `${statusCol}2:${statusCol}1048576`;
-        const dvXml =
-            `<dataValidations count="1">` +
-            `<dataValidation type="list" allowBlank="1" showDropDown="0" sqref="${sqref}">` +
-            `<formula1>"대기,진행중,완료,보류"</formula1>` +
-            `</dataValidation></dataValidations>`;
-
-        // xlsx → Uint8Array 버퍼로 생성
-        const wbArr = XLSXStyle.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-        const files = unzipSync(new Uint8Array(wbArr));
-
-        // sheet1.xml = 개발상세 시트
-        const sheetKey = 'xl/worksheets/sheet1.xml';
-        if (files[sheetKey]) {
-            let xml = strFromU8(files[sheetKey]);
-            // </worksheet> 바로 앞에 삽입 (pageMargins 등 이후 태그 앞)
-            xml = xml.replace(/<(pageMargins|pageSetup|printOptions|headerFooter|rowBreaks|colBreaks|drawing|tableParts|extLst|sheetView[^>]*\/>)\s*<\/worksheet>/, (m) => `${dvXml}${m}`)
-                     .replace(/(<\/sheetData>\s*)(<\/worksheet>)/, `$1${dvXml}$2`);
-            // 혹시 이미 dataValidations가 삽입된 경우 중복 방지는 위 정규식이 처리
-            // 단순 fallback: </worksheet> 앞에 삽입
-            if (!xml.includes('<dataValidations')) {
-                xml = xml.replace('</worksheet>', `${dvXml}</worksheet>`);
-            }
-            files[sheetKey] = strToU8(xml);
-        }
-
-        const rezipped = zipSync(files, { level: 0 });
-        const blob = new Blob([rezipped], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    } catch {
-        // ZIP 조작 실패 시 기본 방식으로 폴백
-        XLSXStyle.writeFile(wb, fileName);
-    }
+    XLSXStyle.writeFile(wb, fileName);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

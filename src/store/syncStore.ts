@@ -269,6 +269,25 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
         socket.on('lock_released', (data: { entityId: string }) => {
             get()._removeLock(data.entityId);
         });
+
+        // WBS 실시간 동기화: 다른 세션이 저장하면 현재 세션도 즉시 반영
+        socket.on('wbs_updated', (data: {
+            projectId: string;
+            updatedBy: string;
+            wbsSnapshot: { menus: any[]; rows: any[]; projectSchedule: any; detailSchedules: any[] };
+        }) => {
+            import('./wbsStore').then(({ useWbsStore }) => {
+                const wbs = useWbsStore.getState();
+                if (wbs.currentProjectId !== data.projectId) return;
+                const snap = data.wbsSnapshot;
+                wbs.loadProject(data.projectId, {
+                    menus: snap.menus,
+                    rows: snap.rows,
+                    projectSchedule: snap.projectSchedule ?? undefined,
+                    detailSchedules: snap.detailSchedules,
+                });
+            });
+        });
     },
 
     disconnect: () => {
