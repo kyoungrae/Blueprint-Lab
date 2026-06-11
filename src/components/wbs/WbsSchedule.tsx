@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
-    Filter, Settings, Plus, AlertCircle, Flag, Trash2, X, ChevronDown, ChevronRight,
+    Filter, Settings, Plus, Trash2, X, ChevronDown, ChevronRight,
     Search, CheckCircle2, Loader2, Clock
 } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
@@ -53,13 +53,6 @@ const startOfWeek = (date: Date): Date => {
     const day = d.getDay();
     const result = new Date(d.getFullYear(), d.getMonth(), d.getDate() - day);
     result.setHours(0, 0, 0, 0);
-    return result;
-};
-
-const endOfWeek = (date: Date): Date => {
-    const d = startOfWeek(date);
-    const result = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 6);
-    result.setHours(23, 59, 59, 999);
     return result;
 };
 
