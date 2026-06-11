@@ -61,11 +61,13 @@ interface WbsMenuTreeProps {
     activeAssignees?: Set<string>;
     /** 담당자 → 팔레트 인덱스 맵 */
     assigneeColorIdx?: Map<string, number>;
+    /** editable=false 상태에서도 전체 접기/펼치기 버튼 표시 */
+    showCollapseButtons?: boolean;
 }
 
 const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
     selectedId, onSelect, editable = true, showProgress = false,
-    showAssignee = false, activeAssignees, assigneeColorIdx,
+    showAssignee = false, activeAssignees, assigneeColorIdx, showCollapseButtons = false,
 }) => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
@@ -339,6 +341,27 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
                 }
             }}
         >
+            {!editable && showCollapseButtons && allParentIds.size > 0 && (
+                <div className="flex items-center gap-0.5 px-1 pb-1.5 mb-1 border-b border-gray-100">
+                    <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider shrink-0 mr-auto">메뉴 구조도</span>
+                    <button
+                        type="button"
+                        onClick={() => setCollapsed(new Set())}
+                        title="전체 펼치기"
+                        className="p-1 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                    >
+                        <ChevronsUpDown size={13} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setCollapsed(new Set(allParentIds))}
+                        title="전체 접기"
+                        className="p-1 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                    >
+                        <ChevronsDownUp size={13} />
+                    </button>
+                </div>
+            )}
             {editable && (
                 <div className="flex items-center gap-2 px-1 pb-2 mb-1 border-b border-gray-100">
                     <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider shrink-0">메뉴 구조도</span>

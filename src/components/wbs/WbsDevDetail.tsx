@@ -597,6 +597,7 @@ const WbsDevDetail: React.FC = () => {
                         editable={false}
                         showProgress
                         showAssignee
+                        showCollapseButtons
                         activeAssignees={activeAssignees}
                         assigneeColorIdx={assigneeColorIdx}
                     />
