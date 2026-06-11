@@ -85,6 +85,10 @@ interface SyncStore {
     requestLock: (entityId: string) => Promise<boolean>;
     releaseLock: (entityId: string) => void;
 
+    /** WBS 수정중 인디케이터 */
+    emitWbsFieldFocus: (elementId: string) => void;
+    emitWbsFieldBlur: (elementId: string) => void;
+
     // Internal setters
     _setOnlineUsers: (users: OnlineUser[]) => void;
     _setCursor: (clientId: string, cursor: any) => void;
@@ -270,6 +274,20 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             get()._removeLock(data.entityId);
         });
 
+        // WBS 수정중 인디케이터 수신
+        socket.on('wbs_field_focus', (data: { elementId: string; userId: string; userName: string }) => {
+            console.log('[WBS] wbs_field_focus 수신:', data);
+            import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
+                useWbsEditingStore.getState().setEditing(data.elementId, data.userId, data.userName);
+            });
+        });
+        socket.on('wbs_field_blur', (data: { elementId: string; userId: string }) => {
+            console.log('[WBS] wbs_field_blur 수신:', data);
+            import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
+                useWbsEditingStore.getState().clearEditing(data.elementId, data.userId);
+            });
+        });
+
         // WBS 실시간 동기화: 다른 세션이 저장하면 현재 세션도 즉시 반영
         socket.on('wbs_updated', (data: {
             projectId: string;
@@ -400,6 +418,21 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
         const { socket, currentProjectId } = get();
         if (socket && currentProjectId && !currentProjectId.startsWith('local_')) {
             socket.emit('release_lock', { entityId });
+        }
+    },
+
+    emitWbsFieldFocus: (elementId) => {
+        const { socket, currentProjectId } = get();
+        console.log('[WBS] emitWbsFieldFocus:', elementId, '| socket:', !!socket, '| projectId:', currentProjectId);
+        if (socket && currentProjectId && !currentProjectId.startsWith('local_')) {
+            socket.emit('wbs_field_focus', { elementId });
+        }
+    },
+
+    emitWbsFieldBlur: (elementId) => {
+        const { socket, currentProjectId } = get();
+        if (socket && currentProjectId && !currentProjectId.startsWith('local_')) {
+            socket.emit('wbs_field_blur', { elementId });
         }
     },
 

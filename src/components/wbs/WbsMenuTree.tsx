@@ -1,6 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Pencil, Check, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { useWbsStore, calcMenuProgress } from '../../store/wbsStore';
+import { useWbsEditingStore } from '../../store/wbsEditingStore';
+import { useSyncStore } from '../../store/syncStore';
+import { useAuthStore } from '../../store/authStore';
 import type { WbsMenuNode } from '../../types/wbs';
 
 interface TreeNode extends WbsMenuNode {
@@ -66,6 +69,10 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
 }) => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
+    const editingMap = useWbsEditingStore((s) => s.editing);
+    const emitFocus = useSyncStore((s) => s.emitWbsFieldFocus);
+    const emitBlur = useSyncStore((s) => s.emitWbsFieldBlur);
+    const currentUserId = useAuthStore((s) => s.user?.id);
 
     /** menuId → 담당자[] (중복 제거) */
     const rowsByMenu = useMemo(() => {
@@ -105,11 +112,17 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
         });
 
     const startEdit = (node: WbsMenuNode) => {
+        const entry = editingMap.get(`menu_${node.id}`);
+        if (entry && entry.userId !== currentUserId) return; // 다른 사람이 수정 중이면 차단
         setEditingId(node.id);
         setDraftName(node.name);
+        emitFocus(`menu_${node.id}`);
     };
     const commitEdit = () => {
-        if (editingId) updateMenu(editingId, { name: draftName.trim() || '이름 없음' });
+        if (editingId) {
+            updateMenu(editingId, { name: draftName.trim() || '이름 없음' });
+            emitBlur(`menu_${editingId}`);
+        }
         setEditingId(null);
     };
 
@@ -126,6 +139,10 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
         const isInsideTarget = isActiveTarget && dropPos === 'inside';
         const progress = showProgress ? calcMenuProgress(menus, rows, node.id) : 0;
         const indentStyle = { marginLeft: depth * 16 + 4 } as React.CSSProperties;
+
+        // 수정중 인디케이터
+        const editingEntry = editingMap.get(`menu_${node.id}`);
+        const isBeingEdited = !!editingEntry && editingEntry.userId !== currentUserId;
 
         // 담당자 필터: 이 노드(or 자손)에 일치하는 담당자 없으면 숨김
         if (activeAssignees && activeAssignees.size > 0 && !nodeMatchesFilter(node, activeAssignees, rowsByMenu)) {
@@ -197,11 +214,23 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
                         setDropPos(null);
                     }}
                     onClick={() => onSelect?.(node.id)}
-                    className={`group flex items-center gap-1 pr-2 py-1.5 rounded-lg cursor-pointer select-none transition-colors ${
+                    className={`group relative flex items-center gap-1 pr-2 py-1.5 rounded-lg cursor-pointer select-none transition-colors ${
                         isSelected ? 'bg-emerald-50 ring-1 ring-emerald-300' : 'hover:bg-gray-50'
                     } ${isInsideTarget ? 'ring-2 ring-emerald-400 bg-emerald-50/60' : ''}`}
-                    style={{ paddingLeft: depth * 16 + 4 }}
+                    style={{
+                        paddingLeft: depth * 16 + 4,
+                        ...(isBeingEdited ? { outline: `2px solid ${editingEntry!.color}`, outlineOffset: '-2px' } : {}),
+                    }}
                 >
+                    {/* 수정중 뱃지 */}
+                    {isBeingEdited && (
+                        <span
+                            className="absolute -top-4 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold text-white z-20 pointer-events-none whitespace-nowrap"
+                            style={{ backgroundColor: editingEntry!.color }}
+                        >
+                            {editingEntry!.userName} <span className="opacity-80">수정중</span>
+                        </span>
+                    )}
                     {editable && (
                         <GripVertical size={13} className="text-gray-300 group-hover:text-gray-400 shrink-0 cursor-grab" />
                     )}

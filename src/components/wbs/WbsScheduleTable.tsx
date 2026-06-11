@@ -1,6 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
+import { useWbsEditingStore } from '../../store/wbsEditingStore';
+import { useSyncStore } from '../../store/syncStore';
+import { useAuthStore } from '../../store/authStore';
 import type { WbsDetailSchedule, ScheduleStatus } from '../../types/wbs';
 
 // ── 날짜 유틸 ──────────────────────────────────────────────────────────────
@@ -166,6 +169,12 @@ const WbsScheduleTable: React.FC = () => {
     const deleteDetailSchedule = useWbsStore((s) => s.deleteDetailSchedule);
     const applySeedData = useWbsStore((s) => s.applySeedData);
 
+    // 수정중 인디케이터
+    const editingMap    = useWbsEditingStore((s) => s.editing);
+    const emitFocus     = useSyncStore((s) => s.emitWbsFieldFocus);
+    const emitBlur      = useSyncStore((s) => s.emitWbsFieldBlur);
+    const currentUserId = useAuthStore((s) => s.user?.id);
+
     // 최초 마운트 시 seed 데이터 적용 (작업자·산출물·실적일·진척도 일괄 반영)
     const seedApplied = useRef(false);
     useEffect(() => {
@@ -273,10 +282,16 @@ const WbsScheduleTable: React.FC = () => {
                             // 대분류 / 세부항목 구분: depth 0,1 = 대분류, depth 2+ = 세부항목
                             const isCategory = node.depth <= 1;
 
+                            const schedEditEntry = editingMap.get(`schedule_${node.id}`);
+                            const isSchedBeingEdited = !!schedEditEntry && schedEditEntry.userId !== currentUserId;
+
                             return (
                                 <tr
                                     key={node.id}
-                                    className={`border-b border-gray-100 hover:bg-sky-50/50 transition-colors group ${rowBg}`}
+                                    className={`border-b border-gray-100 hover:bg-sky-50/50 transition-colors group ${rowBg} ${isSchedBeingEdited ? 'pointer-events-none select-none' : ''}`}
+                                    style={isSchedBeingEdited ? { boxShadow: `inset 3px 0 0 ${schedEditEntry!.color}` } : undefined}
+                                    onFocus={() => { if (!isSchedBeingEdited) emitFocus(`schedule_${node.id}`); }}
+                                    onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(`schedule_${node.id}`); }}
                                 >
                                     {/* 대분류 */}
                                     <td className="border border-gray-100 px-2 py-1.5 align-top">
@@ -454,6 +469,14 @@ const WbsScheduleTable: React.FC = () => {
                                             >
                                                 <Trash2 size={12} />
                                             </button>
+                                            {isSchedBeingEdited && (
+                                                <span
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold text-white whitespace-nowrap"
+                                                    style={{ backgroundColor: schedEditEntry!.color }}
+                                                >
+                                                    {schedEditEntry!.userName} <span className="opacity-80">수정중</span>
+                                                </span>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

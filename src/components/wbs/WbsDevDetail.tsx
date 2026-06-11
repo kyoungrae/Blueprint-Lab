@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { Plus, Trash2, Layers, User, CalendarDays, CalendarCheck, Activity, Percent, ChevronLeft, RotateCcw, Lock, PenLine } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
 import { useProjectStore } from '../../store/projectStore';
+import { useWbsEditingStore } from '../../store/wbsEditingStore';
+import { useSyncStore } from '../../store/syncStore';
+import { useAuthStore } from '../../store/authStore';
 import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, WBS_DEFAULT_CATEGORIES } from '../../types/wbs';
 import type { WbsStatus } from '../../types/wbs';
 import WbsMenuTree, { ASSIGNEE_PALETTE } from './WbsMenuTree';
@@ -339,6 +342,12 @@ const WbsDevDetail: React.FC = () => {
     const addRows   = useWbsStore((s) => s.addRows);
     const updateRow = useWbsStore((s) => s.updateRow);
     const deleteRow = useWbsStore((s) => s.deleteRow);
+
+    // 수정중 인디케이터
+    const editingMap   = useWbsEditingStore((s) => s.editing);
+    const emitFocus    = useSyncStore((s) => s.emitWbsFieldFocus);
+    const emitBlur     = useSyncStore((s) => s.emitWbsFieldBlur);
+    const currentUserId = useAuthStore((s) => s.user?.id);
 
     // 프로젝트 참여자 목록
     const currentProjectId = useProjectStore((s) => s.currentProjectId);
@@ -694,6 +703,8 @@ const WbsDevDetail: React.FC = () => {
                                         menuRows.map((r) => {
                                             const isDbg = !!r.isDebugging;
                                             const dbgLocked = isDbg && !debugUnlocked;
+                                            const rowEditEntry = editingMap.get(`row_${r.id}`);
+                                            const isRowBeingEdited = !!rowEditEntry && rowEditEntry.userId !== currentUserId;
                                             return (
                                             <tr
                                                 key={r.id}
@@ -701,7 +712,10 @@ const WbsDevDetail: React.FC = () => {
                                                     isDbg
                                                         ? 'bg-amber-50/60 hover:bg-amber-50'
                                                         : 'bg-white hover:bg-gray-50'
-                                                }`}
+                                                } ${isRowBeingEdited ? 'pointer-events-none select-none' : ''}`}
+                                                style={isRowBeingEdited ? { boxShadow: `inset 3px 0 0 ${rowEditEntry!.color}` } : undefined}
+                                                onFocus={() => { if (!isRowBeingEdited) emitFocus(`row_${r.id}`); }}
+                                                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(`row_${r.id}`); }}
                                             >
                                                 <td className="align-middle">
                                                     {isDbg ? (
@@ -762,10 +776,19 @@ const WbsDevDetail: React.FC = () => {
                                                     <input value={r.note ?? ''} onChange={(e) => updateRow(r.id, { note: e.target.value })} placeholder="비고" className={cellInput} />
                                                 </td>
                                                 <td className="align-middle text-center">
-                                                    {(!isDbg || menuRows.filter((row) => !row.isDebugging).length === 0) && (
-                                                        <button type="button" onClick={() => deleteRow(r.id)} className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded" title="행 삭제">
-                                                            <Trash2 size={14} />
-                                                        </button>
+                                                    {isRowBeingEdited ? (
+                                                        <span
+                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold text-white whitespace-nowrap"
+                                                            style={{ backgroundColor: rowEditEntry!.color }}
+                                                        >
+                                                            {rowEditEntry!.userName} <span className="opacity-80">수정중</span>
+                                                        </span>
+                                                    ) : (
+                                                        (!isDbg || menuRows.filter((row) => !row.isDebugging).length === 0) && (
+                                                            <button type="button" onClick={() => deleteRow(r.id)} className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded" title="행 삭제">
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )
                                                     )}
                                                 </td>
                                             </tr>

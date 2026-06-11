@@ -474,6 +474,24 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
             }
         });
 
+        // WBS 필드 포커스 브로드캐스트 (수정중 인디케이터)
+        socket.on('wbs_field_focus', (data: { elementId: string }) => {
+            if (!socketData.projectId) return;
+            socket.to(`project:${socketData.projectId}`).emit('wbs_field_focus', {
+                elementId: data.elementId,
+                userId: socketData.user.id,
+                userName: socketData.user.name,
+            });
+        });
+
+        socket.on('wbs_field_blur', (data: { elementId: string }) => {
+            if (!socketData.projectId) return;
+            socket.to(`project:${socketData.projectId}`).emit('wbs_field_blur', {
+                elementId: data.elementId,
+                userId: socketData.user.id,
+            });
+        });
+
         // Handle disconnect
         socket.on('disconnect', async () => {
             // console.log(`🔌 Client disconnected: ${socket.id}`);

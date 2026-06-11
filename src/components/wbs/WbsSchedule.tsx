@@ -5,6 +5,9 @@ import {
     Search
 } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
+import { useWbsEditingStore } from '../../store/wbsEditingStore';
+import { useSyncStore } from '../../store/syncStore';
+import { useAuthStore } from '../../store/authStore';
 import type { WbsDetailSchedule } from '../../types/wbs';
 
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────────────
@@ -461,7 +464,8 @@ const InlineDateRange: React.FC<{
     startDate: string;
     endDate: string;
     onSave: (start: string, end: string) => void;
-}> = ({ startDate, endDate, onSave }) => {
+    locked?: boolean;
+}> = ({ startDate, endDate, onSave, locked }) => {
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLSpanElement>(null);
 
@@ -471,9 +475,9 @@ const InlineDateRange: React.FC<{
         <>
             <span
                 ref={anchorRef}
-                className="text-[10px] text-gray-400 tabular-nums cursor-pointer hover:text-blue-600 transition-colors"
-                title={`${label} — 더블클릭하여 기간 수정`}
-                onDoubleClick={() => setOpen(true)}
+                className={`text-[10px] tabular-nums transition-colors ${locked ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 cursor-pointer hover:text-blue-600'}`}
+                title={locked ? '다른 사용자가 수정 중입니다' : `${label} — 더블클릭하여 기간 수정`}
+                onDoubleClick={() => { if (!locked) setOpen(true); }}
             >
                 {label}
             </span>
@@ -495,7 +499,8 @@ const InlineDateRange: React.FC<{
 const InlineTitle: React.FC<{
     value: string;
     onSave: (v: string) => void;
-}> = ({ value, onSave }) => {
+    locked?: boolean;
+}> = ({ value, onSave, locked }) => {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -527,8 +532,9 @@ const InlineTitle: React.FC<{
 
     return (
         <span
-            className="block w-full text-[13px] font-semibold text-gray-900 whitespace-normal break-keep leading-snug cursor-pointer hover:text-blue-600 transition-colors"
-            onDoubleClick={() => { setDraft(value); setEditing(true); }}
+            className={`block w-full text-[13px] font-semibold text-gray-900 whitespace-normal break-keep leading-snug transition-colors ${locked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:text-blue-600'}`}
+            onDoubleClick={() => { if (!locked) { setDraft(value); setEditing(true); } }}
+            title={locked ? '다른 사용자가 수정 중입니다' : undefined}
         >
             {value}
         </span>
@@ -676,6 +682,12 @@ const WbsSchedule: React.FC = () => {
     const addDetailSchedule = useWbsStore((s) => s.addDetailSchedule);
     const updateDetailSchedule = useWbsStore((s) => s.updateDetailSchedule);
     const deleteDetailSchedule = useWbsStore((s) => s.deleteDetailSchedule);
+
+    // 수정중 인디케이터
+    const editingMap    = useWbsEditingStore((s) => s.editing);
+    const emitFocus     = useSyncStore((s) => s.emitWbsFieldFocus);
+    const emitBlur      = useSyncStore((s) => s.emitWbsFieldBlur);
+    const currentUserId = useAuthStore((s) => s.user?.id);
 
     const [viewMode, setViewMode] = useState<'월' | '주' | '일' | '분기' | 'ALL'>('ALL');
     const [currentDate, setCurrentDate] = useState<Date>(new Date());
@@ -1115,19 +1127,34 @@ const WbsSchedule: React.FC = () => {
                                         parseDate(node.endDate) < new Date() &&
                                         (node.progress ?? 0) < 100;
 
+                                    const ganttEditEntry = editingMap.get(`schedule_${node.id}`);
+                                    const isGanttBeingEdited = !!ganttEditEntry && ganttEditEntry.userId !== currentUserId;
+
                                     return (
                                         <div
                                             key={node.id}
                                             ref={(el) => { leftRowRefs.current[node.id] = el; }}
-                                            className={`flex items-start border-b border-gray-50 group shrink-0 hover:bg-sky-50/60 transition-colors duration-100`}
+                                            className={`flex items-start border-b border-gray-50 group shrink-0 hover:bg-sky-50/60 transition-colors duration-100 relative`}
                                             style={{
                                                 minHeight: rowHeight,
                                                 paddingLeft: `${8 + node.depth * 20}px`,
                                                 paddingRight: 8,
                                                 paddingTop: 6,
                                                 paddingBottom: 6,
+                                                ...(isGanttBeingEdited ? { boxShadow: `inset 3px 0 0 ${ganttEditEntry!.color}` } : {}),
                                             }}
+                                            onFocus={() => emitFocus(`schedule_${node.id}`)}
+                                            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(`schedule_${node.id}`); }}
                                         >
+                                            {/* 수정중 배지 */}
+                                            {isGanttBeingEdited && (
+                                                <span
+                                                    className="absolute -top-3.5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold text-white z-20 pointer-events-none whitespace-nowrap"
+                                                    style={{ backgroundColor: ganttEditEntry!.color }}
+                                                >
+                                                    {ganttEditEntry!.userName} <span className="opacity-80">수정중</span>
+                                                </span>
+                                            )}
                                             {/* 토글 버튼 */}
                                             {childCount > 0 ? (
                                                 <button
@@ -1147,6 +1174,7 @@ const WbsSchedule: React.FC = () => {
                                                 <InlineTitle
                                                     value={node.title}
                                                     onSave={(v) => updateDetailSchedule(node.id, { title: v })}
+                                                    locked={isGanttBeingEdited}
                                                 />
                                                 {/* 기간 — 제목 아래 */}
                                                 {displaySettings.showDates && (
@@ -1155,6 +1183,7 @@ const WbsSchedule: React.FC = () => {
                                                             startDate={node.startDate}
                                                             endDate={node.endDate}
                                                             onSave={(start, end) => updateDetailSchedule(node.id, { startDate: start, endDate: end })}
+                                                            locked={isGanttBeingEdited}
                                                         />
                                                     </div>
                                                 )}
@@ -1191,11 +1220,12 @@ const WbsSchedule: React.FC = () => {
                                                     <button
                                                         ref={progressOpenId === node.id ? progressAnchorRef : undefined}
                                                         onClick={(e) => {
+                                                            if (isGanttBeingEdited) return;
                                                             progressAnchorRef.current = e.currentTarget;
                                                             setProgressOpenId(progressOpenId === node.id ? null : node.id);
                                                         }}
-                                                        className={`text-[11px] font-bold border rounded-md px-2 py-0.5 cursor-pointer transition-all hover:scale-105 ${getProgressColor(node.progress ?? 0)}`}
-                                                        title="클릭하여 진척율 변경"
+                                                        className={`text-[11px] font-bold border rounded-md px-2 py-0.5 transition-all ${isGanttBeingEdited ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:scale-105'} ${getProgressColor(node.progress ?? 0)}`}
+                                                        title={isGanttBeingEdited ? '다른 사용자가 수정 중입니다' : '클릭하여 진척율 변경'}
                                                         style={{ minWidth: 44 }}
                                                     >
                                                         {node.progress ?? 0}%
