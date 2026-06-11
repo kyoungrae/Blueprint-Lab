@@ -657,12 +657,11 @@ const ProjectListPage: React.FC = () => {
                                     '#f97316','#84cc16',
                                 ];
 
-                                // ── 1) 그룹 내 프로젝트→ERD 연결선 ──
-                                // 스팬이 짧은 연결은 얕게, 넓은 연결은 깊게 → 카드 관통 없이 하단 아치
+                                // ── 1) 그룹 내 프로젝트→ERD 연결선 (직교선 + 레인 분리) ──
                                 const validGC = groupingConnections.filter(
                                     (l) => cardPositions[l.fromId] && cardPositions[l.toId]
                                 );
-                                // 수평 스팬 오름차순 정렬 → 짧은 것(index 0)이 얕은 arc, 긴 것이 깊은 arc
+                                // 스팬 오름차순 → 짧은 연결이 얕은 레인, 긴 연결이 깊은 레인
                                 const gcSorted = [...validGC].sort((a, b) => {
                                     const spanA = Math.abs((cardPositions[a.fromId]!.x + cardPositions[a.fromId]!.w / 2) - (cardPositions[a.toId]!.x + cardPositions[a.toId]!.w / 2));
                                     const spanB = Math.abs((cardPositions[b.fromId]!.x + cardPositions[b.fromId]!.w / 2) - (cardPositions[b.toId]!.x + cardPositions[b.toId]!.w / 2));
@@ -679,13 +678,20 @@ const ProjectListPage: React.FC = () => {
                                     const tx = to.x + to.w / 2;
                                     const ty = to.y + to.h;
 
-                                    // 카드 하단 기준으로 내려가는 깊이: 짧은 연결=얕음, 긴 연결=깊음
-                                    const drop = 18 + idx * 16;
-                                    const midY = Math.max(sy, ty) + drop;
-                                    const d = `M ${sx} ${sy} C ${sx} ${midY} ${tx} ${midY} ${tx} ${ty}`;
+                                    // 각 연결마다 고유 레인 Y: 카드 하단 + (14px × 레인 인덱스)
+                                    const groupBottom = Math.max(sy, ty);
+                                    const laneY = groupBottom + 12 + idx * 14;
+
+                                    // 직교선: 하단 수직 → 레인 수평 → 상단 수직 (둥근 모서리)
+                                    const d = roundedOrthoPath([
+                                        { x: sx, y: sy },
+                                        { x: sx, y: laneY },
+                                        { x: tx, y: laneY },
+                                        { x: tx, y: ty },
+                                    ], 5);
 
                                     paths.push(
-                                        <g key={`gc-${link.fromId}-${link.toId}`} opacity="0.8">
+                                        <g key={`gc-${link.fromId}-${link.toId}`} opacity="0.85">
                                             <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="5,3" strokeLinecap="round" />
                                             <circle cx={sx} cy={sy} r="3" fill={color} />
                                             <circle cx={tx} cy={ty} r="3" fill={color} />
