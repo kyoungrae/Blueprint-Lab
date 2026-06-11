@@ -113,6 +113,8 @@ export interface Project {
     linkedErdProjectIds?: string[];
     linkedComponentProjectId?: string;
     bugReports?: BugReport[];
+    /** 그룹 표시 이름 (그룹 내 대표 프로젝트에 저장) */
+    groupLabel?: string;
 }
 
 export type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE' | 'PROJECT_SET' | 'IMPORT' | 'MOVE';

@@ -113,6 +113,8 @@ const ProjectListPage: React.FC = () => {
 
     // 프로젝트 명 / 프로젝트 설명 편집 패널
     const [editingProjectInfo, setEditingProjectInfo] = useState<{ project: Project; name: string; description: string } | null>(null);
+    const [editingGroupId, setEditingGroupId] = useState<string | null>(null); // 현재 편집 중인 그룹 대표 프로젝트 id
+    const [editingGroupLabel, setEditingGroupLabel] = useState('');
 
     // Connection States
     const containerRef = useRef<HTMLDivElement>(null);
@@ -460,6 +462,23 @@ const ProjectListPage: React.FC = () => {
     const renderProjectGroup = (group: Project[]) => {
         const groupIndex = groupIdByProjectId.get(group[0]?.id ?? '') ?? 0;
         const palette = GROUP_PALETTE[groupIndex % GROUP_PALETTE.length];
+        const repId = group[0]?.id ?? '';
+        const currentLabel = group[0]?.groupLabel ?? `${palette.letter} 그룹`;
+        const isEditingThisGroup = editingGroupId === repId;
+
+        const startEditGroupLabel = () => {
+            setEditingGroupId(repId);
+            setEditingGroupLabel(currentLabel);
+        };
+
+        const saveGroupLabel = async () => {
+            const trimmed = editingGroupLabel.trim();
+            if (trimmed && trimmed !== currentLabel) {
+                await updateProjectMetadata(repId, { groupLabel: trimmed });
+            }
+            setEditingGroupId(null);
+        };
+
         return (
             <div
                 key={group[0]?.id ?? groupIndex}
@@ -470,7 +489,29 @@ const ProjectListPage: React.FC = () => {
                 {/* 그룹 헤더 */}
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-2">
-                        <span className="text-base font-black" style={{ color: palette.text }}>{palette.letter} 그룹</span>
+                        {isEditingThisGroup ? (
+                            <input
+                                autoFocus
+                                value={editingGroupLabel}
+                                onChange={(e) => setEditingGroupLabel(e.target.value)}
+                                onBlur={saveGroupLabel}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveGroupLabel();
+                                    if (e.key === 'Escape') setEditingGroupId(null);
+                                }}
+                                className="text-base font-black bg-transparent border-b-2 outline-none px-0.5 w-32"
+                                style={{ color: palette.text, borderColor: palette.text }}
+                            />
+                        ) : (
+                            <span
+                                className="text-base font-black cursor-pointer hover:opacity-70 transition-opacity"
+                                style={{ color: palette.text }}
+                                onClick={startEditGroupLabel}
+                                title="클릭하여 그룹 이름 수정"
+                            >
+                                {currentLabel}
+                            </span>
+                        )}
                         <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ backgroundColor: palette.badgeBg, color: palette.badgeText }}>{group.length}</span>
                     </div>
                     <button className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors" title="그룹 옵션">
