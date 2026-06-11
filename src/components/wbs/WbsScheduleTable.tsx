@@ -161,6 +161,10 @@ const StatusCell: React.FC<{
     );
 };
 
+// ── 정렬 타입 ─────────────────────────────────────────────────────────────
+type SortKey = 'worker' | 'startDate' | 'endDate' | 'planRate' | 'actualStartDate' | 'actualEndDate' | 'progress';
+type SortDir = 'asc' | 'desc';
+
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────
 const WbsScheduleTable: React.FC = () => {
     const detailSchedules = useWbsStore((s) => s.detailSchedules);
@@ -184,8 +188,53 @@ const WbsScheduleTable: React.FC = () => {
     }, [applySeedData]);
 
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const [sortState, setSortState] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+
+    const toggleSort = (key: SortKey) => {
+        setSortState((prev) => {
+            if (!prev || prev.key !== key) return { key, dir: 'asc' };
+            if (prev.dir === 'asc') return { key, dir: 'desc' };
+            return null;
+        });
+    };
 
     const flatRows = useMemo(() => buildFlatTree(detailSchedules, collapsed), [detailSchedules, collapsed]);
+
+    const sortedRows = useMemo(() => {
+        if (!sortState) return flatRows;
+        const { key, dir } = sortState;
+        return [...flatRows].sort((a, b) => {
+            let valA: string | number;
+            let valB: string | number;
+            switch (key) {
+                case 'worker':          valA = a.worker ?? '';           valB = b.worker ?? '';           break;
+                case 'startDate':       valA = a.startDate ?? '';        valB = b.startDate ?? '';        break;
+                case 'endDate':         valA = a.endDate ?? '';          valB = b.endDate ?? '';          break;
+                case 'planRate':        valA = a.progress ?? 0;          valB = b.progress ?? 0;          break;
+                case 'actualStartDate': valA = a.actualStartDate ?? '';  valB = b.actualStartDate ?? ''; break;
+                case 'actualEndDate':   valA = a.actualEndDate ?? '';    valB = b.actualEndDate ?? '';   break;
+                case 'progress':        valA = a.progress ?? 0;          valB = b.progress ?? 0;          break;
+                default:                valA = ''; valB = '';
+            }
+            const cmp = typeof valA === 'number'
+                ? valA - (valB as number)
+                : (valA as string).localeCompare(valB as string);
+            return dir === 'asc' ? cmp : -cmp;
+        });
+    }, [flatRows, sortState]);
+
+    /** 정렬 아이콘 헬퍼 */
+    const SortIcon = ({ sk }: { sk: SortKey }) => (
+        <ChevronDown
+            size={10}
+            className={sortState?.key === sk ? 'text-white' : 'text-slate-400 opacity-60'}
+            style={{
+                transform: sortState?.key === sk && sortState.dir === 'asc' ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.15s',
+                flexShrink: 0,
+            }}
+        />
+    );
 
     const toggleCollapse = (id: string) =>
         setCollapsed((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
@@ -239,18 +288,18 @@ const WbsScheduleTable: React.FC = () => {
                         <tr className="bg-slate-600 text-white">
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24">대분류</th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-48">세부항목</th>
-                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-28">작업자</th>
+                            <th onClick={() => toggleSort('worker')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-28 cursor-pointer select-none hover:bg-slate-500 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">작업자<SortIcon sk="worker" /></span></th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-32">산출물명</th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24">완료기준</th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16">상태</th>
-                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-indigo-700/60">시작일</th>
-                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-indigo-700/60">종료일</th>
+                            <th onClick={() => toggleSort('startDate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-indigo-700/60 cursor-pointer select-none hover:bg-indigo-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">시작일<SortIcon sk="startDate" /></span></th>
+                            <th onClick={() => toggleSort('endDate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-indigo-700/60 cursor-pointer select-none hover:bg-indigo-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">종료일<SortIcon sk="endDate" /></span></th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-indigo-700/60">계획일</th>
-                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-indigo-700/60">계획율</th>
-                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-emerald-700/60">시작일</th>
-                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-emerald-700/60">종료일</th>
+                            <th onClick={() => toggleSort('planRate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-indigo-700/60 cursor-pointer select-none hover:bg-indigo-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">계획율<SortIcon sk="planRate" /></span></th>
+                            <th onClick={() => toggleSort('actualStartDate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-emerald-700/60 cursor-pointer select-none hover:bg-emerald-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">시작일<SortIcon sk="actualStartDate" /></span></th>
+                            <th onClick={() => toggleSort('actualEndDate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-emerald-700/60 cursor-pointer select-none hover:bg-emerald-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">종료일<SortIcon sk="actualEndDate" /></span></th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-emerald-700/60">투입일</th>
-                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-emerald-700/60">진척도</th>
+                            <th onClick={() => toggleSort('progress')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-emerald-700/60 cursor-pointer select-none hover:bg-emerald-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">진척도<SortIcon sk="progress" /></span></th>
                             <th className="border border-slate-500 w-8" />
                         </tr>
                         {/* 전체 합계 행 */}
@@ -270,7 +319,7 @@ const WbsScheduleTable: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {flatRows.map((node) => {
+                        {sortedRows.map((node) => {
                             const isParent = hasChildren(node.id);
                             const isCollapsed = collapsed.has(node.id);
                             const planDays = diffDays(node.startDate, node.endDate);
@@ -484,7 +533,7 @@ const WbsScheduleTable: React.FC = () => {
                         })}
 
                         {/* 빈 상태 */}
-                        {flatRows.length === 0 && (
+                        {sortedRows.length === 0 && (
                             <tr>
                                 <td colSpan={15} className="text-center py-16 text-gray-400 text-sm">
                                     GANTT CHART 탭에서 항목을 추가하거나 엑셀을 업로드하세요.

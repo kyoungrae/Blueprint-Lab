@@ -681,7 +681,7 @@ const WbsDevDetail: React.FC = () => {
                             <table className="w-full border-collapse text-sm">
                                 <thead className="sticky top-0 z-10">
                                     <tr className="bg-gray-100 text-gray-600 text-[11px] font-black uppercase tracking-wider">
-                                        <th className="text-left px-2 py-2 w-32 border-b border-gray-200">구분(산출물)</th>
+                                        <th className="text-left px-2 py-2 w-40 border-b border-gray-200">구분(산출물)</th>
                                         <th className="text-left px-2 py-2 border-b border-gray-200">기능명</th>
                                         <th className="text-left px-2 py-2 w-28 border-b border-gray-200">담당자</th>
                                         <th className="text-left px-2 py-2 w-36 border-b border-gray-200">시작일</th>
