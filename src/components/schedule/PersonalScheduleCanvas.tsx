@@ -108,13 +108,18 @@ const MiniCalendar: React.FC<{
     selected: Date;
     onSelect: (d: Date) => void;
     eventDates: Set<string>;
-}> = ({ current, selected, onSelect, eventDates }) => {
+    rangeStart?: Date;
+    rangeEnd?: Date;
+}> = ({ current, selected, onSelect, eventDates, rangeStart, rangeEnd }) => {
     const [view, setView] = useState(new Date(current.getFullYear(), current.getMonth(), 1));
     const year = view.getFullYear(); const month = view.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const cells: (Date | null)[] = [...Array(firstDay).fill(null),
         ...Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1))];
+
+    const rsYmd = rangeStart ? toYMD(rangeStart) : null;
+    const reYmd = rangeEnd   ? toYMD(rangeEnd)   : null;
 
     return (
         <div className="select-none">
@@ -130,16 +135,29 @@ const MiniCalendar: React.FC<{
                 {cells.map((d, i) => {
                     if (!d) return <div key={`empty-${i}`} />;
                     const ymd = toYMD(d);
-                    const isToday = toYMD(d) === toYMD(new Date());
-                    const isSelected = toYMD(d) === toYMD(selected);
+                    const isToday = ymd === toYMD(new Date());
+                    const isSelected = ymd === toYMD(selected);
                     const hasEvent = eventDates.has(ymd);
+                    const inRange = rsYmd && reYmd && ymd >= rsYmd && ymd <= reYmd;
+                    const isRangeStart = rsYmd && ymd === rsYmd;
+                    const isRangeEnd   = reYmd && ymd === reYmd;
                     return (
-                        <button key={ymd} onClick={() => onSelect(d)}
-                            className={`text-[11px] font-bold rounded-full w-6 h-6 mx-auto flex items-center justify-center relative transition-colors
-                                ${isSelected ? 'bg-rose-500 text-white' : isToday ? 'bg-rose-100 text-rose-600' : 'hover:bg-gray-100 text-gray-700'}`}>
-                            {d.getDate()}
-                            {hasEvent && !isSelected && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-rose-400" />}
-                        </button>
+                        <div key={ymd} className="relative flex items-center justify-center">
+                            {/* 범위 배경 (연속 띠) */}
+                            {inRange && (
+                                <div className={`absolute inset-y-0 bg-rose-100/80
+                                    ${isRangeStart ? 'left-1/2 right-0' : isRangeEnd ? 'left-0 right-1/2' : 'left-0 right-0'}`} />
+                            )}
+                            <button onClick={() => onSelect(d)}
+                                className={`relative z-10 text-[11px] font-bold w-6 h-6 flex items-center justify-center transition-colors
+                                    ${isRangeStart || isRangeEnd ? 'rounded-full bg-rose-400 text-white' :
+                                      isSelected ? 'rounded-full bg-rose-500 text-white' :
+                                      isToday    ? 'rounded-full bg-rose-100 text-rose-600' :
+                                                   'rounded-full hover:bg-gray-100 text-gray-700'}`}>
+                                {d.getDate()}
+                                {hasEvent && !isSelected && !inRange && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-rose-400" />}
+                            </button>
+                        </div>
                     );
                 })}
             </div>
@@ -1102,7 +1120,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                 {/* 좌측 사이드바 */}
                 <div className="w-52 shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-y-auto">
                     <div className="p-4">
-                        <MiniCalendar current={selectedDate} selected={selectedDate} onSelect={d => { setSelectedDate(d); setWeekStart(new Date(d)); }} eventDates={eventDates} />
+                        <MiniCalendar current={selectedDate} selected={selectedDate} onSelect={d => { setSelectedDate(d); setWeekStart(new Date(d)); }} eventDates={eventDates} rangeStart={weekStart} rangeEnd={addDays(weekStart, 6)} />
                     </div>
 
                     <div className="px-4 pb-3">
