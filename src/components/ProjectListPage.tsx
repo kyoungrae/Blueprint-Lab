@@ -53,6 +53,26 @@ function getLinkedErdIds(project: Project): string[] {
     return project.linkedErdProjectId ? [project.linkedErdProjectId] : [];
 }
 
+/** 직각 폴리라인을 둥근 모서리 SVG 경로로 변환 */
+function roundedOrthoPath(rawPts: { x: number; y: number }[], r = 9): string {
+    const pts = rawPts.filter((p, i) => i === 0 || p.x !== rawPts[i - 1].x || p.y !== rawPts[i - 1].y);
+    if (pts.length < 2) return '';
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+        const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+        const inLen = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+        const outLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const rr = Math.min(r, inLen / 2, outLen / 2);
+        if (rr < 1) { d += ` L ${p1.x} ${p1.y}`; continue; }
+        const inX = (p1.x - p0.x) / inLen, inY = (p1.y - p0.y) / inLen;
+        const outX = (p2.x - p1.x) / outLen, outY = (p2.y - p1.y) / outLen;
+        d += ` L ${p1.x - inX * rr} ${p1.y - inY * rr} Q ${p1.x} ${p1.y} ${p1.x + outX * rr} ${p1.y + outY * rr}`;
+    }
+    const last = pts[pts.length - 1];
+    d += ` L ${last.x} ${last.y}`;
+    return d;
+}
+
 const ProjectListPage: React.FC = () => {
     const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, currentProjectId, updateProjectMembers, updateProjectMetadata, inviteMember, joinWithCode } = useProjectStore();
     const { user, logout } = useAuthStore();
@@ -658,27 +678,39 @@ const ProjectListPage: React.FC = () => {
                                         const sy = from.y + from.h;
                                         const cx = to.x + to.w / 2;              // 컴포넌트 중앙 (그리드 컬럼 사이 통로와 일치)
                                         const ty = to.y;                          // 도착: 컴포넌트 상단
+                                        const off = i - (n - 1) / 2;
 
-                                        // 진입점: 상단 모서리에 링크별로 분산 (겹침 방지)
-                                        const spread = (i - (n - 1) / 2) * 12;
-                                        const gx = Math.min(Math.max(cx + spread, to.x + 14), to.x + to.w - 14);
+                                        // 좁은 중앙 통로로 내려온 뒤, 컴포넌트 위 여유 공간에서 부채꼴로 분기해 진입
+                                        const corridorX = cx + off * 7;
+                                        const entryX = Math.min(Math.max(cx + off * 18, to.x + 16), to.x + to.w - 16);
+                                        const fanY = ty - 14 - i * 6;
 
-                                        // 1차 꺾임 높이: 출발 그룹 박스 바로 아래 행 간격 안 (링크별 오프셋, 그룹을 가로지르지 않음)
+                                        // 1차 꺾임 높이: 출발 그룹 박스 바로 아래 행 간격 안 (그룹을 가로지르지 않음)
                                         const y1Base = groupRect ? groupRect.y + groupRect.h : sy + 28;
-                                        const y1 = Math.min(y1Base + 8 + i * 6, ty - 10);
+                                        const y1 = Math.min(y1Base + 12 + i * 6, fanY - 8);
+
+                                        const d = roundedOrthoPath([
+                                            { x: sx, y: sy },
+                                            { x: sx, y: y1 },
+                                            { x: corridorX, y: y1 },
+                                            { x: corridorX, y: fanY },
+                                            { x: entryX, y: fanY },
+                                            { x: entryX, y: ty },
+                                        ]);
 
                                         paths.push(
-                                            <path
-                                                key={`cl-${link.fromId}-${toId}`}
-                                                d={`M ${sx} ${sy} L ${sx} ${y1} L ${gx} ${y1} L ${gx} ${ty}`}
-                                                fill="none"
-                                                stroke={palette.text}
-                                                strokeWidth="2"
-                                                strokeDasharray="6,4"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                opacity="0.55"
-                                            />
+                                            <g key={`cl-${link.fromId}-${toId}`} opacity="0.6">
+                                                <path
+                                                    d={d}
+                                                    fill="none"
+                                                    stroke={palette.text}
+                                                    strokeWidth="1.5"
+                                                    strokeDasharray="6,4"
+                                                    strokeLinecap="round"
+                                                />
+                                                <circle cx={sx} cy={sy} r="3" fill={palette.text} />
+                                                <circle cx={entryX} cy={ty} r="3" fill={palette.text} />
+                                            </g>
                                         );
                                     });
                                 });
