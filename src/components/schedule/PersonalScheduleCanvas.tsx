@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
     ChevronLeft, ChevronRight, Plus, X, Check, Trash2,
-    Calendar, Pencil,
+    Pencil,
     ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
@@ -238,7 +238,7 @@ const EventForm: React.FC<{
     const [editColor, setEditColor] = useState('');
     const [startDate, setStartDate] = useState(event?.startDate || toYMD(new Date()));
     const [startTime, setStartTime] = useState(event?.startTime || '09:00');
-    const [endDate] = useState(event?.endDate || toYMD(new Date()));
+    const [endDate, setEndDate] = useState(event?.endDate || event?.startDate || toYMD(new Date()));
     const [endTime, setEndTime] = useState(event?.endTime || '10:00');
     const [allDay, setAllDay] = useState(event?.allDay ?? false);
     const [repeat, setRepeat] = useState<RepeatType>(event?.repeat || 'none');
@@ -249,6 +249,23 @@ const EventForm: React.FC<{
     // 하위 일정
     const [subEvents, setSubEvents] = useState<SubEvent[]>(event?.subEvents || []);
     const [activeTab, setActiveTab] = useState<'main' | number>('main');
+
+    React.useEffect(() => {
+        setTitle(event?.title || '');
+        setCategory(event?.category || Object.keys(categories)[0] || 'work');
+        setStartDate(event?.startDate || toYMD(new Date()));
+        setStartTime(event?.startTime || '09:00');
+        setEndDate(event?.endDate || event?.startDate || toYMD(new Date()));
+        setEndTime(event?.endTime || '10:00');
+        setAllDay(event?.allDay ?? false);
+        setRepeat(event?.repeat || 'none');
+        setAlarm(event?.alarm || '15분 전');
+        setDescription(event?.description || '');
+        setProjectId(event?.projectId || '');
+        setSubEvents(event?.subEvents || []);
+        setActiveTab('main');
+        setCatMode('select');
+    }, [event?.id, event?.title, event?.category, event?.startDate, event?.startTime, event?.endDate, event?.endTime, event?.allDay, event?.repeat, event?.alarm, event?.description, event?.projectId, event?.subEvents]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const addSubEvent = () => {
         const sub: SubEvent = {
@@ -585,11 +602,12 @@ const WeekView: React.FC<{
     events: ScheduleEvent[];
     onSelectEvent: (e: ScheduleEvent) => void;
     onSlotClick: (date: string, time: string) => void;
+    onAllDayClick: (date: string) => void;
     categories: Record<string, CategoryDef>;
     onNavigate: (dir: 'prev' | 'next') => void;
     scrollToHour?: number | null;
     onScrollHourDone?: () => void;
-}> = ({ weekStart, events, onSelectEvent, onSlotClick, categories, onNavigate, scrollToHour, onScrollHourDone }) => {
+}> = ({ weekStart, events, onSelectEvent, onSlotClick, onAllDayClick, categories, onNavigate, scrollToHour, onScrollHourDone }) => {
     const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     const scrollRef    = React.useRef<HTMLDivElement>(null);
@@ -706,6 +724,16 @@ const WeekView: React.FC<{
                     <div className="absolute inset-0 grid grid-cols-7 pointer-events-none">
                         {days.map((_, i) => (
                             <div key={i} className={`border-l border-gray-100 ${i === 0 ? 'border-l-0' : ''}`} />
+                        ))}
+                    </div>
+                    {/* 빈 종일 슬롯 클릭 */}
+                    <div className="absolute inset-0 grid grid-cols-7 z-[1]">
+                        {days.map((d, i) => (
+                            <div
+                                key={i}
+                                className={`cursor-pointer hover:bg-rose-50/30 transition-colors ${i === 0 ? '' : 'border-l border-gray-100'}`}
+                                onClick={() => onAllDayClick(toYMD(d))}
+                            />
                         ))}
                     </div>
                     {allDayLayout.bars.map(({ event: e, startCol, span, lane }) => (
@@ -1328,7 +1356,6 @@ const PersonalScheduleCanvas: React.FC = () => {
     // 카테고리 관리
     const [categories, setCategories] = useState<Record<string, CategoryDef>>(DEFAULT_CATEGORIES);
     const [visibleCats, setVisibleCats] = useState<Set<CategoryKey>>(new Set(Object.keys(DEFAULT_CATEGORIES)));
-    const [myOnly, setMyOnly] = useState(false);
 
     const handleAddCategory = (label: string, color: string) => {
         const key = `cat_${Date.now()}`;
@@ -1371,8 +1398,24 @@ const PersonalScheduleCanvas: React.FC = () => {
         setPanelOpen(false);
     }, []);
 
-    const openNewEvent = (date: string, time?: string) => {
-        setPanelEvent({ startDate: date, startTime: time, endDate: date, endTime: time ? `${pad(parseInt(time.split(':')[0]) + 1)}:00` : undefined });
+    const openNewEvent = (date: string, time?: string, opts?: { allDay?: boolean }) => {
+        const d = parseDate(date);
+        setSelectedDate(d);
+        const isAllDay = opts?.allDay ?? false;
+        const startTime = isAllDay ? undefined : (time ?? '09:00');
+        let endTime: string | undefined;
+        if (!isAllDay && startTime) {
+            const [hStr, mStr = '00'] = startTime.split(':');
+            const h = parseInt(hStr, 10);
+            endTime = Number.isNaN(h) ? '10:00' : `${pad(Math.min(h + 1, 23))}:${mStr}`;
+        }
+        setPanelEvent({
+            startDate: date,
+            endDate: date,
+            startTime,
+            endTime,
+            allDay: isAllDay,
+        });
         setPanelOpen(true);
     };
 
@@ -1489,23 +1532,6 @@ const PersonalScheduleCanvas: React.FC = () => {
                             ))}
                         </div>
                     </div>
-
-                    <div className="px-4 pb-3">
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-gray-600">내 일정만 보기</span>
-                            <button onClick={() => setMyOnly(v => !v)}
-                                className={`w-9 h-5 rounded-full transition-colors ${myOnly ? 'bg-rose-500' : 'bg-gray-200'}`}>
-                                <span className={`block w-4 h-4 bg-white rounded-full shadow transition-transform mx-0.5 ${myOnly ? 'translate-x-4' : ''}`} />
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="px-4 pb-3 mt-auto">
-                        <button className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-colors">
-                            <Calendar size={13} className="text-rose-400" />
-                            구글 캘린더 연동
-                        </button>
-                    </div>
                 </div>
 
                 {/* 메인 영역 */}
@@ -1533,6 +1559,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                                             <WeekView weekStart={weekStart} events={filteredEvents}
                                                 onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
                                                 onSlotClick={(date, time) => openNewEvent(date, time)}
+                                                onAllDayClick={date => openNewEvent(date, undefined, { allDay: true })}
                                                 categories={categories}
                                                 scrollToHour={calendarScrollHour}
                                                 onScrollHourDone={() => setCalendarScrollHour(null)}
@@ -1545,7 +1572,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                                         {viewMode === 'month' && (
                                             <MonthView month={selectedDate} events={filteredEvents}
                                                 onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
-                                                onDayClick={ymd => { setSelectedDate(parseDate(ymd)); setViewMode('day'); }}
+                                                onDayClick={ymd => openNewEvent(ymd, '09:00')}
                                                 categories={categories}
                                                 onNavigate={dir => {
                                                     const d = new Date(selectedDate);
@@ -1594,6 +1621,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                         {panelOpen && (
                             <div className="w-72 shrink-0 border-l border-gray-100 bg-white flex flex-col overflow-hidden">
                                 <EventForm
+                                    key={panelEvent?.id ?? `new-${panelEvent?.startDate ?? ''}-${panelEvent?.startTime ?? ''}-${panelEvent?.allDay ? '1' : '0'}`}
                                     event={panelEvent}
                                     onSave={handleSaveEvent}
                                     onDelete={handleDeleteEvent}
