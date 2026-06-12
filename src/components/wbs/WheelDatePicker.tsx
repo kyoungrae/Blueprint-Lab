@@ -301,4 +301,156 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     );
 };
 
+// ── WheelTimePicker ───────────────────────────────────────────────────────
+interface WheelTimePickerProps {
+    value: string;           // HH:MM
+    onChange: (v: string) => void;
+    className?: string;
+    placeholder?: string;
+    variant?: 'default' | 'ghost' | 'panel';
+}
+
+function parseTimeValue(v: string) {
+    const parts = v.split(':');
+    if (parts.length >= 2) {
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(h) && !isNaN(m)) {
+            return {
+                h: Math.min(23, Math.max(0, h)),
+                m: Math.min(59, Math.max(0, m)),
+            };
+        }
+    }
+    return { h: 9, m: 0 };
+}
+
+export const WheelTimePicker: React.FC<WheelTimePickerProps> = ({
+    value,
+    onChange,
+    className = '',
+    placeholder = '시간 선택',
+    variant = 'default',
+}) => {
+    const initial = parseTimeValue(value);
+    const [hour, setHour] = useState(initial.h);
+    const [minute, setMinute] = useState(initial.m);
+    const [open, setOpen] = useState(false);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const popupRef = useRef<HTMLDivElement>(null);
+    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
+
+    const updatePopupPos = useCallback(() => {
+        const el = triggerRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const minW = 200;
+        let left = rect.left;
+        if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
+        setPopupPos({ top: rect.bottom + 4, left });
+    }, []);
+
+    useEffect(() => {
+        const p = parseTimeValue(value);
+        setHour(p.h);
+        setMinute(p.m);
+    }, [value]);
+
+    useEffect(() => {
+        if (!open) return;
+        updatePopupPos();
+        window.addEventListener('scroll', updatePopupPos, true);
+        window.addEventListener('resize', updatePopupPos);
+        return () => {
+            window.removeEventListener('scroll', updatePopupPos, true);
+            window.removeEventListener('resize', updatePopupPos);
+        };
+    }, [open, updatePopupPos]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (popupRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
+            setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    const confirm = () => {
+        onChange(`${pad(hour)}:${pad(minute)}`);
+        setOpen(false);
+    };
+
+    const clear = () => { onChange(''); setOpen(false); };
+
+    const hours = range(0, 23);
+    const minutes = range(0, 59);
+
+    const displayValue = value ? `${pad(parseTimeValue(value).h)}:${pad(parseTimeValue(value).m)}` : '';
+
+    const triggerClass = variant === 'ghost'
+        ? 'w-full text-center text-sm outline-none bg-transparent border-none p-0 cursor-pointer'
+        : variant === 'panel'
+            ? 'w-full text-left px-2 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50 hover:border-rose-300 transition-colors outline-none focus:border-rose-400'
+            : 'w-full text-left px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white hover:border-emerald-300 transition-colors outline-none focus:border-emerald-400';
+
+    return (
+        <div className={`relative inline-block w-full ${className}`}>
+            <button
+                ref={triggerRef}
+                type="button"
+                onClick={() => setOpen(v => !v)}
+                className={triggerClass}
+            >
+                {displayValue || <span className="text-gray-400">{placeholder}</span>}
+            </button>
+
+            {open && createPortal(
+                <div
+                    ref={popupRef}
+                    data-wheel-time-picker-popup
+                    className="fixed z-[9999] bg-white border border-gray-100 rounded-2xl shadow-xl p-4 flex flex-col gap-3"
+                    style={{ top: popupPos.top, left: popupPos.left, minWidth: 200 }}
+                    onWheel={e => e.stopPropagation()}
+                >
+                    <div className="flex justify-around text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2">
+                        <span style={{ width: 72, textAlign: 'center' }}>시</span>
+                        <span style={{ width: 72, textAlign: 'center' }}>분</span>
+                    </div>
+
+                    <div className="flex items-center gap-1 justify-center">
+                        <WheelColumn items={hours} selected={hour} onSelect={setHour} format={v => pad(v)} />
+                        <span className="text-gray-300 font-bold text-lg pb-0.5">:</span>
+                        <WheelColumn items={minutes} selected={minute} onSelect={setMinute} format={v => pad(v)} />
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                        <button
+                            type="button"
+                            onClick={clear}
+                            className="flex-1 py-1.5 text-sm font-semibold text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                            초기화
+                        </button>
+                        <button
+                            type="button"
+                            onClick={confirm}
+                            className="flex-1 py-1.5 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
+                        >
+                            확인
+                        </button>
+                    </div>
+                </div>,
+                document.body,
+            )}
+        </div>
+    );
+};
+
+function pad(n: number) {
+    return String(n).padStart(2, '0');
+}
+
 export default WheelDatePicker;

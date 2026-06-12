@@ -5,7 +5,7 @@ import {
     ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
-import WheelDatePicker from '../wbs/WheelDatePicker';
+import WheelDatePicker, { WheelTimePicker } from '../wbs/WheelDatePicker';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
 type ViewMode = 'day' | 'week' | 'month';
@@ -741,10 +741,8 @@ const EventForm: React.FC<{
                         className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50 mb-1.5" />
                     {!allDay && (
                         <div className="grid grid-cols-2 gap-2">
-                            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
-                                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
-                            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
-                                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
+                            <WheelTimePicker value={startTime} onChange={setStartTime} variant="panel" placeholder="시작" />
+                            <WheelTimePicker value={endTime} onChange={setEndTime} variant="panel" placeholder="종료" />
                         </div>
                     )}
                 </div>
@@ -837,10 +835,18 @@ const EventForm: React.FC<{
                             className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50 mb-1.5" />
                         {!s.allDay && (
                             <div className="grid grid-cols-2 gap-2">
-                                <input type="time" value={s.startTime} onChange={e => updateSubEvent(idx, { startTime: e.target.value })}
-                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
-                                <input type="time" value={s.endTime} onChange={e => updateSubEvent(idx, { endTime: e.target.value })}
-                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50" />
+                                <WheelTimePicker
+                                    value={s.startTime || '09:00'}
+                                    onChange={v => updateSubEvent(idx, { startTime: v })}
+                                    variant="panel"
+                                    placeholder="시작"
+                                />
+                                <WheelTimePicker
+                                    value={s.endTime || '10:00'}
+                                    onChange={v => updateSubEvent(idx, { endTime: v })}
+                                    variant="panel"
+                                    placeholder="종료"
+                                />
                             </div>
                         )}
                     </div>
