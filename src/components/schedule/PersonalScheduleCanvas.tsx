@@ -430,6 +430,26 @@ function ganttPatchToEvent(patch: Partial<GanttTask>): Partial<ScheduleEvent> {
     return out;
 }
 
+const GANTT_CHART_PAST_DAYS = 180;
+const GANTT_CHART_FUTURE_DAYS = 365;
+const GANTT_CHART_PADDING_DAYS = 30;
+
+function computeGanttChartRange(tasks: GanttTask[]) {
+    const now = startOfDay(new Date());
+    let start = addDays(now, -GANTT_CHART_PAST_DAYS);
+    let end = addDays(now, GANTT_CHART_FUTURE_DAYS);
+    for (const t of tasks) {
+        const s = startOfDay(parseDate(t.startDate.replace(/\./g, '-')));
+        const e = startOfDay(parseDate(t.endDate.replace(/\./g, '-')));
+        if (s < start) start = s;
+        if (e > end) end = e;
+    }
+    return {
+        chartStart: addDays(start, -GANTT_CHART_PADDING_DAYS),
+        chartEnd: addDays(end, GANTT_CHART_PADDING_DAYS),
+    };
+}
+
 // ── SEED 데이터 (캘린더·간트 단일 소스) ─────────────────────────────────────
 const today = new Date();
 const SEED_SCHEDULE: ScheduleEvent[] = [
@@ -1523,9 +1543,8 @@ const GanttView: React.FC<{
     const calSyncing     = React.useRef(false);  // 캘린더→간트 sync 중 스크롤 무시
     const syncClearTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-    // ±90일 고정 범위 (자정 기준)
-    const chartStart = React.useMemo(() => startOfDay(addDays(new Date(), -90)), []);
-    const chartEnd   = React.useMemo(() => startOfDay(addDays(new Date(),  90)), []);
+    // 작업 범위 + 최소 표시 기간 (과거 180일 · 미래 365일, 여유 30일)
+    const { chartStart, chartEnd } = React.useMemo(() => computeGanttChartRange(tasks), [tasks]);
     const totalDays  = daysBetweenDates(chartStart, chartEnd) + 1;
     const DAY_W = 36;
     const GANTT_ROW_H = 33;
