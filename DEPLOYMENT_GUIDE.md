@@ -76,7 +76,7 @@ docker build --platform linux/amd64 -t blueprint-frontend -f Dockerfile.frontend
 docker build --platform linux/amd64 -t blueprint-backend -f server/Dockerfile ./server
 
 # 빌드된 이미지를 파일(.tar)로 추출
-docker save erd-frontend > erd-frontend.tar
+docker save blueprint-frontend > blueprint-frontend.tar
 ```
 
 #### 2) 백엔드 이미지화
@@ -87,7 +87,7 @@ cd ~/BLUEPRINT-LAB
 docker build --platform linux/amd64 -t blueprint-backend -f server/Dockerfile ./server
 
 # 빌드된 이미지를 파일(.tar)로 추출
-docker save erd-backend > erd-backend.tar
+docker save blueprint-backend > blueprint-backend.tar
 
 #### 3) DB 및 Cache 이미지
 DB와 Redis는 운영 서버에서 직접 다운로드(Pull)하므로 로컬에서 별도로 준비할 필요가 없습니다. (단계 4 참고)
@@ -117,8 +117,8 @@ ssh -p 22222 vims@192.168.0.141
 cd ~/projects/blueprint-lab
 
 # 1. 앱 이미지 파일 로드
-podman load < erd-frontend.tar
-podman load < erd-backend.tar
+podman load < blueprint-frontend.tar
+podman load < blueprint-backend.tar
 
 # 2. DB 및 Cache 이미지 직접 다운로드 (4.4 버전은 구형 CPU AVX 호환성용)
 podman pull docker.io/library/mongo:4.4
@@ -262,7 +262,7 @@ db.screens.find().limit(5).pretty()
 
 ## 🛠 유지보수 및 팁
 
-- **로그 확인**: `podman logs -f erd-backend` 또는 `podman logs -f erd-frontend`
+- **로그 확인**: `podman logs -f blueprint-backend` 또는 `podman logs -f blueprint-frontend`
 - **리소스 정리**: 빌드 파일이 쌓여 용량이 부족할 때 `podman image prune -a` (사용하지 않는 이미지 전체 삭제)
 - **컨테이너 상태**: `podman ps -a` (실행 중이 아닌 컨테이너까지 확인)
 

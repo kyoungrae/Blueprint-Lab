@@ -721,7 +721,6 @@ export const WheelProgressPicker: React.FC<WheelProgressPickerProps> = ({
     value,
     onChange,
     className = '',
-    placeholder = '진행률 선택',
     variant = 'default',
     accentColor = '#6366f1',
 }) => {
