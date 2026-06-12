@@ -587,7 +587,9 @@ const WeekView: React.FC<{
     onSlotClick: (date: string, time: string) => void;
     categories: Record<string, CategoryDef>;
     onNavigate: (dir: 'prev' | 'next') => void;
-}> = ({ weekStart, events, onSelectEvent, onSlotClick, categories, onNavigate }) => {
+    scrollToHour?: number | null;
+    onScrollHourDone?: () => void;
+}> = ({ weekStart, events, onSelectEvent, onSlotClick, categories, onNavigate, scrollToHour, onScrollHourDone }) => {
     const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     const scrollRef    = React.useRef<HTMLDivElement>(null);
@@ -598,6 +600,12 @@ const WeekView: React.FC<{
             scrollRef.current.scrollTop = Math.max(0, (currentHour - 1)) * 56;
         }
     }, []);
+
+    React.useEffect(() => {
+        if (scrollToHour == null || !scrollRef.current) return;
+        scrollRef.current.scrollTop = Math.max(0, (scrollToHour - 1) * 56);
+        onScrollHourDone?.();
+    }, [scrollToHour, weekStart, onScrollHourDone]);
 
     React.useEffect(() => {
         const el = containerRef.current;
@@ -633,10 +641,45 @@ const WeekView: React.FC<{
         });
     };
 
-    const getAllDayEvents = (date: Date) => {
-        const ymd = toYMD(date);
-        return events.filter(e => e.allDay && e.startDate <= ymd && e.endDate >= ymd);
-    };
+    const normYmd = (s: string) => s.replace(/\./g, '-');
+
+    /** 종일·기간 일정을 주간 그리드 위 연속 바로 배치 */
+    const allDayLayout = React.useMemo(() => {
+        const weekStartYmd = toYMD(days[0]);
+        const weekEndYmd = toYMD(days[6]);
+        const BAR_H = 20;
+        const BAR_GAP = 2;
+
+        const inWeek = events.filter(e => {
+            if (!e.allDay) return false;
+            const s = normYmd(e.startDate);
+            const end = normYmd(e.endDate);
+            return s <= weekEndYmd && end >= weekStartYmd;
+        });
+
+        const raw = inWeek.map(e => {
+            const s = normYmd(e.startDate);
+            const end = normYmd(e.endDate);
+            const visStart = s < weekStartYmd ? weekStartYmd : s;
+            const visEnd = end > weekEndYmd ? weekEndYmd : end;
+            const startCol = daysBetweenDates(parseDate(weekStartYmd), parseDate(visStart));
+            const endCol = daysBetweenDates(parseDate(weekStartYmd), parseDate(visEnd));
+            return { event: e, startCol, endCol, span: endCol - startCol + 1 };
+        }).sort((a, b) => a.startCol - b.startCol || b.span - a.span);
+
+        const laneEnds: number[] = [];
+        const bars = raw.map(bar => {
+            let lane = 0;
+            while (lane < laneEnds.length && laneEnds[lane] >= bar.startCol) lane++;
+            if (lane === laneEnds.length) laneEnds.push(-1);
+            laneEnds[lane] = bar.endCol;
+            return { ...bar, lane };
+        });
+
+        const laneCount = Math.max(1, laneEnds.length);
+        const rowHeight = laneCount * (BAR_H + BAR_GAP) + BAR_GAP * 2;
+        return { bars, rowHeight, BAR_H, BAR_GAP };
+    }, [events, days]);
 
     return (
         <div ref={containerRef} className="flex flex-col h-full overflow-hidden">
@@ -655,23 +698,34 @@ const WeekView: React.FC<{
                     );
                 })}
             </div>
-            {/* 종일 이벤트 행 */}
-            <div className="grid shrink-0 border-b border-gray-100 min-h-[28px]" style={{ gridTemplateColumns: '56px repeat(7,1fr)' }}>
+            {/* 종일·기간 이벤트 — 시작~종료까지 연속 바 */}
+            <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '56px repeat(7,1fr)', minHeight: allDayLayout.rowHeight }}>
                 <div className="text-[10px] text-gray-400 px-1 pt-1 text-right">종일</div>
-                {days.map((d, i) => {
-                    const ae = getAllDayEvents(d);
-                    return (
-                        <div key={i} className="border-l border-gray-100 px-0.5 py-0.5 space-y-0.5">
-                            {ae.map(e => (
-                                <div key={e.id} onClick={() => onSelectEvent(e)}
-                                    className="text-[10px] font-bold px-1 py-0.5 rounded cursor-pointer truncate text-white"
-                                    style={{ backgroundColor: (categories[e.category]?.color ?? '#94a3b8') }}>
-                                    {e.title}
-                                </div>
-                            ))}
+                <div className="relative col-span-7 border-l border-gray-100" style={{ minHeight: allDayLayout.rowHeight }}>
+                    {/* 요일 구분선 */}
+                    <div className="absolute inset-0 grid grid-cols-7 pointer-events-none">
+                        {days.map((_, i) => (
+                            <div key={i} className={`border-l border-gray-100 ${i === 0 ? 'border-l-0' : ''}`} />
+                        ))}
+                    </div>
+                    {allDayLayout.bars.map(({ event: e, startCol, span, lane }) => (
+                        <div
+                            key={e.id}
+                            onClick={() => onSelectEvent(e)}
+                            className="absolute text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer truncate text-white z-10"
+                            style={{
+                                left: `calc(${(startCol / 7) * 100}% + 2px)`,
+                                width: `calc(${(span / 7) * 100}% - 4px)`,
+                                top: lane * (allDayLayout.BAR_H + allDayLayout.BAR_GAP) + allDayLayout.BAR_GAP,
+                                height: allDayLayout.BAR_H,
+                                backgroundColor: e.ganttColor ?? categories[e.category]?.color ?? '#94a3b8',
+                            }}
+                            title={e.title}
+                        >
+                            {e.title}
                         </div>
-                    );
-                })}
+                    ))}
+                </div>
             </div>
             {/* 시간 그리드 */}
             <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
@@ -844,9 +898,10 @@ const GanttView: React.FC<{
     onAddTask: () => void;
     onUpdateTask?: (id: string, patch: Partial<GanttTask>) => void;
     onDeleteTask?: (id: string) => void;
+    onTaskClick?: (taskId: string) => void;
     weekStart: Date;
     onWeekChange: (d: Date) => void;
-}> = ({ tasks, onAddTask, weekStart, onWeekChange }) => {
+}> = ({ tasks, onAddTask, onTaskClick, weekStart, onWeekChange }) => {
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const leftRef        = React.useRef<HTMLDivElement>(null);
     const rightRef       = React.useRef<HTMLDivElement>(null);
@@ -867,8 +922,36 @@ const GanttView: React.FC<{
     const flatTasks = tasks.filter(t => !t.parentId || !collapsed.has(t.parentId));
 
     const daysBetween = daysBetweenDates;
-    const getLeft  = (date: string) => Math.max(0, daysBetween(chartStart, parseDate(date))) * DAY_W;
-    const getWidth = (s: string, e: string) => Math.max(DAY_W, (daysBetween(parseDate(s), parseDate(e)) + 1) * DAY_W);
+    const normDate = (s: string) => s.replace(/\./g, '-');
+    const getLeft  = (date: string) => Math.max(0, daysBetween(chartStart, parseDate(normDate(date)))) * DAY_W;
+    const getWidth = (s: string, e: string) => Math.max(DAY_W, (daysBetween(parseDate(normDate(s)), parseDate(normDate(e))) + 1) * DAY_W);
+
+    /** 부모 바 왼쪽 끝 → 각 하위 바 왼쪽 (L자) */
+    const hierarchyLines = React.useMemo(() => {
+        const rowById = new Map(flatTasks.map((t, i) => [t.id, i]));
+        const lines: string[] = [];
+        const rowCenterY = (idx: number) => idx * GANTT_ROW_H + GANTT_ROW_H / 2;
+
+        for (const child of flatTasks) {
+            if (!child.parentId) continue;
+            const cIdx = rowById.get(child.id);
+            if (cIdx === undefined) continue;
+
+            const parent = flatTasks.find(t => t.id === child.parentId);
+            if (!parent) continue;
+            const pIdx = rowById.get(parent.id);
+            if (pIdx === undefined || cIdx <= pIdx) continue;
+
+            const pLeft = getLeft(parent.startDate);
+            const pY = rowCenterY(pIdx);
+            const cLeft = getLeft(child.startDate);
+            const cY = rowCenterY(cIdx);
+            const arrowTip = Math.max(0, cLeft - 4);
+
+            lines.push(`M ${pLeft} ${pY} L ${pLeft} ${cY} L ${arrowTip} ${cY}`);
+        }
+        return lines;
+    }, [flatTasks, chartStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const dateHeaders: Date[] = [];
     for (let i = 0; i < totalDays; i++) dateHeaders.push(addDays(chartStart, i));
@@ -1071,21 +1154,59 @@ const GanttView: React.FC<{
                                 );
                             })}
                         </div>
-                        {/* 바 */}
+                        {/* 바 + 하위 일정 연결선 */}
+                        <div className="relative" style={{ height: flatTasks.length * GANTT_ROW_H }}>
+                            {hierarchyLines.length > 0 && (
+                                <svg
+                                    className="absolute inset-0 pointer-events-none z-[8]"
+                                    width={totalDays * DAY_W}
+                                    height={flatTasks.length * GANTT_ROW_H}
+                                    aria-hidden
+                                >
+                                    {hierarchyLines.map((d, i) => (
+                                        <path
+                                            key={i}
+                                            d={d}
+                                            fill="none"
+                                            stroke="#94a3b8"
+                                            strokeWidth={1.25}
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    ))}
+                                </svg>
+                            )}
                         {flatTasks.map(task => (
                             <div key={task.id} className="relative border-b border-gray-100 hover:bg-gray-50/50"
                                 style={{ height: GANTT_ROW_H }}>
                                 {/* 오늘 선 */}
                                 <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-10 opacity-40"
                                     style={{ left: daysBetween(chartStart, new Date()) * DAY_W }} />
-                                <div className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden"
+                                {task.parentId && (
+                                    <div
+                                        className="absolute top-1/2 -translate-y-1/2 pointer-events-none z-[9]"
+                                        style={{
+                                            left: getLeft(task.startDate) - 5,
+                                            width: 0,
+                                            height: 0,
+                                            borderTop: '3px solid transparent',
+                                            borderBottom: '3px solid transparent',
+                                            borderLeft: '4px solid #94a3b8',
+                                        }}
+                                    />
+                                )}
+                                <div
+                                    className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden cursor-pointer z-10 hover:brightness-95 transition-all"
                                     style={{
                                         left: getLeft(task.startDate),
                                         width: getWidth(task.startDate, task.endDate),
                                         height: 20,
                                         backgroundColor: (task.color || '#6366f1') + '30',
                                         border: `1px solid ${task.color || '#6366f1'}60`,
-                                    }}>
+                                    }}
+                                    onClick={() => onTaskClick?.(task.id)}
+                                    title={task.title}
+                                >
                                     <div className="h-full rounded-l-md transition-all"
                                         style={{ width: `${task.progress}%`, backgroundColor: task.color || '#6366f1' }} />
                                     <span className="absolute left-1 text-[9px] font-black text-gray-700 truncate"
@@ -1095,6 +1216,7 @@ const GanttView: React.FC<{
                                 </div>
                             </div>
                         ))}
+                        </div>
                     </div>
                 </div>
                 </div>{/* 우측 타임라인 래퍼 끝 */}
@@ -1222,6 +1344,7 @@ const PersonalScheduleCanvas: React.FC = () => {
     // 우측 패널
     const [panelEvent, setPanelEvent] = useState<Partial<ScheduleEvent> | null>(null);
     const [panelOpen, setPanelOpen] = useState(false);
+    const [calendarScrollHour, setCalendarScrollHour] = useState<number | null>(null);
 
     const filteredEvents = useMemo(() =>
         events.filter(e => visibleCats.has(e.category)),
@@ -1283,6 +1406,21 @@ const PersonalScheduleCanvas: React.FC = () => {
     const handleDeleteGanttTask = useCallback((id: string) => {
         setEvents(prev => prev.filter(e => e.id !== id && e.parentId !== id));
     }, []);
+
+    const handleGanttTaskClick = useCallback((taskId: string) => {
+        const ev = events.find(e => e.id === taskId);
+        if (!ev) return;
+        const d = startOfDay(parseDate(ev.startDate.replace(/\./g, '-')));
+        setViewMode('week');
+        setWeekStart(d);
+        setSelectedDate(d);
+        if (!ev.allDay && ev.startTime) {
+            const h = parseInt(ev.startTime.split(':')[0], 10);
+            setCalendarScrollHour(Number.isNaN(h) ? null : h);
+        } else {
+            setCalendarScrollHour(null);
+        }
+    }, [events]);
 
     return (
         <div className="w-full h-screen flex flex-col bg-gray-50 overflow-hidden">
@@ -1392,6 +1530,8 @@ const PersonalScheduleCanvas: React.FC = () => {
                                                 onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
                                                 onSlotClick={(date, time) => openNewEvent(date, time)}
                                                 categories={categories}
+                                                scrollToHour={calendarScrollHour}
+                                                onScrollHourDone={() => setCalendarScrollHour(null)}
                                                 onNavigate={dir => {
     const delta = dir === 'next' ? 1 : -1;
     setWeekStart(d => addDays(d, delta));
@@ -1428,6 +1568,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                                         <GanttView tasks={ganttTasks} onAddTask={handleAddTask}
                                             onUpdateTask={handleUpdateGanttTask}
                                             onDeleteTask={handleDeleteGanttTask}
+                                            onTaskClick={handleGanttTaskClick}
                                             weekStart={weekStart}
                                             onWeekChange={ws => { const d = startOfDay(ws); setWeekStart(d); setSelectedDate(d); }} />
                                     </div>
