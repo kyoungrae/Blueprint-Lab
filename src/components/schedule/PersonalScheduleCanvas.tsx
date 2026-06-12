@@ -468,21 +468,9 @@ function computeCalendarScrollRange(events: CalendarEvent[]) {
 
 const CALENDAR_TIME_GUTTER = 48;
 
-// ── SEED 데이터 (캘린더·간트 단일 소스) ─────────────────────────────────────
+// ── SEED 데이터 ───────────────────────────────────────────────────────────
 const today = new Date();
-const SEED_SCHEDULE: ScheduleEvent[] = [
-    { id: 'e1', title: '팀 주간 회의', category: 'meeting', startDate: toYMD(today), startTime: '10:00', endDate: toYMD(today), endTime: '11:00', allDay: false, repeat: 'weekly', description: '주간 업무 공유 및 이슈 논의', progress: 0 },
-    { id: 'e2', title: '개인 운동', category: 'personal', startDate: toYMD(addDays(today, 1)), startTime: '07:00', endDate: toYMD(addDays(today, 1)), endTime: '08:00', allDay: false, repeat: 'daily', progress: 0 },
-    { id: 'e3', title: '클라이언트 미팅', category: 'work', startDate: toYMD(addDays(today, 2)), startTime: '14:00', endDate: toYMD(addDays(today, 2)), endTime: '15:00', allDay: false, repeat: 'none', progress: 0 },
-    { id: 'e4', title: 'UI 디자인 마감', category: 'deadline', startDate: toYMD(addDays(today, 3)), startTime: '17:00', endDate: toYMD(addDays(today, 3)), endTime: '17:00', allDay: false, repeat: 'none', progress: 0 },
-    { id: 't1', title: '1. 프로젝트 착수', category: 'work', startDate: toYMD(today), endDate: toYMD(addDays(today, 7)), allDay: true, repeat: 'none', assignee: '김관리', progress: 100, ganttColor: GANTT_COLORS[0] },
-    { id: 't1-1', title: '1.1 요구사항 정의', category: 'work', startDate: toYMD(today), endDate: toYMD(addDays(today, 3)), allDay: true, repeat: 'none', assignee: '김관리', progress: 100, parentId: 't1', ganttColor: GANTT_COLORS[0] },
-    { id: 't1-2', title: '1.2 프로젝트 계획 수립', category: 'work', startDate: toYMD(addDays(today, 3)), endDate: toYMD(addDays(today, 7)), allDay: true, repeat: 'none', assignee: '박기획', progress: 100, parentId: 't1', ganttColor: GANTT_COLORS[0] },
-    { id: 't2', title: '2. 설계', category: 'work', startDate: toYMD(addDays(today, 8)), endDate: toYMD(addDays(today, 16)), allDay: true, repeat: 'none', assignee: '이개발', progress: 75, ganttColor: GANTT_COLORS[1] },
-    { id: 't2-1', title: '2.1 시스템 설계', category: 'work', startDate: toYMD(addDays(today, 8)), endDate: toYMD(addDays(today, 11)), allDay: true, repeat: 'none', assignee: '이개발', progress: 100, parentId: 't2', ganttColor: GANTT_COLORS[1] },
-    { id: 't2-2', title: '2.2 화면 설계', category: 'work', startDate: toYMD(addDays(today, 12)), endDate: toYMD(addDays(today, 14)), allDay: true, repeat: 'none', assignee: '최디자인', progress: 60, parentId: 't2', ganttColor: GANTT_COLORS[1] },
-    { id: 't3', title: '3. 개발', category: 'work', startDate: toYMD(addDays(today, 17)), endDate: toYMD(addDays(today, 30)), allDay: true, repeat: 'none', assignee: '이개발', progress: 45, ganttColor: GANTT_COLORS[2] },
-];
+const SEED_SCHEDULE: ScheduleEvent[] = [];
 
 const SEED_TODOS: TodoItem[] = [
     { id: 'td1', title: '요구사항 문서 검토', done: true,  category: 'work',     dueDate: toYMD(today) },
