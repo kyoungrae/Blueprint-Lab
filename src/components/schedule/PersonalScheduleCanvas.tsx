@@ -1514,7 +1514,7 @@ const GanttView: React.FC<{
     const chartStart = React.useMemo(() => startOfDay(addDays(new Date(), -90)), []);
     const chartEnd   = React.useMemo(() => startOfDay(addDays(new Date(),  90)), []);
     const totalDays  = daysBetweenDates(chartStart, chartEnd) + 1;
-    const DAY_W = 24;
+    const DAY_W = 36;
     const GANTT_ROW_H = 33;
     const weekStartDay = startOfDay(weekStart);
     const weekHighlightLeft = daysBetweenDates(chartStart, weekStartDay) * DAY_W;
