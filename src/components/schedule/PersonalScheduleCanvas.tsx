@@ -197,15 +197,22 @@ function parseTimeMinutes(t?: string): number {
     return (Number.isNaN(h) ? 0 : h) * 60 + (Number.isNaN(m) ? 0 : m);
 }
 
-function yFromMinutes(min: number, hourOffset: number[], hourHeights: number[]) {
-    const h = Math.min(Math.max(Math.floor(min / 60), 0), hourHeights.length - 1);
+function yFromMinutes(min: number, hourOffset: number[], hourHeights: number[], hourStart = 0) {
+    const hour = Math.floor(min / 60);
+    let idx = hour - hourStart;
+    if (idx < 0) return hourOffset[0];
+    if (idx >= hourHeights.length) return hourOffset[hourHeights.length];
     const m = min % 60;
-    return hourOffset[h] + (m / 60) * hourHeights[h];
+    return hourOffset[idx] + (m / 60) * hourHeights[idx];
 }
 
 const TIMED_BAR_MIN_H = 36;
 const TIMED_BAR_GAP = 2;
 const HOUR_MIN_H = 56;
+const CALENDAR_PRIME_HOUR = 9;
+const CALENDAR_HOUR_END = 23;
+const getCalendarHours = () =>
+    Array.from({ length: CALENDAR_HOUR_END - CALENDAR_PRIME_HOUR + 1 }, (_, i) => CALENDAR_PRIME_HOUR + i);
 const ALLDAY_BAR_MIN_H = 24;
 const ALLDAY_BAR_GAP = 3;
 const ALLDAY_SUB_INDENT = 10;
@@ -307,6 +314,7 @@ function layoutDayTimedEvents(
     dayEvents: CalendarEvent[],
     hourOffset: number[],
     hourHeights: number[],
+    hourStart = CALENDAR_PRIME_HOUR,
 ): TimedBarLayout[] {
     type Item = { event: CalendarEvent; start: number; end: number; row: number; rowCount: number };
     const items: Item[] = dayEvents.map(e => {
@@ -350,8 +358,8 @@ function layoutDayTimedEvents(
     }
 
     return items.map(it => {
-        const baseTop = yFromMinutes(it.start, hourOffset, hourHeights);
-        const fullBottom = yFromMinutes(it.end, hourOffset, hourHeights);
+        const baseTop = yFromMinutes(it.start, hourOffset, hourHeights, hourStart);
+        const fullBottom = yFromMinutes(it.end, hourOffset, hourHeights, hourStart);
         const fullHeight = Math.max(fullBottom - baseTop, TIMED_BAR_MIN_H);
 
         if (it.rowCount <= 1) {
@@ -907,7 +915,7 @@ const WeekView: React.FC<{
     scrollToHour?: number | null;
     onScrollHourDone?: () => void;
 }> = ({ weekStart, events, onSelectEvent, onSlotClick, onAllDayClick, categories, onNavigate, scrollToHour, onScrollHourDone }) => {
-    const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
+    const hours = React.useMemo(() => getCalendarHours(), []);
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     const scrollRef    = React.useRef<HTMLDivElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
@@ -960,7 +968,7 @@ const WeekView: React.FC<{
         const dayLayouts = days.map(d => {
             const ymd = toYMD(d);
             const dayEvents = events.filter(e => !e.allDay && e.startDate === ymd);
-            return layoutDayTimedEvents(dayEvents, hourOffset, hourHeights);
+            return layoutDayTimedEvents(dayEvents, hourOffset, hourHeights, CALENDAR_PRIME_HOUR);
         });
 
         return { hourHeights, hourOffset, totalH, dayLayouts };
@@ -968,28 +976,27 @@ const WeekView: React.FC<{
 
     React.useEffect(() => {
         if (!scrollRef.current) return;
-        const h = Math.max(0, new Date().getHours() - 1);
-        scrollRef.current.scrollTop = timedLayout.hourOffset[h] ?? h * HOUR_MIN_H;
+        scrollRef.current.scrollTop = 0;
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     React.useEffect(() => {
         if (scrollToHour == null || !scrollRef.current) return;
-        const h = Math.max(0, scrollToHour - 1);
-        scrollRef.current.scrollTop = timedLayout.hourOffset[h] ?? h * HOUR_MIN_H;
+        const idx = Math.max(0, Math.min(scrollToHour - CALENDAR_PRIME_HOUR, hours.length - 1));
+        scrollRef.current.scrollTop = timedLayout.hourOffset[idx] ?? 0;
         onScrollHourDone?.();
-    }, [scrollToHour, weekStart, onScrollHourDone, timedLayout.hourOffset]);
+    }, [scrollToHour, weekStart, onScrollHourDone, timedLayout.hourOffset, hours.length]);
 
     return (
         <div ref={containerRef} className="flex flex-col h-full overflow-hidden">
             {/* 헤더 */}
-            <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '56px repeat(7,1fr)' }}>
-                <div />
+            <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '48px repeat(7,1fr)' }}>
+                <div className="min-h-[40px]" />
                 {days.map((d, i) => {
                     const isToday = toYMD(d) === toYMD(new Date());
                     return (
-                        <div key={i} className={`text-center py-2 border-l border-gray-100 ${d.getDay() === 0 ? 'text-red-500' : d.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}`}>
-                            <div className="text-[10px] font-bold text-gray-400">{DAY_LABELS[d.getDay()]}</div>
-                            <div className={`text-sm font-black w-7 h-7 mx-auto flex items-center justify-center rounded-full ${isToday ? 'bg-rose-500 text-white' : ''}`}>
+                        <div key={i} className={`text-center py-1 border-l border-gray-100 ${d.getDay() === 0 ? 'text-red-500' : d.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}`}>
+                            <div className="text-[9px] font-bold text-gray-400 leading-none">{DAY_LABELS[d.getDay()]}</div>
+                            <div className={`text-xs font-black w-6 h-6 mx-auto flex items-center justify-center rounded-full ${isToday ? 'bg-rose-500 text-white' : ''}`}>
                                 {d.getDate()}
                             </div>
                         </div>
@@ -997,7 +1004,7 @@ const WeekView: React.FC<{
                 })}
             </div>
             {/* 종일·기간 이벤트 — 시작~종료까지 연속 바 */}
-            <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '56px repeat(7,1fr)', minHeight: allDayLayout.rowHeight }}>
+            <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '48px repeat(7,1fr)', minHeight: allDayLayout.rowHeight }}>
                 <div className="text-[10px] text-gray-400 px-1 pt-1 text-right">종일</div>
                 <div className="relative col-span-7 border-l border-gray-100" style={{ minHeight: allDayLayout.rowHeight }}>
                     {/* 요일 구분선 */}
@@ -1047,7 +1054,7 @@ const WeekView: React.FC<{
             <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
                 <div className="flex" style={{ height: timedLayout.totalH, minHeight: '100%' }}>
                     {/* 시간 라벨 */}
-                    <div className="w-14 shrink-0 relative">
+                    <div className="w-12 shrink-0 relative">
                         {hours.map((h, i) => (
                             <div
                                 key={h}
@@ -1204,7 +1211,7 @@ const DayView: React.FC<{
     categories: Record<string, CategoryDef>;
     onNavigate: (dir: 'prev' | 'next') => void;
 }> = ({ date, events, onSelectEvent, onSlotClick, categories, onNavigate }) => {
-    const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
+    const hours = React.useMemo(() => getCalendarHours(), []);
     const ymd = toYMD(date);
     const timedEvents = events.filter(e => e.startDate === ymd && !e.allDay);
     const allDayEvents = events
@@ -1247,7 +1254,7 @@ const DayView: React.FC<{
             hourHeights,
             hourOffset,
             totalH: hourOffset[hourHeights.length],
-            bars: layoutDayTimedEvents(timedEvents, hourOffset, hourHeights),
+            bars: layoutDayTimedEvents(timedEvents, hourOffset, hourHeights, CALENDAR_PRIME_HOUR),
         };
     }, [timedEvents, hours]);
 
@@ -2024,6 +2031,27 @@ const PersonalScheduleCanvas: React.FC = () => {
     const [panelInitialTab, setPanelInitialTab] = useState<'main' | number>('main');
     const [panelOpen, setPanelOpen] = useState(false);
     const [calendarScrollHour, setCalendarScrollHour] = useState<number | null>(null);
+    const [calendarSplitPct, setCalendarSplitPct] = useState(50);
+    const splitContainerRef = useRef<HTMLDivElement>(null);
+    const splitDragRef = useRef<{ startY: number; startPct: number } | null>(null);
+
+    const handleSplitPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        splitDragRef.current = { startY: e.clientY, startPct: calendarSplitPct };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const handleSplitPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!splitDragRef.current || !splitContainerRef.current) return;
+        const rect = splitContainerRef.current.getBoundingClientRect();
+        const deltaPct = ((e.clientY - splitDragRef.current.startY) / rect.height) * 100;
+        const next = splitDragRef.current.startPct + deltaPct;
+        setCalendarSplitPct(Math.min(80, Math.max(20, next)));
+    };
+
+    const handleSplitPointerUp = () => {
+        splitDragRef.current = null;
+    };
 
     const filteredEvents = useMemo(() =>
         events.filter(e => visibleCats.has(e.category)),
@@ -2232,9 +2260,9 @@ const PersonalScheduleCanvas: React.FC = () => {
 
                             {/* 캘린더 탭: 위=캘린더 / 아래=간트 */}
                             {tab === 'calendar' && (
-                                <div className="flex-1 flex flex-col overflow-hidden">
-                                    {/* 캘린더 뷰 (상단 60%) */}
-                                    <div className="flex flex-col bg-white" style={{ flex: '0 0 50%', minHeight: 0, overflow: 'hidden' }}>
+                                <div ref={splitContainerRef} className="flex-1 flex flex-col overflow-hidden">
+                                    {/* 캘린더 뷰 */}
+                                    <div className="flex flex-col bg-white" style={{ flex: `0 0 ${calendarSplitPct}%`, minHeight: 0, overflow: 'hidden' }}>
                                         {viewMode === 'week' && (
                                             <WeekView weekStart={weekStart} events={calendarEvents}
                                                 onSelectEvent={handleSelectCalendarEvent}
@@ -2271,11 +2299,24 @@ const PersonalScheduleCanvas: React.FC = () => {
                                         )}
                                     </div>
 
-                                    {/* 구분선 */}
-                                    <div className="shrink-0 h-px bg-gray-200" />
+                                    {/* 높이 조절 핸들 */}
+                                    <div
+                                        role="separator"
+                                        aria-orientation="horizontal"
+                                        aria-label="캘린더와 간트 차트 높이 조절"
+                                        aria-valuenow={Math.round(calendarSplitPct)}
+                                        tabIndex={0}
+                                        onPointerDown={handleSplitPointerDown}
+                                        onPointerMove={handleSplitPointerMove}
+                                        onPointerUp={handleSplitPointerUp}
+                                        onPointerCancel={handleSplitPointerUp}
+                                        className="shrink-0 h-2 cursor-ns-resize group relative z-10 flex items-center justify-center touch-none select-none bg-gray-50 hover:bg-rose-50/80 transition-colors"
+                                    >
+                                        <div className="w-12 h-1 rounded-full bg-gray-300 group-hover:bg-rose-400 transition-colors" />
+                                    </div>
 
-                                    {/* 간트 차트 (하단 40%) */}
-                                    <div className="flex flex-col bg-white" style={{ flex: '0 0 50%', minHeight: 0, overflow: 'hidden' }}>
+                                    {/* 간트 차트 */}
+                                    <div className="flex flex-col bg-white flex-1 min-h-0 overflow-hidden">
                                         <GanttView tasks={ganttTasks} onAddTask={handleAddTask}
                                             onUpdateTask={handleUpdateGanttTask}
                                             onDeleteTask={handleDeleteGanttTask}
