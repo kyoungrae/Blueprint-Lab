@@ -95,6 +95,38 @@ const getCatStyle = (color: string) => ({ backgroundColor: color + '20', color, 
 
 const GANTT_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
+function parseHexColor(color: string): [number, number, number] | null {
+    let hex = color.trim().replace(/^#/, '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    if (hex.length === 8) hex = hex.slice(0, 6);
+    if (hex.length !== 6 || !/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+    const n = parseInt(hex, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function colorLuminance(r: number, g: number, b: number) {
+    const linear = [r, g, b].map(v => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function contrastingTextColor(bgColor: string, light = '#ffffff', dark = '#374151') {
+    const rgb = parseHexColor(bgColor);
+    if (!rgb) return dark;
+    return colorLuminance(...rgb) > 0.45 ? dark : light;
+}
+
+/** 간트 바 진행률 텍스트 — 진행 영역 위면 bar 색 기준, 아니면 연한 배경 기준 */
+function ganttBarTextColor(barColor: string, progress: number) {
+    if (progress > 0) return contrastingTextColor(barColor);
+    const rgb = parseHexColor(barColor);
+    if (!rgb) return '#374151';
+    const blend = rgb.map(c => Math.round(c * 0.19 + 255 * 0.81)) as [number, number, number];
+    return contrastingTextColor(`#${blend.map(v => v.toString(16).padStart(2, '0')).join('')}`);
+}
+
 const pad = (n: number) => String(n).padStart(2, '0');
 const toYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseDate = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -1671,7 +1703,7 @@ const GanttView: React.FC<{
                             <col style={{ width: '52px' }} />
                             <col style={{ width: '32px' }} />
                         </colgroup>
-                        <thead className="sticky top-0 z-10 bg-gray-50">
+                        <thead className="sticky top-0 z-20 bg-gray-50">
                             <tr className="border-b border-gray-200 text-[11px] font-black text-gray-500" style={{ height: GANTT_ROW_H }}>
                                 <th className="px-3 text-left font-black align-middle">작업 이름</th>
                                 <th className="px-2 text-center font-black align-middle">담당자</th>
@@ -1783,7 +1815,7 @@ const GanttView: React.FC<{
                             }}
                         />
                         {/* 날짜 헤더 */}
-                        <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10" style={{ height: GANTT_ROW_H }}>
+                        <div className="flex border-b border-gray-200 sticky top-0 bg-white z-20 shadow-[0_1px_0_0_rgba(229,231,235,1)]" style={{ height: GANTT_ROW_H }}>
                             {dateHeaders.map((d, i) => {
                                 const ymd = toYMD(d);
                                 const isToday = ymd === toYMD(new Date());
@@ -1798,10 +1830,10 @@ const GanttView: React.FC<{
                             })}
                         </div>
                         {/* 바 + 하위 일정 연결선 */}
-                        <div className="relative" style={{ height: flatTasks.length * GANTT_ROW_H }}>
+                        <div className="relative z-0" style={{ height: flatTasks.length * GANTT_ROW_H }}>
                             {hierarchyLines.length > 0 && (
                                 <svg
-                                    className="absolute inset-0 pointer-events-none z-[8]"
+                                    className="absolute inset-0 pointer-events-none z-[1]"
                                     width={totalDays * DAY_W}
                                     height={flatTasks.length * GANTT_ROW_H}
                                     aria-hidden
@@ -1819,15 +1851,18 @@ const GanttView: React.FC<{
                                     ))}
                                 </svg>
                             )}
-                        {flatTasks.map(task => (
+                        {flatTasks.map(task => {
+                            const barColor = task.color || '#6366f1';
+                            const barTextColor = ganttBarTextColor(barColor, task.progress);
+                            return (
                             <div key={task.id} className="relative border-b border-gray-100 hover:bg-gray-50/50"
                                 style={{ height: GANTT_ROW_H }}>
                                 {/* 오늘 선 */}
-                                <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-10 opacity-40"
+                                <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-[1] opacity-40"
                                     style={{ left: daysBetween(chartStart, new Date()) * DAY_W }} />
                                 {task.parentId && (
                                     <div
-                                        className="absolute top-1/2 -translate-y-1/2 pointer-events-none z-[9]"
+                                        className="absolute top-1/2 -translate-y-1/2 pointer-events-none z-[1]"
                                         style={{
                                             left: getLeft(task.startDate) - 5,
                                             width: 0,
@@ -1839,26 +1874,27 @@ const GanttView: React.FC<{
                                     />
                                 )}
                                 <div
-                                    className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden cursor-pointer z-10 hover:brightness-95 transition-all"
+                                    className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden cursor-pointer z-[2] hover:brightness-95 transition-all"
                                     style={{
                                         left: getLeft(task.startDate),
                                         width: getWidth(task.startDate, task.endDate),
                                         height: 20,
-                                        backgroundColor: (task.color || '#6366f1') + '30',
-                                        border: `1px solid ${task.color || '#6366f1'}60`,
+                                        backgroundColor: barColor + '30',
+                                        border: `1px solid ${barColor}60`,
                                     }}
                                     onClick={() => onTaskClick?.(task.id)}
                                     title={task.title}
                                 >
                                     <div className="h-full rounded-l-md transition-all"
-                                        style={{ width: `${task.progress}%`, backgroundColor: task.color || '#6366f1' }} />
-                                    <span className="absolute left-1 text-[9px] font-black text-gray-700 truncate"
-                                        style={{ maxWidth: getWidth(task.startDate, task.endDate) - 8 }}>
+                                        style={{ width: `${task.progress}%`, backgroundColor: barColor }} />
+                                    <span className="absolute left-1 text-[9px] font-black truncate"
+                                        style={{ maxWidth: getWidth(task.startDate, task.endDate) - 8, color: barTextColor }}>
                                         {task.progress}%
                                     </span>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                         </div>
                     </div>
                 </div>
