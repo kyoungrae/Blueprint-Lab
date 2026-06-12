@@ -40,6 +40,11 @@ interface ScheduleEvent {
     description?: string;
     projectId?: string;
     subEvents?: SubEvent[];
+    /** 간트 차트 연동 */
+    assignee?: string;
+    progress?: number;
+    parentId?: string;
+    ganttColor?: string;
 }
 
 interface GanttTask {
@@ -91,23 +96,46 @@ const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.get
 
 function genId() { return Math.random().toString(36).slice(2, 10); }
 
-// ── SEED 데이터 ───────────────────────────────────────────────────────────
-const today = new Date();
-const SEED_EVENTS: ScheduleEvent[] = [
-    { id: 'e1', title: '팀 주간 회의', category: 'meeting', startDate: toYMD(today), startTime: '10:00', endDate: toYMD(today), endTime: '11:00', allDay: false, repeat: 'weekly', description: '주간 업무 공유 및 이슈 논의' },
-    { id: 'e2', title: '개인 운동', category: 'personal', startDate: toYMD(addDays(today, 1)), startTime: '07:00', endDate: toYMD(addDays(today, 1)), endTime: '08:00', allDay: false, repeat: 'daily' },
-    { id: 'e3', title: '클라이언트 미팅', category: 'work', startDate: toYMD(addDays(today, 2)), startTime: '14:00', endDate: toYMD(addDays(today, 2)), endTime: '15:00', allDay: false, repeat: 'none' },
-    { id: 'e4', title: 'UI 디자인 마감', category: 'deadline', startDate: toYMD(addDays(today, 3)), startTime: '17:00', endDate: toYMD(addDays(today, 3)), endTime: '17:00', allDay: false, repeat: 'none' },
-];
+function eventToGanttTask(e: ScheduleEvent, categories: Record<string, CategoryDef>): GanttTask {
+    const catColor = categories[e.category]?.color;
+    return {
+        id: e.id,
+        title: e.title,
+        assignee: e.assignee ?? '',
+        startDate: e.startDate,
+        endDate: e.endDate,
+        progress: e.progress ?? 0,
+        parentId: e.parentId,
+        color: e.ganttColor ?? catColor ?? GANTT_COLORS[0],
+    };
+}
 
-const SEED_TASKS: GanttTask[] = [
-    { id: 't1', title: '1. 프로젝트 착수', assignee: '김관리', startDate: toYMD(today), endDate: toYMD(addDays(today, 7)), progress: 100, color: GANTT_COLORS[0] },
-    { id: 't1-1', title: '1.1 요구사항 정의', assignee: '김관리', startDate: toYMD(today), endDate: toYMD(addDays(today, 3)), progress: 100, parentId: 't1', color: GANTT_COLORS[0] },
-    { id: 't1-2', title: '1.2 프로젝트 계획 수립', assignee: '박기획', startDate: toYMD(addDays(today, 3)), endDate: toYMD(addDays(today, 7)), progress: 100, parentId: 't1', color: GANTT_COLORS[0] },
-    { id: 't2', title: '2. 설계', assignee: '이개발', startDate: toYMD(addDays(today, 8)), endDate: toYMD(addDays(today, 16)), progress: 75, color: GANTT_COLORS[1] },
-    { id: 't2-1', title: '2.1 시스템 설계', assignee: '이개발', startDate: toYMD(addDays(today, 8)), endDate: toYMD(addDays(today, 11)), progress: 100, parentId: 't2', color: GANTT_COLORS[1] },
-    { id: 't2-2', title: '2.2 화면 설계', assignee: '최디자인', startDate: toYMD(addDays(today, 12)), endDate: toYMD(addDays(today, 14)), progress: 60, parentId: 't2', color: GANTT_COLORS[1] },
-    { id: 't3', title: '3. 개발', assignee: '이개발', startDate: toYMD(addDays(today, 17)), endDate: toYMD(addDays(today, 30)), progress: 45, color: GANTT_COLORS[2] },
+function ganttPatchToEvent(patch: Partial<GanttTask>): Partial<ScheduleEvent> {
+    const out: Partial<ScheduleEvent> = {};
+    if (patch.title !== undefined) out.title = patch.title;
+    if (patch.assignee !== undefined) out.assignee = patch.assignee;
+    if (patch.startDate !== undefined) out.startDate = patch.startDate;
+    if (patch.endDate !== undefined) out.endDate = patch.endDate;
+    if (patch.progress !== undefined) out.progress = patch.progress;
+    if (patch.parentId !== undefined) out.parentId = patch.parentId;
+    if (patch.color !== undefined) out.ganttColor = patch.color;
+    return out;
+}
+
+// ── SEED 데이터 (캘린더·간트 단일 소스) ─────────────────────────────────────
+const today = new Date();
+const SEED_SCHEDULE: ScheduleEvent[] = [
+    { id: 'e1', title: '팀 주간 회의', category: 'meeting', startDate: toYMD(today), startTime: '10:00', endDate: toYMD(today), endTime: '11:00', allDay: false, repeat: 'weekly', description: '주간 업무 공유 및 이슈 논의', progress: 0 },
+    { id: 'e2', title: '개인 운동', category: 'personal', startDate: toYMD(addDays(today, 1)), startTime: '07:00', endDate: toYMD(addDays(today, 1)), endTime: '08:00', allDay: false, repeat: 'daily', progress: 0 },
+    { id: 'e3', title: '클라이언트 미팅', category: 'work', startDate: toYMD(addDays(today, 2)), startTime: '14:00', endDate: toYMD(addDays(today, 2)), endTime: '15:00', allDay: false, repeat: 'none', progress: 0 },
+    { id: 'e4', title: 'UI 디자인 마감', category: 'deadline', startDate: toYMD(addDays(today, 3)), startTime: '17:00', endDate: toYMD(addDays(today, 3)), endTime: '17:00', allDay: false, repeat: 'none', progress: 0 },
+    { id: 't1', title: '1. 프로젝트 착수', category: 'work', startDate: toYMD(today), endDate: toYMD(addDays(today, 7)), allDay: true, repeat: 'none', assignee: '김관리', progress: 100, ganttColor: GANTT_COLORS[0] },
+    { id: 't1-1', title: '1.1 요구사항 정의', category: 'work', startDate: toYMD(today), endDate: toYMD(addDays(today, 3)), allDay: true, repeat: 'none', assignee: '김관리', progress: 100, parentId: 't1', ganttColor: GANTT_COLORS[0] },
+    { id: 't1-2', title: '1.2 프로젝트 계획 수립', category: 'work', startDate: toYMD(addDays(today, 3)), endDate: toYMD(addDays(today, 7)), allDay: true, repeat: 'none', assignee: '박기획', progress: 100, parentId: 't1', ganttColor: GANTT_COLORS[0] },
+    { id: 't2', title: '2. 설계', category: 'work', startDate: toYMD(addDays(today, 8)), endDate: toYMD(addDays(today, 16)), allDay: true, repeat: 'none', assignee: '이개발', progress: 75, ganttColor: GANTT_COLORS[1] },
+    { id: 't2-1', title: '2.1 시스템 설계', category: 'work', startDate: toYMD(addDays(today, 8)), endDate: toYMD(addDays(today, 11)), allDay: true, repeat: 'none', assignee: '이개발', progress: 100, parentId: 't2', ganttColor: GANTT_COLORS[1] },
+    { id: 't2-2', title: '2.2 화면 설계', category: 'work', startDate: toYMD(addDays(today, 12)), endDate: toYMD(addDays(today, 14)), allDay: true, repeat: 'none', assignee: '최디자인', progress: 60, parentId: 't2', ganttColor: GANTT_COLORS[1] },
+    { id: 't3', title: '3. 개발', category: 'work', startDate: toYMD(addDays(today, 17)), endDate: toYMD(addDays(today, 30)), allDay: true, repeat: 'none', assignee: '이개발', progress: 45, ganttColor: GANTT_COLORS[2] },
 ];
 
 const SEED_TODOS: TodoItem[] = [
@@ -242,7 +270,22 @@ const EventForm: React.FC<{
 
     const handleSave = () => {
         if (!title.trim()) return;
-        onSave({ id: event?.id || genId(), title: title.trim(), category, startDate, startTime, endDate, endTime, allDay, repeat, alarm, description, projectId: projectId || undefined, subEvents: subEvents.length ? subEvents : undefined });
+        onSave({
+            ...(event as ScheduleEvent | undefined),
+            id: event?.id || genId(),
+            title: title.trim(),
+            category,
+            startDate,
+            startTime,
+            endDate,
+            endTime,
+            allDay,
+            repeat,
+            alarm,
+            description,
+            projectId: projectId || undefined,
+            subEvents: subEvents.length ? subEvents : undefined,
+        });
     };
 
     return (
@@ -815,6 +858,7 @@ const GanttView: React.FC<{
     const chartEnd   = React.useMemo(() => addDays(new Date(),  90), []);
     const totalDays  = diffDays(toYMD(chartStart), toYMD(chartEnd));
     const DAY_W = 24;
+    const GANTT_ROW_H = 33;
 
     const flatTasks = tasks.filter(t => !t.parentId || !collapsed.has(t.parentId));
 
@@ -946,12 +990,12 @@ const GanttView: React.FC<{
                             <col style={{ width: '52px' }} />
                         </colgroup>
                         <thead className="sticky top-0 z-10 bg-gray-50">
-                            <tr className="border-b border-gray-200 text-[11px] font-black text-gray-500">
-                                <th className="px-3 py-2 text-left font-black">작업 이름</th>
-                                <th className="px-2 py-2 text-center font-black">담당자</th>
-                                <th className="px-2 py-2 text-center font-black">시작일</th>
-                                <th className="px-2 py-2 text-center font-black">종료일</th>
-                                <th className="px-2 py-2 text-center font-black">진행률</th>
+                            <tr className="border-b border-gray-200 text-[11px] font-black text-gray-500" style={{ height: GANTT_ROW_H }}>
+                                <th className="px-3 text-left font-black align-middle">작업 이름</th>
+                                <th className="px-2 text-center font-black align-middle">담당자</th>
+                                <th className="px-2 text-center font-black align-middle">시작일</th>
+                                <th className="px-2 text-center font-black align-middle">종료일</th>
+                                <th className="px-2 text-center font-black align-middle">진행률</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -959,9 +1003,9 @@ const GanttView: React.FC<{
                                 const isParent = tasks.some(t => t.parentId === task.id);
                                 const isCollapsed = collapsed.has(task.id);
                                 return (
-                                    <tr key={task.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                                        <td className="py-2" style={{ paddingLeft: task.parentId ? 24 : 10 }}>
-                                            <div className="flex items-center gap-1.5">
+                                    <tr key={task.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors" style={{ height: GANTT_ROW_H }}>
+                                        <td className="align-middle" style={{ paddingLeft: task.parentId ? 24 : 10, height: GANTT_ROW_H }}>
+                                            <div className="flex items-center gap-1.5 min-h-0">
                                                 {isParent ? (
                                                     <button onClick={() => setCollapsed(prev => {
                                                         const n = new Set(prev); n.has(task.id) ? n.delete(task.id) : n.add(task.id); return n;
@@ -975,10 +1019,10 @@ const GanttView: React.FC<{
                                                 <span className={`truncate text-gray-800 ${isParent ? 'font-bold' : 'font-medium'}`}>{task.title}</span>
                                             </div>
                                         </td>
-                                        <td className="px-2 py-2 text-center text-gray-600 truncate">{task.assignee}</td>
-                                        <td className="px-2 py-2 text-center text-gray-500 whitespace-nowrap">{task.startDate}</td>
-                                        <td className="px-2 py-2 text-center text-gray-500 whitespace-nowrap">{task.endDate}</td>
-                                        <td className="px-2 py-2 text-center font-black whitespace-nowrap" style={{ color: task.color || '#6366f1' }}>{task.progress}%</td>
+                                        <td className="px-2 text-center text-gray-600 truncate align-middle">{task.assignee}</td>
+                                        <td className="px-2 text-center text-gray-500 whitespace-nowrap align-middle">{task.startDate}</td>
+                                        <td className="px-2 text-center text-gray-500 whitespace-nowrap align-middle">{task.endDate}</td>
+                                        <td className="px-2 text-center font-black whitespace-nowrap align-middle" style={{ color: task.color || '#6366f1' }}>{task.progress}%</td>
                                     </tr>
                                 );
                             })}
@@ -1002,15 +1046,15 @@ const GanttView: React.FC<{
                     className="h-full overflow-auto">
                     <div style={{ width: totalDays * DAY_W, minWidth: '100%' }}>
                         {/* 날짜 헤더 */}
-                        <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
+                        <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10" style={{ height: GANTT_ROW_H }}>
                             {dateHeaders.map((d, i) => {
                                 const ymd = toYMD(d);
                                 const isToday = ymd === toYMD(new Date());
                                 const isWeekStart = d.getDay() === 0;
                                 return (
-                                    <div key={i} className={`text-center text-[9px] font-bold border-l border-gray-100 shrink-0 py-1 select-none
+                                    <div key={i} className={`flex flex-col items-center justify-center text-[9px] font-bold border-l border-gray-100 shrink-0 select-none
                                         ${isToday ? 'bg-rose-50 text-rose-500' : d.getDay() === 0 ? 'text-red-400 bg-red-50/30' : d.getDay() === 6 ? 'text-blue-400 bg-blue-50/30' : 'text-gray-400'}`}
-                                        style={{ width: DAY_W }}>
+                                        style={{ width: DAY_W, height: GANTT_ROW_H }}>
                                         {isWeekStart ? <span className="block text-[8px] leading-none">{d.getMonth()+1}/{d.getDate()}</span> : d.getDate()}
                                     </div>
                                 );
@@ -1019,7 +1063,7 @@ const GanttView: React.FC<{
                         {/* 바 */}
                         {flatTasks.map(task => (
                             <div key={task.id} className="relative border-b border-gray-100 hover:bg-gray-50/50"
-                                style={{ height: 33 }}>
+                                style={{ height: GANTT_ROW_H }}>
                                 {/* 오늘 선 */}
                                 <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-10 opacity-40"
                                     style={{ left: diffDays(toYMD(chartStart), toYMD(new Date())) * DAY_W }} />
@@ -1141,8 +1185,7 @@ const PersonalScheduleCanvas: React.FC = () => {
     const [tab, setTab] = useState<TabMode>('calendar');
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [weekStart, setWeekStart] = useState(() => new Date());
-    const [events, setEvents] = useState<ScheduleEvent[]>(SEED_EVENTS);
-    const [tasks, setTasks]   = useState<GanttTask[]>(SEED_TASKS);
+    const [events, setEvents] = useState<ScheduleEvent[]>(SEED_SCHEDULE);
     const [todos, setTodos]   = useState<TodoItem[]>(SEED_TODOS);
 
     // 카테고리 관리
@@ -1173,6 +1216,11 @@ const PersonalScheduleCanvas: React.FC = () => {
         events.filter(e => visibleCats.has(e.category)),
         [events, visibleCats]);
 
+    const ganttTasks = useMemo(
+        () => filteredEvents.map(e => eventToGanttTask(e, categories)),
+        [filteredEvents, categories]
+    );
+
     const eventDates = useMemo(() => new Set(filteredEvents.map(e => e.startDate)), [filteredEvents]);
 
     const handleSaveEvent = useCallback((e: ScheduleEvent) => {
@@ -1181,7 +1229,7 @@ const PersonalScheduleCanvas: React.FC = () => {
     }, []);
 
     const handleDeleteEvent = useCallback((id: string) => {
-        setEvents(prev => prev.filter(e => e.id !== id));
+        setEvents(prev => prev.filter(e => e.id !== id && e.parentId !== id));
         setPanelOpen(false);
     }, []);
 
@@ -1197,11 +1245,33 @@ const PersonalScheduleCanvas: React.FC = () => {
 
     const weekEnd = addDays(weekStart, 6);
 
-    // 간트 작업
+    // 간트 작업 추가 → 동일 events에 종일 일정으로 등록
     const handleAddTask = () => {
-        const newTask: GanttTask = { id: genId(), title: '새 작업', assignee: '', startDate: toYMD(new Date()), endDate: toYMD(addDays(new Date(), 7)), progress: 0, color: GANTT_COLORS[tasks.length % GANTT_COLORS.length] };
-        setTasks(prev => [...prev, newTask]);
+        const start = toYMD(new Date());
+        const end = toYMD(addDays(new Date(), 7));
+        const catKey = Object.keys(categories)[0] || 'work';
+        const newEvent: ScheduleEvent = {
+            id: genId(),
+            title: '새 작업',
+            category: catKey,
+            startDate: start,
+            endDate: end,
+            allDay: true,
+            repeat: 'none',
+            assignee: '',
+            progress: 0,
+            ganttColor: GANTT_COLORS[events.length % GANTT_COLORS.length],
+        };
+        setEvents(prev => [...prev, newEvent]);
     };
+
+    const handleUpdateGanttTask = useCallback((id: string, patch: Partial<GanttTask>) => {
+        setEvents(prev => prev.map(e => (e.id === id ? { ...e, ...ganttPatchToEvent(patch) } : e)));
+    }, []);
+
+    const handleDeleteGanttTask = useCallback((id: string) => {
+        setEvents(prev => prev.filter(e => e.id !== id && e.parentId !== id));
+    }, []);
 
     return (
         <div className="w-full h-screen flex flex-col bg-gray-50 overflow-hidden">
@@ -1344,9 +1414,9 @@ const PersonalScheduleCanvas: React.FC = () => {
 
                                     {/* 간트 차트 (하단 40%) */}
                                     <div className="flex flex-col bg-white" style={{ flex: '0 0 50%', minHeight: 0, overflow: 'hidden' }}>
-                                        <GanttView tasks={tasks} onAddTask={handleAddTask}
-                                            onUpdateTask={(id, p) => setTasks(prev => prev.map(t => t.id === id ? { ...t, ...p } : t))}
-                                            onDeleteTask={id => setTasks(prev => prev.filter(t => t.id !== id))}
+                                        <GanttView tasks={ganttTasks} onAddTask={handleAddTask}
+                                            onUpdateTask={handleUpdateGanttTask}
+                                            onDeleteTask={handleDeleteGanttTask}
                                             weekStart={weekStart}
                                             onWeekChange={ws => { setWeekStart(ws); setSelectedDate(ws); }} />
                                     </div>
