@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
     ChevronLeft, ChevronRight, Plus, X, Check, Trash2,
     Pencil,
     ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
+import WheelDatePicker from '../wbs/WheelDatePicker';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
 type ViewMode = 'day' | 'week' | 'month';
@@ -1297,6 +1298,164 @@ const DayView: React.FC<{
     );
 };
 
+// ── 간트 테이블 인라인 편집 ───────────────────────────────────────────────
+type GanttEditField = 'title' | 'assignee' | 'startDate' | 'endDate' | 'progress';
+
+const toPickerDate = (s: string) => s.replace(/\./g, '-');
+
+const GanttInlineTextCell: React.FC<{
+    value: string;
+    isEditing: boolean;
+    onStartEdit: () => void;
+    onSave: (v: string) => void;
+    onCancel: () => void;
+    className?: string;
+    inputClassName?: string;
+    placeholder?: string;
+}> = ({ value, isEditing, onStartEdit, onSave, onCancel, className = '', inputClassName = '', placeholder = '—' }) => {
+    const [draft, setDraft] = useState(value);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => { setDraft(value); }, [value]);
+    useEffect(() => { if (isEditing) inputRef.current?.focus(); }, [isEditing]);
+
+    const commit = () => {
+        const trimmed = draft.trim();
+        if (trimmed) onSave(trimmed);
+        else { setDraft(value); onCancel(); }
+    };
+
+    if (isEditing) {
+        return (
+            <input
+                ref={inputRef}
+                type="text"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={e => {
+                    if (e.key === 'Enter') commit();
+                    if (e.key === 'Escape') { setDraft(value); onCancel(); }
+                }}
+                onClick={e => e.stopPropagation()}
+                className={`w-full bg-white border border-rose-300 rounded px-1 py-0.5 text-xs outline-none focus:border-rose-400 ${inputClassName}`}
+            />
+        );
+    }
+
+    return (
+        <span
+            onDoubleClick={e => { e.stopPropagation(); onStartEdit(); }}
+            className={`cursor-text hover:text-rose-500 transition-colors ${className}`}
+            title="더블클릭하여 편집"
+        >
+            {value || <span className="text-gray-300">{placeholder}</span>}
+        </span>
+    );
+};
+
+const GanttInlineDateCell: React.FC<{
+    value: string;
+    isEditing: boolean;
+    onStartEdit: () => void;
+    onSave: (v: string) => void;
+    onCancel: () => void;
+}> = ({ value, isEditing, onStartEdit, onSave, onCancel }) => {
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!isEditing) return;
+        const t = setTimeout(() => wrapRef.current?.querySelector('button')?.click(), 0);
+        return () => clearTimeout(t);
+    }, [isEditing]);
+
+    useEffect(() => {
+        if (!isEditing) return;
+        const onDown = (e: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) onCancel();
+        };
+        document.addEventListener('mousedown', onDown);
+        return () => document.removeEventListener('mousedown', onDown);
+    }, [isEditing, onCancel]);
+
+    if (isEditing) {
+        return (
+            <div ref={wrapRef} className="relative z-20" onClick={e => e.stopPropagation()}>
+                <WheelDatePicker
+                    value={toPickerDate(value)}
+                    onChange={v => { if (v) onSave(v); else onCancel(); }}
+                    variant="ghost"
+                    className="w-full text-[11px]"
+                    placeholder="날짜 선택"
+                />
+            </div>
+        );
+    }
+
+    return (
+        <span
+            onDoubleClick={e => { e.stopPropagation(); onStartEdit(); }}
+            className="cursor-text whitespace-nowrap hover:text-rose-500 transition-colors"
+            title="더블클릭하여 편집"
+        >
+            {value || '—'}
+        </span>
+    );
+};
+
+const GanttInlineProgressCell: React.FC<{
+    value: number;
+    color?: string;
+    isEditing: boolean;
+    onStartEdit: () => void;
+    onSave: (v: number) => void;
+    onCancel: () => void;
+}> = ({ value, color, isEditing, onStartEdit, onSave, onCancel }) => {
+    const [draft, setDraft] = useState(String(value));
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => { setDraft(String(value)); }, [value]);
+    useEffect(() => { if (isEditing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [isEditing]);
+
+    const commit = () => {
+        const n = Math.min(100, Math.max(0, parseInt(draft, 10) || 0));
+        onSave(n);
+    };
+
+    if (isEditing) {
+        return (
+            <div className="flex items-center justify-center gap-0.5" onClick={e => e.stopPropagation()}>
+                <input
+                    ref={inputRef}
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onBlur={commit}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter') commit();
+                        if (e.key === 'Escape') { setDraft(String(value)); onCancel(); }
+                    }}
+                    className="w-10 bg-white border border-rose-300 rounded px-1 py-0.5 text-xs text-center outline-none focus:border-rose-400"
+                />
+                <span className="text-[10px] font-bold" style={{ color: color || '#6366f1' }}>%</span>
+            </div>
+        );
+    }
+
+    return (
+        <span
+            onDoubleClick={e => { e.stopPropagation(); onStartEdit(); }}
+            className="cursor-text font-black hover:opacity-70 transition-opacity"
+            style={{ color: color || '#6366f1' }}
+            title="더블클릭하여 편집"
+        >
+            {value}%
+        </span>
+    );
+};
+
 // ── 간트 차트 ─────────────────────────────────────────────────────────────
 const GanttView: React.FC<{
     tasks: GanttTask[];
@@ -1306,8 +1465,9 @@ const GanttView: React.FC<{
     onTaskClick?: (taskId: string) => void;
     weekStart: Date;
     onWeekChange: (d: Date) => void;
-}> = ({ tasks, onAddTask, onTaskClick, weekStart, onWeekChange }) => {
+}> = ({ tasks, onAddTask, onUpdateTask, onTaskClick, weekStart, onWeekChange }) => {
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const [editCell, setEditCell] = useState<{ id: string; field: GanttEditField } | null>(null);
     const leftRef        = React.useRef<HTMLDivElement>(null);
     const rightRef       = React.useRef<HTMLDivElement>(null);
     const syncingV       = React.useRef(false);  // 세로 스크롤 루프 방지
@@ -1469,6 +1629,17 @@ const GanttView: React.FC<{
         handleTimelineScroll();
     }, [handleTimelineScroll]);
 
+    const isEditing = (id: string, field: GanttEditField) =>
+        editCell?.id === id && editCell.field === field;
+
+    const startEdit = (id: string, field: GanttEditField) => setEditCell({ id, field });
+    const cancelEdit = () => setEditCell(null);
+
+    const saveField = (id: string, patch: Partial<GanttTask>) => {
+        onUpdateTask?.(id, patch);
+        setEditCell(null);
+    };
+
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 shrink-0">
@@ -1518,13 +1689,55 @@ const GanttView: React.FC<{
                                                     <span className="w-[11px] shrink-0" />
                                                 )}
                                                 <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || '#6366f1' }} />
-                                                <span className={`truncate text-gray-800 ${isParent ? 'font-bold' : 'font-medium'}`}>{task.title}</span>
+                                                <GanttInlineTextCell
+                                                    value={task.title}
+                                                    isEditing={isEditing(task.id, 'title')}
+                                                    onStartEdit={() => startEdit(task.id, 'title')}
+                                                    onSave={v => saveField(task.id, { title: v })}
+                                                    onCancel={cancelEdit}
+                                                    className={`truncate text-gray-800 ${isParent ? 'font-bold' : 'font-medium'}`}
+                                                    inputClassName="font-medium"
+                                                />
                                             </div>
                                         </td>
-                                        <td className="px-2 text-center text-gray-600 truncate align-middle">{task.assignee}</td>
-                                        <td className="px-2 text-center text-gray-500 whitespace-nowrap align-middle">{task.startDate}</td>
-                                        <td className="px-2 text-center text-gray-500 whitespace-nowrap align-middle">{task.endDate}</td>
-                                        <td className="px-2 text-center font-black whitespace-nowrap align-middle" style={{ color: task.color || '#6366f1' }}>{task.progress}%</td>
+                                        <td className="px-2 text-center text-gray-600 truncate align-middle">
+                                            <GanttInlineTextCell
+                                                value={task.assignee}
+                                                isEditing={isEditing(task.id, 'assignee')}
+                                                onStartEdit={() => startEdit(task.id, 'assignee')}
+                                                onSave={v => saveField(task.id, { assignee: v })}
+                                                onCancel={cancelEdit}
+                                                className="truncate text-gray-600"
+                                            />
+                                        </td>
+                                        <td className="px-2 text-center text-gray-500 align-middle">
+                                            <GanttInlineDateCell
+                                                value={task.startDate}
+                                                isEditing={isEditing(task.id, 'startDate')}
+                                                onStartEdit={() => startEdit(task.id, 'startDate')}
+                                                onSave={v => saveField(task.id, { startDate: v })}
+                                                onCancel={cancelEdit}
+                                            />
+                                        </td>
+                                        <td className="px-2 text-center text-gray-500 align-middle">
+                                            <GanttInlineDateCell
+                                                value={task.endDate}
+                                                isEditing={isEditing(task.id, 'endDate')}
+                                                onStartEdit={() => startEdit(task.id, 'endDate')}
+                                                onSave={v => saveField(task.id, { endDate: v })}
+                                                onCancel={cancelEdit}
+                                            />
+                                        </td>
+                                        <td className="px-2 text-center align-middle">
+                                            <GanttInlineProgressCell
+                                                value={task.progress}
+                                                color={task.color || '#6366f1'}
+                                                isEditing={isEditing(task.id, 'progress')}
+                                                onStartEdit={() => startEdit(task.id, 'progress')}
+                                                onSave={v => saveField(task.id, { progress: v })}
+                                                onCancel={cancelEdit}
+                                            />
+                                        </td>
                                     </tr>
                                 );
                             })}
