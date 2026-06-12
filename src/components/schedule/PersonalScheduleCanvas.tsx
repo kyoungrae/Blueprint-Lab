@@ -1468,7 +1468,7 @@ const GanttView: React.FC<{
     onTaskClick?: (taskId: string) => void;
     weekStart: Date;
     onWeekChange: (d: Date) => void;
-}> = ({ tasks, onAddTask, onUpdateTask, onTaskClick, weekStart, onWeekChange }) => {
+}> = ({ tasks, onAddTask, onUpdateTask, onDeleteTask, onTaskClick, weekStart, onWeekChange }) => {
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const [editCell, setEditCell] = useState<{ id: string; field: GanttEditField } | null>(null);
     const leftRef        = React.useRef<HTMLDivElement>(null);
@@ -1643,6 +1643,11 @@ const GanttView: React.FC<{
         setEditCell(null);
     };
 
+    const deleteTask = (id: string) => {
+        onDeleteTask?.(id);
+        if (editCell?.id === id) setEditCell(null);
+    };
+
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 shrink-0">
@@ -1656,7 +1661,7 @@ const GanttView: React.FC<{
             <div className="flex flex-1 overflow-hidden">
                 {/* 좌측 작업 목록 */}
                 <div ref={leftRef} onScroll={handleLeftScroll}
-                    className="w-[480px] shrink-0 border-r border-gray-200 overflow-auto">
+                    className="w-[512px] shrink-0 border-r border-gray-200 overflow-auto">
                     <table className="w-full border-collapse text-xs">
                         <colgroup>
                             <col style={{ width: '180px' }} />
@@ -1664,6 +1669,7 @@ const GanttView: React.FC<{
                             <col style={{ width: '92px' }} />
                             <col style={{ width: '92px' }} />
                             <col style={{ width: '52px' }} />
+                            <col style={{ width: '32px' }} />
                         </colgroup>
                         <thead className="sticky top-0 z-10 bg-gray-50">
                             <tr className="border-b border-gray-200 text-[11px] font-black text-gray-500" style={{ height: GANTT_ROW_H }}>
@@ -1672,6 +1678,7 @@ const GanttView: React.FC<{
                                 <th className="px-2 text-center font-black align-middle">시작일</th>
                                 <th className="px-2 text-center font-black align-middle">종료일</th>
                                 <th className="px-2 text-center font-black align-middle">진행률</th>
+                                <th className="px-1 text-center font-black align-middle" aria-label="삭제" />
                             </tr>
                         </thead>
                         <tbody>
@@ -1679,7 +1686,7 @@ const GanttView: React.FC<{
                                 const isParent = tasks.some(t => t.parentId === task.id);
                                 const isCollapsed = collapsed.has(task.id);
                                 return (
-                                    <tr key={task.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors" style={{ height: GANTT_ROW_H }}>
+                                    <tr key={task.id} className="group border-b border-gray-100 hover:bg-gray-50 transition-colors" style={{ height: GANTT_ROW_H }}>
                                         <td className="align-middle" style={{ paddingLeft: task.parentId ? 24 : 10, height: GANTT_ROW_H }}>
                                             <div className="flex items-center gap-1.5 min-h-0">
                                                 {isParent ? (
@@ -1740,6 +1747,17 @@ const GanttView: React.FC<{
                                                 onSave={v => saveField(task.id, { progress: v })}
                                                 onCancel={cancelEdit}
                                             />
+                                        </td>
+                                        <td className="px-1 text-center align-middle">
+                                            <button
+                                                type="button"
+                                                onClick={e => { e.stopPropagation(); deleteTask(task.id); }}
+                                                className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                                                title="작업 삭제"
+                                                aria-label="작업 삭제"
+                                            >
+                                                <Trash2 size={12} />
+                                            </button>
                                         </td>
                                     </tr>
                                 );
@@ -2070,7 +2088,11 @@ const PersonalScheduleCanvas: React.FC = () => {
 
     const handleDeleteGanttTask = useCallback((id: string) => {
         setEvents(prev => prev.filter(e => e.id !== id && e.parentId !== id));
-    }, []);
+        if (panelEvent?.id === id || panelEvent?.parentId === id) {
+            setPanelEvent(null);
+            setPanelOpen(false);
+        }
+    }, [panelEvent]);
 
     const handleGanttTaskClick = useCallback((taskId: string) => {
         const ev = events.find(e => e.id === taskId);
