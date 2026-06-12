@@ -158,6 +158,211 @@ function eventBarColor(e: CalendarEvent, categories: Record<string, CategoryDef>
     return e.ganttColor ?? categories[e.category]?.color ?? '#94a3b8';
 }
 
+function parseTimeMinutes(t?: string): number {
+    if (!t) return 0;
+    const [h, m = 0] = t.split(':').map(Number);
+    return (Number.isNaN(h) ? 0 : h) * 60 + (Number.isNaN(m) ? 0 : m);
+}
+
+function yFromMinutes(min: number, hourOffset: number[], hourHeights: number[]) {
+    const h = Math.min(Math.max(Math.floor(min / 60), 0), hourHeights.length - 1);
+    const m = min % 60;
+    return hourOffset[h] + (m / 60) * hourHeights[h];
+}
+
+const TIMED_BAR_MIN_H = 36;
+const TIMED_BAR_GAP = 2;
+const HOUR_MIN_H = 56;
+const ALLDAY_BAR_MIN_H = 24;
+const ALLDAY_BAR_GAP = 3;
+const ALLDAY_SUB_INDENT = 10;
+
+function getCalendarParentId(e: CalendarEvent): string | undefined {
+    return e._sourceEventId ?? e.parentId;
+}
+
+function timesOverlap(a: { start: number; end: number }, b: { start: number; end: number }) {
+    return a.start < b.end && a.end > b.start;
+}
+
+type AllDayBarLayout = {
+    event: CalendarEvent;
+    startCol: number;
+    endCol: number;
+    span: number;
+    lane: number;
+    isSub: boolean;
+};
+
+/** 종일 bar — 부모 아래에 하위 row 배치 + spanning */
+function layoutAllDayWeekBars(events: CalendarEvent[], days: Date[]): { bars: AllDayBarLayout[]; rowHeight: number } {
+    const weekStartYmd = toYMD(days[0]);
+    const weekEndYmd = toYMD(days[6]);
+
+    const inWeek = events.filter(e => {
+        if (!e.allDay) return false;
+        const s = normEventYmd(e.startDate);
+        const end = normEventYmd(e.endDate);
+        return s <= weekEndYmd && end >= weekStartYmd;
+    });
+
+    type Raw = { event: CalendarEvent; startCol: number; endCol: number; span: number; isSub: boolean };
+    const raw: Raw[] = inWeek.map(e => {
+        const s = normEventYmd(e.startDate);
+        const end = normEventYmd(e.endDate);
+        const visStart = s < weekStartYmd ? weekStartYmd : s;
+        const visEnd = end > weekEndYmd ? weekEndYmd : end;
+        const startCol = daysBetweenDates(parseDate(weekStartYmd), parseDate(visStart));
+        const endCol = daysBetweenDates(parseDate(weekStartYmd), parseDate(visEnd));
+        return { event: e, startCol, endCol, span: endCol - startCol + 1, isSub: isCalendarSubEvent(e) };
+    });
+
+    const parents = raw.filter(b => !b.isSub).sort((a, b) => a.startCol - b.startCol || b.span - a.span);
+    const children = raw.filter(b => b.isSub);
+    const bars: AllDayBarLayout[] = [];
+    const laneEnds: number[] = [];
+
+    for (const bar of parents) {
+        let lane = 0;
+        while (lane < laneEnds.length && laneEnds[lane] >= bar.startCol) lane++;
+        if (lane === laneEnds.length) laneEnds.push(-1);
+        laneEnds[lane] = bar.endCol;
+        bars.push({ ...bar, lane });
+
+        const childList = children
+            .filter(c => getCalendarParentId(c.event) === bar.event.id)
+            .sort((a, b) => a.startCol - b.startCol);
+
+        const siblingLaneEnds: number[] = [];
+        for (const child of childList) {
+            let sLane = 0;
+            while (sLane < siblingLaneEnds.length && siblingLaneEnds[sLane] >= child.startCol) sLane++;
+            if (sLane === siblingLaneEnds.length) siblingLaneEnds.push(-1);
+            siblingLaneEnds[sLane] = child.endCol;
+            bars.push({ ...child, lane: lane + 1 + sLane });
+        }
+    }
+
+    for (const child of children) {
+        if (bars.some(b => b.event.id === child.event.id)) continue;
+        let lane = 0;
+        while (lane < laneEnds.length && laneEnds[lane] >= child.startCol) lane++;
+        if (lane === laneEnds.length) laneEnds.push(-1);
+        laneEnds[lane] = child.endCol;
+        bars.push({ ...child, lane });
+    }
+
+    const maxLane = bars.length ? Math.max(...bars.map(b => b.lane)) + 1 : 1;
+    const rowHeight = maxLane * (ALLDAY_BAR_MIN_H + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP * 2;
+    return { bars, rowHeight };
+}
+
+function calendarBarStyle(isSub: boolean, color: string): React.CSSProperties {
+    return isSub
+        ? { background: color + '18', color, boxShadow: `inset 0 0 0 1px ${color}40` }
+        : { background: color, color: '#fff' };
+}
+
+type TimedBarLayout = {
+    event: CalendarEvent;
+    top: number;
+    height: number;
+    isSub: boolean;
+};
+
+function layoutDayTimedEvents(
+    dayEvents: CalendarEvent[],
+    hourOffset: number[],
+    hourHeights: number[],
+): TimedBarLayout[] {
+    type Item = { event: CalendarEvent; start: number; end: number; row: number; rowCount: number };
+    const items: Item[] = dayEvents.map(e => {
+        const start = parseTimeMinutes(e.startTime);
+        const end = Math.max(parseTimeMinutes(e.endTime), start + 30);
+        return { event: e, start, end, row: 0, rowCount: 1 };
+    }).sort((a, b) => {
+        if (a.start !== b.start) return a.start - b.start;
+        return (isCalendarSubEvent(a.event) ? 1 : 0) - (isCalendarSubEvent(b.event) ? 1 : 0);
+    });
+
+    for (let i = 0; i < items.length; i++) {
+        const parentIdx = items.findIndex((other, j) => j < i &&
+            timesOverlap(other, items[i]) &&
+            (items[i].event.parentId === other.event.id || items[i].event._sourceEventId === other.event.id),
+        );
+
+        if (parentIdx >= 0) {
+            items[i].row = items[parentIdx].row + 1;
+            while (items.slice(0, i).some((other, j) =>
+                j !== parentIdx && other.row === items[i].row && timesOverlap(other, items[i]),
+            )) {
+                items[i].row++;
+            }
+        } else {
+            const usedRows = new Set<number>();
+            for (let j = 0; j < i; j++) {
+                if (timesOverlap(items[j], items[i])) usedRows.add(items[j].row);
+            }
+            let row = 0;
+            while (usedRows.has(row)) row++;
+            items[i].row = row;
+        }
+    }
+    for (let i = 0; i < items.length; i++) {
+        let maxRow = items[i].row;
+        for (const other of items) {
+            if (other.start < items[i].end && other.end > items[i].start) maxRow = Math.max(maxRow, other.row);
+        }
+        items[i].rowCount = maxRow + 1;
+    }
+
+    return items.map(it => {
+        const baseTop = yFromMinutes(it.start, hourOffset, hourHeights);
+        const fullBottom = yFromMinutes(it.end, hourOffset, hourHeights);
+        const fullHeight = Math.max(fullBottom - baseTop, TIMED_BAR_MIN_H);
+
+        if (it.rowCount <= 1) {
+            return {
+                event: it.event,
+                top: baseTop,
+                height: fullHeight,
+                isSub: isCalendarSubEvent(it.event),
+            };
+        }
+
+        const top = baseTop + it.row * (TIMED_BAR_MIN_H + TIMED_BAR_GAP);
+        return {
+            event: it.event,
+            top,
+            height: TIMED_BAR_MIN_H,
+            isSub: isCalendarSubEvent(it.event),
+        };
+    });
+}
+
+/** 해당 시간대 최대 겹침 row 수 */
+function maxOverlapRowsAtHour(dayEvents: CalendarEvent[], hour: number): number {
+    const items = dayEvents
+        .filter(e => Math.floor(parseTimeMinutes(e.startTime) / 60) === hour)
+        .map(e => ({
+            start: parseTimeMinutes(e.startTime),
+            end: Math.max(parseTimeMinutes(e.endTime), parseTimeMinutes(e.startTime) + 30),
+            row: 0,
+        }));
+
+    for (let i = 0; i < items.length; i++) {
+        const usedRows = new Set<number>();
+        for (let j = 0; j < i; j++) {
+            if (items[j].start < items[i].end && items[j].end > items[i].start) usedRows.add(items[j].row);
+        }
+        let row = 0;
+        while (usedRows.has(row)) row++;
+        items[i].row = row;
+    }
+    if (items.length === 0) return 1;
+    return Math.max(...items.map(it => it.row + 1), 1);
+}
+
 function eventToGanttTask(e: ScheduleEvent, categories: Record<string, CategoryDef>): GanttTask {
     const catColor = categories[e.category]?.color;
     return {
@@ -673,18 +878,6 @@ const WeekView: React.FC<{
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     const scrollRef    = React.useRef<HTMLDivElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
-    React.useEffect(() => {
-        if (scrollRef.current) {
-            const currentHour = new Date().getHours();
-            scrollRef.current.scrollTop = Math.max(0, (currentHour - 1)) * 56;
-        }
-    }, []);
-
-    React.useEffect(() => {
-        if (scrollToHour == null || !scrollRef.current) return;
-        scrollRef.current.scrollTop = Math.max(0, (scrollToHour - 1) * 56);
-        onScrollHourDone?.();
-    }, [scrollToHour, weekStart, onScrollHourDone]);
 
     React.useEffect(() => {
         const el = containerRef.current;
@@ -710,42 +903,48 @@ const WeekView: React.FC<{
     }, [onNavigate]);
     const DAY_LABELS = ['일','월','화','수','목','금','토'];
 
-    const getEventsForSlot = (date: Date, hour: number) => {
-        const ymd = toYMD(date);
-        return events.filter(e => {
-            if (e.startDate !== ymd) return false;
-            if (e.allDay) return false;
-            const h = parseInt(e.startTime?.split(':')[0] || '0');
-            return h === hour;
-        });
-    };
+    /** 종일·기간 — 연속 spanning bar + 부모 아래 하위 row */
+    const allDayLayout = React.useMemo(() => layoutAllDayWeekBars(events, days), [events, days]);
 
-    /** 종일·기간 — 날짜(열)마다 개별 bar, 하위 일정 별도 lane */
-    const allDayLayout = React.useMemo(() => {
-        const BAR_H = 18;
-        const BAR_GAP = 2;
-        const SUB_INDENT = 8;
-
-        const allDayEvents = events.filter(e => e.allDay);
-        const dayBars: { col: number; event: CalendarEvent; lane: number; isSub: boolean }[] = [];
-        const laneCountByCol = Array(7).fill(0);
-
-        for (let col = 0; col < 7; col++) {
-            const ymd = toYMD(days[col]);
-            const dayEvents = allDayEvents
-                .filter(e => eventActiveOnYmd(e, ymd))
-                .sort(sortCalendarEventsForDay);
-
-            dayEvents.forEach((event, lane) => {
-                dayBars.push({ col, event, lane, isSub: isCalendarSubEvent(event) });
-                laneCountByCol[col] = Math.max(laneCountByCol[col], lane + 1);
+    /** 시간 그리드 — 동적 행 높이 + 연속 bar */
+    const timedLayout = React.useMemo(() => {
+        const hourHeights = hours.map(h => {
+            let maxRows = 1;
+            days.forEach(d => {
+                const ymd = toYMD(d);
+                const dayEs = events.filter(e => !e.allDay && e.startDate === ymd);
+                maxRows = Math.max(maxRows, maxOverlapRowsAtHour(dayEs, h));
             });
-        }
+            return Math.max(HOUR_MIN_H, maxRows * (TIMED_BAR_MIN_H + TIMED_BAR_GAP) + 8);
+        });
 
-        const maxLanes = Math.max(1, ...laneCountByCol);
-        const rowHeight = maxLanes * (BAR_H + BAR_GAP) + BAR_GAP * 2;
-        return { dayBars, rowHeight, BAR_H, BAR_GAP, SUB_INDENT, maxLanes };
-    }, [events, days]);
+        const hourOffset: number[] = [0];
+        for (let i = 0; i < hourHeights.length; i++) {
+            hourOffset.push(hourOffset[i] + hourHeights[i]);
+        }
+        const totalH = hourOffset[hourHeights.length];
+
+        const dayLayouts = days.map(d => {
+            const ymd = toYMD(d);
+            const dayEvents = events.filter(e => !e.allDay && e.startDate === ymd);
+            return layoutDayTimedEvents(dayEvents, hourOffset, hourHeights);
+        });
+
+        return { hourHeights, hourOffset, totalH, dayLayouts };
+    }, [events, days, hours]);
+
+    React.useEffect(() => {
+        if (!scrollRef.current) return;
+        const h = Math.max(0, new Date().getHours() - 1);
+        scrollRef.current.scrollTop = timedLayout.hourOffset[h] ?? h * HOUR_MIN_H;
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    React.useEffect(() => {
+        if (scrollToHour == null || !scrollRef.current) return;
+        const h = Math.max(0, scrollToHour - 1);
+        scrollRef.current.scrollTop = timedLayout.hourOffset[h] ?? h * HOUR_MIN_H;
+        onScrollHourDone?.();
+    }, [scrollToHour, weekStart, onScrollHourDone, timedLayout.hourOffset]);
 
     return (
         <div ref={containerRef} className="flex flex-col h-full overflow-hidden">
@@ -784,70 +983,92 @@ const WeekView: React.FC<{
                             />
                         ))}
                     </div>
-                    {allDayLayout.dayBars.map(({ col, event: e, lane, isSub }) => {
+                    {allDayLayout.bars.map(({ event: e, startCol, span, lane, isSub }) => {
                         const color = eventBarColor(e, categories);
-                        const inset = isSub ? allDayLayout.SUB_INDENT : 2;
+                        const inset = isSub ? ALLDAY_SUB_INDENT : 2;
                         return (
                         <div
-                            key={`${e.id}-${col}`}
+                            key={e.id}
                             onClick={() => onSelectEvent(e)}
-                            className={`absolute text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer truncate z-10
-                                ${isSub ? 'ring-1 ring-white/60' : 'text-white'}`}
+                            className={`absolute text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer z-10 leading-snug
+                                ${isSub ? '' : 'shadow-sm'}`}
                             style={{
-                                left: `calc(${(col / 7) * 100}% + ${inset}px)`,
-                                width: `calc(${(1 / 7) * 100}% - ${inset + 2}px)`,
-                                top: lane * (allDayLayout.BAR_H + allDayLayout.BAR_GAP) + allDayLayout.BAR_GAP,
-                                height: allDayLayout.BAR_H,
-                                background: isSub ? color + '22' : color,
-                                color: isSub ? color : '#fff',
+                                left: `calc(${(startCol / 7) * 100}% + ${inset}px)`,
+                                width: `calc(${(span / 7) * 100}% - ${inset + 2}px)`,
+                                top: lane * (ALLDAY_BAR_MIN_H + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP,
+                                minHeight: ALLDAY_BAR_MIN_H,
+                                ...calendarBarStyle(isSub, color),
                             }}
                             title={e.title}
                         >
-                            {isSub && <span className="opacity-60 mr-0.5">↳</span>}
-                            {e.title}
+                            <span className="flex items-center gap-0.5 min-w-0">
+                                {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
+                                <span className="truncate">{e.title}</span>
+                            </span>
                         </div>
                         );
                     })}
                 </div>
             </div>
-            {/* 시간 그리드 */}
+            {/* 시간 그리드 — 연속 bar + 동적 높이 */}
             <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-                {hours.map(h => (
-                    <div key={h} className="grid" style={{ gridTemplateColumns: '56px repeat(7,1fr)', height: 56 }}>
-                        <div className="text-[10px] text-gray-400 text-right pr-2 pt-1 shrink-0">{pad(h)}:00</div>
-                        {days.map((d, i) => {
-                            const slotEvents = getEventsForSlot(d, h).sort(sortCalendarEventsForDay);
-                            const slotH = 56;
-                            return (
-                                <div key={i} className="border-l border-t border-gray-100 relative cursor-pointer hover:bg-rose-50/30 transition-colors"
-                                    onClick={() => onSlotClick(toYMD(d), `${pad(h)}:00`)}>
-                                    {slotEvents.map((e, idx) => {
-                                        const isSub = isCalendarSubEvent(e);
-                                        const count = slotEvents.length;
-                                        const barH = count > 1 ? Math.max(12, (slotH - 4) / count - 2) : slotH - 4;
-                                        const color = eventBarColor(e, categories);
-                                        return (
-                                        <div key={e.id} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
-                                            className={`absolute rounded-md px-1.5 py-0.5 text-[10px] font-bold cursor-pointer z-10 overflow-hidden
-                                                ${isSub ? 'ring-1 ring-inset ring-black/10' : 'text-white'}`}
-                                            style={{
-                                                left: isSub ? 10 : 2,
-                                                right: 2,
-                                                top: 2 + idx * (barH + 2),
-                                                height: barH,
-                                                background: isSub ? color + '22' : color,
-                                                color: isSub ? color : '#fff',
-                                            }}>
-                                            <div className="truncate">{e.startTime} - {e.endTime}</div>
-                                            <div className="truncate">{isSub ? `↳ ${e.title}` : e.title}</div>
-                                        </div>
-                                        );
-                                    })}
-                                </div>
-                            );
-                        })}
+                <div className="flex" style={{ height: timedLayout.totalH, minHeight: '100%' }}>
+                    {/* 시간 라벨 */}
+                    <div className="w-14 shrink-0 relative">
+                        {hours.map((h, i) => (
+                            <div
+                                key={h}
+                                className="absolute w-full text-[10px] text-gray-400 text-right pr-2 pt-1 border-t border-gray-100"
+                                style={{ top: timedLayout.hourOffset[i], height: timedLayout.hourHeights[i] }}
+                            >
+                                {pad(h)}:00
+                            </div>
+                        ))}
                     </div>
-                ))}
+                    {/* 요일 열 */}
+                    {days.map((d, di) => (
+                        <div key={di} className="flex-1 relative border-l border-gray-100">
+                            {hours.map((h, i) => (
+                                <div
+                                    key={h}
+                                    className="absolute inset-x-0 border-t border-gray-100 cursor-pointer hover:bg-rose-50/30 transition-colors"
+                                    style={{ top: timedLayout.hourOffset[i], height: timedLayout.hourHeights[i] }}
+                                    onClick={() => onSlotClick(toYMD(d), `${pad(h)}:00`)}
+                                />
+                            ))}
+                            {timedLayout.dayLayouts[di].map(({ event: e, top, height, isSub }) => {
+                                const color = eventBarColor(e, categories);
+                                const inset = isSub ? ALLDAY_SUB_INDENT : 2;
+                                const timeLabel = e.startTime && e.endTime ? `${e.startTime} - ${e.endTime}` : undefined;
+                                return (
+                                    <div
+                                        key={e.id}
+                                        onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
+                                        className={`absolute rounded-md px-2 py-1 text-[10px] font-bold cursor-pointer z-10 overflow-hidden leading-snug
+                                            ${isSub ? '' : 'shadow-sm'}`}
+                                        style={{
+                                            top: top + 1,
+                                            height: Math.max(height - 2, TIMED_BAR_MIN_H),
+                                            left: inset,
+                                            right: 2,
+                                            ...calendarBarStyle(isSub, color),
+                                        }}
+                                    >
+                                        {timeLabel && (
+                                            <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
+                                                {timeLabel}
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-0.5 min-w-0">
+                                            {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
+                                            <span className="truncate">{e.title}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -919,13 +1140,15 @@ const MonthView: React.FC<{
                                     const color = eventBarColor(e, categories);
                                     return (
                                     <div key={`${e.id}-${ymd}`} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
-                                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded truncate cursor-pointer
-                                            ${isSub ? 'ml-2 ring-1 ring-inset ring-black/5' : 'text-white'}`}
-                                        style={{
-                                            background: isSub ? color + '22' : color,
-                                            color: isSub ? color : '#fff',
-                                        }}>
-                                        {e.startTime && !e.allDay && `${e.startTime} `}{isSub ? `↳ ${e.title}` : e.title}
+                                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate cursor-pointer mb-0.5
+                                            ${isSub ? 'ml-2' : ''}`}
+                                        style={calendarBarStyle(isSub, color)}>
+                                        <span className="flex items-center gap-0.5 min-w-0">
+                                            {isSub && <span className="shrink-0 opacity-45">↳</span>}
+                                            <span className="truncate">
+                                                {e.startTime && !e.allDay ? `${e.startTime} ` : ''}{e.title}
+                                            </span>
+                                        </span>
                                     </div>
                                     );
                                 })}
@@ -978,6 +1201,23 @@ const DayView: React.FC<{
         return () => { el.removeEventListener('wheel', onWheel); };
     }, [onNavigate]);
 
+    const timedLayout = React.useMemo(() => {
+        const hourHeights = hours.map(h => {
+            const maxRows = maxOverlapRowsAtHour(timedEvents, h);
+            return Math.max(HOUR_MIN_H, maxRows * (TIMED_BAR_MIN_H + TIMED_BAR_GAP) + 8);
+        });
+        const hourOffset: number[] = [0];
+        for (let i = 0; i < hourHeights.length; i++) {
+            hourOffset.push(hourOffset[i] + hourHeights[i]);
+        }
+        return {
+            hourHeights,
+            hourOffset,
+            totalH: hourOffset[hourHeights.length],
+            bars: layoutDayTimedEvents(timedEvents, hourOffset, hourHeights),
+        };
+    }, [timedEvents, hours]);
+
     return (
         <div ref={containerRef} className="h-full min-h-0 overflow-y-auto">
             {allDayEvents.length > 0 && (
@@ -988,48 +1228,71 @@ const DayView: React.FC<{
                         const color = eventBarColor(e, categories);
                         return (
                             <div key={`${e.id}-${ymd}`} onClick={() => onSelectEvent(e)}
-                                className={`text-[10px] font-bold px-2 py-1 rounded cursor-pointer truncate
-                                    ${isSub ? 'ml-3 ring-1 ring-inset ring-black/5' : 'text-white'}`}
-                                style={{
-                                    background: isSub ? color + '22' : color,
-                                    color: isSub ? color : '#fff',
-                                }}>
-                                {isSub ? `↳ ${e.title}` : e.title}
+                                className={`text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer leading-snug
+                                    ${isSub ? 'ml-2' : 'shadow-sm'}`}
+                                style={calendarBarStyle(isSub, color)}>
+                                <span className="flex items-center gap-0.5 min-w-0">
+                                    {isSub && <span className="shrink-0 text-[11px] opacity-45">↳</span>}
+                                    <span className="truncate">{e.title}</span>
+                                </span>
                             </div>
                         );
                     })}
                 </div>
             )}
-            {hours.map(h => {
-                const slotEvents = timedEvents
-                    .filter(e => parseInt(e.startTime?.split(':')[0] || '0') === h)
-                    .sort(sortCalendarEventsForDay);
-                return (
-                    <div key={h} className="flex border-b border-gray-100" style={{ minHeight: 60 }}>
-                        <div className="w-16 text-[11px] text-gray-400 text-right pr-3 pt-1 shrink-0">{pad(h)}:00</div>
-                        <div className="flex-1 border-l border-gray-100 relative cursor-pointer hover:bg-rose-50/30 transition-colors px-1 py-0.5"
-                            onClick={() => onSlotClick(ymd, `${pad(h)}:00`)}>
-                            {slotEvents.map((e, idx) => {
-                                const isSub = isCalendarSubEvent(e);
-                                const color = eventBarColor(e, categories);
-                                return (
-                                <div key={e.id} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
-                                    className={`rounded-lg px-3 py-1.5 cursor-pointer mb-0.5 last:mb-0
-                                        ${isSub ? 'ml-2 ring-1 ring-inset ring-black/5' : 'text-white'}`}
-                                    style={{
-                                        background: isSub ? color + '22' : color,
-                                        color: isSub ? color : '#fff',
-                                        marginTop: idx > 0 ? 2 : 0,
-                                    }}>
-                                    <div className="text-xs font-black">{isSub ? `↳ ${e.title}` : e.title}</div>
-                                    <div className="text-[10px] opacity-80">{e.startTime} ~ {e.endTime}</div>
-                                </div>
-                                );
-                            })}
+            <div className="flex" style={{ height: timedLayout.totalH, minHeight: '100%' }}>
+                <div className="w-16 shrink-0 relative">
+                    {hours.map((h, i) => (
+                        <div
+                            key={h}
+                            className="absolute w-full text-[11px] text-gray-400 text-right pr-3 pt-1 border-t border-gray-100"
+                            style={{ top: timedLayout.hourOffset[i], height: timedLayout.hourHeights[i] }}
+                        >
+                            {pad(h)}:00
                         </div>
-                    </div>
-                );
-            })}
+                    ))}
+                </div>
+                <div className="flex-1 relative border-l border-gray-100">
+                    {hours.map((h, i) => (
+                        <div
+                            key={h}
+                            className="absolute inset-x-0 border-t border-gray-100 cursor-pointer hover:bg-rose-50/30 transition-colors"
+                            style={{ top: timedLayout.hourOffset[i], height: timedLayout.hourHeights[i] }}
+                            onClick={() => onSlotClick(ymd, `${pad(h)}:00`)}
+                        />
+                    ))}
+                    {timedLayout.bars.map(({ event: e, top, height, isSub }) => {
+                        const color = eventBarColor(e, categories);
+                        const inset = isSub ? ALLDAY_SUB_INDENT : 2;
+                        const timeLabel = e.startTime && e.endTime ? `${e.startTime} ~ ${e.endTime}` : undefined;
+                        return (
+                            <div
+                                key={e.id}
+                                onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
+                                className={`absolute rounded-md px-2 py-1 cursor-pointer z-10 overflow-hidden leading-snug text-[10px] font-bold
+                                    ${isSub ? '' : 'shadow-sm'}`}
+                                style={{
+                                    top: top + 1,
+                                    height: Math.max(height - 2, TIMED_BAR_MIN_H),
+                                    left: inset,
+                                    right: 2,
+                                    ...calendarBarStyle(isSub, color),
+                                }}
+                            >
+                                {timeLabel && (
+                                    <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
+                                        {timeLabel}
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-0.5 min-w-0">
+                                    {isSub && <span className="shrink-0 text-[11px] opacity-45">↳</span>}
+                                    <span className="truncate">{e.title}</span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
         </div>
     );
 };
