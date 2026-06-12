@@ -453,4 +453,247 @@ function pad(n: number) {
     return String(n).padStart(2, '0');
 }
 
+export const WHEEL_BAR_COLORS = [
+    '#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',
+    '#06b6d4', '#84cc16', '#f97316', '#14b8a6', '#a855f7', '#f43f5e', '#64748b',
+];
+
+// ── ColorWheelColumn ────────────────────────────────────────────────────────
+const ColorWheelColumn: React.FC<{
+    colors: string[];
+    selected: string;
+    onSelect: (c: string) => void;
+}> = ({ colors, selected, onSelect }) => {
+    const ref = useRef<HTMLDivElement>(null);
+    const isDragging = useRef(false);
+    const startY = useRef(0);
+    const [offset, setOffset] = useState(0);
+    const selectedIndex = Math.max(0, colors.indexOf(selected));
+
+    const snapTo = useCallback((idx: number) => {
+        const clamped = Math.max(0, Math.min(colors.length - 1, idx));
+        onSelect(colors[clamped]);
+        setOffset(0);
+    }, [colors, onSelect]);
+
+    const onWheel = useCallback((e: WheelEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const delta = e.deltaY > 0 ? 1 : -1;
+        const newIdx = Math.max(0, Math.min(colors.length - 1, selectedIndex + delta));
+        onSelect(colors[newIdx]);
+    }, [selectedIndex, colors, onSelect]);
+
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, [onWheel]);
+
+    const onPointerDown = (e: React.PointerEvent) => {
+        isDragging.current = true;
+        startY.current = e.clientY;
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    };
+    const onPointerMove = (e: React.PointerEvent) => {
+        if (!isDragging.current) return;
+        setOffset(e.clientY - startY.current);
+    };
+    const onPointerUp = (e: React.PointerEvent) => {
+        if (!isDragging.current) return;
+        isDragging.current = false;
+        const dy = e.clientY - startY.current;
+        const delta = -Math.round(dy / ITEM_H);
+        snapTo(selectedIndex + delta);
+    };
+
+    const baseTranslate = (CENTER - selectedIndex) * ITEM_H + offset;
+
+    return (
+        <div
+            ref={ref}
+            className="relative flex flex-col items-center select-none cursor-ns-resize overflow-hidden mx-auto"
+            style={{ height: VISIBLE * ITEM_H, width: 120 }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+        >
+            <div
+                className="absolute left-2 right-2 rounded-lg bg-emerald-50 border border-emerald-200 pointer-events-none z-10"
+                style={{ top: CENTER * ITEM_H, height: ITEM_H }}
+            />
+            <div
+                className="absolute inset-0 pointer-events-none z-20"
+                style={{ background: 'linear-gradient(to bottom, white 0%, transparent 35%, transparent 65%, white 100%)' }}
+            />
+            <div
+                className="absolute left-0 right-0 z-[15]"
+                style={{ transform: `translateY(${baseTranslate}px)` }}
+            >
+                {colors.map((color) => (
+                    <div
+                        key={color}
+                        className="flex items-center justify-center gap-2"
+                        style={{ height: ITEM_H }}
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={() => onSelect(color)}
+                    >
+                        <span
+                            className={`rounded-full border-2 transition-transform ${color === selected ? 'w-7 h-7 border-emerald-500 scale-110' : 'w-6 h-6 border-gray-200'}`}
+                            style={{ backgroundColor: color }}
+                        />
+                        <span className={`text-[10px] font-bold uppercase ${color === selected ? 'text-emerald-700' : 'text-gray-400'}`}>
+                            {color}
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// ── WheelColorPicker ────────────────────────────────────────────────────────
+interface WheelColorPickerProps {
+    value: string;
+    onChange: (v: string) => void;
+    className?: string;
+    placeholder?: string;
+    variant?: 'default' | 'panel';
+    colors?: string[];
+}
+
+export const WheelColorPicker: React.FC<WheelColorPickerProps> = ({
+    value,
+    onChange,
+    className = '',
+    placeholder = '색상 선택',
+    variant = 'default',
+    colors = WHEEL_BAR_COLORS,
+}) => {
+    const [draft, setDraft] = useState(value || colors[0]);
+    const [open, setOpen] = useState(false);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const popupRef = useRef<HTMLDivElement>(null);
+    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
+
+    const updatePopupPos = useCallback(() => {
+        const el = triggerRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const minW = 220;
+        let left = rect.left;
+        if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
+        setPopupPos({ top: rect.bottom + 4, left });
+    }, []);
+
+    useEffect(() => {
+        setDraft(value || colors[0]);
+    }, [value, colors]);
+
+    useEffect(() => {
+        if (!open) return;
+        updatePopupPos();
+        window.addEventListener('scroll', updatePopupPos, true);
+        window.addEventListener('resize', updatePopupPos);
+        return () => {
+            window.removeEventListener('scroll', updatePopupPos, true);
+            window.removeEventListener('resize', updatePopupPos);
+        };
+    }, [open, updatePopupPos]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (popupRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
+            setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    const confirm = () => {
+        onChange(draft);
+        setOpen(false);
+    };
+
+    const clear = () => {
+        onChange(colors[0]);
+        setDraft(colors[0]);
+        setOpen(false);
+    };
+
+    const displayColor = value || colors[0];
+
+    const triggerClass = variant === 'panel'
+        ? 'w-full flex items-center gap-2 px-2 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50 hover:border-rose-300 transition-colors outline-none focus:border-rose-400'
+        : 'w-full flex items-center gap-2 text-left px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white hover:border-emerald-300 transition-colors outline-none focus:border-emerald-400';
+
+    return (
+        <div className={`relative inline-block w-full ${className}`}>
+            <button
+                ref={triggerRef}
+                type="button"
+                onClick={() => setOpen(v => !v)}
+                className={triggerClass}
+            >
+                <span
+                    className="w-5 h-5 rounded-full border border-gray-200 shrink-0"
+                    style={{ backgroundColor: displayColor }}
+                />
+                <span className="text-gray-700 truncate">{displayColor || placeholder}</span>
+            </button>
+
+            {open && createPortal(
+                <div
+                    ref={popupRef}
+                    data-wheel-color-picker-popup
+                    className="fixed z-[9999] bg-white border border-gray-100 rounded-2xl shadow-xl p-4 flex flex-col gap-3"
+                    style={{ top: popupPos.top, left: popupPos.left, minWidth: 220 }}
+                    onWheel={e => e.stopPropagation()}
+                >
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider text-center">
+                        바 색상
+                    </div>
+
+                    <ColorWheelColumn colors={colors} selected={draft} onSelect={setDraft} />
+
+                    <div className="grid grid-cols-7 gap-1.5 px-1">
+                        {colors.map(c => (
+                            <button
+                                key={`grid-${c}`}
+                                type="button"
+                                onClick={() => setDraft(c)}
+                                className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${draft === c ? 'border-emerald-500 scale-110' : 'border-transparent'}`}
+                                style={{ backgroundColor: c }}
+                                aria-label={c}
+                            />
+                        ))}
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                        <button
+                            type="button"
+                            onClick={clear}
+                            className="flex-1 py-1.5 text-sm font-semibold text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                            초기화
+                        </button>
+                        <button
+                            type="button"
+                            onClick={confirm}
+                            className="flex-1 py-1.5 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
+                        >
+                            확인
+                        </button>
+                    </div>
+                </div>,
+                document.body,
+            )}
+        </div>
+    );
+};
+
 export default WheelDatePicker;

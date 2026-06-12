@@ -5,7 +5,7 @@ import {
     ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
-import WheelDatePicker, { WheelTimePicker } from '../wbs/WheelDatePicker';
+import WheelDatePicker, { WheelTimePicker, WheelColorPicker } from '../wbs/WheelDatePicker';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
 type ViewMode = 'day' | 'week' | 'month';
@@ -578,6 +578,9 @@ const EventForm: React.FC<{
     const [alarm, setAlarm] = useState(event?.alarm || '15분 전');
     const [description, setDescription] = useState(event?.description || '');
     const [projectId, setProjectId] = useState(event?.projectId || '');
+    const [barColor, setBarColor] = useState(
+        event?.ganttColor || categories[event?.category || Object.keys(categories)[0] || 'work']?.color || GANTT_COLORS[0],
+    );
 
     // 하위 일정
     const [subEvents, setSubEvents] = useState<SubEvent[]>(event?.subEvents || []);
@@ -595,10 +598,11 @@ const EventForm: React.FC<{
         setAlarm(event?.alarm || '15분 전');
         setDescription(event?.description || '');
         setProjectId(event?.projectId || '');
+        setBarColor(event?.ganttColor || categories[event?.category || Object.keys(categories)[0] || 'work']?.color || GANTT_COLORS[0]);
         setSubEvents(event?.subEvents || []);
         setActiveTab(initialActiveTab);
         setCatMode('select');
-    }, [event?.id, event?.title, event?.category, event?.startDate, event?.startTime, event?.endDate, event?.endTime, event?.allDay, event?.repeat, event?.alarm, event?.description, event?.projectId, event?.subEvents, initialActiveTab]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [event?.id, event?.title, event?.category, event?.startDate, event?.startTime, event?.endDate, event?.endTime, event?.allDay, event?.repeat, event?.alarm, event?.description, event?.projectId, event?.ganttColor, event?.subEvents, initialActiveTab, categories]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const addSubEvent = () => {
         const sub: SubEvent = {
@@ -636,6 +640,7 @@ const EventForm: React.FC<{
             alarm,
             description,
             projectId: projectId || undefined,
+            ganttColor: barColor,
             subEvents: subEvents.length ? subEvents : undefined,
         });
     };
@@ -758,6 +763,12 @@ const EventForm: React.FC<{
                             </div>
                         </div>
                     )}
+                </div>
+
+                {/* 바 색상 */}
+                <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">바 색상</label>
+                    <WheelColorPicker value={barColor} onChange={setBarColor} variant="panel" placeholder="색상 선택" />
                 </div>
 
                 {/* 일정 */}
@@ -1657,6 +1668,7 @@ const GanttView: React.FC<{
     const GANTT_ROW_H = 33;
     const weekStartDay = startOfDay(weekStart);
     const weekHighlightLeft = daysBetweenDates(chartStart, weekStartDay) * DAY_W;
+    const todayLineLeft = daysBetweenDates(chartStart, startOfDay(new Date())) * DAY_W + DAY_W / 2;
 
     const flatTasks = tasks.filter(t => !t.parentId || !collapsed.has(t.parentId));
 
@@ -1942,6 +1954,15 @@ const GanttView: React.FC<{
                 <div ref={rightRef} onScroll={handleRightScroll}
                     className="h-full overflow-auto">
                     <div style={{ width: totalDays * DAY_W, minWidth: '100%', position: 'relative' }}>
+                        {/* 오늘 표시 — 파란 세로 실선 */}
+                        <div
+                            className="absolute top-0 bottom-0 pointer-events-none z-[25]"
+                            style={{ left: todayLineLeft, transform: 'translateX(-50%)' }}
+                            aria-hidden
+                        >
+                            <div className="absolute top-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-blue-500" />
+                            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-blue-500" />
+                        </div>
                         {/* 현재 주 하이라이트 — weekStart 기준 (캘린더와 동일) */}
                         <div
                             className="absolute top-0 bottom-0 pointer-events-none z-[5]"
@@ -1996,9 +2017,6 @@ const GanttView: React.FC<{
                             return (
                             <div key={task.id} className="relative border-b border-gray-100 hover:bg-gray-50/50"
                                 style={{ height: GANTT_ROW_H }}>
-                                {/* 오늘 선 */}
-                                <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-[1] opacity-40"
-                                    style={{ left: daysBetween(chartStart, new Date()) * DAY_W }} />
                                 {task.parentId && (
                                     <div
                                         className="absolute top-1/2 -translate-y-1/2 pointer-events-none z-[1]"
