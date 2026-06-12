@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import WheelDatePicker from './WheelDatePicker';
+import WheelDatePicker, { WheelProgressPicker } from './WheelDatePicker';
 import { createPortal } from 'react-dom';
 import {
     Filter, Settings, Plus, Trash2, X, ChevronDown, ChevronRight,
@@ -215,14 +215,16 @@ const THEMES = [
     { bg: 'bg-teal-50', bar: 'bg-teal-100/80', border: 'border-teal-200/60', text: 'text-teal-700', dot: 'bg-teal-500', label: 'text-teal-600' },
 ] as const;
 
-// ─── 진척율 배지 색상 ───────────────────────────────────────────────────────
+// ─── 진척율 강조 색상 ───────────────────────────────────────────────────────
 
-function getProgressColor(pct: number) {
-    if (pct === 0) return 'bg-gray-100 text-gray-500 border-gray-200';
-    if (pct < 30) return 'bg-red-50 text-red-600 border-red-200';
-    if (pct < 70) return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-    if (pct < 100) return 'bg-blue-50 text-blue-700 border-blue-200';
-    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+const FILTER_PROGRESS_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+function getProgressAccent(pct: number) {
+    if (pct === 0) return '#9ca3af';
+    if (pct < 30) return '#dc2626';
+    if (pct < 70) return '#ca8a04';
+    if (pct < 100) return '#2563eb';
+    return '#10b981';
 }
 
 // ─── 트리 헬퍼 ──────────────────────────────────────────────────────────────
@@ -253,72 +255,6 @@ function buildFlatTree(
     });
     return result;
 }
-
-// ─── 진척율 셀렉터 컴포넌트 ────────────────────────────────────────────────
-
-const PROGRESS_OPTIONS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-
-const ProgressSelector: React.FC<{
-    value: number;
-    anchorRef: React.RefObject<HTMLElement | null>;
-    onSelect: (v: number) => void;
-    onClose: () => void;
-}> = ({ value, anchorRef, onSelect, onClose }) => {
-    const ref = useRef<HTMLDivElement>(null);
-    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-    useEffect(() => {
-        const anchor = anchorRef.current;
-        if (!anchor) return;
-        const update = () => {
-            const r = anchor.getBoundingClientRect();
-            setPos({ top: r.bottom + 4, left: r.left });
-        };
-        update();
-        window.addEventListener('scroll', update, true);
-        window.addEventListener('resize', update);
-        return () => {
-            window.removeEventListener('scroll', update, true);
-            window.removeEventListener('resize', update);
-        };
-    }, [anchorRef]);
-
-    useEffect(() => {
-        const handler = (e: MouseEvent) => {
-            const t = e.target as Node;
-            if (ref.current?.contains(t)) return;
-            if (anchorRef.current?.contains(t)) return;
-            onClose();
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [onClose, anchorRef]);
-
-    if (!pos) return null;
-
-    return createPortal(
-        <div
-            ref={ref}
-            className="fixed z-[9999] bg-white rounded-xl shadow-xl border border-gray-100 p-2 flex flex-wrap gap-1"
-            style={{ top: pos.top, left: pos.left, minWidth: 200 }}
-        >
-            {PROGRESS_OPTIONS.map((p) => (
-                <button
-                    key={p}
-                    onClick={() => { onSelect(p); onClose(); }}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all ${
-                        value === p
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                            : `${getProgressColor(p)} hover:opacity-80`
-                    }`}
-                >
-                    {p}%
-                </button>
-            ))}
-        </div>,
-        document.body
-    );
-};
 
 function formatDisplayDate(iso: string, withYear = true): string {
     if (!iso) return '';
@@ -576,7 +512,7 @@ const FilterPanel: React.FC<{
                         onChange={(e) => onChange({ ...filter, progressMin: Number(e.target.value) })}
                         className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 outline-none"
                     >
-                        {PROGRESS_OPTIONS.map((p) => <option key={p} value={p}>{p}%</option>)}
+                        {FILTER_PROGRESS_STEPS.map((p) => <option key={p} value={p}>{p}%</option>)}
                     </select>
                     <span className="text-[11px] text-gray-400">~</span>
                     <select
@@ -584,7 +520,7 @@ const FilterPanel: React.FC<{
                         onChange={(e) => onChange({ ...filter, progressMax: Number(e.target.value) })}
                         className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 outline-none"
                     >
-                        {PROGRESS_OPTIONS.map((p) => <option key={p} value={p}>{p}%</option>)}
+                        {FILTER_PROGRESS_STEPS.map((p) => <option key={p} value={p}>{p}%</option>)}
                     </select>
                 </div>
             </div>
@@ -709,10 +645,6 @@ const WbsSchedule: React.FC = () => {
 
     // 트리 상태
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-    // 진척율 셀렉터 오픈 id
-    const [progressOpenId, setProgressOpenId] = useState<string | null>(null);
-    const progressAnchorRef = useRef<HTMLButtonElement | null>(null);
 
     // 스크롤 동기화 (왼쪽 WBS 목록 ↔ 오른쪽 간트 바디)
     const listScrollRef = useRef<HTMLDivElement>(null);
@@ -1261,30 +1193,18 @@ const WbsSchedule: React.FC = () => {
                                                 <Trash2 size={12} />
                                             </button>
 
-                                            {/* 진척율 배지 */}
+                                            {/* 진척율 */}
                                             {displaySettings.showProgress && (
-                                                <div className="relative shrink-0">
-                                                    <button
-                                                        ref={progressOpenId === node.id ? progressAnchorRef : undefined}
-                                                        onClick={(e) => {
-                                                            if (isGanttBeingEdited) return;
-                                                            progressAnchorRef.current = e.currentTarget;
-                                                            setProgressOpenId(progressOpenId === node.id ? null : node.id);
-                                                        }}
-                                                        className={`text-[11px] font-bold border rounded-md px-2 py-0.5 transition-all ${isGanttBeingEdited ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:scale-105'} ${getProgressColor(node.progress ?? 0)}`}
-                                                        title={isGanttBeingEdited ? '다른 사용자가 수정 중입니다' : '클릭하여 진척율 변경'}
-                                                        style={{ minWidth: 44 }}
-                                                    >
-                                                        {node.progress ?? 0}%
-                                                    </button>
-                                                    {progressOpenId === node.id && (
-                                                        <ProgressSelector
-                                                            value={node.progress ?? 0}
-                                                            anchorRef={progressAnchorRef}
-                                                            onSelect={(v) => updateDetailSchedule(node.id, { progress: v })}
-                                                            onClose={() => setProgressOpenId(null)}
-                                                        />
-                                                    )}
+                                                <div
+                                                    className={`relative shrink-0 w-[72px] ${isGanttBeingEdited ? 'pointer-events-none opacity-50' : ''}`}
+                                                    title={isGanttBeingEdited ? '다른 사용자가 수정 중입니다' : '클릭하여 진척율 변경'}
+                                                >
+                                                    <WheelProgressPicker
+                                                        value={node.progress ?? 0}
+                                                        onChange={(v) => updateDetailSchedule(node.id, { progress: v })}
+                                                        variant="ghost"
+                                                        accentColor={getProgressAccent(node.progress ?? 0)}
+                                                    />
                                                 </div>
                                             )}
                                         </div>

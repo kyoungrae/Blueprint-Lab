@@ -760,7 +760,7 @@ export const WheelProgressPicker: React.FC<WheelProgressPickerProps> = ({
     const display = snapProgress(value);
 
     const triggerClass = variant === 'ghost'
-        ? 'w-full text-center text-sm outline-none bg-transparent border-none p-0 cursor-pointer font-black'
+        ? 'w-full flex items-center gap-1.5 text-sm outline-none bg-transparent border-none p-0 cursor-pointer min-w-0'
         : variant === 'panel'
             ? 'w-full flex items-center gap-2 px-2 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50 hover:border-rose-300 transition-colors outline-none focus:border-rose-400'
             : 'w-full flex items-center gap-2 text-left px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white hover:border-emerald-300 transition-colors outline-none focus:border-emerald-400';
@@ -772,10 +772,14 @@ export const WheelProgressPicker: React.FC<WheelProgressPickerProps> = ({
                 type="button"
                 onClick={() => setOpen(v => !v)}
                 className={triggerClass}
-                style={variant === 'ghost' ? { color: accentColor } : undefined}
             >
                 {variant === 'ghost' ? (
-                    <span>{display}%</span>
+                    <>
+                        <span className="flex-1 min-w-0 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <span className="block h-full rounded-full transition-all" style={{ width: `${display}%`, backgroundColor: accentColor }} />
+                        </span>
+                        <span className="shrink-0 font-black tabular-nums text-xs w-8 text-right" style={{ color: accentColor }}>{display}%</span>
+                    </>
                 ) : (
                     <>
                         <span className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">

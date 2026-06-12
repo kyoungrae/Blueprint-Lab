@@ -509,13 +509,15 @@ const WbsDevDetail: React.FC = () => {
     useEffect(() => {
         if (!showBulk) return;
         const handler = (e: MouseEvent) => {
-            if (
-                bulkPanelRef.current && !bulkPanelRef.current.contains(e.target as Node) &&
-                bulkTriggerRef.current && !bulkTriggerRef.current.contains(e.target as Node)
-            ) {
-                setShowBulk(false);
-                setBulkField(null);
-            }
+            const t = e.target as Node;
+            if (bulkPanelRef.current?.contains(t)) return;
+            if (bulkTriggerRef.current?.contains(t)) return;
+            // Wheel pickers render in a portal — clicks there must not close the bulk panel
+            if ((t as Element).closest?.(
+                '[data-wheel-date-picker-popup], [data-wheel-time-picker-popup], [data-wheel-color-picker-popup], [data-wheel-progress-picker-popup]'
+            )) return;
+            setShowBulk(false);
+            setBulkField(null);
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
@@ -821,7 +823,6 @@ const WbsDevDetail: React.FC = () => {
                                                                 onChange={(v) => updateRow(r.id, { progress: v })}
                                                                 variant="ghost"
                                                                 accentColor="#10b981"
-                                                                className="[&_button]:text-right"
                                                             />
                                                         </div>
                                                     )}
