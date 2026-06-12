@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, Layers, User, CalendarDays, CalendarCheck, Activity, Percent, ChevronLeft, RotateCcw, Lock, PenLine } from 'lucide-react';
-import WheelDatePicker from './WheelDatePicker';
+import WheelDatePicker, { WheelProgressPicker } from './WheelDatePicker';
 import { useWbsStore } from '../../store/wbsStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
@@ -577,19 +577,12 @@ const WbsDevDetail: React.FC = () => {
         }
         if (bulkField === 'progress') {
             return (
-                <div className="flex items-center gap-1 mt-2">
-                    <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={bulkValue}
-                        onChange={(e) => setBulkValue(e.target.value)}
-                        placeholder="0"
-                        className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-emerald-400"
-                        autoFocus
-                    />
-                    <span className="text-xs text-gray-400 shrink-0">%</span>
-                </div>
+                <WheelProgressPicker
+                    value={Math.min(100, Math.max(0, Number(bulkValue) || 0))}
+                    onChange={(v) => setBulkValue(String(v))}
+                    className="w-full mt-2"
+                    accentColor="#10b981"
+                />
             );
         }
         // assignee — 멤버 선택 + 직접입력
@@ -822,9 +815,14 @@ const WbsDevDetail: React.FC = () => {
                                                             <LockTooltip />
                                                         </div>
                                                     ) : (
-                                                        <div className="flex items-center gap-1 px-2">
-                                                            <input type="number" min={0} max={100} value={r.progress} onChange={(e) => updateRow(r.id, { progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} className="w-12 bg-transparent text-sm outline-none focus:bg-emerald-50/50 rounded text-right" />
-                                                            <span className="text-xs text-gray-400">%</span>
+                                                        <div className="px-2">
+                                                            <WheelProgressPicker
+                                                                value={r.progress}
+                                                                onChange={(v) => updateRow(r.id, { progress: v })}
+                                                                variant="ghost"
+                                                                accentColor="#10b981"
+                                                                className="[&_button]:text-right"
+                                                            />
                                                         </div>
                                                     )}
                                                 </td>
