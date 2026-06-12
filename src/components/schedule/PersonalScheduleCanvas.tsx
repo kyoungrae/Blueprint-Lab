@@ -1996,6 +1996,8 @@ const TodoView: React.FC<{
     );
 };
 
+const CALENDAR_SPLIT_DEFAULT = 50;
+
 // ── 메인 캔버스 ───────────────────────────────────────────────────────────
 const PersonalScheduleCanvas: React.FC = () => {
     const { projects, setCurrentProject } = useProjectStore();
@@ -2031,18 +2033,21 @@ const PersonalScheduleCanvas: React.FC = () => {
     const [panelInitialTab, setPanelInitialTab] = useState<'main' | number>('main');
     const [panelOpen, setPanelOpen] = useState(false);
     const [calendarScrollHour, setCalendarScrollHour] = useState<number | null>(null);
-    const [calendarSplitPct, setCalendarSplitPct] = useState(50);
+    const [calendarSplitPct, setCalendarSplitPct] = useState(CALENDAR_SPLIT_DEFAULT);
     const splitContainerRef = useRef<HTMLDivElement>(null);
     const splitDragRef = useRef<{ startY: number; startPct: number } | null>(null);
+    const splitDraggedRef = useRef(false);
 
     const handleSplitPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         e.preventDefault();
+        splitDraggedRef.current = false;
         splitDragRef.current = { startY: e.clientY, startPct: calendarSplitPct };
         e.currentTarget.setPointerCapture(e.pointerId);
     };
 
     const handleSplitPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
         if (!splitDragRef.current || !splitContainerRef.current) return;
+        if (Math.abs(e.clientY - splitDragRef.current.startY) > 3) splitDraggedRef.current = true;
         const rect = splitContainerRef.current.getBoundingClientRect();
         const deltaPct = ((e.clientY - splitDragRef.current.startY) / rect.height) * 100;
         const next = splitDragRef.current.startPct + deltaPct;
@@ -2051,6 +2056,11 @@ const PersonalScheduleCanvas: React.FC = () => {
 
     const handleSplitPointerUp = () => {
         splitDragRef.current = null;
+    };
+
+    const handleSplitDoubleClick = () => {
+        if (splitDraggedRef.current) return;
+        setCalendarSplitPct(CALENDAR_SPLIT_DEFAULT);
     };
 
     const filteredEvents = useMemo(() =>
@@ -2310,6 +2320,8 @@ const PersonalScheduleCanvas: React.FC = () => {
                                         onPointerMove={handleSplitPointerMove}
                                         onPointerUp={handleSplitPointerUp}
                                         onPointerCancel={handleSplitPointerUp}
+                                        onDoubleClick={handleSplitDoubleClick}
+                                        title="드래그하여 높이 조절 · 더블클릭하여 기본값 복원"
                                         className="shrink-0 h-2 cursor-ns-resize group relative z-10 flex items-center justify-center touch-none select-none bg-gray-50 hover:bg-rose-50/80 transition-colors"
                                     >
                                         <div className="w-12 h-1 rounded-full bg-gray-300 group-hover:bg-rose-400 transition-colors" />
