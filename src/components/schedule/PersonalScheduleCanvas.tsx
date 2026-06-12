@@ -237,7 +237,7 @@ type AllDayBarLayout = {
 /** 종일 bar — 부모 아래에 하위 row 배치 + spanning */
 function layoutAllDayWeekBars(events: CalendarEvent[], days: Date[]): { bars: AllDayBarLayout[]; rowHeight: number } {
     const weekStartYmd = toYMD(days[0]);
-    const weekEndYmd = toYMD(days[6]);
+    const weekEndYmd = toYMD(days[days.length - 1]);
 
     const inWeek = events.filter(e => {
         if (!e.allDay) return false;
@@ -449,6 +449,24 @@ function computeGanttChartRange(tasks: GanttTask[]) {
         chartEnd: addDays(end, GANTT_CHART_PADDING_DAYS),
     };
 }
+
+function computeCalendarScrollRange(events: CalendarEvent[]) {
+    const now = startOfDay(new Date());
+    let start = addDays(now, -GANTT_CHART_PAST_DAYS);
+    let end = addDays(now, GANTT_CHART_FUTURE_DAYS);
+    for (const e of events) {
+        const s = startOfDay(parseDate(normEventYmd(e.startDate)));
+        const ed = startOfDay(parseDate(normEventYmd(e.endDate)));
+        if (s < start) start = s;
+        if (ed > end) end = ed;
+    }
+    return {
+        rangeStart: addDays(start, -GANTT_CHART_PADDING_DAYS),
+        rangeEnd: addDays(end, GANTT_CHART_PADDING_DAYS),
+    };
+}
+
+const CALENDAR_TIME_GUTTER = 48;
 
 // ── SEED 데이터 (캘린더·간트 단일 소스) ─────────────────────────────────────
 const today = new Date();
@@ -937,47 +955,48 @@ const WeekView: React.FC<{
     onSlotClick: (date: string, time: string) => void;
     onAllDayClick: (date: string) => void;
     categories: Record<string, CategoryDef>;
-    onNavigate: (dir: 'prev' | 'next') => void;
+    onWeekChange: (ws: Date) => void;
     scrollToHour?: number | null;
     onScrollHourDone?: () => void;
-}> = ({ weekStart, events, onSelectEvent, onSlotClick, onAllDayClick, categories, onNavigate, scrollToHour, onScrollHourDone }) => {
+}> = ({ weekStart, events, onSelectEvent, onSlotClick, onAllDayClick, categories, onWeekChange, scrollToHour, onScrollHourDone }) => {
     const hours = React.useMemo(() => getCalendarHours(), []);
-    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-    const scrollRef    = React.useRef<HTMLDivElement>(null);
+    const scrollRef = React.useRef<HTMLDivElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
+    const calIsSource = React.useRef(false);
+    const extSyncing = React.useRef(false);
+    const snapTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const syncClearTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const [dayW, setDayW] = React.useState(100);
+
+    const { rangeStart, rangeEnd } = React.useMemo(() => computeCalendarScrollRange(events), [events]);
+    const totalDays = daysBetweenDates(rangeStart, rangeEnd) + 1;
+    const allDays = React.useMemo(
+        () => Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i)),
+        [rangeStart, totalDays],
+    );
+    const timelineWidth = totalDays * dayW;
+
+    const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
     React.useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
-        let accumulated = 0;
-        let lastNav = 0;
-        const THRESHOLD = 50;   // px
-        const COOLDOWN  = 500;  // ms — 이동 후 재입력 차단
-        const onWheel = (e: WheelEvent) => {
-            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-            e.preventDefault();
-            const now = Date.now();
-            if (now - lastNav < COOLDOWN) { accumulated = 0; return; }
-            accumulated += e.deltaX;
-            if (Math.abs(accumulated) >= THRESHOLD) {
-                onNavigate(accumulated > 0 ? 'next' : 'prev');
-                accumulated = 0;
-                lastNav = now;
-            }
+        const update = () => {
+            const w = el.clientWidth - CALENDAR_TIME_GUTTER;
+            setDayW(Math.max(72, w / 7));
         };
-        el.addEventListener('wheel', onWheel, { passive: false });
-        return () => { el.removeEventListener('wheel', onWheel); };
-    }, [onNavigate]);
-    const DAY_LABELS = ['일','월','화','수','목','금','토'];
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
 
-    /** 종일·기간 — 연속 spanning bar + 부모 아래 하위 row */
-    const allDayLayout = React.useMemo(() => layoutAllDayWeekBars(events, days), [events, days]);
+    const allDayLayout = React.useMemo(() => layoutAllDayWeekBars(events, allDays), [events, allDays]);
 
-    /** 시간 그리드 — 동적 행 높이 + 연속 bar */
     const timedLayout = React.useMemo(() => {
         const hourHeights = hours.map(h => {
             let maxRows = 1;
-            days.forEach(d => {
+            allDays.forEach(d => {
                 const ymd = toYMD(d);
                 const dayEs = events.filter(e => !e.allDay && e.startDate === ymd);
                 maxRows = Math.max(maxRows, maxOverlapRowsAtHour(dayEs, h));
@@ -991,14 +1010,87 @@ const WeekView: React.FC<{
         }
         const totalH = hourOffset[hourHeights.length];
 
-        const dayLayouts = days.map(d => {
+        const dayLayouts = allDays.map(d => {
             const ymd = toYMD(d);
             const dayEvents = events.filter(e => !e.allDay && e.startDate === ymd);
             return layoutDayTimedEvents(dayEvents, hourOffset, hourHeights, CALENDAR_PRIME_HOUR);
         });
 
         return { hourHeights, hourOffset, totalH, dayLayouts };
-    }, [events, days, hours]);
+    }, [events, allDays, hours]);
+
+    const scrollToWeek = React.useCallback((ws: Date) => {
+        const el = scrollRef.current;
+        if (!el) return;
+        extSyncing.current = true;
+        const dayIdx = daysBetweenDates(rangeStart, startOfDay(ws));
+        const viewWidth = el.clientWidth - CALENDAR_TIME_GUTTER;
+        const target = Math.max(0, dayIdx * dayW + 3.5 * dayW - viewWidth / 2);
+        el.scrollLeft = target;
+        clearTimeout(syncClearTimer.current);
+        syncClearTimer.current = setTimeout(() => { extSyncing.current = false; }, 450);
+    }, [rangeStart, dayW]);
+
+    React.useLayoutEffect(() => {
+        if (calIsSource.current) {
+            calIsSource.current = false;
+            return;
+        }
+        scrollToWeek(weekStart);
+    }, [weekStart, scrollToWeek]);
+
+    React.useLayoutEffect(() => {
+        scrollToWeek(weekStart);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const snap = React.useCallback(() => {
+        const el = scrollRef.current;
+        if (!el || extSyncing.current) return;
+        const viewWidth = el.clientWidth - CALENDAR_TIME_GUTTER;
+        const S = el.scrollLeft;
+        const rawN = (S + viewWidth / 2 - 3.5 * dayW) / dayW;
+        const snapN = Math.round(rawN);
+        const target = Math.max(0, snapN * dayW + 3.5 * dayW - viewWidth / 2);
+
+        extSyncing.current = true;
+        clearTimeout(syncClearTimer.current);
+        el.style.scrollBehavior = 'smooth';
+        el.scrollLeft = target;
+        el.style.scrollBehavior = '';
+
+        const newWeekStart = startOfDay(addDays(rangeStart, snapN));
+        calIsSource.current = true;
+        onWeekChange(newWeekStart);
+        syncClearTimer.current = setTimeout(() => { extSyncing.current = false; }, 500);
+    }, [rangeStart, dayW, onWeekChange]);
+
+    const handleScroll = React.useCallback(() => {
+        const el = scrollRef.current;
+        if (!el || extSyncing.current) return;
+
+        const viewWidth = el.clientWidth - CALENDAR_TIME_GUTTER;
+        const S = el.scrollLeft;
+        const rawN = (S + viewWidth / 2 - 3.5 * dayW) / dayW;
+        const N = Math.round(rawN);
+        const newWeekStart = startOfDay(addDays(rangeStart, N));
+        calIsSource.current = true;
+        onWeekChange(newWeekStart);
+
+        clearTimeout(snapTimer.current);
+        snapTimer.current = setTimeout(snap, 300);
+    }, [rangeStart, dayW, onWeekChange, snap]);
+
+    React.useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => {
+            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+            e.preventDefault();
+            el.scrollLeft += e.deltaX;
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, []);
 
     React.useEffect(() => {
         if (!scrollRef.current) return;
@@ -1014,126 +1106,140 @@ const WeekView: React.FC<{
 
     return (
         <div ref={containerRef} className="flex flex-col h-full overflow-hidden">
-            {/* 헤더 */}
-            <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '48px repeat(7,1fr)' }}>
-                <div className="min-h-[40px]" />
-                {days.map((d, i) => {
-                    const isToday = toYMD(d) === toYMD(new Date());
-                    return (
-                        <div key={i} className={`text-center py-1 border-l border-gray-100 ${d.getDay() === 0 ? 'text-red-500' : d.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}`}>
-                            <div className="text-[9px] font-bold text-gray-400 leading-none">{DAY_LABELS[d.getDay()]}</div>
-                            <div className={`text-xs font-black w-6 h-6 mx-auto flex items-center justify-center rounded-full ${isToday ? 'bg-rose-500 text-white' : ''}`}>
-                                {d.getDate()}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-            {/* 종일·기간 이벤트 — 시작~종료까지 연속 바 */}
-            <div className="grid shrink-0 border-b border-gray-100" style={{ gridTemplateColumns: '48px repeat(7,1fr)', minHeight: allDayLayout.rowHeight }}>
-                <div className="text-[10px] text-gray-400 px-1 pt-1 text-right">종일</div>
-                <div className="relative col-span-7 border-l border-gray-100" style={{ minHeight: allDayLayout.rowHeight }}>
-                    {/* 요일 구분선 */}
-                    <div className="absolute inset-0 grid grid-cols-7 pointer-events-none">
-                        {days.map((_, i) => (
-                            <div key={i} className={`border-l border-gray-100 ${i === 0 ? 'border-l-0' : ''}`} />
-                        ))}
-                    </div>
-                    {/* 빈 종일 슬롯 클릭 */}
-                    <div className="absolute inset-0 grid grid-cols-7 z-[1]">
-                        {days.map((d, i) => (
-                            <div
-                                key={i}
-                                className={`cursor-pointer hover:bg-rose-50/30 transition-colors ${i === 0 ? '' : 'border-l border-gray-100'}`}
-                                onClick={() => onAllDayClick(toYMD(d))}
-                            />
-                        ))}
-                    </div>
-                    {allDayLayout.bars.map(({ event: e, startCol, span, lane, isSub }) => {
-                        const color = eventBarColor(e, categories);
-                        const inset = isSub ? ALLDAY_SUB_INDENT : 2;
-                        return (
-                        <div
-                            key={e.id}
-                            onClick={() => onSelectEvent(e)}
-                            className={`absolute text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer z-10 leading-snug
-                                ${isSub ? '' : 'shadow-sm'}`}
-                            style={{
-                                left: `calc(${(startCol / 7) * 100}% + ${inset}px)`,
-                                width: `calc(${(span / 7) * 100}% - ${inset + 2}px)`,
-                                top: lane * (ALLDAY_BAR_MIN_H + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP,
-                                minHeight: ALLDAY_BAR_MIN_H,
-                                ...calendarBarStyle(isSub, color),
-                            }}
-                            title={e.title}
-                        >
-                            <span className="flex items-center gap-0.5 min-w-0">
-                                {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
-                                <span className="truncate">{e.title}</span>
-                            </span>
-                        </div>
-                        );
-                    })}
-                </div>
-            </div>
-            {/* 시간 그리드 — 연속 bar + 동적 높이 */}
-            <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-                <div className="flex" style={{ height: timedLayout.totalH, minHeight: '100%' }}>
-                    {/* 시간 라벨 */}
-                    <div className="w-12 shrink-0 relative">
-                        {hours.map((h, i) => (
-                            <div
-                                key={h}
-                                className="absolute w-full text-[10px] text-gray-400 text-right pr-2 pt-1 border-t border-gray-100"
-                                style={{ top: timedLayout.hourOffset[i], height: timedLayout.hourHeights[i] }}
-                            >
-                                {pad(h)}:00
-                            </div>
-                        ))}
-                    </div>
-                    {/* 요일 열 */}
-                    {days.map((d, di) => (
-                        <div key={di} className="flex-1 relative border-l border-gray-100">
-                            {hours.map((h, i) => (
-                                <div
-                                    key={h}
-                                    className="absolute inset-x-0 border-t border-gray-100 cursor-pointer hover:bg-rose-50/30 transition-colors"
-                                    style={{ top: timedLayout.hourOffset[i], height: timedLayout.hourHeights[i] }}
-                                    onClick={() => onSlotClick(toYMD(d), `${pad(h)}:00`)}
-                                />
-                            ))}
-                            {timedLayout.dayLayouts[di].map(({ event: e, top, height, isSub }) => {
-                                const color = eventBarColor(e, categories);
-                                const inset = isSub ? ALLDAY_SUB_INDENT : 2;
-                                const timeLabel = e.startTime && e.endTime ? `${e.startTime} - ${e.endTime}` : undefined;
+            <div
+                ref={scrollRef}
+                className="flex-1 min-h-0 overflow-auto"
+                onScroll={handleScroll}
+            >
+                <div style={{ minWidth: CALENDAR_TIME_GUTTER + timelineWidth }}>
+                    {/* 날짜 헤더 */}
+                    <div className="sticky top-0 z-20 flex bg-white border-b border-gray-100 shadow-[0_1px_0_0_rgba(229,231,235,1)]">
+                        <div className="sticky left-0 z-30 shrink-0 bg-white min-h-[40px]" style={{ width: CALENDAR_TIME_GUTTER }} />
+                        <div className="flex shrink-0" style={{ width: timelineWidth }}>
+                            {allDays.map((d, i) => {
+                                const isToday = toYMD(d) === toYMD(new Date());
                                 return (
                                     <div
-                                        key={e.id}
-                                        onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
-                                        className={`absolute rounded-md px-2 py-1 text-[10px] font-bold cursor-pointer z-10 overflow-hidden leading-snug
-                                            ${isSub ? '' : 'shadow-sm'}`}
-                                        style={{
-                                            top: top + 1,
-                                            height: Math.max(height - 2, TIMED_BAR_MIN_H),
-                                            left: inset,
-                                            right: 2,
-                                            ...calendarBarStyle(isSub, color),
-                                        }}
+                                        key={i}
+                                        className={`shrink-0 text-center py-1 border-l border-gray-100 ${d.getDay() === 0 ? 'text-red-500' : d.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}`}
+                                        style={{ width: dayW }}
                                     >
-                                        {timeLabel && (
-                                            <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
-                                                {timeLabel}
-                                            </div>
-                                        )}
-                                        <div className="flex items-center gap-0.5 min-w-0">
-                                            {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
-                                            <span className="truncate">{e.title}</span>
+                                        <div className="text-[9px] font-bold text-gray-400 leading-none">{DAY_LABELS[d.getDay()]}</div>
+                                        <div className={`text-xs font-black w-6 h-6 mx-auto flex items-center justify-center rounded-full ${isToday ? 'bg-rose-500 text-white' : ''}`}>
+                                            {d.getDate()}
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
-                    ))}
+                    </div>
+
+                    {/* 종일·기간 이벤트 */}
+                    <div className="sticky top-[40px] z-10 flex bg-white border-b border-gray-100" style={{ minHeight: allDayLayout.rowHeight }}>
+                        <div className="sticky left-0 z-30 shrink-0 bg-white text-[10px] text-gray-400 px-1 pt-1 text-right" style={{ width: CALENDAR_TIME_GUTTER }}>
+                            종일
+                        </div>
+                        <div className="relative shrink-0 border-l border-gray-100" style={{ width: timelineWidth, minHeight: allDayLayout.rowHeight }}>
+                            {allDayLayout.bars.map(({ event: e, startCol, span, lane, isSub }) => {
+                                const color = eventBarColor(e, categories);
+                                const inset = isSub ? ALLDAY_SUB_INDENT : 2;
+                                return (
+                                    <div
+                                        key={e.id}
+                                        onClick={() => onSelectEvent(e)}
+                                        className={`absolute text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer z-[1] leading-snug ${isSub ? '' : 'shadow-sm'}`}
+                                        style={{
+                                            left: startCol * dayW + inset,
+                                            width: span * dayW - inset - 2,
+                                            top: lane * (ALLDAY_BAR_MIN_H + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP,
+                                            minHeight: ALLDAY_BAR_MIN_H,
+                                            ...calendarBarStyle(isSub, color),
+                                        }}
+                                        title={e.title}
+                                    >
+                                        <span className="flex items-center gap-0.5 min-w-0">
+                                            {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
+                                            <span className="truncate">{e.title}</span>
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                            {allDays.map((d, i) => (
+                                <div
+                                    key={toYMD(d)}
+                                    className="absolute top-0 bottom-0 border-l border-gray-100 cursor-pointer hover:bg-rose-50/30 transition-colors z-[1]"
+                                    style={{ left: i * dayW, width: dayW }}
+                                    onClick={() => onAllDayClick(toYMD(d))}
+                                />
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 시간 그리드 */}
+                    <div className="flex relative" style={{ height: timedLayout.totalH, minHeight: 200 }}>
+                        <div
+                            className="sticky left-0 z-20 shrink-0 bg-white relative shadow-[1px_0_0_0_#e5e7eb]"
+                            style={{ width: CALENDAR_TIME_GUTTER, height: timedLayout.totalH }}
+                        >
+                            {hours.map((h, i) => (
+                                <div
+                                    key={h}
+                                    className="absolute w-full text-[10px] text-gray-400 text-right pr-2 pt-1 border-t border-gray-100"
+                                    style={{ top: timedLayout.hourOffset[i], height: timedLayout.hourHeights[i] }}
+                                >
+                                    {pad(h)}:00
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="relative shrink-0 z-0" style={{ width: timelineWidth, height: timedLayout.totalH }}>
+                            {allDays.map((d, di) => (
+                                <div
+                                    key={toYMD(d)}
+                                    className="absolute top-0 border-l border-gray-100 overflow-hidden"
+                                    style={{ left: di * dayW, width: dayW, height: timedLayout.totalH }}
+                                >
+                                    {hours.map((h, i) => (
+                                        <div
+                                            key={h}
+                                            className="absolute inset-x-0 border-t border-gray-100 cursor-pointer hover:bg-rose-50/30 transition-colors"
+                                            style={{ top: timedLayout.hourOffset[i], height: timedLayout.hourHeights[i] }}
+                                            onClick={() => onSlotClick(toYMD(d), `${pad(h)}:00`)}
+                                        />
+                                    ))}
+                                    {timedLayout.dayLayouts[di].map(({ event: e, top, height, isSub }) => {
+                                        const color = eventBarColor(e, categories);
+                                        const inset = isSub ? ALLDAY_SUB_INDENT : 2;
+                                        const timeLabel = e.startTime && e.endTime ? `${e.startTime} - ${e.endTime}` : undefined;
+                                        return (
+                                            <div
+                                                key={e.id}
+                                                onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
+                                                className={`absolute rounded-md px-2 py-1 text-[10px] font-bold cursor-pointer z-[1] overflow-hidden leading-snug ${isSub ? '' : 'shadow-sm'}`}
+                                                style={{
+                                                    top: top + 1,
+                                                    height: Math.max(height - 2, TIMED_BAR_MIN_H),
+                                                    left: inset,
+                                                    right: 2,
+                                                    ...calendarBarStyle(isSub, color),
+                                                }}
+                                            >
+                                                {timeLabel && (
+                                                    <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
+                                                        {timeLabel}
+                                                    </div>
+                                                )}
+                                                <div className="flex items-center gap-0.5 min-w-0">
+                                                    {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
+                                                    <span className="truncate">{e.title}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2306,11 +2412,11 @@ const PersonalScheduleCanvas: React.FC = () => {
                                                 categories={categories}
                                                 scrollToHour={calendarScrollHour}
                                                 onScrollHourDone={() => setCalendarScrollHour(null)}
-                                                onNavigate={dir => {
-    const delta = dir === 'next' ? 1 : -1;
-    setWeekStart(d => addDays(d, delta));
-    setSelectedDate(d => addDays(d, delta));
-}} />
+                                                onWeekChange={ws => {
+                                                    const d = startOfDay(ws);
+                                                    setWeekStart(d);
+                                                    setSelectedDate(d);
+                                                }} />
                                         )}
                                         {viewMode === 'month' && (
                                             <MonthView month={selectedDate} events={calendarEvents}
