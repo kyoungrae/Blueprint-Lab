@@ -77,6 +77,16 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                     rows: [],
                     savedAt: new Date()
                 }
+            }),
+            ...(pt === 'PERSONAL_SCHEDULE' && {
+                personalScheduleSnapshot: {
+                    version: 1,
+                    events: [],
+                    todos: [],
+                    categories: {},
+                    visibleCats: [],
+                    savedAt: new Date()
+                }
             })
         });
 
@@ -230,6 +240,20 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                     rows: Array.isArray(data.rows) ? data.rows : (project.wbsSnapshot?.rows ?? []),
                     projectSchedule: data.projectSchedule !== undefined ? data.projectSchedule : (project.wbsSnapshot?.projectSchedule ?? null),
                     detailSchedules: Array.isArray(data.detailSchedules) ? data.detailSchedules : (project.wbsSnapshot?.detailSchedules ?? []),
+                    savedAt: new Date()
+                };
+            } else if (project.projectType === 'PERSONAL_SCHEDULE' && (
+                data.events !== undefined
+                || data.todos !== undefined
+                || data.categories !== undefined
+                || data.visibleCats !== undefined
+            )) {
+                project.personalScheduleSnapshot = {
+                    version: (project.personalScheduleSnapshot?.version || 0) + 1,
+                    events: Array.isArray(data.events) ? data.events : (project.personalScheduleSnapshot?.events ?? []),
+                    todos: Array.isArray(data.todos) ? data.todos : (project.personalScheduleSnapshot?.todos ?? []),
+                    categories: data.categories ?? project.personalScheduleSnapshot?.categories ?? {},
+                    visibleCats: Array.isArray(data.visibleCats) ? data.visibleCats : (project.personalScheduleSnapshot?.visibleCats ?? []),
                     savedAt: new Date()
                 };
             } else {

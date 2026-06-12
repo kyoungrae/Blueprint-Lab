@@ -5,6 +5,7 @@ import {
     ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
+import { schedulePersonalScheduleSave } from '../../store/personalScheduleStore';
 import WheelDatePicker, { WheelTimePicker, WheelColorPicker, WheelProgressPicker } from '../wbs/WheelDatePicker';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
@@ -60,10 +61,12 @@ interface GanttTask {
     children?: GanttTask[];
 }
 
-/** 캘린더 표시용 — 하위 일정 펼침 메타 */
+/** 캘린더 표시용 — 하위 일정·반복 일정 펼침 메타 */
 interface CalendarEvent extends ScheduleEvent {
     _sourceEventId?: string;
     _subEventIndex?: number;
+    /** 반복 원본 일정 id (클릭 시 패널 열기용) */
+    _recurrenceSourceId?: string;
 }
 
 interface TodoItem {
@@ -156,13 +159,141 @@ function subEventToCalendarEvent(parent: ScheduleEvent, sub: SubEvent, index: nu
     };
 }
 
-function expandEventsForCalendar(events: ScheduleEvent[], visibleCats: Set<CategoryKey>): CalendarEvent[] {
-    const out: CalendarEvent[] = [];
+const GANTT_CHART_PAST_DAYS = 180;
+const GANTT_CHART_FUTURE_DAYS = 365;
+const GANTT_CHART_PADDING_DAYS = 30;
+const MAX_REPEAT_OCCURRENCES = 1000;
+
+function getCalendarExpandRange(events: ScheduleEvent[]) {
+    const now = startOfDay(new Date());
+    let start = addDays(now, -GANTT_CHART_PAST_DAYS);
+    let end = addDays(now, GANTT_CHART_FUTURE_DAYS);
     for (const e of events) {
-        if (visibleCats.has(e.category)) out.push(e);
+        const s = startOfDay(parseDate(normEventYmd(e.startDate)));
+        const ed = startOfDay(parseDate(normEventYmd(e.endDate)));
+        if (s < start) start = s;
+        if (ed > end) end = ed;
+        for (const sub of e.subEvents ?? []) {
+            const ss = startOfDay(parseDate(normEventYmd(sub.startDate)));
+            const se = startOfDay(parseDate(normEventYmd(sub.endDate)));
+            if (ss < start) start = ss;
+            if (se > end) end = se;
+        }
+    }
+    return {
+        rangeStart: addDays(start, -GANTT_CHART_PADDING_DAYS),
+        rangeEnd: addDays(end, GANTT_CHART_PADDING_DAYS),
+    };
+}
+
+function advanceMonthly(cursor: Date, anchor: Date) {
+    const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(anchor.getDate(), lastDay));
+    return next;
+}
+
+function advanceYearly(cursor: Date, anchor: Date) {
+    const y = cursor.getFullYear() + 1;
+    const lastDay = new Date(y, anchor.getMonth() + 1, 0).getDate();
+    return new Date(y, anchor.getMonth(), Math.min(anchor.getDate(), lastDay));
+}
+
+function fastForwardRepeatCursor(cursor: Date, anchor: Date, repeat: RepeatType, rangeStart: Date) {
+    if (cursor >= rangeStart) return cursor;
+    if (repeat === 'daily') {
+        const diff = daysBetweenDates(cursor, rangeStart);
+        return addDays(cursor, diff);
+    }
+    let next = new Date(cursor);
+    let guard = 0;
+    while (next < rangeStart && guard < MAX_REPEAT_OCCURRENCES) {
+        if (repeat === 'weekly') next = addDays(next, 7);
+        else if (repeat === 'monthly') next = advanceMonthly(next, anchor);
+        else if (repeat === 'yearly') next = advanceYearly(next, anchor);
+        else break;
+        guard++;
+    }
+    return next;
+}
+
+function iterateRepeatOccurrenceStarts(
+    anchorStart: Date,
+    repeat: RepeatType,
+    rangeStart: Date,
+    rangeEnd: Date,
+): Date[] {
+    if (repeat === 'none') {
+        return anchorStart >= rangeStart && anchorStart <= rangeEnd ? [anchorStart] : [];
+    }
+
+    const out: Date[] = [];
+    let cursor = fastForwardRepeatCursor(new Date(anchorStart), anchorStart, repeat, rangeStart);
+    let guard = 0;
+
+    while (cursor <= rangeEnd && guard < MAX_REPEAT_OCCURRENCES) {
+        if (cursor >= anchorStart) out.push(new Date(cursor));
+        guard++;
+        if (repeat === 'daily') cursor = addDays(cursor, 1);
+        else if (repeat === 'weekly') cursor = addDays(cursor, 7);
+        else if (repeat === 'monthly') cursor = advanceMonthly(cursor, anchorStart);
+        else if (repeat === 'yearly') cursor = advanceYearly(cursor, anchorStart);
+        else break;
+    }
+    return out;
+}
+
+function shiftEventToOccurrence<T extends { startDate: string; endDate: string }>(
+    event: T,
+    occStart: Date,
+    anchorStart: Date,
+): T {
+    const duration = daysBetweenDates(
+        anchorStart,
+        startOfDay(parseDate(normEventYmd(event.endDate))),
+    );
+    return {
+        ...event,
+        startDate: toYMD(occStart),
+        endDate: toYMD(addDays(occStart, duration)),
+    };
+}
+
+function expandEventRepeats(event: CalendarEvent, rangeStart: Date, rangeEnd: Date): CalendarEvent[] {
+    const repeat = event.repeat ?? 'none';
+    if (repeat === 'none') return [event];
+
+    const anchorStart = startOfDay(parseDate(normEventYmd(event.startDate)));
+    const recurrenceSourceId = event._recurrenceSourceId
+        ?? event._sourceEventId
+        ?? event.id.split('::')[0];
+    const occurrences = iterateRepeatOccurrenceStarts(anchorStart, repeat, rangeStart, rangeEnd);
+
+    return occurrences.map(occStart => {
+        const occYmd = toYMD(occStart);
+        const shifted = shiftEventToOccurrence(event, occStart, anchorStart);
+        return {
+            ...shifted,
+            id: `${event.id.split('::occ::')[0]}::occ::${occYmd}`,
+            repeat: 'none' as RepeatType,
+            _recurrenceSourceId: recurrenceSourceId,
+            _sourceEventId: event._sourceEventId,
+            _subEventIndex: event._subEventIndex,
+        };
+    });
+}
+
+function expandEventsForCalendar(events: ScheduleEvent[], visibleCats: Set<CategoryKey>): CalendarEvent[] {
+    const { rangeStart, rangeEnd } = getCalendarExpandRange(events);
+    const out: CalendarEvent[] = [];
+
+    for (const e of events) {
+        if (visibleCats.has(e.category)) {
+            out.push(...expandEventRepeats(e, rangeStart, rangeEnd));
+        }
         (e.subEvents ?? []).forEach((sub, i) => {
             if (!visibleCats.has(sub.category)) return;
-            out.push(subEventToCalendarEvent(e, sub, i));
+            out.push(...expandEventRepeats(subEventToCalendarEvent(e, sub, i), rangeStart, rangeEnd));
         });
     }
     return out;
@@ -430,10 +561,6 @@ function ganttPatchToEvent(patch: Partial<GanttTask>): Partial<ScheduleEvent> {
     return out;
 }
 
-const GANTT_CHART_PAST_DAYS = 180;
-const GANTT_CHART_FUTURE_DAYS = 365;
-const GANTT_CHART_PADDING_DAYS = 30;
-
 function computeGanttChartRange(tasks: GanttTask[]) {
     const now = startOfDay(new Date());
     let start = addDays(now, -GANTT_CHART_PAST_DAYS);
@@ -469,15 +596,7 @@ function computeCalendarScrollRange(events: CalendarEvent[]) {
 const CALENDAR_TIME_GUTTER = 48;
 
 // ── SEED 데이터 ───────────────────────────────────────────────────────────
-const today = new Date();
 const SEED_SCHEDULE: ScheduleEvent[] = [];
-
-const SEED_TODOS: TodoItem[] = [
-    { id: 'td1', title: '요구사항 문서 검토', done: true,  category: 'work',     dueDate: toYMD(today) },
-    { id: 'td2', title: '주간 보고서 작성',   done: false, category: 'work',     dueDate: toYMD(addDays(today, 1)) },
-    { id: 'td3', title: '운동 계획 수립',     done: false, category: 'personal', dueDate: toYMD(addDays(today, 2)) },
-    { id: 'td4', title: '회의 자료 준비',     done: false, category: 'meeting',  dueDate: toYMD(today) },
-];
 
 // ── 미니 캘린더 ───────────────────────────────────────────────────────────
 const MiniCalendar: React.FC<{
@@ -2159,19 +2278,87 @@ const TodoView: React.FC<{
 const CALENDAR_SPLIT_DEFAULT = 50;
 
 // ── 메인 캔버스 ───────────────────────────────────────────────────────────
+type PersonalScheduleProjectData = {
+    events?: ScheduleEvent[];
+    todos?: TodoItem[];
+    categories?: Record<string, CategoryDef>;
+    visibleCats?: string[];
+};
+
 const PersonalScheduleCanvas: React.FC = () => {
-    const { projects, setCurrentProject } = useProjectStore();
+    const currentProjectId = useProjectStore(s => s.currentProjectId);
+    const projects = useProjectStore(s => s.projects);
+    const setCurrentProject = useProjectStore(s => s.setCurrentProject);
+    const project = projects.find(p => p.id === currentProjectId);
 
     const [viewMode, setViewMode] = useState<ViewMode>('week');
     const [tab, setTab] = useState<TabMode>('calendar');
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [weekStart, setWeekStart] = useState(() => startOfDay(new Date()));
     const [events, setEvents] = useState<ScheduleEvent[]>(SEED_SCHEDULE);
-    const [todos, setTodos]   = useState<TodoItem[]>(SEED_TODOS);
+    const [todos, setTodos]   = useState<TodoItem[]>([]);
 
     // 카테고리 관리
     const [categories, setCategories] = useState<Record<string, CategoryDef>>(DEFAULT_CATEGORIES);
     const [visibleCats, setVisibleCats] = useState<Set<CategoryKey>>(new Set(Object.keys(DEFAULT_CATEGORIES)));
+
+    const skipSaveRef = useRef(true);
+    const loadedProjectIdRef = useRef<string | null>(null);
+    /** fetchProjects로 서버 스냅샷을 한 번 반영했는지 (삭제 후 빈 목록을 서버 데이터로 되돌리지 않도록) */
+    const initialFetchAppliedRef = useRef(false);
+
+    const applyProjectData = useCallback((data: PersonalScheduleProjectData | undefined) => {
+        const cats = data?.categories && Object.keys(data.categories).length > 0
+            ? data.categories
+            : DEFAULT_CATEGORIES;
+        const vis = Array.isArray(data?.visibleCats) && data.visibleCats.length > 0
+            ? data.visibleCats
+            : Object.keys(cats);
+        skipSaveRef.current = true;
+        setEvents(Array.isArray(data?.events) ? data.events : []);
+        setTodos(Array.isArray(data?.todos) ? data.todos : []);
+        setCategories(cats);
+        setVisibleCats(new Set(vis));
+        requestAnimationFrame(() => { skipSaveRef.current = false; });
+    }, []);
+
+    // 프로젝트 전환 시 로드
+    useEffect(() => {
+        if (!currentProjectId) return;
+        loadedProjectIdRef.current = currentProjectId;
+        initialFetchAppliedRef.current = false;
+        applyProjectData(project?.data as PersonalScheduleProjectData | undefined);
+    }, [currentProjectId, applyProjectData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // fetchProjects 후 서버 일정/할일이 도착했을 때 1회만 반영 (빈 로컬 캐시 → 서버 스냅샷)
+    useEffect(() => {
+        if (!currentProjectId || loadedProjectIdRef.current !== currentProjectId) return;
+        if (initialFetchAppliedRef.current) return;
+
+        const data = project?.data as PersonalScheduleProjectData | undefined;
+        const serverEvents = Array.isArray(data?.events) ? data.events : [];
+        const serverTodos = Array.isArray(data?.todos) ? data.todos : [];
+
+        if (events.length > 0 || todos.length > 0) {
+            initialFetchAppliedRef.current = true;
+            return;
+        }
+        if (serverEvents.length === 0 && serverTodos.length === 0) return;
+
+        initialFetchAppliedRef.current = true;
+        applyProjectData(data);
+    }, [currentProjectId, project?.data, project?.updatedAt, events.length, todos.length, applyProjectData]);
+
+    // 변경 시 DB 저장 (디바운스)
+    useEffect(() => {
+        if (!currentProjectId || skipSaveRef.current || loadedProjectIdRef.current !== currentProjectId) return;
+        schedulePersonalScheduleSave(currentProjectId, {
+            events,
+            todos,
+            categories,
+            visibleCats: Array.from(visibleCats),
+        });
+    }, [currentProjectId, events, todos, categories, visibleCats]);
 
     const handleAddCategory = (label: string, color: string) => {
         const key = `cat_${Date.now()}`;
@@ -2248,6 +2435,15 @@ const PersonalScheduleCanvas: React.FC = () => {
             if (parent) {
                 setPanelEvent(parent);
                 setPanelInitialTab(e._subEventIndex);
+                setPanelOpen(true);
+                return;
+            }
+        }
+        if (e._recurrenceSourceId) {
+            const parent = events.find(x => x.id === e._recurrenceSourceId);
+            if (parent) {
+                setPanelEvent(parent);
+                setPanelInitialTab('main');
                 setPanelOpen(true);
                 return;
             }

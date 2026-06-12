@@ -157,6 +157,17 @@ export const useProjectStore = create<ProjectStore>()(
                                 } else {
                                     projData = { menus: [], rows: [] };
                                 }
+                            } else if (pt === 'PERSONAL_SCHEDULE') {
+                                if (p.personalScheduleSnapshot) {
+                                    projData = {
+                                        events: p.personalScheduleSnapshot.events || [],
+                                        todos: p.personalScheduleSnapshot.todos || [],
+                                        categories: p.personalScheduleSnapshot.categories || {},
+                                        visibleCats: p.personalScheduleSnapshot.visibleCats || [],
+                                    };
+                                } else {
+                                    projData = { events: [], todos: [], categories: {}, visibleCats: [] };
+                                }
                             } else {
                                 // ERD: 서버 currentSnapshot 사용
                                 const snap = p.currentSnapshot;
@@ -215,7 +226,7 @@ export const useProjectStore = create<ProjectStore>()(
                                 : projectType === 'WBS'
                                     ? { menus: [], rows: [] }
                                 : projectType === 'PERSONAL_SCHEDULE'
-                                    ? { events: [], tasks: [], todos: [] }
+                                    ? { events: [], todos: [], categories: {}, visibleCats: [] }
                                 : { entities: [], relationships: [], sections: [] },
                         updatedAt: new Date().toISOString()
                     };
@@ -258,6 +269,8 @@ export const useProjectStore = create<ProjectStore>()(
                                     ? { nodes: [], edges: [], sections: [] }
                                     : (p.projectType || projectType) === 'WBS'
                                         ? { menus: [], rows: [] }
+                                    : (p.projectType || projectType) === 'PERSONAL_SCHEDULE'
+                                        ? { events: [], todos: [], categories: {}, visibleCats: [] }
                                     : { entities: [], relationships: [], sections: [] },
                         bugReports: [],
                     };
@@ -512,7 +525,7 @@ export const useProjectStore = create<ProjectStore>()(
                                                 : p.projectType === 'WBS'
                                                     ? { menus: [], rows: [], projectSchedule: undefined, detailSchedules: [] }
                                                     : p.projectType === 'PERSONAL_SCHEDULE'
-                                                        ? { events: [], tasks: [], todos: [] }
+                                                        ? { events: [], todos: [], categories: {}, visibleCats: [] }
                                                         : { components: [], flows: [] },
                             bugReports: [],
                         };
@@ -550,7 +563,7 @@ export const useProjectStore = create<ProjectStore>()(
                                                 : p.projectType === 'WBS'
                                                     ? { menus: [], rows: [], projectSchedule: undefined, detailSchedules: [] }
                                                     : p.projectType === 'PERSONAL_SCHEDULE'
-                                                        ? { events: [], tasks: [], todos: [] }
+                                                        ? { events: [], todos: [], categories: {}, visibleCats: [] }
                                                         : { components: [], flows: [] },
                             bugReports: [],
                         };

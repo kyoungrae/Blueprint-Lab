@@ -238,6 +238,16 @@ export interface IWbsSnapshot {
     savedAt: Date;
 }
 
+/** 개인 일정 스냅샷 */
+export interface IPersonalScheduleSnapshot {
+    version: number;
+    events: any[];
+    todos: any[];
+    categories?: Record<string, { label: string; color: string }>;
+    visibleCats?: string[];
+    savedAt: Date;
+}
+
 // Project Document Interface
 export interface IBugReportReply {
     id: string;
@@ -281,6 +291,7 @@ export interface IProject extends Document {
     componentSnapshot?: IComponentSnapshot;
     processFlowSnapshot?: IProcessFlowSnapshot;
     wbsSnapshot?: IWbsSnapshot;
+    personalScheduleSnapshot?: IPersonalScheduleSnapshot;
     linkedErdProjectId?: string;
     /** 화면 설계에 연결된 ERD 프로젝트 ID 배열 (여러 개 연결 가능) */
     linkedErdProjectIds?: string[];
@@ -516,6 +527,15 @@ const WbsSnapshotSchema = new Schema({
     savedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+const PersonalScheduleSnapshotSchema = new Schema({
+    version: { type: Number, default: 1 },
+    events: { type: [Schema.Types.Mixed], default: [] },
+    todos: { type: [Schema.Types.Mixed], default: [] },
+    categories: { type: Schema.Types.Mixed, default: {} },
+    visibleCats: { type: [String], default: [] },
+    savedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const BugReportReplySchema = new Schema<IBugReportReply>({
     id: { type: String, required: true },
     bugReportId: { type: String, required: true },
@@ -555,6 +575,7 @@ const ProjectSchema = new Schema<IProject>({
     componentSnapshot: { type: ComponentSnapshotSchema, default: { version: 1, components: [], flows: [], savedAt: new Date() } },
     processFlowSnapshot: { type: ProcessFlowSnapshotSchema, default: { version: 1, nodes: [], edges: [], sections: [], savedAt: new Date() } },
     wbsSnapshot: { type: WbsSnapshotSchema, default: { version: 1, menus: [], rows: [], savedAt: new Date() } },
+    personalScheduleSnapshot: { type: PersonalScheduleSnapshotSchema, default: { version: 1, events: [], todos: [], categories: {}, visibleCats: [], savedAt: new Date() } },
     linkedErdProjectId: { type: String },
     linkedErdProjectIds: [{ type: String }],
     linkedComponentProjectId: { type: String },
