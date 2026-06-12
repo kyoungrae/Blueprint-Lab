@@ -59,6 +59,12 @@ interface GanttTask {
     children?: GanttTask[];
 }
 
+/** 캘린더 표시용 — 하위 일정 펼침 메타 */
+interface CalendarEvent extends ScheduleEvent {
+    _sourceEventId?: string;
+    _subEventIndex?: number;
+}
+
 interface TodoItem {
     id: string;
     title: string;
@@ -97,6 +103,60 @@ const daysBetweenDates = (a: Date, b: Date) =>
     Math.round((startOfDay(b).getTime() - startOfDay(a).getTime()) / 86400000);
 
 function genId() { return Math.random().toString(36).slice(2, 10); }
+
+function subEventToCalendarEvent(parent: ScheduleEvent, sub: SubEvent, index: number): CalendarEvent {
+    return {
+        id: `${parent.id}::sub::${sub.id}`,
+        title: sub.title || `하위 일정 ${index + 1}`,
+        category: sub.category,
+        startDate: sub.startDate,
+        startTime: sub.startTime,
+        endDate: sub.endDate,
+        endTime: sub.endTime,
+        allDay: sub.allDay ?? false,
+        repeat: sub.repeat,
+        alarm: sub.alarm,
+        description: sub.description,
+        ganttColor: parent.ganttColor,
+        _sourceEventId: parent.id,
+        _subEventIndex: index,
+    };
+}
+
+function expandEventsForCalendar(events: ScheduleEvent[], visibleCats: Set<CategoryKey>): CalendarEvent[] {
+    const out: CalendarEvent[] = [];
+    for (const e of events) {
+        if (visibleCats.has(e.category)) out.push(e);
+        (e.subEvents ?? []).forEach((sub, i) => {
+            if (!visibleCats.has(sub.category)) return;
+            out.push(subEventToCalendarEvent(e, sub, i));
+        });
+    }
+    return out;
+}
+
+const normEventYmd = (s: string) => s.replace(/\./g, '-');
+
+function isCalendarSubEvent(e: CalendarEvent) {
+    return e._sourceEventId != null || !!e.parentId;
+}
+
+function eventActiveOnYmd(e: CalendarEvent, ymd: string) {
+    const s = normEventYmd(e.startDate);
+    const end = normEventYmd(e.endDate);
+    return s <= ymd && end >= ymd;
+}
+
+function sortCalendarEventsForDay(a: CalendarEvent, b: CalendarEvent) {
+    const aSub = isCalendarSubEvent(a) ? 1 : 0;
+    const bSub = isCalendarSubEvent(b) ? 1 : 0;
+    if (aSub !== bSub) return aSub - bSub;
+    return normEventYmd(a.startDate).localeCompare(normEventYmd(b.startDate));
+}
+
+function eventBarColor(e: CalendarEvent, categories: Record<string, CategoryDef>) {
+    return e.ganttColor ?? categories[e.category]?.color ?? '#94a3b8';
+}
 
 function eventToGanttTask(e: ScheduleEvent, categories: Record<string, CategoryDef>): GanttTask {
     const catColor = categories[e.category]?.color;
@@ -216,6 +276,7 @@ const MiniCalendar: React.FC<{
 // ── 이벤트 폼 패널 ────────────────────────────────────────────────────────
 const EventForm: React.FC<{
     event: Partial<ScheduleEvent> | null;
+    initialActiveTab?: 'main' | number;
     onSave: (e: ScheduleEvent) => void;
     onDelete: (id: string) => void;
     onClose: () => void;
@@ -224,7 +285,7 @@ const EventForm: React.FC<{
     onAddCategory: (label: string, color: string) => void;
     onEditCategory: (key: string, label: string, color: string) => void;
     onDeleteCategory: (key: string) => void;
-}> = ({ event, onSave, onDelete, onClose, projects, categories, onAddCategory, onEditCategory, onDeleteCategory }) => {
+}> = ({ event, initialActiveTab = 'main', onSave, onDelete, onClose, projects, categories, onAddCategory, onEditCategory, onDeleteCategory }) => {
     const isNew = !event?.id;
     const [title, setTitle] = useState(event?.title || '');
     const [category, setCategory] = useState<CategoryKey>(event?.category || Object.keys(categories)[0] || 'work');
@@ -263,9 +324,9 @@ const EventForm: React.FC<{
         setDescription(event?.description || '');
         setProjectId(event?.projectId || '');
         setSubEvents(event?.subEvents || []);
-        setActiveTab('main');
+        setActiveTab(initialActiveTab);
         setCatMode('select');
-    }, [event?.id, event?.title, event?.category, event?.startDate, event?.startTime, event?.endDate, event?.endTime, event?.allDay, event?.repeat, event?.alarm, event?.description, event?.projectId, event?.subEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [event?.id, event?.title, event?.category, event?.startDate, event?.startTime, event?.endDate, event?.endTime, event?.allDay, event?.repeat, event?.alarm, event?.description, event?.projectId, event?.subEvents, initialActiveTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const addSubEvent = () => {
         const sub: SubEvent = {
@@ -599,8 +660,8 @@ const EventForm: React.FC<{
 // ── 주간 캘린더 뷰 ────────────────────────────────────────────────────────
 const WeekView: React.FC<{
     weekStart: Date;
-    events: ScheduleEvent[];
-    onSelectEvent: (e: ScheduleEvent) => void;
+    events: CalendarEvent[];
+    onSelectEvent: (e: CalendarEvent) => void;
     onSlotClick: (date: string, time: string) => void;
     onAllDayClick: (date: string) => void;
     categories: Record<string, CategoryDef>;
@@ -659,44 +720,31 @@ const WeekView: React.FC<{
         });
     };
 
-    const normYmd = (s: string) => s.replace(/\./g, '-');
-
-    /** 종일·기간 일정을 주간 그리드 위 연속 바로 배치 */
+    /** 종일·기간 — 날짜(열)마다 개별 bar, 하위 일정 별도 lane */
     const allDayLayout = React.useMemo(() => {
-        const weekStartYmd = toYMD(days[0]);
-        const weekEndYmd = toYMD(days[6]);
-        const BAR_H = 20;
+        const BAR_H = 18;
         const BAR_GAP = 2;
+        const SUB_INDENT = 8;
 
-        const inWeek = events.filter(e => {
-            if (!e.allDay) return false;
-            const s = normYmd(e.startDate);
-            const end = normYmd(e.endDate);
-            return s <= weekEndYmd && end >= weekStartYmd;
-        });
+        const allDayEvents = events.filter(e => e.allDay);
+        const dayBars: { col: number; event: CalendarEvent; lane: number; isSub: boolean }[] = [];
+        const laneCountByCol = Array(7).fill(0);
 
-        const raw = inWeek.map(e => {
-            const s = normYmd(e.startDate);
-            const end = normYmd(e.endDate);
-            const visStart = s < weekStartYmd ? weekStartYmd : s;
-            const visEnd = end > weekEndYmd ? weekEndYmd : end;
-            const startCol = daysBetweenDates(parseDate(weekStartYmd), parseDate(visStart));
-            const endCol = daysBetweenDates(parseDate(weekStartYmd), parseDate(visEnd));
-            return { event: e, startCol, endCol, span: endCol - startCol + 1 };
-        }).sort((a, b) => a.startCol - b.startCol || b.span - a.span);
+        for (let col = 0; col < 7; col++) {
+            const ymd = toYMD(days[col]);
+            const dayEvents = allDayEvents
+                .filter(e => eventActiveOnYmd(e, ymd))
+                .sort(sortCalendarEventsForDay);
 
-        const laneEnds: number[] = [];
-        const bars = raw.map(bar => {
-            let lane = 0;
-            while (lane < laneEnds.length && laneEnds[lane] >= bar.startCol) lane++;
-            if (lane === laneEnds.length) laneEnds.push(-1);
-            laneEnds[lane] = bar.endCol;
-            return { ...bar, lane };
-        });
+            dayEvents.forEach((event, lane) => {
+                dayBars.push({ col, event, lane, isSub: isCalendarSubEvent(event) });
+                laneCountByCol[col] = Math.max(laneCountByCol[col], lane + 1);
+            });
+        }
 
-        const laneCount = Math.max(1, laneEnds.length);
-        const rowHeight = laneCount * (BAR_H + BAR_GAP) + BAR_GAP * 2;
-        return { bars, rowHeight, BAR_H, BAR_GAP };
+        const maxLanes = Math.max(1, ...laneCountByCol);
+        const rowHeight = maxLanes * (BAR_H + BAR_GAP) + BAR_GAP * 2;
+        return { dayBars, rowHeight, BAR_H, BAR_GAP, SUB_INDENT, maxLanes };
     }, [events, days]);
 
     return (
@@ -736,23 +784,30 @@ const WeekView: React.FC<{
                             />
                         ))}
                     </div>
-                    {allDayLayout.bars.map(({ event: e, startCol, span, lane }) => (
+                    {allDayLayout.dayBars.map(({ col, event: e, lane, isSub }) => {
+                        const color = eventBarColor(e, categories);
+                        const inset = isSub ? allDayLayout.SUB_INDENT : 2;
+                        return (
                         <div
-                            key={e.id}
+                            key={`${e.id}-${col}`}
                             onClick={() => onSelectEvent(e)}
-                            className="absolute text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer truncate text-white z-10"
+                            className={`absolute text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer truncate z-10
+                                ${isSub ? 'ring-1 ring-white/60' : 'text-white'}`}
                             style={{
-                                left: `calc(${(startCol / 7) * 100}% + 2px)`,
-                                width: `calc(${(span / 7) * 100}% - 4px)`,
+                                left: `calc(${(col / 7) * 100}% + ${inset}px)`,
+                                width: `calc(${(1 / 7) * 100}% - ${inset + 2}px)`,
                                 top: lane * (allDayLayout.BAR_H + allDayLayout.BAR_GAP) + allDayLayout.BAR_GAP,
                                 height: allDayLayout.BAR_H,
-                                backgroundColor: e.ganttColor ?? categories[e.category]?.color ?? '#94a3b8',
+                                background: isSub ? color + '22' : color,
+                                color: isSub ? color : '#fff',
                             }}
                             title={e.title}
                         >
+                            {isSub && <span className="opacity-60 mr-0.5">↳</span>}
                             {e.title}
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
             {/* 시간 그리드 */}
@@ -761,18 +816,33 @@ const WeekView: React.FC<{
                     <div key={h} className="grid" style={{ gridTemplateColumns: '56px repeat(7,1fr)', height: 56 }}>
                         <div className="text-[10px] text-gray-400 text-right pr-2 pt-1 shrink-0">{pad(h)}:00</div>
                         {days.map((d, i) => {
-                            const slotEvents = getEventsForSlot(d, h);
+                            const slotEvents = getEventsForSlot(d, h).sort(sortCalendarEventsForDay);
+                            const slotH = 56;
                             return (
                                 <div key={i} className="border-l border-t border-gray-100 relative cursor-pointer hover:bg-rose-50/30 transition-colors"
                                     onClick={() => onSlotClick(toYMD(d), `${pad(h)}:00`)}>
-                                    {slotEvents.map(e => (
+                                    {slotEvents.map((e, idx) => {
+                                        const isSub = isCalendarSubEvent(e);
+                                        const count = slotEvents.length;
+                                        const barH = count > 1 ? Math.max(12, (slotH - 4) / count - 2) : slotH - 4;
+                                        const color = eventBarColor(e, categories);
+                                        return (
                                         <div key={e.id} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
-                                            className="absolute inset-x-0.5 top-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white cursor-pointer z-10 overflow-hidden"
-                                            style={{ backgroundColor: (categories[e.category]?.color ?? '#94a3b8'), minHeight: 28 }}>
+                                            className={`absolute rounded-md px-1.5 py-0.5 text-[10px] font-bold cursor-pointer z-10 overflow-hidden
+                                                ${isSub ? 'ring-1 ring-inset ring-black/10' : 'text-white'}`}
+                                            style={{
+                                                left: isSub ? 10 : 2,
+                                                right: 2,
+                                                top: 2 + idx * (barH + 2),
+                                                height: barH,
+                                                background: isSub ? color + '22' : color,
+                                                color: isSub ? color : '#fff',
+                                            }}>
                                             <div className="truncate">{e.startTime} - {e.endTime}</div>
-                                            <div className="truncate">{e.title}</div>
+                                            <div className="truncate">{isSub ? `↳ ${e.title}` : e.title}</div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             );
                         })}
@@ -786,8 +856,8 @@ const WeekView: React.FC<{
 // ── 월간 캘린더 뷰 ────────────────────────────────────────────────────────
 const MonthView: React.FC<{
     month: Date;
-    events: ScheduleEvent[];
-    onSelectEvent: (e: ScheduleEvent) => void;
+    events: CalendarEvent[];
+    onSelectEvent: (e: CalendarEvent) => void;
     onDayClick: (date: string) => void;
     categories: Record<string, CategoryDef>;
     onNavigate: (dir: 'prev' | 'next') => void;
@@ -832,7 +902,9 @@ const MonthView: React.FC<{
                 {cells.map((d, i) => {
                     if (!d) return <div key={`empty-${i}`} className="border-r border-b border-gray-100 bg-gray-50/50" />;
                     const ymd = toYMD(d);
-                    const dayEvents = events.filter(e => e.startDate === ymd);
+                    const dayEvents = events
+                        .filter(e => e.allDay ? eventActiveOnYmd(e, ymd) : e.startDate === ymd)
+                        .sort(sortCalendarEventsForDay);
                     const isToday = ymd === toYMD(new Date());
                     return (
                         <div key={ymd} onClick={() => onDayClick(ymd)}
@@ -842,13 +914,21 @@ const MonthView: React.FC<{
                                 {d.getDate()}
                             </div>
                             <div className="space-y-0.5">
-                                {dayEvents.slice(0, 3).map(e => (
-                                    <div key={e.id} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
-                                        className="text-[10px] font-bold px-1.5 py-0.5 rounded text-white truncate cursor-pointer"
-                                        style={{ backgroundColor: (categories[e.category]?.color ?? '#94a3b8') }}>
-                                        {e.startTime && `${e.startTime} `}{e.title}
+                                {dayEvents.slice(0, 3).map(e => {
+                                    const isSub = isCalendarSubEvent(e);
+                                    const color = eventBarColor(e, categories);
+                                    return (
+                                    <div key={`${e.id}-${ymd}`} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
+                                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded truncate cursor-pointer
+                                            ${isSub ? 'ml-2 ring-1 ring-inset ring-black/5' : 'text-white'}`}
+                                        style={{
+                                            background: isSub ? color + '22' : color,
+                                            color: isSub ? color : '#fff',
+                                        }}>
+                                        {e.startTime && !e.allDay && `${e.startTime} `}{isSub ? `↳ ${e.title}` : e.title}
                                     </div>
-                                ))}
+                                    );
+                                })}
                                 {dayEvents.length > 3 && <div className="text-[10px] text-gray-400 font-bold pl-1">+{dayEvents.length - 3}개 더</div>}
                             </div>
                         </div>
@@ -862,15 +942,18 @@ const MonthView: React.FC<{
 // ── 일간 캘린더 뷰 ────────────────────────────────────────────────────────
 const DayView: React.FC<{
     date: Date;
-    events: ScheduleEvent[];
-    onSelectEvent: (e: ScheduleEvent) => void;
+    events: CalendarEvent[];
+    onSelectEvent: (e: CalendarEvent) => void;
     onSlotClick: (date: string, time: string) => void;
     categories: Record<string, CategoryDef>;
     onNavigate: (dir: 'prev' | 'next') => void;
 }> = ({ date, events, onSelectEvent, onSlotClick, categories, onNavigate }) => {
     const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00 ~ 23:00
     const ymd = toYMD(date);
-    const dayEvents = events.filter(e => e.startDate === ymd && !e.allDay);
+    const timedEvents = events.filter(e => e.startDate === ymd && !e.allDay);
+    const allDayEvents = events
+        .filter(e => e.allDay && eventActiveOnYmd(e, ymd))
+        .sort(sortCalendarEventsForDay);
     const containerRef = React.useRef<HTMLDivElement>(null);
     const accRef       = React.useRef(0);
     const lastNavRef   = React.useRef(0);
@@ -897,21 +980,52 @@ const DayView: React.FC<{
 
     return (
         <div ref={containerRef} className="h-full min-h-0 overflow-y-auto">
+            {allDayEvents.length > 0 && (
+                <div className="border-b border-gray-100 px-2 py-1.5 space-y-1 shrink-0">
+                    <div className="text-[10px] font-bold text-gray-400 px-1">종일</div>
+                    {allDayEvents.map(e => {
+                        const isSub = isCalendarSubEvent(e);
+                        const color = eventBarColor(e, categories);
+                        return (
+                            <div key={`${e.id}-${ymd}`} onClick={() => onSelectEvent(e)}
+                                className={`text-[10px] font-bold px-2 py-1 rounded cursor-pointer truncate
+                                    ${isSub ? 'ml-3 ring-1 ring-inset ring-black/5' : 'text-white'}`}
+                                style={{
+                                    background: isSub ? color + '22' : color,
+                                    color: isSub ? color : '#fff',
+                                }}>
+                                {isSub ? `↳ ${e.title}` : e.title}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
             {hours.map(h => {
-                const slotEvents = dayEvents.filter(e => parseInt(e.startTime?.split(':')[0] || '0') === h);
+                const slotEvents = timedEvents
+                    .filter(e => parseInt(e.startTime?.split(':')[0] || '0') === h)
+                    .sort(sortCalendarEventsForDay);
                 return (
                     <div key={h} className="flex border-b border-gray-100" style={{ minHeight: 60 }}>
                         <div className="w-16 text-[11px] text-gray-400 text-right pr-3 pt-1 shrink-0">{pad(h)}:00</div>
-                        <div className="flex-1 border-l border-gray-100 relative cursor-pointer hover:bg-rose-50/30 transition-colors px-1 py-0.5 space-y-0.5"
+                        <div className="flex-1 border-l border-gray-100 relative cursor-pointer hover:bg-rose-50/30 transition-colors px-1 py-0.5"
                             onClick={() => onSlotClick(ymd, `${pad(h)}:00`)}>
-                            {slotEvents.map(e => (
+                            {slotEvents.map((e, idx) => {
+                                const isSub = isCalendarSubEvent(e);
+                                const color = eventBarColor(e, categories);
+                                return (
                                 <div key={e.id} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
-                                    className="rounded-lg px-3 py-2 text-white cursor-pointer"
-                                    style={{ backgroundColor: (categories[e.category]?.color ?? '#94a3b8') }}>
-                                    <div className="text-xs font-black">{e.title}</div>
+                                    className={`rounded-lg px-3 py-1.5 cursor-pointer mb-0.5 last:mb-0
+                                        ${isSub ? 'ml-2 ring-1 ring-inset ring-black/5' : 'text-white'}`}
+                                    style={{
+                                        background: isSub ? color + '22' : color,
+                                        color: isSub ? color : '#fff',
+                                        marginTop: idx > 0 ? 2 : 0,
+                                    }}>
+                                    <div className="text-xs font-black">{isSub ? `↳ ${e.title}` : e.title}</div>
                                     <div className="text-[10px] opacity-80">{e.startTime} ~ {e.endTime}</div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 );
@@ -1374,6 +1488,7 @@ const PersonalScheduleCanvas: React.FC = () => {
 
     // 우측 패널
     const [panelEvent, setPanelEvent] = useState<Partial<ScheduleEvent> | null>(null);
+    const [panelInitialTab, setPanelInitialTab] = useState<'main' | number>('main');
     const [panelOpen, setPanelOpen] = useState(false);
     const [calendarScrollHour, setCalendarScrollHour] = useState<number | null>(null);
 
@@ -1381,12 +1496,35 @@ const PersonalScheduleCanvas: React.FC = () => {
         events.filter(e => visibleCats.has(e.category)),
         [events, visibleCats]);
 
+    const calendarEvents = useMemo(
+        () => expandEventsForCalendar(events, visibleCats),
+        [events, visibleCats],
+    );
+
     const ganttTasks = useMemo(
         () => filteredEvents.map(e => eventToGanttTask(e, categories)),
         [filteredEvents, categories]
     );
 
-    const eventDates = useMemo(() => new Set(filteredEvents.map(e => e.startDate)), [filteredEvents]);
+    const eventDates = useMemo(
+        () => new Set(calendarEvents.map(e => e.startDate)),
+        [calendarEvents],
+    );
+
+    const handleSelectCalendarEvent = useCallback((e: CalendarEvent) => {
+        if (e._sourceEventId != null && e._subEventIndex != null) {
+            const parent = events.find(x => x.id === e._sourceEventId);
+            if (parent) {
+                setPanelEvent(parent);
+                setPanelInitialTab(e._subEventIndex);
+                setPanelOpen(true);
+                return;
+            }
+        }
+        setPanelEvent(e);
+        setPanelInitialTab('main');
+        setPanelOpen(true);
+    }, [events]);
 
     const handleSaveEvent = useCallback((e: ScheduleEvent) => {
         setEvents(prev => prev.some(x => x.id === e.id) ? prev.map(x => x.id === e.id ? e : x) : [...prev, e]);
@@ -1416,6 +1554,7 @@ const PersonalScheduleCanvas: React.FC = () => {
             endTime,
             allDay: isAllDay,
         });
+        setPanelInitialTab('main');
         setPanelOpen(true);
     };
 
@@ -1499,7 +1638,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                             </button>
                         ))}
                     </div>
-                    <button onClick={() => { setPanelEvent(null); setPanelOpen(true); }}
+                    <button onClick={() => { setPanelEvent(null); setPanelInitialTab('main'); setPanelOpen(true); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500 text-white rounded-xl text-sm font-bold hover:bg-rose-600 transition-colors">
                         <Plus size={15} /> 일정 추가
                     </button>
@@ -1556,8 +1695,8 @@ const PersonalScheduleCanvas: React.FC = () => {
                                     {/* 캘린더 뷰 (상단 60%) */}
                                     <div className="flex flex-col bg-white" style={{ flex: '0 0 50%', minHeight: 0, overflow: 'hidden' }}>
                                         {viewMode === 'week' && (
-                                            <WeekView weekStart={weekStart} events={filteredEvents}
-                                                onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
+                                            <WeekView weekStart={weekStart} events={calendarEvents}
+                                                onSelectEvent={handleSelectCalendarEvent}
                                                 onSlotClick={(date, time) => openNewEvent(date, time)}
                                                 onAllDayClick={date => openNewEvent(date, undefined, { allDay: true })}
                                                 categories={categories}
@@ -1570,8 +1709,8 @@ const PersonalScheduleCanvas: React.FC = () => {
 }} />
                                         )}
                                         {viewMode === 'month' && (
-                                            <MonthView month={selectedDate} events={filteredEvents}
-                                                onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
+                                            <MonthView month={selectedDate} events={calendarEvents}
+                                                onSelectEvent={handleSelectCalendarEvent}
                                                 onDayClick={ymd => openNewEvent(ymd, '09:00')}
                                                 categories={categories}
                                                 onNavigate={dir => {
@@ -1581,8 +1720,8 @@ const PersonalScheduleCanvas: React.FC = () => {
                                                 }} />
                                         )}
                                         {viewMode === 'day' && (
-                                            <DayView date={selectedDate} events={filteredEvents}
-                                                onSelectEvent={e => { setPanelEvent(e); setPanelOpen(true); }}
+                                            <DayView date={selectedDate} events={calendarEvents}
+                                                onSelectEvent={handleSelectCalendarEvent}
                                                 onSlotClick={(date, time) => openNewEvent(date, time)}
                                                 categories={categories}
                                                 onNavigate={dir => {
@@ -1621,8 +1760,9 @@ const PersonalScheduleCanvas: React.FC = () => {
                         {panelOpen && (
                             <div className="w-72 shrink-0 border-l border-gray-100 bg-white flex flex-col overflow-hidden">
                                 <EventForm
-                                    key={panelEvent?.id ?? `new-${panelEvent?.startDate ?? ''}-${panelEvent?.startTime ?? ''}-${panelEvent?.allDay ? '1' : '0'}`}
+                                    key={`${panelEvent?.id ?? 'new'}-${panelInitialTab}-${panelEvent?.startDate ?? ''}-${panelEvent?.startTime ?? ''}`}
                                     event={panelEvent}
+                                    initialActiveTab={panelInitialTab}
                                     onSave={handleSaveEvent}
                                     onDelete={handleDeleteEvent}
                                     onClose={() => setPanelOpen(false)}
