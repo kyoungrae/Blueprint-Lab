@@ -91,8 +91,10 @@ const GANTT_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8
 const pad = (n: number) => String(n).padStart(2, '0');
 const toYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseDate = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
-const diffDays = (a: string, b: string) => Math.max(0, Math.round((parseDate(b).getTime() - parseDate(a).getTime()) / 86400000) + 1);
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+const daysBetweenDates = (a: Date, b: Date) =>
+    Math.round((startOfDay(b).getTime() - startOfDay(a).getTime()) / 86400000);
 
 function genId() { return Math.random().toString(36).slice(2, 10); }
 
@@ -853,18 +855,18 @@ const GanttView: React.FC<{
     const calSyncing     = React.useRef(false);  // 캘린더→간트 sync 중 스크롤 무시
     const syncClearTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-    // ±90일 고정 범위
-    const chartStart = React.useMemo(() => addDays(new Date(), -90), []);
-    const chartEnd   = React.useMemo(() => addDays(new Date(),  90), []);
-    const totalDays  = diffDays(toYMD(chartStart), toYMD(chartEnd));
+    // ±90일 고정 범위 (자정 기준)
+    const chartStart = React.useMemo(() => startOfDay(addDays(new Date(), -90)), []);
+    const chartEnd   = React.useMemo(() => startOfDay(addDays(new Date(),  90)), []);
+    const totalDays  = daysBetweenDates(chartStart, chartEnd) + 1;
     const DAY_W = 24;
     const GANTT_ROW_H = 33;
+    const weekStartDay = startOfDay(weekStart);
+    const weekHighlightLeft = daysBetweenDates(chartStart, weekStartDay) * DAY_W;
 
     const flatTasks = tasks.filter(t => !t.parentId || !collapsed.has(t.parentId));
 
-    // diffDays 는 +1 보정이 있으므로 날짜 간격 계산은 직접 처리
-    const daysBetween = (a: Date, b: Date) =>
-        Math.round((b.getTime() - a.getTime()) / 86400000);
+    const daysBetween = daysBetweenDates;
     const getLeft  = (date: string) => Math.max(0, daysBetween(chartStart, parseDate(date))) * DAY_W;
     const getWidth = (s: string, e: string) => Math.max(DAY_W, (daysBetween(parseDate(s), parseDate(e)) + 1) * DAY_W);
 
@@ -884,22 +886,30 @@ const GanttView: React.FC<{
         return () => el.removeEventListener('wheel', onWheel);
     }, []);
 
-    // ── 캘린더 → 간트 동기화 (간트가 원인이면 건너뜀) ────────
-    React.useEffect(() => {
+    // ── 캘린더 → 간트 스크롤 동기화 ───────────────────────────
+    const scrollToWeek = React.useCallback((ws: Date) => {
+        const el = rightRef.current;
+        if (!el) return;
+        calSyncing.current = true;
+        const weekPos = daysBetween(chartStart, startOfDay(ws)) * DAY_W;
+        const viewWidth = el.clientWidth;
+        const target = Math.max(0, weekPos - viewWidth / 2 + (7 * DAY_W) / 2);
+        el.scrollLeft = target;
+        clearTimeout(syncClearTimer.current);
+        syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 450);
+    }, [chartStart]);
+
+    React.useLayoutEffect(() => {
         if (ganttIsSource.current) {
             ganttIsSource.current = false;
             return;
         }
-        if (!rightRef.current) return;
-        // 현재 주(7일)를 뷰포트 가운데에 오도록 스크롤
-        clearTimeout(syncClearTimer.current);
-        calSyncing.current = true;
-        const weekPos   = daysBetween(chartStart, weekStart) * DAY_W;
-        const viewWidth = rightRef.current.clientWidth;
-        const target    = Math.max(0, weekPos - viewWidth / 2 + (7 * DAY_W) / 2);
-        rightRef.current.scrollLeft = target;
-        syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 400);
-    }, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+        scrollToWeek(weekStart);
+    }, [weekStart, scrollToWeek]);
+
+    React.useLayoutEffect(() => {
+        scrollToWeek(weekStart);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // 현재 weekStart의 day index (chartStart 기준)
     const weekStartIdx = React.useRef(daysBetween(chartStart, weekStart));
@@ -926,7 +936,7 @@ const GanttView: React.FC<{
         rightRef.current.scrollLeft = target;
         rightRef.current.style.scrollBehavior = '';
 
-        const newWeekStart = addDays(chartStart, snapN);
+        const newWeekStart = startOfDay(addDays(chartStart, snapN));
         weekStartIdx.current = snapN;
         ganttIsSource.current = true;
         onWeekChange(newWeekStart);
@@ -941,7 +951,7 @@ const GanttView: React.FC<{
         const S = rightRef.current?.scrollLeft ?? 0;
         const rawN = (S + viewWidth / 2 - 3.5 * DAY_W) / DAY_W;
         const N = Math.round(rawN);
-        const newWeekStart = addDays(chartStart, N);
+        const newWeekStart = startOfDay(addDays(chartStart, N));
         ganttIsSource.current = true;
         onWeekChange(newWeekStart);
         // 스크롤 멈추면 스냅
@@ -1032,19 +1042,20 @@ const GanttView: React.FC<{
 
                 {/* 우측 타임라인 */}
                 <div className="flex-1 overflow-hidden relative">
-                    {/* 현재 주 고정 하이라이트 오버레이 */}
-                    <div className="absolute inset-y-0 pointer-events-none z-20"
-                        style={{
-                            left: '50%',
-                            transform: `translateX(-50%)`,
-                            width: 7 * DAY_W,
-                            backgroundColor: 'rgba(251,113,133,0.10)',
-                            borderLeft:  '1px solid rgba(251,113,133,0.3)',
-                            borderRight: '1px solid rgba(251,113,133,0.3)',
-                        }} />
                 <div ref={rightRef} onScroll={handleRightScroll}
                     className="h-full overflow-auto">
-                    <div style={{ width: totalDays * DAY_W, minWidth: '100%' }}>
+                    <div style={{ width: totalDays * DAY_W, minWidth: '100%', position: 'relative' }}>
+                        {/* 현재 주 하이라이트 — weekStart 기준 (캘린더와 동일) */}
+                        <div
+                            className="absolute top-0 bottom-0 pointer-events-none z-[5]"
+                            style={{
+                                left: weekHighlightLeft,
+                                width: 7 * DAY_W,
+                                backgroundColor: 'rgba(251,113,133,0.10)',
+                                borderLeft: '1px solid rgba(251,113,133,0.3)',
+                                borderRight: '1px solid rgba(251,113,133,0.3)',
+                            }}
+                        />
                         {/* 날짜 헤더 */}
                         <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10" style={{ height: GANTT_ROW_H }}>
                             {dateHeaders.map((d, i) => {
@@ -1066,7 +1077,7 @@ const GanttView: React.FC<{
                                 style={{ height: GANTT_ROW_H }}>
                                 {/* 오늘 선 */}
                                 <div className="absolute top-0 bottom-0 w-px bg-rose-400 z-10 opacity-40"
-                                    style={{ left: diffDays(toYMD(chartStart), toYMD(new Date())) * DAY_W }} />
+                                    style={{ left: daysBetween(chartStart, new Date()) * DAY_W }} />
                                 <div className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden"
                                     style={{
                                         left: getLeft(task.startDate),
@@ -1184,7 +1195,7 @@ const PersonalScheduleCanvas: React.FC = () => {
     const [viewMode, setViewMode] = useState<ViewMode>('week');
     const [tab, setTab] = useState<TabMode>('calendar');
     const [selectedDate, setSelectedDate] = useState(new Date());
-    const [weekStart, setWeekStart] = useState(() => new Date());
+    const [weekStart, setWeekStart] = useState(() => startOfDay(new Date()));
     const [events, setEvents] = useState<ScheduleEvent[]>(SEED_SCHEDULE);
     const [todos, setTodos]   = useState<TodoItem[]>(SEED_TODOS);
 
@@ -1241,7 +1252,7 @@ const PersonalScheduleCanvas: React.FC = () => {
     // 주 이동
     const prevWeek = () => setWeekStart(d => addDays(d, -7));
     const nextWeek = () => setWeekStart(d => addDays(d, 7));
-    const goToday  = () => { setWeekStart(new Date()); setSelectedDate(new Date()); };
+    const goToday  = () => { const t = startOfDay(new Date()); setWeekStart(t); setSelectedDate(t); };
 
     const weekEnd = addDays(weekStart, 6);
 
@@ -1315,7 +1326,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                 {/* 좌측 사이드바 */}
                 <div className="w-52 shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-y-auto">
                     <div className="p-4">
-                        <MiniCalendar current={selectedDate} selected={selectedDate} onSelect={d => { setSelectedDate(d); setWeekStart(new Date(d)); }} eventDates={eventDates} rangeStart={weekStart} rangeEnd={addDays(weekStart, 6)} />
+                        <MiniCalendar current={selectedDate} selected={selectedDate} onSelect={d => { setSelectedDate(d); setWeekStart(startOfDay(d)); }} eventDates={eventDates} rangeStart={weekStart} rangeEnd={addDays(weekStart, 6)} />
                     </div>
 
                     <div className="px-4 pb-3">
@@ -1418,7 +1429,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                                             onUpdateTask={handleUpdateGanttTask}
                                             onDeleteTask={handleDeleteGanttTask}
                                             weekStart={weekStart}
-                                            onWeekChange={ws => { setWeekStart(ws); setSelectedDate(ws); }} />
+                                            onWeekChange={ws => { const d = startOfDay(ws); setWeekStart(d); setSelectedDate(d); }} />
                                     </div>
                                 </div>
                             )}
