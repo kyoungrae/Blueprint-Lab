@@ -696,4 +696,174 @@ export const WheelColorPicker: React.FC<WheelColorPickerProps> = ({
     );
 };
 
+const PROGRESS_STEPS = Array.from({ length: 21 }, (_, i) => i * 5);
+
+function snapProgress(n: number) {
+    return Math.min(100, Math.max(0, Math.round(n / 5) * 5));
+}
+
+// ── WheelProgressPicker ───────────────────────────────────────────────────
+interface WheelProgressPickerProps {
+    value: number;
+    onChange: (v: number) => void;
+    className?: string;
+    placeholder?: string;
+    variant?: 'default' | 'ghost' | 'panel';
+    accentColor?: string;
+}
+
+export const WheelProgressPicker: React.FC<WheelProgressPickerProps> = ({
+    value,
+    onChange,
+    className = '',
+    placeholder = '진행률 선택',
+    variant = 'default',
+    accentColor = '#6366f1',
+}) => {
+    const [draft, setDraft] = useState(snapProgress(value));
+    const [open, setOpen] = useState(false);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const popupRef = useRef<HTMLDivElement>(null);
+    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
+
+    const updatePopupPos = useCallback(() => {
+        const el = triggerRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const minW = 220;
+        let left = rect.left;
+        if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
+        setPopupPos({ top: rect.bottom + 4, left });
+    }, []);
+
+    useEffect(() => {
+        setDraft(snapProgress(value));
+    }, [value]);
+
+    useEffect(() => {
+        if (!open) return;
+        updatePopupPos();
+        window.addEventListener('scroll', updatePopupPos, true);
+        window.addEventListener('resize', updatePopupPos);
+        return () => {
+            window.removeEventListener('scroll', updatePopupPos, true);
+            window.removeEventListener('resize', updatePopupPos);
+        };
+    }, [open, updatePopupPos]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (popupRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
+            setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    const confirm = () => {
+        onChange(draft);
+        setOpen(false);
+    };
+
+    const clear = () => {
+        onChange(0);
+        setDraft(0);
+        setOpen(false);
+    };
+
+    const display = snapProgress(value);
+
+    const triggerClass = variant === 'ghost'
+        ? 'w-full text-center text-sm outline-none bg-transparent border-none p-0 cursor-pointer font-black'
+        : variant === 'panel'
+            ? 'w-full flex items-center gap-2 px-2 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50 hover:border-rose-300 transition-colors outline-none focus:border-rose-400'
+            : 'w-full flex items-center gap-2 text-left px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white hover:border-emerald-300 transition-colors outline-none focus:border-emerald-400';
+
+    return (
+        <div className={`relative inline-block w-full ${className}`}>
+            <button
+                ref={triggerRef}
+                type="button"
+                onClick={() => setOpen(v => !v)}
+                className={triggerClass}
+                style={variant === 'ghost' ? { color: accentColor } : undefined}
+            >
+                {variant === 'ghost' ? (
+                    <span>{display}%</span>
+                ) : (
+                    <>
+                        <span className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+                            <span className="block h-full rounded-full transition-all" style={{ width: `${display}%`, backgroundColor: accentColor }} />
+                        </span>
+                        <span className="shrink-0 font-bold text-gray-700 w-9 text-right">{display}%</span>
+                    </>
+                )}
+            </button>
+
+            {open && createPortal(
+                <div
+                    ref={popupRef}
+                    data-wheel-progress-picker-popup
+                    className="fixed z-[9999] bg-white border border-gray-100 rounded-2xl shadow-xl p-4 flex flex-col gap-3"
+                    style={{ top: popupPos.top, left: popupPos.left, minWidth: 220 }}
+                    onWheel={e => e.stopPropagation()}
+                >
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider text-center">
+                        진행률
+                    </div>
+
+                    <div className="px-2">
+                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${draft}%`, backgroundColor: accentColor }} />
+                        </div>
+                        <div className="text-center text-sm font-black text-emerald-700 mt-2">{draft}%</div>
+                    </div>
+
+                    <div className="flex items-center gap-1 justify-center">
+                        <WheelColumn
+                            items={PROGRESS_STEPS}
+                            selected={draft}
+                            onSelect={setDraft}
+                            format={v => `${v}%`}
+                        />
+                    </div>
+
+                    <div className="flex justify-center gap-2 px-1">
+                        {[0, 25, 50, 75, 100].map(p => (
+                            <button
+                                key={p}
+                                type="button"
+                                onClick={() => setDraft(p)}
+                                className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-colors ${draft === p ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                            >
+                                {p}%
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                        <button
+                            type="button"
+                            onClick={clear}
+                            className="flex-1 py-1.5 text-sm font-semibold text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                            초기화
+                        </button>
+                        <button
+                            type="button"
+                            onClick={confirm}
+                            className="flex-1 py-1.5 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
+                        >
+                            확인
+                        </button>
+                    </div>
+                </div>,
+                document.body,
+            )}
+        </div>
+    );
+};
+
 export default WheelDatePicker;

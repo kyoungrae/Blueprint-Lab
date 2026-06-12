@@ -5,7 +5,7 @@ import {
     ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
-import WheelDatePicker, { WheelTimePicker, WheelColorPicker } from '../wbs/WheelDatePicker';
+import WheelDatePicker, { WheelTimePicker, WheelColorPicker, WheelProgressPicker } from '../wbs/WheelDatePicker';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
 type ViewMode = 'day' | 'week' | 'month';
@@ -581,6 +581,7 @@ const EventForm: React.FC<{
     const [barColor, setBarColor] = useState(
         event?.ganttColor || categories[event?.category || Object.keys(categories)[0] || 'work']?.color || GANTT_COLORS[0],
     );
+    const [progress, setProgress] = useState(event?.progress ?? 0);
 
     // 하위 일정
     const [subEvents, setSubEvents] = useState<SubEvent[]>(event?.subEvents || []);
@@ -599,10 +600,11 @@ const EventForm: React.FC<{
         setDescription(event?.description || '');
         setProjectId(event?.projectId || '');
         setBarColor(event?.ganttColor || categories[event?.category || Object.keys(categories)[0] || 'work']?.color || GANTT_COLORS[0]);
+        setProgress(event?.progress ?? 0);
         setSubEvents(event?.subEvents || []);
         setActiveTab(initialActiveTab);
         setCatMode('select');
-    }, [event?.id, event?.title, event?.category, event?.startDate, event?.startTime, event?.endDate, event?.endTime, event?.allDay, event?.repeat, event?.alarm, event?.description, event?.projectId, event?.ganttColor, event?.subEvents, initialActiveTab, categories]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [event?.id, event?.title, event?.category, event?.startDate, event?.startTime, event?.endDate, event?.endTime, event?.allDay, event?.repeat, event?.alarm, event?.description, event?.projectId, event?.ganttColor, event?.progress, event?.subEvents, initialActiveTab, categories]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const addSubEvent = () => {
         const sub: SubEvent = {
@@ -641,6 +643,7 @@ const EventForm: React.FC<{
             description,
             projectId: projectId || undefined,
             ganttColor: barColor,
+            progress,
             subEvents: subEvents.length ? subEvents : undefined,
         });
     };
@@ -769,6 +772,12 @@ const EventForm: React.FC<{
                 <div>
                     <label className="block text-xs font-bold text-gray-600 mb-1">바 색상</label>
                     <WheelColorPicker value={barColor} onChange={setBarColor} variant="panel" placeholder="색상 선택" />
+                </div>
+
+                {/* 진행률 */}
+                <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">진행률</label>
+                    <WheelProgressPicker value={progress} onChange={setProgress} variant="panel" accentColor={barColor} />
                 </div>
 
                 {/* 일정 */}
@@ -1597,35 +1606,36 @@ const GanttInlineProgressCell: React.FC<{
     onSave: (v: number) => void;
     onCancel: () => void;
 }> = ({ value, color, isEditing, onStartEdit, onSave, onCancel }) => {
-    const [draft, setDraft] = useState(String(value));
-    const inputRef = useRef<HTMLInputElement>(null);
+    const wrapRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => { setDraft(String(value)); }, [value]);
-    useEffect(() => { if (isEditing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [isEditing]);
+    useEffect(() => {
+        if (!isEditing) return;
+        const t = setTimeout(() => wrapRef.current?.querySelector('button')?.click(), 0);
+        return () => clearTimeout(t);
+    }, [isEditing]);
 
-    const commit = () => {
-        const n = Math.min(100, Math.max(0, parseInt(draft, 10) || 0));
-        onSave(n);
-    };
+    useEffect(() => {
+        if (!isEditing) return;
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (wrapRef.current?.contains(t)) return;
+            if (t instanceof Element && t.closest('[data-wheel-progress-picker-popup]')) return;
+            onCancel();
+        };
+        document.addEventListener('mousedown', onDown);
+        return () => document.removeEventListener('mousedown', onDown);
+    }, [isEditing, onCancel]);
 
     if (isEditing) {
         return (
-            <div className="flex items-center justify-center gap-0.5" onClick={e => e.stopPropagation()}>
-                <input
-                    ref={inputRef}
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={draft}
-                    onChange={e => setDraft(e.target.value)}
-                    onBlur={commit}
-                    onKeyDown={e => {
-                        if (e.key === 'Enter') commit();
-                        if (e.key === 'Escape') { setDraft(String(value)); onCancel(); }
-                    }}
-                    className="w-10 bg-white border border-rose-300 rounded px-1 py-0.5 text-xs text-center outline-none focus:border-rose-400"
+            <div ref={wrapRef} className="relative z-20" onClick={e => e.stopPropagation()}>
+                <WheelProgressPicker
+                    value={value}
+                    onChange={onSave}
+                    variant="ghost"
+                    accentColor={color || '#6366f1'}
+                    className="w-full text-[11px]"
                 />
-                <span className="text-[10px] font-bold" style={{ color: color || '#6366f1' }}>%</span>
             </div>
         );
     }
