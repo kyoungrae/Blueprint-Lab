@@ -1140,6 +1140,27 @@ const WeekView: React.FC<{
                             종일
                         </div>
                         <div className="relative shrink-0 border-l border-gray-100" style={{ width: timelineWidth, minHeight: allDayLayout.rowHeight }}>
+                            {/* 요일 구분선 — 바 아래 */}
+                            <div className="absolute inset-0 z-0 pointer-events-none flex">
+                                {allDays.map((d, i) => (
+                                    <div
+                                        key={`grid-${toYMD(d)}`}
+                                        className={`h-full border-l border-gray-100 ${i === 0 ? 'border-l-0' : ''}`}
+                                        style={{ width: dayW }}
+                                    />
+                                ))}
+                            </div>
+                            {/* 빈 종일 슬롯 클릭 */}
+                            <div className="absolute inset-0 z-[1] flex">
+                                {allDays.map((d) => (
+                                    <div
+                                        key={toYMD(d)}
+                                        className="h-full cursor-pointer hover:bg-rose-50/30 transition-colors"
+                                        style={{ width: dayW }}
+                                        onClick={() => onAllDayClick(toYMD(d))}
+                                    />
+                                ))}
+                            </div>
                             {allDayLayout.bars.map(({ event: e, startCol, span, lane, isSub }) => {
                                 const color = eventBarColor(e, categories);
                                 const inset = isSub ? ALLDAY_SUB_INDENT : 2;
@@ -1147,10 +1168,10 @@ const WeekView: React.FC<{
                                     <div
                                         key={e.id}
                                         onClick={() => onSelectEvent(e)}
-                                        className={`absolute text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer z-[1] leading-snug ${isSub ? '' : 'shadow-sm'}`}
+                                        className={`absolute text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer z-10 leading-snug ${isSub ? '' : 'shadow-sm'}`}
                                         style={{
                                             left: startCol * dayW + inset,
-                                            width: span * dayW - inset - 2,
+                                            width: span * dayW - inset * 2,
                                             top: lane * (ALLDAY_BAR_MIN_H + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP,
                                             minHeight: ALLDAY_BAR_MIN_H,
                                             ...calendarBarStyle(isSub, color),
@@ -1164,14 +1185,6 @@ const WeekView: React.FC<{
                                     </div>
                                 );
                             })}
-                            {allDays.map((d, i) => (
-                                <div
-                                    key={toYMD(d)}
-                                    className="absolute top-0 bottom-0 border-l border-gray-100 cursor-pointer hover:bg-rose-50/30 transition-colors z-[1]"
-                                    style={{ left: i * dayW, width: dayW }}
-                                    onClick={() => onAllDayClick(toYMD(d))}
-                                />
-                            ))}
                         </div>
                     </div>
 
