@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────
 const ITEM_H = 36; // px per row
@@ -154,7 +155,20 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     const [month, setMonth] = useState(initial.m);
     const [day, setDay] = useState(initial.d);
     const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
+    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
+
+    const updatePopupPos = useCallback(() => {
+        const el = triggerRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const minW = 260;
+        let left = rect.left;
+        if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
+        setPopupPos({ top: rect.bottom + 4, left });
+    }, []);
 
     // value prop 외부 변경 시 동기화
     useEffect(() => {
@@ -168,13 +182,25 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
         if (day > maxDay) setDay(maxDay);
     }, [year, month, maxDay]);
 
+    // 팝업 위치 — 스크롤/리사이즈 시 갱신
+    useEffect(() => {
+        if (!open) return;
+        updatePopupPos();
+        window.addEventListener('scroll', updatePopupPos, true);
+        window.addEventListener('resize', updatePopupPos);
+        return () => {
+            window.removeEventListener('scroll', updatePopupPos, true);
+            window.removeEventListener('resize', updatePopupPos);
+        };
+    }, [open, updatePopupPos]);
+
     // 외부 클릭 닫기
     useEffect(() => {
         if (!open) return;
         const handler = (e: MouseEvent) => {
-            if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
-                setOpen(false);
-            }
+            const t = e.target as Node;
+            if (popupRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
+            setOpen(false);
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
@@ -198,9 +224,10 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
         : '';
 
     return (
-        <div ref={popupRef} className={`relative inline-block ${className}`}>
+        <div ref={rootRef} className={`relative inline-block ${className}`}>
             {/* 트리거 */}
             <button
+                ref={triggerRef}
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 className={variant === 'ghost'
@@ -211,11 +238,15 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
                 {displayValue || <span className="text-gray-400">{placeholder}</span>}
             </button>
 
-            {/* 팝업 */}
-            {open && (
-                <div className="absolute z-[100] mt-1 bg-white border border-gray-100 rounded-2xl shadow-xl p-4 flex flex-col gap-3"
-                    style={{ minWidth: 260 }}
-                    onWheel={(e) => e.stopPropagation()}>
+            {/* 팝업 — body 최상위 포털 */}
+            {open && createPortal(
+                <div
+                    ref={popupRef}
+                    data-wheel-date-picker-popup
+                    className="fixed z-[9999] bg-white border border-gray-100 rounded-2xl shadow-xl p-4 flex flex-col gap-3"
+                    style={{ top: popupPos.top, left: popupPos.left, minWidth: 260 }}
+                    onWheel={(e) => e.stopPropagation()}
+                >
                     {/* 컬럼 레이블 */}
                     <div className="flex justify-around text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2">
                         <span style={{ width: 72, textAlign: 'center' }}>년</span>
@@ -263,7 +294,8 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
                             확인
                         </button>
                     </div>
-                </div>
+                </div>,
+                document.body,
             )}
         </div>
     );

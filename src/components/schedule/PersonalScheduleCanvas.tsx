@@ -1372,7 +1372,10 @@ const GanttInlineDateCell: React.FC<{
     useEffect(() => {
         if (!isEditing) return;
         const onDown = (e: MouseEvent) => {
-            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) onCancel();
+            const t = e.target as Node;
+            if (wrapRef.current?.contains(t)) return;
+            if (t instanceof Element && t.closest('[data-wheel-date-picker-popup]')) return;
+            onCancel();
         };
         document.addEventListener('mousedown', onDown);
         return () => document.removeEventListener('mousedown', onDown);
