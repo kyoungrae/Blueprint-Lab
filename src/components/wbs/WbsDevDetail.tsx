@@ -430,6 +430,12 @@ const WbsDevDetail: React.FC = () => {
         .filter((r) => r.menuId === selectedMenuId)
         .sort((a, b) => (a.isDebugging ? 1 : 0) - (b.isDebugging ? 1 : 0));
 
+    /** 일괄 적용 대상 — Debugging 행 제외 */
+    const bulkTargetRows = useMemo(
+        () => menuRows.filter((r) => !r.isDebugging),
+        [menuRows],
+    );
+
     // ── 담당자 필터 ──
     /** 전체 고유 담당자 (등장 순) */
     const allAssignees = useMemo(() => {
@@ -525,8 +531,8 @@ const WbsDevDetail: React.FC = () => {
 
     // 일괄 적용
     const applyBulk = () => {
-        if (!selectedMenuId || bulkField === null) return;
-        menuRows.forEach((r) => {
+        if (!selectedMenuId || bulkField === null || bulkTargetRows.length === 0) return;
+        bulkTargetRows.forEach((r) => {
             if (bulkField === 'progress') {
                 updateRow(r.id, { progress: Math.min(100, Math.max(0, Number(bulkValue) || 0)) });
             } else if (bulkField === 'status') {
@@ -901,10 +907,10 @@ const WbsDevDetail: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={applyBulk}
-                                    disabled={bulkValue === '' || menuRows.length === 0}
+                                    disabled={bulkValue === '' || bulkTargetRows.length === 0}
                                     className="mt-1 w-full px-3 py-2 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                    전체 {menuRows.length}행 적용
+                                    전체 {bulkTargetRows.length}행 적용
                                 </button>
                             </div>
                         )}
