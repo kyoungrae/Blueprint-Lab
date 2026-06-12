@@ -1,10 +1,79 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────
 const ITEM_H = 36; // px per row
 const VISIBLE = 5; // rows visible (must be odd)
 const CENTER = Math.floor(VISIBLE / 2); // index of center row
+const POPUP_GAP = 4;
+const VIEWPORT_PAD = 8;
+
+function computeWheelPopupPosition(
+    trigger: HTMLElement,
+    popup: HTMLElement | null,
+    minW: number,
+    fallbackH = 320,
+) {
+    const rect = trigger.getBoundingClientRect();
+    let left = rect.left;
+    if (left + minW > window.innerWidth - VIEWPORT_PAD) {
+        left = Math.max(VIEWPORT_PAD, window.innerWidth - minW - VIEWPORT_PAD);
+    }
+
+    const popupH = popup?.offsetHeight || fallbackH;
+    const spaceBelow = window.innerHeight - VIEWPORT_PAD - rect.bottom - POPUP_GAP;
+    const spaceAbove = rect.top - VIEWPORT_PAD - POPUP_GAP;
+    const fitsBelow = spaceBelow >= popupH;
+    const fitsAbove = spaceAbove >= popupH;
+
+    let top: number;
+    if (fitsBelow || (!fitsAbove && spaceBelow >= spaceAbove)) {
+        top = rect.bottom + POPUP_GAP;
+        if (top + popupH > window.innerHeight - VIEWPORT_PAD) {
+            top = Math.max(VIEWPORT_PAD, window.innerHeight - VIEWPORT_PAD - popupH);
+        }
+    } else {
+        top = rect.top - POPUP_GAP - popupH;
+        if (top < VIEWPORT_PAD) top = VIEWPORT_PAD;
+    }
+
+    return { top, left };
+}
+
+function useWheelPopupPosition(
+    open: boolean,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+    popupRef: React.RefObject<HTMLDivElement | null>,
+    minW: number,
+    fallbackH = 320,
+) {
+    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
+
+    const updatePopupPos = useCallback(() => {
+        const trigger = triggerRef.current;
+        if (!trigger) return;
+        setPopupPos(computeWheelPopupPosition(trigger, popupRef.current, minW, fallbackH));
+    }, [triggerRef, popupRef, minW, fallbackH]);
+
+    useLayoutEffect(() => {
+        if (!open) return;
+        updatePopupPos();
+        const raf = requestAnimationFrame(updatePopupPos);
+        return () => cancelAnimationFrame(raf);
+    }, [open, updatePopupPos]);
+
+    useEffect(() => {
+        if (!open) return;
+        window.addEventListener('scroll', updatePopupPos, true);
+        window.addEventListener('resize', updatePopupPos);
+        return () => {
+            window.removeEventListener('scroll', updatePopupPos, true);
+            window.removeEventListener('resize', updatePopupPos);
+        };
+    }, [open, updatePopupPos]);
+
+    return popupPos;
+}
 
 function range(start: number, end: number) {
     return Array.from({ length: end - start + 1 }, (_, i) => start + i);
@@ -158,17 +227,7 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     const rootRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
-    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
-
-    const updatePopupPos = useCallback(() => {
-        const el = triggerRef.current;
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        const minW = 260;
-        let left = rect.left;
-        if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
-        setPopupPos({ top: rect.bottom + 4, left });
-    }, []);
+    const popupPos = useWheelPopupPosition(open, triggerRef, popupRef, 260, 320);
 
     // value prop 외부 변경 시 동기화
     useEffect(() => {
@@ -181,18 +240,6 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     useEffect(() => {
         if (day > maxDay) setDay(maxDay);
     }, [year, month, maxDay]);
-
-    // 팝업 위치 — 스크롤/리사이즈 시 갱신
-    useEffect(() => {
-        if (!open) return;
-        updatePopupPos();
-        window.addEventListener('scroll', updatePopupPos, true);
-        window.addEventListener('resize', updatePopupPos);
-        return () => {
-            window.removeEventListener('scroll', updatePopupPos, true);
-            window.removeEventListener('resize', updatePopupPos);
-        };
-    }, [open, updatePopupPos]);
 
     // 외부 클릭 닫기
     useEffect(() => {
@@ -338,34 +385,13 @@ export const WheelTimePicker: React.FC<WheelTimePickerProps> = ({
     const [open, setOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
-    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
-
-    const updatePopupPos = useCallback(() => {
-        const el = triggerRef.current;
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        const minW = 200;
-        let left = rect.left;
-        if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
-        setPopupPos({ top: rect.bottom + 4, left });
-    }, []);
+    const popupPos = useWheelPopupPosition(open, triggerRef, popupRef, 200, 280);
 
     useEffect(() => {
         const p = parseTimeValue(value);
         setHour(p.h);
         setMinute(p.m);
     }, [value]);
-
-    useEffect(() => {
-        if (!open) return;
-        updatePopupPos();
-        window.addEventListener('scroll', updatePopupPos, true);
-        window.addEventListener('resize', updatePopupPos);
-        return () => {
-            window.removeEventListener('scroll', updatePopupPos, true);
-            window.removeEventListener('resize', updatePopupPos);
-        };
-    }, [open, updatePopupPos]);
 
     useEffect(() => {
         if (!open) return;
@@ -576,32 +602,11 @@ export const WheelColorPicker: React.FC<WheelColorPickerProps> = ({
     const [open, setOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
-    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
-
-    const updatePopupPos = useCallback(() => {
-        const el = triggerRef.current;
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        const minW = 220;
-        let left = rect.left;
-        if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
-        setPopupPos({ top: rect.bottom + 4, left });
-    }, []);
+    const popupPos = useWheelPopupPosition(open, triggerRef, popupRef, 220, 380);
 
     useEffect(() => {
         setDraft(value || colors[0]);
     }, [value, colors]);
-
-    useEffect(() => {
-        if (!open) return;
-        updatePopupPos();
-        window.addEventListener('scroll', updatePopupPos, true);
-        window.addEventListener('resize', updatePopupPos);
-        return () => {
-            window.removeEventListener('scroll', updatePopupPos, true);
-            window.removeEventListener('resize', updatePopupPos);
-        };
-    }, [open, updatePopupPos]);
 
     useEffect(() => {
         if (!open) return;
@@ -724,32 +729,11 @@ export const WheelProgressPicker: React.FC<WheelProgressPickerProps> = ({
     const [open, setOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
-    const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
-
-    const updatePopupPos = useCallback(() => {
-        const el = triggerRef.current;
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        const minW = 220;
-        let left = rect.left;
-        if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
-        setPopupPos({ top: rect.bottom + 4, left });
-    }, []);
+    const popupPos = useWheelPopupPosition(open, triggerRef, popupRef, 220, 380);
 
     useEffect(() => {
         setDraft(snapProgress(value));
     }, [value]);
-
-    useEffect(() => {
-        if (!open) return;
-        updatePopupPos();
-        window.addEventListener('scroll', updatePopupPos, true);
-        window.addEventListener('resize', updatePopupPos);
-        return () => {
-            window.removeEventListener('scroll', updatePopupPos, true);
-            window.removeEventListener('resize', updatePopupPos);
-        };
-    }, [open, updatePopupPos]);
 
     useEffect(() => {
         if (!open) return;
