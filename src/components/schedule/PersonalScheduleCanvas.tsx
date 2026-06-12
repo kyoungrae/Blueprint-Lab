@@ -926,7 +926,9 @@ const GanttView: React.FC<{
     const getLeft  = (date: string) => Math.max(0, daysBetween(chartStart, parseDate(normDate(date)))) * DAY_W;
     const getWidth = (s: string, e: string) => Math.max(DAY_W, (daysBetween(parseDate(normDate(s)), parseDate(normDate(e))) + 1) * DAY_W);
 
-    /** 부모 바 왼쪽 끝 → 각 하위 바 왼쪽 (L자) */
+    const GANTT_CONNECTOR_GAP = 8;
+
+    /** 부모 바 왼쪽 간격 → 하위 바 왼쪽 (가로+세로 L자) */
     const hierarchyLines = React.useMemo(() => {
         const rowById = new Map(flatTasks.map((t, i) => [t.id, i]));
         const lines: string[] = [];
@@ -943,12 +945,14 @@ const GanttView: React.FC<{
             if (pIdx === undefined || cIdx <= pIdx) continue;
 
             const pLeft = getLeft(parent.startDate);
+            const trunkX = Math.max(0, pLeft - GANTT_CONNECTOR_GAP);
             const pY = rowCenterY(pIdx);
             const cLeft = getLeft(child.startDate);
             const cY = rowCenterY(cIdx);
             const arrowTip = Math.max(0, cLeft - 4);
 
-            lines.push(`M ${pLeft} ${pY} L ${pLeft} ${cY} L ${arrowTip} ${cY}`);
+            // 간격(trunkX) → 부모 왼쪽 → 간격으로 복귀 → 세로 → 하위 왼쪽
+            lines.push(`M ${trunkX} ${pY} L ${pLeft} ${pY} L ${trunkX} ${pY} L ${trunkX} ${cY} L ${arrowTip} ${cY}`);
         }
         return lines;
     }, [flatTasks, chartStart]); // eslint-disable-line react-hooks/exhaustive-deps
