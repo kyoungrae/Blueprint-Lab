@@ -1860,9 +1860,13 @@ const PersonalScheduleCanvas: React.FC = () => {
         const ev = events.find(e => e.id === taskId);
         if (!ev) return;
         const d = startOfDay(parseDate(ev.startDate.replace(/\./g, '-')));
+        setTab('calendar');
         setViewMode('week');
         setWeekStart(d);
         setSelectedDate(d);
+        setPanelEvent(ev);
+        setPanelInitialTab('main');
+        setPanelOpen(true);
         if (!ev.allDay && ev.startTime) {
             const h = parseInt(ev.startTime.split(':')[0], 10);
             setCalendarScrollHour(Number.isNaN(h) ? null : h);
