@@ -1,276 +1,309 @@
 import { type Node, type Edge } from 'reactflow';
 
-/**
- * 테이블의 실제 크기를 계산하거나 컬럼 개수로 추정합니다.
- */
+/** 노드 실제 크기 (measured → width/height → 컬럼수 추정) */
 function getNodeSize(node: Node): { width: number; height: number } {
-    const measured = (node as any).measured;
-    const width =
-        (measured && measured.width > 0 ? measured.width : undefined) ??
-        (typeof node.width === 'number' && node.width > 0 ? node.width : undefined) ??
-        350;
-
-    // height는 measured/node.height가 있으면 그것을 최우선으로 사용 (추정치로 과대 계산 방지)
-    const measuredHeight = measured && measured.height > 0 ? measured.height : undefined;
-    const nodeHeight = typeof node.height === 'number' && node.height > 0 ? node.height : undefined;
-    if (measuredHeight != null || nodeHeight != null) {
-        return { width, height: measuredHeight ?? nodeHeight! };
-    }
-
-    const data = node.data as any;
-    const attributes = data?.entity?.attributes || data?.attributes;
-    if (Array.isArray(attributes)) {
-        // 컬럼당 40px + 헤더/여백 160px
-        return { width, height: 160 + (attributes.length * 40) };
-    }
-
-    // 속성 정보도 없으면 보수적인 기본값 사용
-    return { width, height: 400 };
+    const m = (node as any).measured;
+    const w =
+        (m?.width  > 0 ? m.width  : undefined) ??
+        (typeof node.width  === 'number' && node.width  > 0 ? node.width  : undefined) ??
+        340;
+    const mh =
+        (m?.height > 0 ? m.height : undefined) ??
+        (typeof node.height === 'number' && node.height > 0 ? node.height : undefined);
+    if (mh != null) return { width: w, height: mh };
+    const attrs = (node.data as any)?.entity?.attributes ?? (node.data as any)?.attributes;
+    const h = Array.isArray(attrs) ? 96 + attrs.length * 34 : 280;
+    return { width: w, height: h };
 }
 
-/**
- * 연결된 그룹(군락)을 찾는 DFS 알고리즘
- */
+/** 노드의 대각선(충돌 반지름) */
+function nodeRadius(node: Node): number {
+    const { width, height } = getNodeSize(node);
+    return Math.sqrt(width * width + height * height) / 2;
+}
+
+/** BFS로 연결 컴포넌트 분리 */
 function getConnectedComponents(nodes: Node[], edges: Edge[]): Node[][] {
-    const idToIndex = new Map<string, number>();
-    nodes.forEach((n, i) => idToIndex.set(n.id, i));
-    const n = nodes.length;
-    const adj: number[][] = Array.from({ length: n }, () => []);
-    edges.forEach((e) => {
-        const i = idToIndex.get(e.source);
-        const j = idToIndex.get(e.target);
-        if (i !== undefined && j !== undefined) {
-            adj[i].push(j); adj[j].push(i);
-        }
+    const adj = new Map<string, Set<string>>();
+    nodes.forEach(n => adj.set(n.id, new Set()));
+    edges.forEach(e => {
+        adj.get(e.source)?.add(e.target);
+        adj.get(e.target)?.add(e.source);
     });
-    const visited = new Array(n).fill(false);
+    const visited = new Set<string>();
     const components: Node[][] = [];
-    function dfs(v: number, comp: Node[]) {
-        visited[v] = true; comp.push(nodes[v]);
-        adj[v].forEach((u) => { if (!visited[u]) dfs(u, comp); });
+    for (const node of nodes) {
+        if (visited.has(node.id)) continue;
+        const comp: Node[] = [];
+        const queue = [node.id];
+        visited.add(node.id);
+        while (queue.length) {
+            const cur = queue.shift()!;
+            const found = nodes.find(n => n.id === cur);
+            if (found) comp.push(found);
+            for (const nb of adj.get(cur) ?? []) {
+                if (!visited.has(nb)) { visited.add(nb); queue.push(nb); }
+            }
+        }
+        components.push(comp);
     }
-    for (let i = 0; i < n; i++) {
-        if (!visited[i]) { const comp: Node[] = []; dfs(i, comp); components.push(comp); }
-    }
-    components.sort((a, b) => b.length - a.length);
-    return components;
+    return components.sort((a, b) => b.length - a.length);
 }
 
-// 레이아웃 시 결정된 핸들 정보를 저장 (엣지 연결 시 사용)
-const nodeToMasterHandleMap = new Map<string, { source: string; target: string }>();
-
 /**
- * [핵심] 군락 내 방사형 레이아웃: 마스터의 높이에 비례해 간격을 동적으로 조절
+ * 방사형 레이아웃 — 연결수가 가장 많은 노드를 중심에 놓고
+ * 나머지를 BFS 레벨별 동심원으로 배치.
+ *
+ * 각 링의 반지름은:
+ *   r = max(  innerRadius + gap + maxNodeDiag/2,
+ *             N * (avgNodeDiag + gap) / (2π)  )
+ * 로 결정하여 노드끼리 겹치지 않도록 보장.
  */
-function layoutRadialIsland(compNodes: Node[], compEdges: Edge[]): { nodes: Node[], width: number, height: number } {
+function layoutRadial(
+    compNodes: Node[],
+    compEdges: Edge[],
+): { nodes: Node[]; edges: Edge[]; width: number; height: number } {
+    if (compNodes.length === 0) return { nodes: [], edges: compEdges, width: 0, height: 0 };
+
+    const RING_GAP = 100;   // 링 사이 최소 여백
+    const NODE_GAP = 60;    // 같은 링 내 노드 간 최소 여백
+
     if (compNodes.length === 1) {
-        const size = getNodeSize(compNodes[0]);
-        return { nodes: [{ ...compNodes[0], position: { x: 0, y: 0 } }], width: size.width, height: size.height };
+        const { width, height } = getNodeSize(compNodes[0]);
+        return {
+            nodes: [{ ...compNodes[0], position: { x: 0, y: 0 } }],
+            edges: compEdges,
+            width,
+            height,
+        };
     }
 
-    // 마스터 노드 찾기 (연결선이 가장 많은 노드)
-    const degreeMap = new Map<string, number>();
-    compNodes.forEach(n => degreeMap.set(n.id, 0));
+    // 인접 리스트
+    const adj = new Map<string, Set<string>>();
+    compNodes.forEach(n => adj.set(n.id, new Set()));
     compEdges.forEach(e => {
-        if (degreeMap.has(e.source)) degreeMap.set(e.source, degreeMap.get(e.source)! + 1);
-        if (degreeMap.has(e.target)) degreeMap.set(e.target, degreeMap.get(e.target)! + 1);
+        adj.get(e.source)?.add(e.target);
+        adj.get(e.target)?.add(e.source);
     });
 
-    let masterNode = compNodes[0];
-    let maxDeg = -1;
-    degreeMap.forEach((deg, id) => {
-        if (deg > maxDeg) { maxDeg = deg; masterNode = compNodes.find(n => n.id === id)!; }
-    });
+    // 중심 = 연결수 최대 노드
+    const center = [...compNodes].sort(
+        (a, b) => (adj.get(b.id)?.size ?? 0) - (adj.get(a.id)?.size ?? 0),
+    )[0];
 
-    const satelliteNodes = compNodes.filter(n => n.id !== masterNode.id);
-    const masterSize = getNodeSize(masterNode);
-    const positionedNodes: Node[] = [];
-
-    // 마스터 중앙 배치
-    positionedNodes.push({ ...masterNode, position: { x: 0, y: 0 } });
-
-    // 자식들을 4방향으로 분배 (우, 하, 좌, 상 순서로 핑퐁)
-    const sides: Node[][] = [[], [], [], []]; 
-    satelliteNodes.forEach((node, i) => sides[i % 4].push(node));
-
-    // ★ 마스터의 크기에 따른 동적 안전 거리 계산
-    const marginX = 800; // 가로 기본 여백
-    const marginY = 600; // 세로 기본 여백
-    const safeDistX = (masterSize.width / 2) + marginX;
-    const safeDistY = (masterSize.height / 2) + marginY;
-
-    let minX = 0, minY = 0, maxX = masterSize.width, maxY = masterSize.height;
-    const handleNames = ['right', 'bottom', 'left', 'top'];
-    const targetOppositeNames = ['left', 'top', 'right', 'bottom'];
-
-    sides.forEach((group, sideIdx) => {
-        group.forEach((node, inIdx) => {
-            const size = getNodeSize(node);
-            // 같은 방향에 여러 개일 때의 퍼짐 정도
-            const spread = (inIdx - (group.length - 1) / 2) * 600;
-            let x = 0, y = 0;
-
-            if (sideIdx === 0) { // Right
-                x = (masterSize.width / 2) + safeDistX - (size.width / 2);
-                y = (masterSize.height / 2) + spread - (size.height / 2);
-            } else if (sideIdx === 1) { // Bottom
-                x = (masterSize.width / 2) + spread - (size.width / 2);
-                y = (masterSize.height / 2) + safeDistY - (size.height / 2);
-            } else if (sideIdx === 2) { // Left
-                x = (masterSize.width / 2) - safeDistX - (size.width / 2);
-                y = (masterSize.height / 2) + spread - (size.height / 2);
-            } else if (sideIdx === 3) { // Top
-                x = (masterSize.width / 2) + spread - (size.width / 2);
-                y = (masterSize.height / 2) - safeDistY - (size.height / 2);
+    // BFS 레벨 할당
+    const levelOf = new Map<string, number>();
+    const queue: string[] = [center.id];
+    levelOf.set(center.id, 0);
+    while (queue.length) {
+        const cur = queue.shift()!;
+        for (const nb of adj.get(cur) ?? []) {
+            if (!levelOf.has(nb)) {
+                levelOf.set(nb, (levelOf.get(cur) ?? 0) + 1);
+                queue.push(nb);
             }
+        }
+    }
 
-            nodeToMasterHandleMap.set(node.id, {
-                source: handleNames[sideIdx],
-                target: targetOppositeNames[sideIdx]
+    // 레벨별 그룹화
+    const maxLevel = Math.max(...levelOf.values());
+    const rings: Node[][] = Array.from({ length: maxLevel + 1 }, () => []);
+    compNodes.forEach(n => rings[levelOf.get(n.id) ?? 0].push(n));
+
+    // 각 링의 반지름 계산 (겹침 방지)
+    const posMap = new Map<string, { x: number; y: number }>();
+    const centerNode = rings[0][0];
+    const { width: cw, height: ch } = getNodeSize(centerNode);
+    posMap.set(centerNode.id, { x: -cw / 2, y: -ch / 2 });
+
+    let prevOuterRadius = Math.max(nodeRadius(centerNode), 80);
+
+    for (let lvl = 1; lvl <= maxLevel; lvl++) {
+        const ring = rings[lvl];
+        const avgDiag = ring.reduce((s, n) => s + nodeRadius(n) * 2, 0) / ring.length;
+
+        // 이 링이 차지해야 할 최소 원주 = N * (avgDiag + gap)
+        const minCircumference = ring.length * (avgDiag + NODE_GAP);
+        const rByCirc = minCircumference / (2 * Math.PI);
+
+        // 이전 링의 바깥 경계 + 갭 + 이 링 최대 노드 반지름
+        const maxDiag = Math.max(...ring.map(n => nodeRadius(n)));
+        const rByGap = prevOuterRadius + RING_GAP + maxDiag;
+
+        const r = Math.max(rByCirc, rByGap);
+
+        // 이 링의 노드 배치 — 균등 각도 분할
+        // 시작 각도: 정상(12시)에서 시작, 첫 노드가 너무 중심 위에 오지 않도록 약간 회전
+        const angleStep = (2 * Math.PI) / ring.length;
+        const startAngle = ring.length === 1 ? Math.PI / 2 * 3 : -Math.PI / 2; // 12시 방향
+
+        ring.forEach((n, i) => {
+            const angle = startAngle + i * angleStep;
+            const { width, height } = getNodeSize(n);
+            posMap.set(n.id, {
+                x: Math.cos(angle) * r - width / 2,
+                y: Math.sin(angle) * r - height / 2,
             });
-
-            // 스냅 그리드 유지 (선택적)
-            const snapX = Math.round(x / 50) * 50;
-            const snapY = Math.round(y / 50) * 50;
-
-            positionedNodes.push({ ...node, position: { x: snapX, y: snapY } });
-            minX = Math.min(minX, snapX); minY = Math.min(minY, snapY);
-            maxX = Math.max(maxX, snapX + size.width); maxY = Math.max(maxY, snapY + size.height);
         });
-    });
 
-    const normalizedNodes = positionedNodes.map(n => ({
+        prevOuterRadius = r + maxDiag;
+    }
+
+    const layoutedNodes = compNodes.map(n => ({
         ...n,
-        position: { x: n.position.x - minX, y: n.position.y - minY }
+        position: posMap.get(n.id) ?? n.position,
     }));
 
-    return { nodes: normalizedNodes, width: maxX - minX, height: maxY - minY };
-}
-
-/**
- * [외톨이 그룹] 바둑판 정렬
- */
-function layoutGridIsland(compNodes: Node[]): { nodes: Node[], width: number, height: number } {
-    const GAP_X = 300, GAP_Y = 300;
-    const maxRowWidth = compNodes.length > 20 ? 8000 : 4000;
-    let currentX = 0, currentY = 0, currentRowHeight = 0;
-    let islandWidth = 0, islandHeight = 0;
-    
-    compNodes.sort((a, b) => {
-        const nameA = (a.data?.entity?.name || a.data?.name || a.id).toLowerCase();
-        const nameB = (b.data?.entity?.name || b.data?.name || b.id).toLowerCase();
-        return nameA.localeCompare(nameB);
-    });
-    
-    const positionedNodes = compNodes.map(node => {
-        const { width, height } = getNodeSize(node);
-        if (currentX + width > maxRowWidth && currentX > 0) {
-            currentX = 0; currentY += currentRowHeight + GAP_Y; currentRowHeight = 0;
-        }
-        const pos = { x: currentX, y: currentY };
-        currentX += width + GAP_X;
-        currentRowHeight = Math.max(currentRowHeight, height);
-        islandWidth = Math.max(islandWidth, currentX);
-        islandHeight = Math.max(islandHeight, currentY + currentRowHeight);
-        return { ...node, position: pos };
-    });
-    return { nodes: positionedNodes, width: islandWidth, height: islandHeight };
-}
-
-export function getRelationshipLayoutedElements(nodes: Node[], edges: Edge[], _direction: 'TB' | 'LR' = 'LR'): { nodes: Node[]; edges: Edge[] } {
-    if (nodes.length === 0) return { nodes, edges };
-    nodeToMasterHandleMap.clear();
-
-    const allComponents = getConnectedComponents(nodes, edges);
-    const linkedComponents: Node[][] = [];
-    const isolatedNodes: Node[] = [];
-    allComponents.forEach(comp => { if (comp.length > 1) linkedComponents.push(comp); else isolatedNodes.push(comp[0]); });
-
-    const islands: Array<{ nodes: Node[], width: number, height: number }> = [];
-    linkedComponents.forEach(comp => islands.push(layoutRadialIsland(comp, edges)));
-    if (isolatedNodes.length > 0) islands.push(layoutGridIsland(isolatedNodes));
-
-    // 섬(군락) 배치: 새로고침 직후 measured가 불안정해도 흔들리지 않도록 고정 열 그리드 배치
-    const ISLAND_GAP = 800;
-    const COLUMNS_PER_ROW = 3;
-
-    let finalNodes: Node[] = [];
-    let currentX = 0;
-    let currentY = 0;
-    let maxHInRow = 0;
-
-    islands.forEach((island, index) => {
-        if (index > 0 && index % COLUMNS_PER_ROW === 0) {
-            currentX = 0;
-            currentY += maxHInRow + ISLAND_GAP;
-            maxHInRow = 0;
-        }
-
-        island.nodes.forEach(node => {
-            finalNodes.push({
-                ...node,
-                position: {
-                    x: node.position.x + currentX,
-                    y: node.position.y + currentY,
-                }
-            });
-        });
-
-        currentX += island.width + ISLAND_GAP;
-        maxHInRow = Math.max(maxHInRow, island.height);
-    });
-
-    // 전체 좌표 정규화: 좌상단이 (0,0) 근처로 오도록 평행이동
-    if (finalNodes.length > 0) {
-        let minWorldX = Infinity;
-        let minWorldY = Infinity;
-        finalNodes.forEach((n) => {
-            minWorldX = Math.min(minWorldX, n.position.x);
-            minWorldY = Math.min(minWorldY, n.position.y);
-        });
-        finalNodes = finalNodes.map((n) => ({
-            ...n,
-            position: {
-                x: Math.round(((n.position.x - minWorldX) / 50)) * 50,
-                y: Math.round(((n.position.y - minWorldY) / 50)) * 50,
-            },
-        }));
-    }
-
-    // 레이아웃 결과가 과도하게 커질 경우 전체를 축소해 안정화
-    const MAX_WORLD = 12000;
-    let maxX = 0;
-    let maxY = 0;
-    finalNodes.forEach((n) => {
+    // bbox
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    layoutedNodes.forEach(n => {
         const { width, height } = getNodeSize(n);
+        minX = Math.min(minX, n.position.x);
+        minY = Math.min(minY, n.position.y);
         maxX = Math.max(maxX, n.position.x + width);
         maxY = Math.max(maxY, n.position.y + height);
     });
-    const maxDim = Math.max(maxX, maxY);
-    if (maxDim > MAX_WORLD) {
-        const scale = MAX_WORLD / maxDim;
-        finalNodes = finalNodes.map((n) => ({
-            ...n,
-            position: {
-                x: Math.round((n.position.x * scale) / 50) * 50,
-                y: Math.round((n.position.y * scale) / 50) * 50,
-            },
-        }));
-    }
 
-    const finalEdges = edges.map(edge => {
-        const forced = nodeToMasterHandleMap.get(edge.source) || nodeToMasterHandleMap.get(edge.target);
-        if (forced) {
-            const isTargetMaster = nodeToMasterHandleMap.has(edge.source);
-            return {
-                ...edge,
-                sourceHandle: isTargetMaster ? forced.target : forced.source,
-                targetHandle: isTargetMaster ? forced.source : forced.target,
-                style: { strokeWidth: 2, stroke: '#3b82f6' }
-            };
+    // 정규화 (0, 0) 기준
+    const normalized = layoutedNodes.map(n => ({
+        ...n,
+        position: { x: n.position.x - minX, y: n.position.y - minY },
+    }));
+
+    // 포지션 맵 (center 기준) — 핸들 할당에 사용
+    const centerOf = (n: Node) => {
+        const p = posMap.get(n.id) ?? n.position;
+        const { width, height } = getNodeSize(n);
+        return { x: p.x + width / 2, y: p.y + height / 2 };
+    };
+
+    // 두 노드의 중심 간 각도로 최적 핸들 결정
+    const assignHandles = (src: Node, tgt: Node): { sourceHandle: string; targetHandle: string } => {
+        const sc = centerOf(src);
+        const tc = centerOf(tgt);
+        const dx = tc.x - sc.x;
+        const dy = tc.y - sc.y;
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI); // -180 ~ 180
+
+        // 45도 구간으로 4방향 분류
+        if (angle > -45 && angle <= 45) {
+            return { sourceHandle: 'right', targetHandle: 'left' };
+        } else if (angle > 45 && angle <= 135) {
+            return { sourceHandle: 'bottom', targetHandle: 'top' };
+        } else if (angle > 135 || angle <= -135) {
+            return { sourceHandle: 'left', targetHandle: 'right' };
+        } else {
+            return { sourceHandle: 'top', targetHandle: 'bottom' };
         }
-        return edge;
+    };
+
+    const nodeMap = new Map(compNodes.map(n => [n.id, n]));
+    const edgesWithHandles = compEdges.map(e => {
+        const src = nodeMap.get(e.source);
+        const tgt = nodeMap.get(e.target);
+        if (!src || !tgt) return e;
+        return { ...e, ...assignHandles(src, tgt) };
     });
 
-    return { nodes: finalNodes, edges: finalEdges };
+    return {
+        nodes: normalized,
+        edges: edgesWithHandles,
+        width: maxX - minX,
+        height: maxY - minY,
+    };
+}
+
+/** 고립 노드를 가로 그리드로 배치 */
+function layoutIsolated(nodes: Node[]): { nodes: Node[]; width: number; height: number } {
+    const GAP = 80;
+    const COLS = Math.ceil(Math.sqrt(nodes.length));
+    let cx = 0, cy = 0, rowH = 0, col = 0;
+    let maxW = 0;
+    const result = nodes.map(n => {
+        const { width, height } = getNodeSize(n);
+        const pos = { x: cx, y: cy };
+        cx += width + GAP;
+        rowH = Math.max(rowH, height);
+        col++;
+        if (col >= COLS) {
+            maxW = Math.max(maxW, cx - GAP);
+            cx = 0; cy += rowH + GAP; rowH = 0; col = 0;
+        }
+        return { ...n, position: pos };
+    });
+    return { nodes: result, width: Math.max(maxW, cx), height: cy + rowH };
+}
+
+/**
+ * ERD 관계 정렬 진입점.
+ * 연결 컴포넌트별로 방사형 레이아웃 적용 후
+ * 컴포넌트끼리 겹치지 않게 그리드로 배치.
+ */
+export function getRelationshipLayoutedElements(
+    nodes: Node[],
+    edges: Edge[],
+    _direction: 'TB' | 'LR' = 'LR',
+): { nodes: Node[]; edges: Edge[] } {
+    if (nodes.length === 0) return { nodes, edges };
+
+    const ISLAND_GAP = 180;
+    const MARGIN = 100;
+
+    const components = getConnectedComponents(nodes, edges);
+    const linked   = components.filter(c => c.length > 1);
+    const isolated = components.filter(c => c.length === 1).map(c => c[0]);
+
+    const islands: Array<{ nodes: Node[]; edges: Edge[]; width: number; height: number }> = [];
+
+    for (const comp of linked) {
+        const compEdges = edges.filter(
+            e => comp.some(n => n.id === e.source) && comp.some(n => n.id === e.target),
+        );
+        islands.push(layoutRadial(comp, compEdges));
+    }
+
+    if (isolated.length > 0) {
+        const { nodes: iso, width, height } = layoutIsolated(isolated);
+        islands.push({ nodes: iso, edges: [], width, height });
+    }
+
+    // 컴포넌트를 그리드로 배치 (가로 방향 우선)
+    const GRID_COLS = Math.max(1, Math.ceil(Math.sqrt(islands.length)));
+    let col = 0, cx = 0, cy = 0, rowH = 0;
+
+    const placedIslands = islands.map(island => {
+        const ox = cx, oy = cy;
+        cx += island.width + ISLAND_GAP;
+        rowH = Math.max(rowH, island.height);
+        col++;
+        if (col >= GRID_COLS) {
+            cx = 0; cy += rowH + ISLAND_GAP; rowH = 0; col = 0;
+        }
+        return { island, ox, oy };
+    });
+
+    let allNodes: Node[] = [];
+    const edgeMap = new Map<string, Edge>();
+    edges.forEach(e => edgeMap.set(e.id, e));
+
+    for (const { island, ox, oy } of placedIslands) {
+        island.nodes.forEach(n => {
+            allNodes.push({ ...n, position: { x: n.position.x + ox, y: n.position.y + oy } });
+        });
+        island.edges.forEach(e => edgeMap.set(e.id, e));
+    }
+
+    // 전체 정규화 + 여백
+    let minX = Infinity, minY = Infinity;
+    allNodes.forEach(n => { minX = Math.min(minX, n.position.x); minY = Math.min(minY, n.position.y); });
+
+    allNodes = allNodes.map(n => ({
+        ...n,
+        position: {
+            x: Math.round((n.position.x - minX + MARGIN)),
+            y: Math.round((n.position.y - minY + MARGIN)),
+        },
+    }));
+
+    return { nodes: allNodes, edges: Array.from(edgeMap.values()) };
 }

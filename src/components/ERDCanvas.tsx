@@ -1166,16 +1166,56 @@ const ERDCanvasContent: React.FC = () => {
             : relationships.filter((rel) => visibleNodeIds.has(rel.source) || visibleNodeIds.has(rel.target));
 
         // 같은 entity+side를 공유하는 엣지끼리 인덱스를 계산해 분산 오프셋에 사용
-        const sourceGroups = new Map<string, string[]>();
-        const targetGroups = new Map<string, string[]>();
+        // 상대 노드의 위치 기준으로 정렬해 가장 가까운 노드가 가장 가까운 핸들 슬롯을 쓰도록 함
+        const rfNodes = getNodes();
+        const nodePosMap = new Map<string, { x: number; y: number; width: number; height: number }>();
+        for (const n of rfNodes) {
+            const m = (n as any).measured;
+            nodePosMap.set(n.id, {
+                x: n.position.x,
+                y: n.position.y,
+                width: m?.width ?? (typeof n.width === 'number' ? n.width : 340),
+                height: m?.height ?? (typeof n.height === 'number' ? n.height : 280),
+            });
+        }
+
+        // 노드 중심 좌표
+        const nodeCenter = (id: string) => {
+            const p = nodePosMap.get(id);
+            if (!p) return { x: 0, y: 0 };
+            return { x: p.x + p.width / 2, y: p.y + p.height / 2 };
+        };
+
+        // sourceGroup: 같은 source+handle 그룹 → 상대(target) 노드의 Y(또는 X)로 정렬
+        const sourceGroupMap = new Map<string, { id: string; sortVal: number }[]>();
+        const targetGroupMap = new Map<string, { id: string; sortVal: number }[]>();
+
         for (const rel of rels) {
             const sk = `${rel.source}::${rel.sourceHandle ?? ''}`;
             const tk = `${rel.target}::${rel.targetHandle ?? ''}`;
-            if (!sourceGroups.has(sk)) sourceGroups.set(sk, []);
-            sourceGroups.get(sk)!.push(rel.id);
-            if (!targetGroups.has(tk)) targetGroups.set(tk, []);
-            targetGroups.get(tk)!.push(rel.id);
+            const sc = nodeCenter(rel.source);
+            const tc = nodeCenter(rel.target);
+
+            // left/right 핸들 → Y축 기준 정렬, top/bottom → X축 기준 정렬
+            const srcIsHoriz = rel.sourceHandle === 'left' || rel.sourceHandle === 'right' || !rel.sourceHandle;
+            const tgtIsHoriz = rel.targetHandle === 'left' || rel.targetHandle === 'right' || !rel.targetHandle;
+
+            if (!sourceGroupMap.has(sk)) sourceGroupMap.set(sk, []);
+            sourceGroupMap.get(sk)!.push({ id: rel.id, sortVal: srcIsHoriz ? tc.y : tc.x });
+
+            if (!targetGroupMap.has(tk)) targetGroupMap.set(tk, []);
+            targetGroupMap.get(tk)!.push({ id: rel.id, sortVal: tgtIsHoriz ? sc.y : sc.x });
         }
+
+        // 정렬 후 순서 배열로 변환
+        const sourceGroups = new Map<string, string[]>();
+        const targetGroups = new Map<string, string[]>();
+        sourceGroupMap.forEach((arr, key) => {
+            sourceGroups.set(key, arr.sort((a, b) => a.sortVal - b.sortVal).map(x => x.id));
+        });
+        targetGroupMap.forEach((arr, key) => {
+            targetGroups.set(key, arr.sort((a, b) => a.sortVal - b.sortVal).map(x => x.id));
+        });
 
         const flowEdges: Edge[] = rels.map((rel) => {
             const isSelfRef = isSelfReferencingRelationship(rel.source, rel.target);
