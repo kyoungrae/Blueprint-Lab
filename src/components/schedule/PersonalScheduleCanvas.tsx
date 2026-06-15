@@ -14,6 +14,13 @@ type TabMode = 'calendar' | 'gantt' | 'todo';
 type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 type CategoryKey = string;
 
+const REPEAT_LABELS: Record<Exclude<RepeatType, 'none'>, string> = {
+    daily: '매일',
+    weekly: '매주',
+    monthly: '매월',
+    yearly: '매년',
+};
+
 interface SubEvent {
     id: string;
     title: string;
@@ -45,6 +52,10 @@ interface ScheduleEvent {
     /** 간트 차트 연동 */
     assignee?: string;
     progress?: number;
+    /** 반복 일정 — 회차별 진행률 (키: 회차 시작일 YYYY-MM-DD) */
+    occurrenceProgress?: Record<string, number>;
+    /** 반복 일정 — 회차별 시작·종료일 오버라이드 */
+    occurrenceDates?: Record<string, { startDate: string; endDate: string }>;
     parentId?: string;
     ganttColor?: string;
 }
@@ -59,6 +70,10 @@ interface GanttTask {
     parentId?: string;
     color?: string;
     children?: GanttTask[];
+    /** 반복 일정 — 작업명 옆 뱃지용 */
+    repeat?: RepeatType;
+    /** 타임라인에 그릴 전체 회차 (반복 일정) */
+    occurrences?: { occYmd: string; startDate: string; endDate: string; progress: number }[];
 }
 
 /** 캘린더 표시용 — 하위 일정·반복 일정 펼침 메타 */
@@ -164,6 +179,17 @@ const GANTT_CHART_FUTURE_DAYS = 365;
 const GANTT_CHART_PADDING_DAYS = 30;
 const MAX_REPEAT_OCCURRENCES = 1000;
 
+const normEventYmd = (s: string) => s.replace(/\./g, '-');
+
+function getOccurrenceProgress(event: ScheduleEvent, occStartYmd: string): number {
+    const anchor = normEventYmd(event.startDate);
+    if (event.occurrenceProgress && Object.prototype.hasOwnProperty.call(event.occurrenceProgress, occStartYmd)) {
+        return event.occurrenceProgress[occStartYmd];
+    }
+    if (occStartYmd === anchor) return event.progress ?? 0;
+    return 0;
+}
+
 function getCalendarExpandRange(events: ScheduleEvent[]) {
     const now = startOfDay(new Date());
     let start = addDays(now, -GANTT_CHART_PAST_DAYS);
@@ -259,6 +285,45 @@ function shiftEventToOccurrence<T extends { startDate: string; endDate: string }
     };
 }
 
+function isOccurrenceDate(event: ScheduleEvent, date: Date): boolean {
+    const repeat = event.repeat ?? 'none';
+    const d = startOfDay(date);
+    if (repeat === 'none') {
+        return normEventYmd(event.startDate) === toYMD(d);
+    }
+    const anchor = startOfDay(parseDate(normEventYmd(event.startDate)));
+    if (d < anchor) return false;
+
+    switch (repeat) {
+        case 'daily':
+            return true;
+        case 'weekly':
+            return d.getDay() === anchor.getDay();
+        case 'monthly': {
+            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+            return d.getDate() === Math.min(anchor.getDate(), lastDay);
+        }
+        case 'yearly': {
+            if (d.getMonth() !== anchor.getMonth()) return false;
+            const lastDay = new Date(d.getFullYear(), anchor.getMonth() + 1, 0).getDate();
+            return d.getDate() === Math.min(anchor.getDate(), lastDay);
+        }
+        default:
+            return false;
+    }
+}
+
+function getOccurrenceDates(event: ScheduleEvent, occStart: Date, anchorStart: Date): { startDate: string; endDate: string } {
+    const occYmd = toYMD(occStart);
+    const override = event.occurrenceDates?.[occYmd];
+    if (override) return override;
+    return shiftEventToOccurrence(
+        { startDate: event.startDate, endDate: event.endDate },
+        occStart,
+        anchorStart,
+    );
+}
+
 function expandEventRepeats(event: CalendarEvent, rangeStart: Date, rangeEnd: Date): CalendarEvent[] {
     const repeat = event.repeat ?? 'none';
     if (repeat === 'none') return [event];
@@ -271,11 +336,13 @@ function expandEventRepeats(event: CalendarEvent, rangeStart: Date, rangeEnd: Da
 
     return occurrences.map(occStart => {
         const occYmd = toYMD(occStart);
-        const shifted = shiftEventToOccurrence(event, occStart, anchorStart);
+        const dates = getOccurrenceDates(event as ScheduleEvent, occStart, anchorStart);
         return {
-            ...shifted,
+            ...event,
+            ...dates,
             id: `${event.id.split('::occ::')[0]}::occ::${occYmd}`,
             repeat: 'none' as RepeatType,
+            progress: getOccurrenceProgress(event as ScheduleEvent, occYmd),
             _recurrenceSourceId: recurrenceSourceId,
             _sourceEventId: event._sourceEventId,
             _subEventIndex: event._subEventIndex,
@@ -299,7 +366,143 @@ function expandEventsForCalendar(events: ScheduleEvent[], visibleCats: Set<Categ
     return out;
 }
 
-const normEventYmd = (s: string) => s.replace(/\./g, '-');
+function eventsToGanttTasks(events: ScheduleEvent[], categories: Record<string, CategoryDef>, refDate: Date): GanttTask[] {
+    const { rangeStart, rangeEnd } = getCalendarExpandRange(events);
+    const today = startOfDay(refDate);
+    const todayYmd = toYMD(today);
+
+    return events.map(e => {
+        const repeat = e.repeat ?? 'none';
+        const catColor = categories[e.category]?.color;
+        const base: GanttTask = {
+            id: e.id,
+            title: e.title,
+            assignee: e.assignee ?? '',
+            startDate: e.startDate,
+            endDate: e.endDate,
+            progress: e.progress ?? 0,
+            parentId: e.parentId,
+            color: e.ganttColor ?? catColor ?? GANTT_COLORS[0],
+        };
+
+        if (repeat === 'none') return base;
+
+        const anchorStart = startOfDay(parseDate(normEventYmd(e.startDate)));
+        const expanded = expandEventRepeats(e, rangeStart, rangeEnd);
+        const occurrences = expanded.map(occ => ({
+            occYmd: normEventYmd(occ.startDate),
+            startDate: occ.startDate,
+            endDate: occ.endDate,
+            progress: occ.progress ?? 0,
+        }));
+
+        if (isOccurrenceDate(e, today)) {
+            const dates = getOccurrenceDates(e, today, anchorStart);
+            base.startDate = dates.startDate;
+            base.endDate = dates.endDate;
+            base.progress = getOccurrenceProgress(e, todayYmd);
+        }
+
+        return {
+            ...base,
+            repeat,
+            occurrences,
+        };
+    });
+}
+
+function isAnchorOccurrenceYmd(event: ScheduleEvent, occYmd: string) {
+    return normEventYmd(event.startDate) === occYmd;
+}
+
+function buildEventViewForOccurrence(
+    parent: ScheduleEvent,
+    occurrence: Pick<ScheduleEvent, 'startDate' | 'endDate' | 'startTime' | 'endTime' | 'allDay' | 'progress'>,
+    occYmd?: string,
+): ScheduleEvent {
+    const ymd = occYmd ?? normEventYmd(occurrence.startDate);
+    return {
+        ...parent,
+        startDate: occurrence.startDate,
+        endDate: occurrence.endDate,
+        startTime: occurrence.startTime ?? parent.startTime,
+        endTime: occurrence.endTime ?? parent.endTime,
+        allDay: occurrence.allDay ?? parent.allDay,
+        progress: occurrence.progress ?? getOccurrenceProgress(parent, ymd),
+    };
+}
+
+function applyOccurrencePatchToEvent(
+    event: ScheduleEvent,
+    occYmd: string,
+    patch: Partial<Pick<ScheduleEvent, 'title' | 'assignee' | 'ganttColor' | 'progress' | 'startDate' | 'endDate'>>,
+): ScheduleEvent {
+    const repeat = event.repeat ?? 'none';
+    if (repeat === 'none') return { ...event, ...patch };
+
+    const next: ScheduleEvent = { ...event };
+    const isAnchor = isAnchorOccurrenceYmd(event, occYmd);
+    const occDate = parseDate(occYmd);
+    const anchorStart = startOfDay(parseDate(normEventYmd(event.startDate)));
+
+    if (patch.progress !== undefined) {
+        if (isAnchor) next.progress = patch.progress;
+        else next.occurrenceProgress = { ...next.occurrenceProgress, [occYmd]: patch.progress };
+    }
+    if (patch.startDate !== undefined || patch.endDate !== undefined) {
+        const prev = next.occurrenceDates?.[occYmd];
+        const defaultDates = prev ?? getOccurrenceDates(event, occDate, anchorStart);
+        const dates = {
+            startDate: patch.startDate ?? defaultDates.startDate,
+            endDate: patch.endDate ?? defaultDates.endDate,
+        };
+        if (isAnchor) {
+            next.startDate = dates.startDate;
+            next.endDate = dates.endDate;
+        } else {
+            next.occurrenceDates = { ...next.occurrenceDates, [occYmd]: dates };
+        }
+    }
+    if (patch.title !== undefined) next.title = patch.title;
+    if (patch.assignee !== undefined) next.assignee = patch.assignee;
+    if (patch.ganttColor !== undefined) next.ganttColor = patch.ganttColor;
+    return next;
+}
+
+function applyPanelSaveToEvent(existing: ScheduleEvent, saved: ScheduleEvent, occYmd: string): ScheduleEvent {
+    const next = applyOccurrencePatchToEvent(existing, occYmd, {
+        title: saved.title,
+        assignee: saved.assignee,
+        ganttColor: saved.ganttColor,
+        progress: saved.progress,
+        startDate: saved.startDate,
+        endDate: saved.endDate,
+    });
+    return {
+        ...next,
+        category: saved.category,
+        startTime: saved.startTime,
+        endTime: saved.endTime,
+        allDay: saved.allDay,
+        repeat: saved.repeat,
+        alarm: saved.alarm,
+        description: saved.description,
+        projectId: saved.projectId,
+        subEvents: saved.subEvents,
+    };
+}
+
+function applyGanttPatchToEvent(event: ScheduleEvent, patch: Partial<GanttTask>): ScheduleEvent {
+    const repeat = event.repeat ?? 'none';
+    const today = startOfDay(new Date());
+    const todayYmd = toYMD(today);
+
+    if (repeat !== 'none' && isOccurrenceDate(event, today)) {
+        return applyOccurrencePatchToEvent(event, todayYmd, ganttPatchToEvent(patch));
+    }
+
+    return { ...event, ...ganttPatchToEvent(patch) };
+}
 
 function isCalendarSubEvent(e: CalendarEvent) {
     return e._sourceEventId != null || !!e.parentId;
@@ -576,20 +779,6 @@ function maxOverlapRowsAtHour(dayEvents: CalendarEvent[], hour: number): number 
     return Math.max(...items.map(it => it.row + 1), 1);
 }
 
-function eventToGanttTask(e: ScheduleEvent, categories: Record<string, CategoryDef>): GanttTask {
-    const catColor = categories[e.category]?.color;
-    return {
-        id: e.id,
-        title: e.title,
-        assignee: e.assignee ?? '',
-        startDate: e.startDate,
-        endDate: e.endDate,
-        progress: e.progress ?? 0,
-        parentId: e.parentId,
-        color: e.ganttColor ?? catColor ?? GANTT_COLORS[0],
-    };
-}
-
 function ganttPatchToEvent(patch: Partial<GanttTask>): Partial<ScheduleEvent> {
     const out: Partial<ScheduleEvent> = {};
     if (patch.title !== undefined) out.title = patch.title;
@@ -607,10 +796,15 @@ function computeGanttChartRange(tasks: GanttTask[]) {
     let start = addDays(now, -GANTT_CHART_PAST_DAYS);
     let end = addDays(now, GANTT_CHART_FUTURE_DAYS);
     for (const t of tasks) {
-        const s = startOfDay(parseDate(t.startDate.replace(/\./g, '-')));
-        const e = startOfDay(parseDate(t.endDate.replace(/\./g, '-')));
-        if (s < start) start = s;
-        if (e > end) end = e;
+        const spans = t.occurrences?.length
+            ? t.occurrences
+            : [{ startDate: t.startDate, endDate: t.endDate }];
+        for (const span of spans) {
+            const ss = startOfDay(parseDate(span.startDate.replace(/\./g, '-')));
+            const ee = startOfDay(parseDate(span.endDate.replace(/\./g, '-')));
+            if (ss < start) start = ss;
+            if (ee > end) end = ee;
+        }
     }
     return {
         chartStart: addDays(start, -GANTT_CHART_PADDING_DAYS),
@@ -1850,7 +2044,7 @@ const GanttView: React.FC<{
     onAddTask: () => void;
     onUpdateTask?: (id: string, patch: Partial<GanttTask>) => void;
     onDeleteTask?: (id: string) => void;
-    onTaskClick?: (taskId: string) => void;
+    onTaskClick?: (taskId: string, occYmd?: string) => void;
     weekStart: Date;
     onWeekChange: (d: Date) => void;
 }> = ({ tasks, onAddTask, onUpdateTask, onDeleteTask, onTaskClick, weekStart, onWeekChange }) => {
@@ -2091,6 +2285,11 @@ const GanttView: React.FC<{
                                                     className={`truncate text-gray-800 ${isParent ? 'font-bold' : 'font-medium'}`}
                                                     inputClassName="font-medium"
                                                 />
+                                                {task.repeat && task.repeat !== 'none' && (
+                                                    <span className="shrink-0 px-1 py-px rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200 leading-tight">
+                                                        [{REPEAT_LABELS[task.repeat]}]
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-2 text-center text-gray-600 truncate align-middle">
@@ -2212,16 +2411,18 @@ const GanttView: React.FC<{
                                 </svg>
                             )}
                         {flatTasks.map(task => {
-                            const barColor = task.color || '#6366f1';
-                            const barTextColor = ganttBarTextColor(barColor, task.progress);
+                            const bars = task.occurrences?.length
+                                ? task.occurrences
+                                : [{ occYmd: normEventYmd(task.startDate), startDate: task.startDate, endDate: task.endDate, progress: task.progress }];
+                            const todayYmd = toYMD(new Date());
                             return (
                             <div key={task.id} className="relative border-b border-gray-100 hover:bg-gray-50/50"
                                 style={{ height: GANTT_ROW_H }}>
-                                {task.parentId && (
+                                {task.parentId && bars[0] && (
                                     <div
                                         className="absolute top-1/2 -translate-y-1/2 pointer-events-none z-[1]"
                                         style={{
-                                            left: getLeft(task.startDate) - 5,
+                                            left: getLeft(bars[0].startDate) - 5,
                                             width: 0,
                                             height: 0,
                                             borderTop: '3px solid transparent',
@@ -2230,25 +2431,33 @@ const GanttView: React.FC<{
                                         }}
                                     />
                                 )}
+                                {bars.map(bar => {
+                                    const barColor = task.color || '#6366f1';
+                                    const barTextColor = ganttBarTextColor(barColor, bar.progress);
+                                    const isTodayBar = bar.occYmd === todayYmd;
+                                    return (
                                 <div
-                                    className="absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden cursor-pointer z-[2] hover:brightness-95 transition-all"
+                                    key={bar.occYmd}
+                                    className={`absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden cursor-pointer z-[2] hover:brightness-95 transition-all ${isTodayBar ? 'ring-1 ring-rose-400 ring-offset-1' : ''}`}
                                     style={{
-                                        left: getLeft(task.startDate),
-                                        width: getWidth(task.startDate, task.endDate),
+                                        left: getLeft(bar.startDate),
+                                        width: getWidth(bar.startDate, bar.endDate),
                                         height: 20,
-                                        backgroundColor: barColor + '30',
-                                        border: `1px solid ${barColor}60`,
+                                        backgroundColor: barColor + (isTodayBar ? '45' : '30'),
+                                        border: `1px solid ${barColor}${isTodayBar ? 'aa' : '60'}`,
                                     }}
-                                    onClick={() => onTaskClick?.(task.id)}
-                                    title={task.title}
+                                    onClick={() => onTaskClick?.(task.id, bar.occYmd)}
+                                    title={`${task.title}${isTodayBar ? ' (오늘)' : ''}`}
                                 >
                                     <div className="h-full rounded-l-md transition-all"
-                                        style={{ width: `${task.progress}%`, backgroundColor: barColor }} />
+                                        style={{ width: `${bar.progress}%`, backgroundColor: barColor }} />
                                     <span className="absolute left-1 text-[9px] font-black truncate"
-                                        style={{ maxWidth: getWidth(task.startDate, task.endDate) - 8, color: barTextColor }}>
-                                        {task.progress}%
+                                        style={{ maxWidth: getWidth(bar.startDate, bar.endDate) - 8, color: barTextColor }}>
+                                        {bar.progress}%
                                     </span>
                                 </div>
+                                    );
+                                })}
                             </div>
                             );
                         })}
@@ -2448,6 +2657,7 @@ const PersonalScheduleCanvas: React.FC = () => {
 
     // 우측 패널
     const [panelEvent, setPanelEvent] = useState<Partial<ScheduleEvent> | null>(null);
+    const [panelOccurrenceYmd, setPanelOccurrenceYmd] = useState<string | null>(null);
     const [panelInitialTab, setPanelInitialTab] = useState<'main' | number>('main');
     const [panelOpen, setPanelOpen] = useState(false);
     const [calendarScrollHour, setCalendarScrollHour] = useState<number | null>(null);
@@ -2490,9 +2700,11 @@ const PersonalScheduleCanvas: React.FC = () => {
         [events, visibleCats],
     );
 
+    const calendarNow = useCalendarNow();
+
     const ganttTasks = useMemo(
-        () => filteredEvents.map(e => eventToGanttTask(e, categories)),
-        [filteredEvents, categories]
+        () => eventsToGanttTasks(filteredEvents, categories, calendarNow),
+        [filteredEvents, categories, calendarNow],
     );
 
     const eventDates = useMemo(
@@ -2504,6 +2716,7 @@ const PersonalScheduleCanvas: React.FC = () => {
         if (e._sourceEventId != null && e._subEventIndex != null) {
             const parent = events.find(x => x.id === e._sourceEventId);
             if (parent) {
+                setPanelOccurrenceYmd(null);
                 setPanelEvent(parent);
                 setPanelInitialTab(e._subEventIndex);
                 setPanelOpen(true);
@@ -2513,24 +2726,36 @@ const PersonalScheduleCanvas: React.FC = () => {
         if (e._recurrenceSourceId) {
             const parent = events.find(x => x.id === e._recurrenceSourceId);
             if (parent) {
-                setPanelEvent(parent);
+                const occYmd = normEventYmd(e.startDate);
+                setPanelOccurrenceYmd(occYmd);
+                setPanelEvent(buildEventViewForOccurrence(parent, e, occYmd));
                 setPanelInitialTab('main');
                 setPanelOpen(true);
                 return;
             }
         }
+        setPanelOccurrenceYmd(null);
         setPanelEvent(e);
         setPanelInitialTab('main');
         setPanelOpen(true);
     }, [events]);
 
     const handleSaveEvent = useCallback((e: ScheduleEvent) => {
-        setEvents(prev => prev.some(x => x.id === e.id) ? prev.map(x => x.id === e.id ? e : x) : [...prev, e]);
+        setEvents(prev => {
+            const existing = prev.find(x => x.id === e.id);
+            if (!existing) return [...prev, e];
+            if (panelOccurrenceYmd && (existing.repeat ?? 'none') !== 'none') {
+                return prev.map(x => (x.id === e.id ? applyPanelSaveToEvent(existing, e, panelOccurrenceYmd) : x));
+            }
+            return prev.map(x => (x.id === e.id ? e : x));
+        });
+        setPanelOccurrenceYmd(null);
         setPanelOpen(false);
-    }, []);
+    }, [panelOccurrenceYmd]);
 
     const handleDeleteEvent = useCallback((id: string) => {
         setEvents(prev => prev.filter(e => e.id !== id && e.parentId !== id));
+        setPanelOccurrenceYmd(null);
         setPanelOpen(false);
     }, []);
 
@@ -2552,6 +2777,7 @@ const PersonalScheduleCanvas: React.FC = () => {
             endTime,
             allDay: isAllDay,
         });
+        setPanelOccurrenceYmd(null);
         setPanelInitialTab('main');
         setPanelOpen(true);
     };
@@ -2584,30 +2810,55 @@ const PersonalScheduleCanvas: React.FC = () => {
     };
 
     const handleUpdateGanttTask = useCallback((id: string, patch: Partial<GanttTask>) => {
-        setEvents(prev => prev.map(e => (e.id === id ? { ...e, ...ganttPatchToEvent(patch) } : e)));
+        setEvents(prev => prev.map(e => (e.id === id ? applyGanttPatchToEvent(e, patch) : e)));
     }, []);
 
     const handleDeleteGanttTask = useCallback((id: string) => {
         setEvents(prev => prev.filter(e => e.id !== id && e.parentId !== id));
         if (panelEvent?.id === id || panelEvent?.parentId === id) {
             setPanelEvent(null);
+            setPanelOccurrenceYmd(null);
             setPanelOpen(false);
         }
     }, [panelEvent]);
 
-    const handleGanttTaskClick = useCallback((taskId: string) => {
+    const handleGanttTaskClick = useCallback((taskId: string, occYmd?: string) => {
         const ev = events.find(e => e.id === taskId);
         if (!ev) return;
-        const d = startOfDay(parseDate(ev.startDate.replace(/\./g, '-')));
+
+        const today = startOfDay(new Date());
+        const todayYmd = toYMD(today);
+        const repeat = ev.repeat ?? 'none';
+        const targetYmd = occYmd
+            ?? (repeat !== 'none' && isOccurrenceDate(ev, today) ? todayYmd : normEventYmd(ev.startDate));
+
+        const occDate = parseDate(targetYmd);
+        const anchorStart = startOfDay(parseDate(normEventYmd(ev.startDate)));
+        const dates = repeat !== 'none'
+            ? getOccurrenceDates(ev, occDate, anchorStart)
+            : { startDate: ev.startDate, endDate: ev.endDate };
+
+        const panelEv = repeat !== 'none'
+            ? buildEventViewForOccurrence(ev, {
+                ...dates,
+                startTime: ev.startTime,
+                endTime: ev.endTime,
+                allDay: ev.allDay,
+                progress: getOccurrenceProgress(ev, targetYmd),
+            }, targetYmd)
+            : ev;
+
+        setPanelOccurrenceYmd(repeat !== 'none' ? targetYmd : null);
+        const d = startOfDay(parseDate(targetYmd.replace(/\./g, '-')));
         setTab('calendar');
         setViewMode('week');
         setWeekStart(d);
         setSelectedDate(d);
-        setPanelEvent(ev);
+        setPanelEvent(panelEv);
         setPanelInitialTab('main');
         setPanelOpen(true);
-        if (!ev.allDay && ev.startTime) {
-            const h = parseInt(ev.startTime.split(':')[0], 10);
+        if (!panelEv.allDay && panelEv.startTime) {
+            const h = parseInt(panelEv.startTime.split(':')[0], 10);
             setCalendarScrollHour(Number.isNaN(h) ? null : h);
         } else {
             setCalendarScrollHour(null);
@@ -2781,12 +3032,12 @@ const PersonalScheduleCanvas: React.FC = () => {
                         {panelOpen && (
                             <div className="w-72 shrink-0 border-l border-gray-100 bg-white flex flex-col overflow-hidden">
                                 <EventForm
-                                    key={`${panelEvent?.id ?? 'new'}-${panelInitialTab}-${panelEvent?.startDate ?? ''}-${panelEvent?.startTime ?? ''}`}
+                                    key={`${panelEvent?.id ?? 'new'}-${panelInitialTab}-${panelOccurrenceYmd ?? ''}-${panelEvent?.startDate ?? ''}-${panelEvent?.startTime ?? ''}`}
                                     event={panelEvent}
                                     initialActiveTab={panelInitialTab}
                                     onSave={handleSaveEvent}
                                     onDelete={handleDeleteEvent}
-                                    onClose={() => setPanelOpen(false)}
+                                    onClose={() => { setPanelOccurrenceYmd(null); setPanelOpen(false); }}
                                     projects={projects.map(p => ({ id: p.id, name: p.name }))}
                                     categories={categories}
                                     onAddCategory={handleAddCategory}
