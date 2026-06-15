@@ -2077,13 +2077,6 @@ const ERDCanvasContent: React.FC = () => {
                                     <Link size={16} className="text-cyan-500" />
                                     <span>관계 정렬</span>
                                 </button>
-                                <button
-                                    onClick={onForceLayout}
-                                    className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors text-left"
-                                >
-                                    <Zap size={16} className="text-yellow-500" />
-                                    <span>자동 분산 정렬 (Force)</span>
-                                </button>
                             </div>
                         )}
                     </div>

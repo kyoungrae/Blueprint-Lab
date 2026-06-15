@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect } from 'react';
 import { Handle, Position, type NodeProps, useStore } from 'reactflow';
 import type { Entity, Attribute } from '../types/erd';
-import { Database, Eye, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare, GripVertical } from 'lucide-react';
+import { Database, Eye, Key, Link, Plus, Trash2, X, Lock, Unlock, GripVertical } from 'lucide-react';
 import { useERDStore } from '../store/erdStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -116,12 +116,12 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <div className="w-16 flex-shrink-0 flex items-center h-4">
-                        <span className={`text-[10px] w-full block truncate ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
+                        <span className={`text-sm w-full block truncate ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
                             {attr.type.split('(')[0]}
                         </span>
                     </div>
                     <div className="w-10 flex-shrink-0">
-                        <span className={`block w-full text-[9px] px-1 py-0.5 border border-transparent truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                        <span className={`block w-full text-sm px-1 py-0.5 border border-transparent truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
                             {attr.length || ''}
                         </span>
                     </div>
@@ -129,10 +129,10 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                         <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
                             <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
                         </div>
-                        <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                        <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                     </div>
                     <div className="w-24 flex-shrink-0 flex items-center gap-1 bg-gray-50/30 px-1 rounded h-[18px]">
-                        {attr.comment && <><MessageSquare size={11} className="shrink-0 text-blue-400" /><span className="text-[9px] text-blue-500 italic truncate">{attr.comment}</span></>}
+                        {attr.comment && <span className="text-sm text-blue-500 italic truncate">{attr.comment}</span>}
                     </div>
                     <div className="w-8 flex-shrink-0 flex justify-center">
                         <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
@@ -204,7 +204,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                         onChange={(e) => onUpdate(attr.id, { type: e.target.value })}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
-                        className={`bg-transparent border-none focus:ring-0 text-[10px] outline-none w-full appearance-none transition-colors ${!isLocked ? 'nodrag text-blue-600 hover:text-blue-800 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}
+                        className={`bg-transparent border-none focus:ring-0 text-sm outline-none w-full appearance-none transition-colors ${!isLocked ? 'nodrag text-blue-600 hover:text-blue-800 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}
                     >
                         {availableTypes.map(type => (
                             <option key={type} value={type}>{type}</option>
@@ -223,7 +223,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                         onKeyDown={(e) => e.key === 'Enter' && handleCommitLength()}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
-                        className={`w-full bg-gray-50/50 border-gray-100 border rounded text-[9px] px-1 py-0.5 outline-none focus:border-blue-300 focus:bg-white transition-all ${isLocked ? 'text-gray-400 opacity-50' : 'text-blue-500'}`}
+                        className={`w-full bg-gray-50/50 border-gray-100 border rounded text-sm px-1 py-0.5 outline-none focus:border-blue-300 focus:bg-white transition-all ${isLocked ? 'text-gray-400 opacity-50' : 'text-blue-500'}`}
                         placeholder="len"
                     />
                 </div>
@@ -239,12 +239,11 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                             <div className={`w-2.5 h-2.5 bg-white rounded-full transition-transform shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
                         </button>
                     </PremiumTooltip>
-                    <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                    <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                 </div>
 
                 {/* Comment Column */}
                 <div className="w-24 flex-shrink-0 flex items-center gap-1 group/cmt bg-gray-50/30 px-1 rounded transition-all hover:bg-gray-50">
-                    <MessageSquare size={11} className={`shrink-0 ${attr.comment ? 'text-blue-400' : 'text-gray-200'}`} />
                     <input
                         type="text"
                         value={displayValue('comment', localComment)}
@@ -254,7 +253,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                         onKeyDown={(e) => e.key === 'Enter' && handleCommitComment()}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
-                        className={`text-[9px] bg-transparent border-none focus:ring-0 p-0 outline-none italic placeholder-gray-300 w-full transition-all ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}
+                        className={`text-sm bg-transparent border-none focus:ring-0 p-0 outline-none italic placeholder-gray-300 w-full transition-all ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}
                         placeholder="설명..."
                     />
                 </div>
@@ -418,7 +417,7 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
                             </div>
                             {/* 코멘트 */}
                             <div className="w-24 flex-shrink-0 flex items-center gap-1 px-1">
-                                {attr.comment && <><MessageSquare size={11} className="shrink-0 text-blue-400" /><span className="text-[9px] text-blue-500 italic truncate">{attr.comment}</span></>}
+                                {attr.comment && <span className="text-sm text-blue-500 italic truncate">{attr.comment}</span>}
                             </div>
                             {/* FK */}
                             <div className="w-8 flex-shrink-0 flex justify-center">
