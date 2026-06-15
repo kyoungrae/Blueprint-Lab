@@ -337,6 +337,33 @@ function yFromMinutes(min: number, hourOffset: number[], hourHeights: number[], 
     return hourOffset[idx] + (m / 60) * hourHeights[idx];
 }
 
+function getNowLineTop(now: Date, hourOffset: number[], hourHeights: number[], hourStart = CALENDAR_PRIME_HOUR): number | null {
+    const min = now.getHours() * 60 + now.getMinutes();
+    const startMin = hourStart * 60;
+    const endMin = (hourStart + hourHeights.length) * 60;
+    if (min < startMin || min > endMin) return null;
+    return yFromMinutes(min, hourOffset, hourHeights, hourStart);
+}
+
+function useCalendarNow(tickMs = 60_000) {
+    const [now, setNow] = React.useState(() => new Date());
+    React.useEffect(() => {
+        const id = setInterval(() => setNow(new Date()), tickMs);
+        return () => clearInterval(id);
+    }, [tickMs]);
+    return now;
+}
+
+const CalendarNowLine: React.FC<{ top: number; left?: number; width?: number | string }> = ({ top, left = 0, width = '100%' }) => (
+    <div
+        className="absolute z-[5] pointer-events-none flex items-center"
+        style={{ top, left, width, transform: 'translateY(-50%)' }}
+    >
+        <div className="w-2.5 h-2.5 shrink-0 rounded-full bg-red-500 ring-2 ring-white" />
+        <div className="flex-1 min-w-0 h-0.5 bg-red-500" />
+    </div>
+);
+
 const TIMED_BAR_MIN_H = 36;
 const TIMED_BAR_GAP = 2;
 const HOUR_MIN_H = 56;
@@ -1087,6 +1114,8 @@ const WeekView: React.FC<{
     onScrollHourDone?: () => void;
 }> = ({ weekStart, events, onSelectEvent, onSlotClick, onAllDayClick, categories, onWeekChange, scrollToHour, onScrollHourDone }) => {
     const hours = React.useMemo(() => getCalendarHours(), []);
+    const now = useCalendarNow();
+    const todayYmd = toYMD(now);
     const scrollRef = React.useRef<HTMLDivElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
     const calIsSource = React.useRef(false);
@@ -1145,6 +1174,15 @@ const WeekView: React.FC<{
 
         return { hourHeights, hourOffset, totalH, dayLayouts };
     }, [events, allDays, hours]);
+
+    const todayDayIndex = React.useMemo(
+        () => allDays.findIndex(d => toYMD(d) === todayYmd),
+        [allDays, todayYmd],
+    );
+    const nowLineTop = React.useMemo(
+        () => getNowLineTop(now, timedLayout.hourOffset, timedLayout.hourHeights, CALENDAR_PRIME_HOUR),
+        [now, timedLayout.hourOffset, timedLayout.hourHeights],
+    );
 
     const scrollToWeek = React.useCallback((ws: Date) => {
         const el = scrollRef.current;
@@ -1316,7 +1354,7 @@ const WeekView: React.FC<{
                     </div>
 
                     {/* 시간 그리드 */}
-                    <div className="flex relative" style={{ height: timedLayout.totalH, minHeight: 200 }}>
+                    <div className="flex relative overflow-visible" style={{ height: timedLayout.totalH, minHeight: 200 }}>
                         <div
                             className="sticky left-0 z-20 shrink-0 bg-white relative shadow-[1px_0_0_0_#e5e7eb]"
                             style={{ width: CALENDAR_TIME_GUTTER, height: timedLayout.totalH }}
@@ -1332,7 +1370,14 @@ const WeekView: React.FC<{
                             ))}
                         </div>
 
-                        <div className="relative shrink-0 z-0" style={{ width: timelineWidth, height: timedLayout.totalH }}>
+                        <div className="relative shrink-0 z-0 overflow-visible" style={{ width: timelineWidth, height: timedLayout.totalH }}>
+                            {todayDayIndex >= 0 && nowLineTop != null && (
+                                <CalendarNowLine
+                                    top={nowLineTop}
+                                    left={todayDayIndex * dayW}
+                                    width={dayW}
+                                />
+                            )}
                             {allDays.map((d, di) => (
                                 <div
                                     key={toYMD(d)}
@@ -1484,7 +1529,9 @@ const DayView: React.FC<{
     onNavigate: (dir: 'prev' | 'next') => void;
 }> = ({ date, events, onSelectEvent, onSlotClick, categories, onNavigate }) => {
     const hours = React.useMemo(() => getCalendarHours(), []);
+    const now = useCalendarNow();
     const ymd = toYMD(date);
+    const isToday = ymd === toYMD(now);
     const timedEvents = events.filter(e => e.startDate === ymd && !e.allDay);
     const allDayEvents = events
         .filter(e => e.allDay && eventActiveOnYmd(e, ymd))
@@ -1530,6 +1577,11 @@ const DayView: React.FC<{
         };
     }, [timedEvents, hours]);
 
+    const nowLineTop = React.useMemo(
+        () => (isToday ? getNowLineTop(now, timedLayout.hourOffset, timedLayout.hourHeights, CALENDAR_PRIME_HOUR) : null),
+        [isToday, now, timedLayout.hourOffset, timedLayout.hourHeights],
+    );
+
     return (
         <div ref={containerRef} className="h-full min-h-0 overflow-y-auto">
             {allDayEvents.length > 0 && (
@@ -1552,7 +1604,7 @@ const DayView: React.FC<{
                     })}
                 </div>
             )}
-            <div className="flex" style={{ height: timedLayout.totalH, minHeight: '100%' }}>
+            <div className="flex overflow-visible" style={{ height: timedLayout.totalH, minHeight: '100%' }}>
                 <div className="w-16 shrink-0 relative">
                     {hours.map((h, i) => (
                         <div
@@ -1564,7 +1616,10 @@ const DayView: React.FC<{
                         </div>
                     ))}
                 </div>
-                <div className="flex-1 relative border-l border-gray-100">
+                <div className="flex-1 relative border-l border-gray-100 overflow-visible">
+                    {nowLineTop != null && (
+                        <CalendarNowLine top={nowLineTop} />
+                    )}
                     {hours.map((h, i) => (
                         <div
                             key={h}
