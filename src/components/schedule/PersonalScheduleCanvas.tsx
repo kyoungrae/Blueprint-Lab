@@ -74,6 +74,8 @@ interface GanttTask {
     repeat?: RepeatType;
     /** 타임라인에 그릴 전체 회차 (반복 일정) */
     occurrences?: { occYmd: string; startDate: string; endDate: string; progress: number }[];
+    /** 작업표·강조 표시용 현재 주기 회차 */
+    currentOccYmd?: string;
 }
 
 /** 캘린더 표시용 — 하위 일정·반복 일정 펼침 메타 */
@@ -285,32 +287,51 @@ function shiftEventToOccurrence<T extends { startDate: string; endDate: string }
     };
 }
 
-function isOccurrenceDate(event: ScheduleEvent, date: Date): boolean {
+function getCurrentPeriodOccurrenceStart(event: ScheduleEvent, refDate: Date): Date | null {
     const repeat = event.repeat ?? 'none';
-    const d = startOfDay(date);
-    if (repeat === 'none') {
-        return normEventYmd(event.startDate) === toYMD(d);
-    }
+    if (repeat === 'none') return null;
+
+    const ref = startOfDay(refDate);
     const anchor = startOfDay(parseDate(normEventYmd(event.startDate)));
-    if (d < anchor) return false;
+    if (ref < anchor) return null;
 
     switch (repeat) {
         case 'daily':
-            return true;
-        case 'weekly':
-            return d.getDay() === anchor.getDay();
+            return ref;
+
+        case 'weekly': {
+            const targetDow = anchor.getDay();
+            const weekStart = addDays(ref, -ref.getDay());
+            let occ = addDays(weekStart, targetDow);
+            while (occ < anchor) occ = addDays(occ, 7);
+            return occ;
+        }
+
         case 'monthly': {
-            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-            return d.getDate() === Math.min(anchor.getDate(), lastDay);
+            const y = ref.getFullYear();
+            const m = ref.getMonth();
+            const lastDay = new Date(y, m + 1, 0).getDate();
+            const occ = new Date(y, m, Math.min(anchor.getDate(), lastDay));
+            return occ < anchor ? null : startOfDay(occ);
         }
+
         case 'yearly': {
-            if (d.getMonth() !== anchor.getMonth()) return false;
-            const lastDay = new Date(d.getFullYear(), anchor.getMonth() + 1, 0).getDate();
-            return d.getDate() === Math.min(anchor.getDate(), lastDay);
+            const anchorMonth = anchor.getMonth();
+            const anchorDay = anchor.getDate();
+            const y = ref.getFullYear();
+            const lastDay = new Date(y, anchorMonth + 1, 0).getDate();
+            const occ = new Date(y, anchorMonth, Math.min(anchorDay, lastDay));
+            return occ < anchor ? null : startOfDay(occ);
         }
+
         default:
-            return false;
+            return null;
     }
+}
+
+function getCurrentPeriodOccurrenceYmd(event: ScheduleEvent, refDate: Date): string | null {
+    const occ = getCurrentPeriodOccurrenceStart(event, refDate);
+    return occ ? toYMD(occ) : null;
 }
 
 function getOccurrenceDates(event: ScheduleEvent, occStart: Date, anchorStart: Date): { startDate: string; endDate: string } {
@@ -369,7 +390,6 @@ function expandEventsForCalendar(events: ScheduleEvent[], visibleCats: Set<Categ
 function eventsToGanttTasks(events: ScheduleEvent[], categories: Record<string, CategoryDef>, refDate: Date): GanttTask[] {
     const { rangeStart, rangeEnd } = getCalendarExpandRange(events);
     const today = startOfDay(refDate);
-    const todayYmd = toYMD(today);
 
     return events.map(e => {
         const repeat = e.repeat ?? 'none';
@@ -396,17 +416,20 @@ function eventsToGanttTasks(events: ScheduleEvent[], categories: Record<string, 
             progress: occ.progress ?? 0,
         }));
 
-        if (isOccurrenceDate(e, today)) {
-            const dates = getOccurrenceDates(e, today, anchorStart);
+        const periodOcc = getCurrentPeriodOccurrenceStart(e, today);
+        if (periodOcc) {
+            const periodYmd = toYMD(periodOcc);
+            const dates = getOccurrenceDates(e, periodOcc, anchorStart);
             base.startDate = dates.startDate;
             base.endDate = dates.endDate;
-            base.progress = getOccurrenceProgress(e, todayYmd);
+            base.progress = getOccurrenceProgress(e, periodYmd);
         }
 
         return {
             ...base,
             repeat,
             occurrences,
+            currentOccYmd: periodOcc ? toYMD(periodOcc) : undefined,
         };
     });
 }
@@ -492,13 +515,12 @@ function applyPanelSaveToEvent(existing: ScheduleEvent, saved: ScheduleEvent, oc
     };
 }
 
-function applyGanttPatchToEvent(event: ScheduleEvent, patch: Partial<GanttTask>): ScheduleEvent {
+function applyGanttPatchToEvent(event: ScheduleEvent, patch: Partial<GanttTask>, refDate: Date = startOfDay(new Date())): ScheduleEvent {
     const repeat = event.repeat ?? 'none';
-    const today = startOfDay(new Date());
-    const todayYmd = toYMD(today);
+    const periodOcc = getCurrentPeriodOccurrenceStart(event, refDate);
 
-    if (repeat !== 'none' && isOccurrenceDate(event, today)) {
-        return applyOccurrencePatchToEvent(event, todayYmd, ganttPatchToEvent(patch));
+    if (repeat !== 'none' && periodOcc) {
+        return applyOccurrencePatchToEvent(event, toYMD(periodOcc), ganttPatchToEvent(patch));
     }
 
     return { ...event, ...ganttPatchToEvent(patch) };
@@ -2415,6 +2437,7 @@ const GanttView: React.FC<{
                                 ? task.occurrences
                                 : [{ occYmd: normEventYmd(task.startDate), startDate: task.startDate, endDate: task.endDate, progress: task.progress }];
                             const todayYmd = toYMD(new Date());
+                            const highlightYmd = task.currentOccYmd ?? todayYmd;
                             return (
                             <div key={task.id} className="relative border-b border-gray-100 hover:bg-gray-50/50"
                                 style={{ height: GANTT_ROW_H }}>
@@ -2434,7 +2457,7 @@ const GanttView: React.FC<{
                                 {bars.map(bar => {
                                     const barColor = task.color || '#6366f1';
                                     const barTextColor = ganttBarTextColor(barColor, bar.progress);
-                                    const isTodayBar = bar.occYmd === todayYmd;
+                                    const isTodayBar = bar.occYmd === highlightYmd;
                                     return (
                                 <div
                                     key={bar.occYmd}
@@ -2447,7 +2470,7 @@ const GanttView: React.FC<{
                                         border: `1px solid ${barColor}${isTodayBar ? 'aa' : '60'}`,
                                     }}
                                     onClick={() => onTaskClick?.(task.id, bar.occYmd)}
-                                    title={`${task.title}${isTodayBar ? ' (오늘)' : ''}`}
+                                    title={`${task.title}${isTodayBar ? ' (현재 주기)' : ''}`}
                                 >
                                     <div className="h-full rounded-l-md transition-all"
                                         style={{ width: `${bar.progress}%`, backgroundColor: barColor }} />
@@ -2827,10 +2850,10 @@ const PersonalScheduleCanvas: React.FC = () => {
         if (!ev) return;
 
         const today = startOfDay(new Date());
-        const todayYmd = toYMD(today);
         const repeat = ev.repeat ?? 'none';
         const targetYmd = occYmd
-            ?? (repeat !== 'none' && isOccurrenceDate(ev, today) ? todayYmd : normEventYmd(ev.startDate));
+            ?? getCurrentPeriodOccurrenceYmd(ev, today)
+            ?? normEventYmd(ev.startDate);
 
         const occDate = parseDate(targetYmd);
         const anchorStart = startOfDay(parseDate(normEventYmd(ev.startDate)));
