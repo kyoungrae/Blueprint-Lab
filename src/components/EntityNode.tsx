@@ -260,6 +260,61 @@ export interface EntityNodeData {
     inView?: boolean;
 }
 
+/** Lite/Full 공통 — 컬럼 행 높이를 맞추기 위한 보이지 않는 스켈레톤 */
+const EntityAttributeRowSkeleton: React.FC<{ attr: Attribute; isLocked: boolean }> = ({ attr, isLocked }) => (
+    <div className={`flex items-center gap-1 py-1 px-2 rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
+        <div className="w-8 flex-shrink-0 flex justify-center">
+            <span className="invisible p-1 rounded"><Key size={14} /></span>
+        </div>
+        <div className="flex-1 min-w-0 mx-1">
+            <span className="invisible text-sm px-1.5 py-0.5 block truncate">{attr.name || 'column'}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-16 flex-shrink-0 flex items-center h-4">
+                <span className="invisible text-[10px] w-full block">type</span>
+            </div>
+            <div className="w-10 flex-shrink-0">
+                <span className="invisible text-[9px] block">len</span>
+            </div>
+            <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
+                <span className="invisible text-[8px]">NN</span>
+            </div>
+            <div className="w-24 flex-shrink-0 flex items-center gap-1 bg-gray-50/30 px-1 rounded h-[18px]">
+                <span className="invisible text-[9px]">comment</span>
+            </div>
+            <div className="w-8 flex-shrink-0 flex justify-center">
+                <span className="invisible p-1 rounded"><Link size={14} /></span>
+            </div>
+            {!isLocked && <div className="w-[20px]" />}
+        </div>
+    </div>
+);
+
+/** Lite/Full 공통 — 컬럼 추가 버튼 영역 높이 */
+const EntityAddAttributeSkeleton: React.FC = () => (
+    <div className="px-2 pb-2">
+        <div className="w-full flex items-center justify-center gap-2 py-1.5 border-2 border-dashed border-transparent rounded invisible pointer-events-none">
+            <Plus size={14} />
+            <span className="text-xs font-medium">컬럼 추가</span>
+        </div>
+    </div>
+);
+
+/** Lite 모드 — 헤더와 동일한 크기를 유지하는 보이지 않는 헤더 스켈레톤 (아이콘 제외) */
+const EntityHeaderTextSkeleton: React.FC<{ entity: Entity; isLocked: boolean; isView: boolean }> = ({ entity, isLocked, isView }) => (
+    <>
+        {isView ? (
+            <span className="invisible text-[9px] font-black uppercase tracking-wider shrink-0">VIEW</span>
+        ) : null}
+        <span className="invisible font-bold text-lg flex-1 min-w-0 truncate">{entity.name || 'table'}</span>
+        <span className="invisible font-bold text-lg flex-1 min-w-0 truncate">{entity.comment || 'comment'}</span>
+        <div className="invisible flex items-center gap-1 shrink-0">
+            <span className="p-1"><Lock size={16} /></span>
+            {!isLocked && <span className="p-1"><X size={16} /></span>}
+        </div>
+    </>
+);
+
 /** 줌아웃/오프스크린용 경량 플레이스홀더.
  *  EntityNode와 시각적으로 완전히 동일하나, React hook/이벤트 핸들러 없음
  *  → 100개 기준 ~500개 Zustand 구독 제거, 리렌더링 0회 */
@@ -288,21 +343,14 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
                 }`}
             >
                 {isView ? <Eye size={16} className="flex-shrink-0" /> : <Database size={16} className="flex-shrink-0" />}
-                <span className="font-bold text-lg flex-1 truncate">{entity.name}</span>
                 {isView ? (
                     <span className="text-[9px] font-black uppercase tracking-wider opacity-90 shrink-0">
                         {entity.isMaterializedView ? 'MAT VIEW' : 'VIEW'}
                     </span>
                 ) : null}
+                <span className="font-bold text-lg flex-1 min-w-0 truncate">{entity.name}</span>
+                <span className="font-bold text-lg flex-1 min-w-0 truncate">{entity.comment || ''}</span>
             </div>
-
-            {/* ── 테이블 설명 (있을 때만) ── */}
-            {entity.comment && (
-                <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                    <MessageSquare size={12} className="text-gray-400 shrink-0" />
-                    <span className="text-[11px] italic text-gray-400 truncate">{entity.comment}</span>
-                </div>
-            )}
 
             {/* ── 컬럼 목록 (span으로 정적 표시 — input 없음) ── */}
             <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
@@ -419,35 +467,26 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
                 }`}
             >
                 {isView ? <Eye size={16} className="flex-shrink-0" /> : <Database size={16} className="flex-shrink-0" />}
-                <span className="font-bold text-lg w-full block truncate">
-                    {entity.name}
-                </span>
+                <EntityHeaderTextSkeleton entity={entity} isLocked={isLocked} isView={isView} />
             </div>
 
-            {(!isLocked || entity.comment) && (
-                <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100">
-                    <span className="invisible text-[11px] block truncate">{entity.comment || 'comment'}</span>
-                </div>
-            )}
-
-            <div className="relative bg-gray-50 rounded-b-[calc(0.5rem-2px)]">
+            <div className="relative rounded-b-[calc(0.5rem-2px)]">
                 <div className="absolute inset-0 z-[1] flex items-center justify-center pointer-events-none">
-                    <span className="px-3 py-1.5 rounded-lg bg-white/90 border border-gray-200 text-gray-600 text-xl font-semibold max-w-[85%] truncate shadow-sm">
-                        {entity.name || (isView ? '새 뷰' : '새 테이블')}
-                    </span>
+                    <div className="px-3 py-1.5 rounded-lg bg-white/90 border border-gray-200 text-gray-600 max-w-[85%] shadow-sm flex flex-col items-center gap-0.5 min-w-[120px]">
+                        <span className="text-xl font-semibold truncate w-full text-center leading-tight">
+                            {entity.name || (isView ? '새 뷰' : '새 테이블')}
+                        </span>
+                        <span className="text-xl font-semibold truncate w-full text-center leading-tight">
+                            {entity.comment || '\u00a0'}
+                        </span>
+                    </div>
                 </div>
                 <div className="p-2 space-y-1">
                     {entity.attributes.map((attr) => (
-                        <div key={attr.id} className="h-[30px] px-2 rounded">
-                            <span className="invisible text-sm">{attr.name || 'column'}</span>
-                        </div>
+                        <EntityAttributeRowSkeleton key={attr.id} attr={attr} isLocked={isLocked} />
                     ))}
                 </div>
-                {!isLocked && (
-                    <div className="px-2 pb-2">
-                        <div className="h-[34px] w-full rounded border-2 border-dashed border-gray-200" />
-                    </div>
-                )}
+                {!isLocked && <EntityAddAttributeSkeleton />}
             </div>
 
             <PrivHandles />
@@ -487,6 +526,18 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
             payload: { name: newName }
+        });
+    };
+
+    const handleCommentChange = (newComment: string) => {
+        if (isLocked) return;
+        updateEntity(entity.id, { comment: newComment });
+        sendOperation({
+            type: 'ENTITY_UPDATE',
+            targetId: entity.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: { comment: newComment },
         });
     };
 
@@ -665,11 +716,34 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                     }}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
-                    className={`${!isLocked ? 'nodrag bg-blue-400/20' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg w-full p-0 outline-none placeholder-blue-200 rounded transition-colors disabled:text-white`}
-                    placeholder="테이블 명"
+                    className={`${!isLocked ? 'nodrag bg-blue-400/20' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg flex-1 min-w-0 p-0 outline-none placeholder-blue-200 rounded transition-colors disabled:text-white`}
+                    placeholder="영문 테이블명"
                     spellCheck={false}
                 />
-                <div className={`flex items-center gap-1 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
+                <input
+                    type="text"
+                    value={entityCommentComposing !== null ? entityCommentComposing : (entity.comment || '')}
+                    onChange={(e) => {
+                        const v = e.target.value;
+                        if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                            setEntityCommentComposing(v);
+                            return;
+                        }
+                        setEntityCommentComposing(null);
+                        handleCommentChange(v);
+                    }}
+                    onCompositionEnd={(e) => {
+                        const v = (e.target as HTMLInputElement).value;
+                        setEntityCommentComposing(null);
+                        handleCommentChange(v);
+                    }}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                    disabled={isLocked}
+                    className={`${!isLocked ? 'nodrag bg-blue-400/20' : 'bg-transparent pointer-events-none'} border-none focus:ring-0 font-bold text-lg flex-1 min-w-0 p-0 outline-none placeholder-blue-200 rounded transition-colors disabled:text-white`}
+                    placeholder="한글 테이블명"
+                    spellCheck={false}
+                />
+                <div className={`flex items-center gap-1 shrink-0 ${isLocked ? 'pointer-events-none opacity-0 group-hover:opacity-100' : ''}`}>
                     <PremiumTooltip label={isLocked ? "잠금 해제" : "잠금"}>
                         <button onClick={handleToggleLock} onMouseDown={(e) => e.stopPropagation()} className="nodrag p-1 hover:bg-white/20 rounded-md transition-colors text-white pointer-events-auto">
                             {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
@@ -684,53 +758,6 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                     )}
                 </div>
             </div>
-
-            {(!isLocked || entity.comment) && (
-                <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                    <MessageSquare size={12} className="text-gray-400 shrink-0" />
-                    <input
-                        type="text"
-                        value={entityCommentComposing !== null ? entityCommentComposing : (entity.comment || '')}
-                        onChange={(e) => {
-                            const v = e.target.value;
-                            if ((e.nativeEvent as { isComposing?: boolean }).isComposing) {
-                                setEntityCommentComposing(v);
-                                return;
-                            }
-                            setEntityCommentComposing(null);
-                            updateEntity(entity.id, { comment: v });
-                            if (!isLocked) {
-                                sendOperation({
-                                    type: 'ENTITY_UPDATE',
-                                    targetId: entity.id,
-                                    userId: user?.id || 'anonymous',
-                                    userName: user?.name || 'Anonymous',
-                                    payload: { comment: v },
-                                });
-                            }
-                        }}
-                        onCompositionEnd={(e) => {
-                            const v = (e.target as HTMLInputElement).value;
-                            setEntityCommentComposing(null);
-                            updateEntity(entity.id, { comment: v });
-                            if (!isLocked) {
-                                sendOperation({
-                                    type: 'ENTITY_UPDATE',
-                                    targetId: entity.id,
-                                    userId: user?.id || 'anonymous',
-                                    userName: user?.name || 'Anonymous',
-                                    payload: { comment: v },
-                                });
-                            }
-                        }}
-                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                        disabled={isLocked}
-                        className={`text-[11px] w-full bg-transparent border-none focus:ring-0 p-0 outline-none italic placeholder-gray-300 ${isLocked ? 'text-gray-400' : 'text-blue-600 focus:bg-white transition-colors'}`}
-                        placeholder="테이블 설명 추가..."
-                        spellCheck={false}
-                    />
-                </div>
-            )}
 
             <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
                 {entity.attributes.map((attr) => (
