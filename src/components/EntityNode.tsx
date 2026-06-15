@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect } from 'react';
 import { Handle, Position, type NodeProps, useStore } from 'reactflow';
 import type { Entity, Attribute } from '../types/erd';
-import { Database, Eye, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare } from 'lucide-react';
+import { Database, Eye, Key, Link, Plus, Trash2, X, Lock, Unlock, MessageSquare, GripVertical } from 'lucide-react';
 import { useERDStore } from '../store/erdStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
@@ -24,9 +24,14 @@ interface AttributeRowProps {
     availableTypes: string[];
     onUpdate: (attrId: string, updates: Partial<Attribute>, granular?: boolean) => void;
     onDelete: (attrId: string, e: React.MouseEvent) => void;
+    isDragOver?: boolean;
+    onDragStart?: (e: React.DragEvent) => void;
+    onDragEnd?: (e: React.DragEvent) => void;
+    onDragOver?: (e: React.DragEvent) => void;
+    onDrop?: (e: React.DragEvent) => void;
 }
 
-const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSelected, availableTypes, onUpdate, onDelete }) => {
+const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSelected, availableTypes, onUpdate, onDelete, isDragOver, onDragStart, onDragEnd, onDragOver, onDrop }) => {
     const [localName, setLocalName] = useState(attr.name);
     const [localComment, setLocalComment] = useState(attr.comment || '');
     const [localLength, setLocalLength] = useState(attr.length || '');
@@ -85,7 +90,20 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
 
     if (!isSelected) {
         return (
-            <div className={`flex items-center gap-1 py-1 px-2 rounded group/attr relative cursor-default ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
+            <div
+                className={`nodrag flex items-center gap-1 py-1 px-2 rounded group/attr relative cursor-default transition-all ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'} ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'}`}
+                draggable={!isLocked}
+                onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onDragOver={onDragOver}
+                onDrop={onDrop}
+            >
+                {!isLocked && (
+                    <div className="w-4 flex-shrink-0 flex justify-center opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                        <GripVertical size={13} className="text-gray-300" />
+                    </div>
+                )}
                 <div className="w-8 flex-shrink-0 flex justify-center">
                     <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
                         <Key size={14} />
@@ -128,7 +146,25 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
     }
 
     return (
-        <div className={`flex items-center gap-1 py-1 px-2 rounded group/attr transition-colors relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'}`}>
+        <div
+            className={`nodrag flex items-center gap-1 py-1 px-2 rounded group/attr transition-colors relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'} ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'}`}
+            draggable={!isLocked}
+            onMouseDown={(e) => !isLocked && e.stopPropagation()}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+        >
+            {/* Drag Handle */}
+            {!isLocked && (
+                <div
+                    className="w-4 flex-shrink-0 flex justify-center opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <GripVertical size={13} className="text-gray-300" />
+                </div>
+            )}
+
             {/* PK Icon/Toggle */}
             <div className="w-8 flex-shrink-0 flex justify-center">
                 <PremiumTooltip label={attr.isPK ? "기본 키 (클릭 해제)" : "기본 키 (클릭 설정)"} dotColor="#eab308">
@@ -292,11 +328,9 @@ const EntityAttributeRowSkeleton: React.FC<{ attr: Attribute; isLocked: boolean 
 
 /** Lite/Full 공통 — 컬럼 추가 버튼 영역 높이 */
 const EntityAddAttributeSkeleton: React.FC = () => (
-    <div className="px-2 pb-2">
-        <div className="w-full flex items-center justify-center gap-2 py-1.5 border-2 border-dashed border-transparent rounded invisible pointer-events-none">
-            <Plus size={14} />
-            <span className="text-xs font-medium">컬럼 추가</span>
-        </div>
+    <div className="w-full flex items-center justify-center gap-2 py-2 border-t-2 border-dashed border-transparent invisible pointer-events-none text-xs font-semibold">
+        <Plus size={14} />
+        <span>컬럼 추가</span>
     </div>
 );
 
@@ -534,6 +568,59 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
     const { isLockedByOther, lockedBy, requestLock, releaseLock } = useEntityLock(entityId);
     const [entityNameComposing, setEntityNameComposing] = useState<string | null>(null);
     const [entityCommentComposing, setEntityCommentComposing] = useState<string | null>(null);
+
+    // Drag-to-reorder state
+    const dragIndexRef = React.useRef<number | null>(null);
+    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+    const handleAttrDragStart = (index: number) => (e: React.DragEvent) => {
+        e.stopPropagation();
+        dragIndexRef.current = index;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(index));
+    };
+
+    const handleAttrDragEnd = () => {
+        dragIndexRef.current = null;
+        setDragOverIndex(null);
+    };
+
+    const handleAttrDragOver = (index: number) => (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragIndexRef.current !== null && dragIndexRef.current !== index) {
+            setDragOverIndex(index);
+        }
+    };
+
+    const handleAttrDrop = (index: number) => (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const from = dragIndexRef.current;
+        if (from === null || from === index) {
+            setDragOverIndex(null);
+            return;
+        }
+        const currentEntity = useERDStore.getState().entitiesById[entity.id];
+        if (!currentEntity) return;
+
+        const newAttributes = [...currentEntity.attributes];
+        const [moved] = newAttributes.splice(from, 1);
+        newAttributes.splice(index, 0, moved);
+
+        updateEntity(entity.id, { attributes: newAttributes });
+        sendOperation({
+            type: 'ATTRIBUTE_UPDATE',
+            targetId: entity.id,
+            userId: user?.id || 'anonymous',
+            userName: user?.name || 'Anonymous',
+            payload: { attributes: newAttributes },
+        });
+
+        dragIndexRef.current = null;
+        setDragOverIndex(null);
+    };
 
     if (!entity) return null;
 
@@ -785,7 +872,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
             </div>
 
             <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
-                {entity.attributes.map((attr) => (
+                {entity.attributes.map((attr, index) => (
                     <AttributeRow
                         key={attr.id}
                         attr={attr}
@@ -794,23 +881,26 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                         availableTypes={availableTypes}
                         onUpdate={handleUpdateAttribute}
                         onDelete={handleDeleteAttribute}
+                        isDragOver={dragOverIndex === index}
+                        onDragStart={handleAttrDragStart(index)}
+                        onDragEnd={handleAttrDragEnd}
+                        onDragOver={handleAttrDragOver(index)}
+                        onDrop={handleAttrDrop(index)}
                     />
                 ))}
             </div>
 
             {!isLocked && (
-                <div className="px-2 pb-2">
-                    <PremiumTooltip label="컬럼 추가">
-                        <button
-                            onClick={handleAddAttribute}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            className="nodrag w-full flex items-center justify-center gap-2 py-1.5 border-2 border-dashed border-gray-200 rounded text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition-all text-xs font-medium"
-                        >
-                            <Plus size={14} />
-                            컬럼 추가
-                        </button>
-                    </PremiumTooltip>
-                </div>
+                <PremiumTooltip label="컬럼 추가" wrapperClassName="w-full">
+                    <button
+                        onClick={handleAddAttribute}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="nodrag w-full flex items-center justify-center gap-2 py-2 border-t-2 border-dashed border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition-all text-xs font-semibold rounded-b-[calc(0.5rem-2px)]"
+                    >
+                        <Plus size={14} />
+                        컬럼 추가
+                    </button>
+                </PremiumTooltip>
             )}
 
             <PrivHandles />

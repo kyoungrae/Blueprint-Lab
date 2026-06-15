@@ -191,7 +191,6 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                                                     {attr.name}
                                                     {attr.isPK ? ' 🔑' : ''}
                                                     {attr.isFK ? ' (FK)' : ''}
-                                                    {attr.type ? ` · ${attr.type}` : ''}
                                                 </option>
                                             ))}
                                         </select>
@@ -213,7 +212,6 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                                                     {attr.name}
                                                     {attr.isPK ? ' 🔑' : ''}
                                                     {attr.isFK ? ' (FK)' : ''}
-                                                    {attr.type ? ` · ${attr.type}` : ''}
                                                 </option>
                                             ))}
                                         </select>
