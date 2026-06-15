@@ -440,14 +440,30 @@ const EntityNode: React.FC<NodeProps<EntityNodeData>> = ({ data, selected, id: n
     return <EntityNodeFull entityId={entityId} selected={selected} nodeId={nodeId} />;
 };
 
+/** 간단 모드 — 줌에 따라 글자를 키우되 엔티티 밖으로 넘치지 않게 제한 */
+function getLiteLabelScale(zoom: number) {
+    return Math.min(2.4, 0.72 / Math.max(zoom, 0.22));
+}
+
 /** 줌아웃 시 사용되는 초경량 노드. 화면 디자인처럼 헤더 + 이름만 노출한다. */
 const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(({ entityId, selected }) => {
     const entity = useERDStore((s) => s.entitiesById[entityId]);
+    const zoom = useStore(zoomSelector);
     if (!entity) return null;
     const isLocked = entity.isLocked ?? true;
     const isView = entity.entityKind === 'VIEW';
+    const displayName = entity.name || (isView ? '새 뷰' : '새 테이블');
+    const tooltipLabel = entity.comment ? `${displayName} · ${entity.comment}` : displayName;
+    const labelScale = getLiteLabelScale(zoom);
 
     return (
+        <PremiumTooltip
+            label={tooltipLabel}
+            forceBodyPortal
+            placement="top"
+            zIndex={99999}
+            wrapperClassName="block min-w-[300px]"
+        >
         <div
             className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] relative overflow-visible ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
@@ -457,7 +473,7 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
                         ? 'border-violet-400 shadow-violet-100'
                         : 'border-blue-500 shadow-blue-100'
                 }`}
-            style={{ contain: 'layout style paint' }}
+            style={{ contain: 'layout style' }}
         >
             <EntityLockBadge entityId={entityId} />
 
@@ -471,12 +487,19 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
             </div>
 
             <div className="relative rounded-b-[calc(0.5rem-2px)]">
-                <div className="absolute inset-0 z-[1] flex items-center justify-center pointer-events-none">
-                    <div className="px-3 py-1.5 rounded-lg bg-white/90 border border-gray-200 text-gray-600 max-w-[85%] shadow-sm flex flex-col items-center gap-0.5 min-w-[120px]">
-                        <span className="text-xl font-semibold truncate w-full text-center leading-tight">
-                            {entity.name || (isView ? '새 뷰' : '새 테이블')}
+                <div className="absolute inset-x-2 inset-y-0 z-[1] flex items-center justify-center pointer-events-none overflow-hidden">
+                    <div
+                        className="flex flex-col items-center justify-center gap-0.5 px-1"
+                        style={{
+                            transform: `scale(${labelScale})`,
+                            transformOrigin: 'center center',
+                            width: `${100 / labelScale}%`,
+                        }}
+                    >
+                        <span className="text-[17px] font-bold leading-snug text-center text-gray-900 break-all w-full">
+                            {displayName}
                         </span>
-                        <span className="text-xl font-semibold truncate w-full text-center leading-tight">
+                        <span className="text-[14px] font-semibold leading-snug text-center text-gray-600 break-all w-full">
                             {entity.comment || '\u00a0'}
                         </span>
                     </div>
@@ -491,6 +514,7 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
 
             <PrivHandles />
         </div>
+        </PremiumTooltip>
     );
 });
 
