@@ -405,6 +405,7 @@ const ERDCanvasContent: React.FC = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [sidebarWidth] = useState(ERD_SIDEBAR_DEFAULT_WIDTH);
     const [editingRelationship, setEditingRelationship] = useState<Relationship | null>(null);
+    const [newRelationshipId, setNewRelationshipId] = useState<string | null>(null);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [reconnectingEdgeId, setReconnectingEdgeId] = useState<string | null>(null);
@@ -1164,11 +1165,28 @@ const ERDCanvasContent: React.FC = () => {
             ? relationships
             : relationships.filter((rel) => visibleNodeIds.has(rel.source) || visibleNodeIds.has(rel.target));
 
+        // 같은 entity+side를 공유하는 엣지끼리 인덱스를 계산해 분산 오프셋에 사용
+        const sourceGroups = new Map<string, string[]>();
+        const targetGroups = new Map<string, string[]>();
+        for (const rel of rels) {
+            const sk = `${rel.source}::${rel.sourceHandle ?? ''}`;
+            const tk = `${rel.target}::${rel.targetHandle ?? ''}`;
+            if (!sourceGroups.has(sk)) sourceGroups.set(sk, []);
+            sourceGroups.get(sk)!.push(rel.id);
+            if (!targetGroups.has(tk)) targetGroups.set(tk, []);
+            targetGroups.get(tk)!.push(rel.id);
+        }
+
         const flowEdges: Edge[] = rels.map((rel) => {
             const isSelfRef = isSelfReferencingRelationship(rel.source, rel.target);
             const handles = isSelfRef
                 ? normalizeSelfRefHandles(rel.sourceHandle, rel.targetHandle)
                 : { sourceHandle: rel.sourceHandle, targetHandle: rel.targetHandle };
+
+            const sk = `${rel.source}::${rel.sourceHandle ?? ''}`;
+            const tk = `${rel.target}::${rel.targetHandle ?? ''}`;
+            const srcGroup = sourceGroups.get(sk) ?? [rel.id];
+            const tgtGroup = targetGroups.get(tk) ?? [rel.id];
 
             return {
             id: rel.id,
@@ -1189,6 +1207,10 @@ const ERDCanvasContent: React.FC = () => {
                 sourceEnd: rel.sourceEnd,
                 targetEnd: rel.targetEnd,
                 isSelfRef,
+                sourceIndex: srcGroup.indexOf(rel.id),
+                sourceCount: srcGroup.length,
+                targetIndex: tgtGroup.indexOf(rel.id),
+                targetCount: tgtGroup.length,
             },
         };
         });
@@ -1286,10 +1308,14 @@ const ERDCanvasContent: React.FC = () => {
                     userName: user?.name || 'Anonymous',
                     payload: newRelationship as unknown as Record<string, unknown>
                 });
+
+                // 연결 직후 키 설정 팝업 표시
+                setNewRelationshipId(newRelationship.id);
+                setEditingRelationship(newRelationship);
             }
             setReconnectingEdgeId(null);
         },
-        [reconnectingEdgeId, addRelationship, updateRelationship, relationships, user, sendOperation]
+        [reconnectingEdgeId, addRelationship, updateRelationship, relationships, user, sendOperation, setEditingRelationship]
     );
 
     const onConnectEnd = useCallback(() => {
@@ -2373,6 +2399,7 @@ const ERDCanvasContent: React.FC = () => {
                         targetEntityName={entities.find(e => e.id === editingRelationship.target)?.name || 'Unknown'}
                         sourceAttributes={entities.find(e => e.id === editingRelationship.source)?.attributes}
                         targetAttributes={entities.find(e => e.id === editingRelationship.target)?.attributes}
+                        isNew={newRelationshipId === editingRelationship.id}
                         onSave={(updated) => {
                             updateRelationship(updated.id, updated, user);
                             sendOperation({
@@ -2382,6 +2409,7 @@ const ERDCanvasContent: React.FC = () => {
                                 userName: user?.name || 'Anonymous',
                                 payload: updated as unknown as Record<string, unknown>,
                             });
+                            setNewRelationshipId(null);
                         }}
                         onDelete={() => {
                             deleteRelationship(editingRelationship.id, user);
@@ -2393,8 +2421,9 @@ const ERDCanvasContent: React.FC = () => {
                                 payload: {},
                             });
                             setEditingRelationship(null);
+                            setNewRelationshipId(null);
                         }}
-                        onClose={() => setEditingRelationship(null)}
+                        onClose={() => { setEditingRelationship(null); setNewRelationshipId(null); }}
                     />
                 )}
             </div>

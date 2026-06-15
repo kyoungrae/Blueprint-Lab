@@ -24,6 +24,7 @@ interface EdgeEditModalProps {
     targetEntityName: string;
     sourceAttributes?: Attribute[];
     targetAttributes?: Attribute[];
+    isNew?: boolean;
     onSave: (updatedRelationship: Relationship) => void;
     onDelete: () => void;
     onClose: () => void;
@@ -35,6 +36,7 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
     targetEntityName,
     sourceAttributes = [],
     targetAttributes = [],
+    isNew = false,
     onSave,
     onDelete,
     onClose,
@@ -84,7 +86,7 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
                 <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50">
-                    <h2 className="text-lg font-bold text-gray-800">관계 편집</h2>
+                    <h2 className="text-lg font-bold text-gray-800">{isNew ? '관계 설정' : '관계 편집'}</h2>
                     <button
                         onClick={onClose}
                         className="p-2 hover:bg-white rounded-full transition-colors text-gray-400 hover:text-gray-600 border border-transparent hover:border-gray-200"

@@ -1,3 +1,4 @@
+import React from 'react';
 import {
     type EdgeProps,
     getSmoothStepPath,
@@ -91,7 +92,7 @@ function MarkerManyOptional({ color }: { color: string }) {
 
 const MARKER_GAP = 0;
 /** ERDCanvas edgeUpdaterRadius와 동일 - 선이 edge updater 끝에서 시작/종료 */
-const EDGE_UPDATER_RADIUS = 20;
+const EDGE_UPDATER_RADIUS = 36;
 
 function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndType; color: string; id: string; isStart?: boolean }) {
     const content = {
@@ -117,6 +118,14 @@ function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndTy
     );
 }
 
+/** 같은 side를 공유하는 N개 엣지를 SPREAD px 간격으로 분산 */
+const SPREAD = 28;
+
+function computeSpreadOffset(index: number, count: number): number {
+    if (count <= 1) return 0;
+    return (index - (count - 1) / 2) * SPREAD;
+}
+
 const ERDEdge = ({
     id,
     source,
@@ -138,22 +147,32 @@ const ERDEdge = ({
     const targetEnd = (data?.targetEnd ?? getEndsFromType(relType).targetEnd) as RelationshipEndType;
     const isSelfLoop = source === target || data?.isSelfRef === true;
 
+    // 분산 오프셋 계산 (left/right → Y축, top/bottom → X축)
+    const srcSpread = computeSpreadOffset(data?.sourceIndex ?? 0, data?.sourceCount ?? 1);
+    const tgtSpread = computeSpreadOffset(data?.targetIndex ?? 0, data?.targetCount ?? 1);
+    const isVerticalSrc = sourcePosition === 'left' || sourcePosition === 'right';
+    const isVerticalTgt = targetPosition === 'left' || targetPosition === 'right';
+    const adjSrcX = sourceX + (isVerticalSrc ? 0 : srcSpread);
+    const adjSrcY = sourceY + (isVerticalSrc ? srcSpread : 0);
+    const adjTgtX = targetX + (isVerticalTgt ? 0 : tgtSpread);
+    const adjTgtY = targetY + (isVerticalTgt ? tgtSpread : 0);
+
     const [sx, sy] = (() => {
         switch (sourcePosition) {
-            case 'left': return [sourceX - EDGE_UPDATER_RADIUS, sourceY];
-            case 'right': return [sourceX + EDGE_UPDATER_RADIUS, sourceY];
-            case 'top': return [sourceX, sourceY - EDGE_UPDATER_RADIUS];
-            case 'bottom': return [sourceX, sourceY + EDGE_UPDATER_RADIUS];
-            default: return [sourceX, sourceY];
+            case 'left': return [adjSrcX - EDGE_UPDATER_RADIUS, adjSrcY];
+            case 'right': return [adjSrcX + EDGE_UPDATER_RADIUS, adjSrcY];
+            case 'top': return [adjSrcX, adjSrcY - EDGE_UPDATER_RADIUS];
+            case 'bottom': return [adjSrcX, adjSrcY + EDGE_UPDATER_RADIUS];
+            default: return [adjSrcX, adjSrcY];
         }
     })();
     const [tx, ty] = (() => {
         switch (targetPosition) {
-            case 'left': return [targetX - EDGE_UPDATER_RADIUS, targetY];
-            case 'right': return [targetX + EDGE_UPDATER_RADIUS, targetY];
-            case 'top': return [targetX, targetY - EDGE_UPDATER_RADIUS];
-            case 'bottom': return [targetX, targetY + EDGE_UPDATER_RADIUS];
-            default: return [targetX, targetY];
+            case 'left': return [adjTgtX - EDGE_UPDATER_RADIUS, adjTgtY];
+            case 'right': return [adjTgtX + EDGE_UPDATER_RADIUS, adjTgtY];
+            case 'top': return [adjTgtX, adjTgtY - EDGE_UPDATER_RADIUS];
+            case 'bottom': return [adjTgtX, adjTgtY + EDGE_UPDATER_RADIUS];
+            default: return [adjTgtX, adjTgtY];
         }
     })();
 
@@ -172,6 +191,25 @@ const ERDEdge = ({
 
     const markerStartId = `erd-start-${sourceEnd}-${id}`;
     const markerEndId = `erd-end-${targetEnd}-${id}`;
+
+    // 엔드포인트 점 위치 — EdgeLabelRenderer 좌표계 (flowX, flowY)
+    // 핸들 위치 기준: adjSrc/adjTgt (spread 적용된 좌표)
+    const dotSrcX = adjSrcX;
+    const dotSrcY = adjSrcY;
+    const dotTgtX = adjTgtX;
+    const dotTgtY = adjTgtY;
+
+    const dotStyle = (color: string): React.CSSProperties => ({
+        position: 'absolute',
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        background: color,
+        border: '1.5px solid white',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+        pointerEvents: 'none',
+        zIndex: 10,
+    });
 
     return (
         <>
@@ -231,6 +269,13 @@ const ERDEdge = ({
                 )}
             </g>
             <EdgeLabelRenderer>
+                {/* 분산 연결 점 — DOM 레이어에서 렌더링해 노드 위에 표시 */}
+                {!isSelfLoop && (
+                    <>
+                        <div style={{ ...dotStyle(edgeColor), transform: `translate(-50%, -50%) translate(${dotSrcX}px, ${dotSrcY}px)` }} />
+                        <div style={{ ...dotStyle(edgeColor), transform: `translate(-50%, -50%) translate(${dotTgtX}px, ${dotTgtY}px)` }} />
+                    </>
+                )}
                 <div
                     style={{
                         position: 'absolute',
