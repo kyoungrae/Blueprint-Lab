@@ -70,9 +70,8 @@ import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { OnlineUsers, UserCursors } from './collaboration';
 import PremiumTooltip from './screenNode/PremiumTooltip';
-import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Zap, Undo2, Redo2, History, Square, Link, Palette } from 'lucide-react';
+import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Undo2, Redo2, History, Square, Link, Palette } from 'lucide-react';
 import { getLayoutedElements } from '../utils/layout';
-import { getForceLayoutedElements } from '../utils/forceLayout';
 import { getRelationshipLayoutedElements } from '../utils/relationshipLayout';
 import { generateSQLFromERD } from '../utils/sqlGenerator';
 import { copyToClipboard } from '../utils/clipboard';
@@ -1764,44 +1763,6 @@ const ERDCanvasContent: React.FC = () => {
 
         setIsLayoutMenuOpen(false);
     }, [nodes, edges, entities, relationships, sections, setNodes, setEdges, importData, getViewport, sendOperation, user, currentProjectId, updateProjectData]);
-
-    const onForceLayout = useCallback(() => {
-        const { nodes: layoutedNodes } = getForceLayoutedElements(nodes, edges);
-
-        skipNextEntitySyncRef.current = true;
-        setNodes(layoutedNodes);
-
-        // Sync with store
-        const updatedEntities = entities.map(entity => {
-            const layoutNode = layoutedNodes.find(n => n.id === entity.id);
-            if (layoutNode) {
-                return { ...entity, position: layoutNode.position };
-            }
-            return entity;
-        });
-
-        importData({
-            entities: updatedEntities,
-            relationships: relationships,
-            sections,
-        });
-
-        // Broadcast Batch Move (단일 통신으로 부분 동기화 방지)
-        sendOperation({
-            type: 'ERD_IMPORT',
-            targetId: currentProjectId || 'bulk',
-            userId: user?.id || 'anonymous',
-            userName: user?.name || 'Anonymous',
-            payload: {
-                entities: updatedEntities,
-                relationships: relationships,
-                sections: sections,
-                overwrite: true,
-            },
-        });
-
-        setIsLayoutMenuOpen(false);
-    }, [nodes, edges, entities, relationships, sections, setNodes, importData, sendOperation, user, currentProjectId, updateProjectData]);
 
     const onRelationshipLayout = useCallback(() => {
         if (entities.length === 0) {
