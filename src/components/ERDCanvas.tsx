@@ -58,6 +58,7 @@ const FigmaStyleZoomControls: React.FC = () => {
 
 import EntityNode, { EntityNodePlaceholder } from './EntityNode';
 import ERDEdge from './ERDEdge';
+import { normalizeSelfRefHandles, isSelfReferencingRelationship } from '../utils/erdSelfLoop';
 import EdgeEditModal from './EdgeEditModal';
 import ImportModal from './ImportModal';
 import Sidebar from './Sidebar';
@@ -1163,12 +1164,18 @@ const ERDCanvasContent: React.FC = () => {
             ? relationships
             : relationships.filter((rel) => visibleNodeIds.has(rel.source) || visibleNodeIds.has(rel.target));
 
-        const flowEdges: Edge[] = rels.map((rel) => ({
+        const flowEdges: Edge[] = rels.map((rel) => {
+            const isSelfRef = isSelfReferencingRelationship(rel.source, rel.target);
+            const handles = isSelfRef
+                ? normalizeSelfRefHandles(rel.sourceHandle, rel.targetHandle)
+                : { sourceHandle: rel.sourceHandle, targetHandle: rel.targetHandle };
+
+            return {
             id: rel.id,
             source: rel.source,
             target: rel.target,
-            sourceHandle: rel.sourceHandle,
-            targetHandle: rel.targetHandle,
+            sourceHandle: handles.sourceHandle,
+            targetHandle: handles.targetHandle,
             type: 'erd',
             label: rel.type,
             animated: false,
@@ -1181,13 +1188,15 @@ const ERDCanvasContent: React.FC = () => {
                 type: rel.type,
                 sourceEnd: rel.sourceEnd,
                 targetEnd: rel.targetEnd,
+                isSelfRef,
             },
-        }));
+        };
+        });
         setEdges(flowEdges);
     }, [relationships, setEdges, reconnectingEdgeId, visibleNodeIds]);
 
     const isValidConnection = useCallback((connection: Connection) => {
-        return connection.source !== connection.target;
+        return Boolean(connection.source && connection.target);
     }, []);
 
     const onConnectStart = useCallback((_event: any, _params: any) => {
@@ -1196,19 +1205,38 @@ const ERDCanvasContent: React.FC = () => {
 
     const onConnect = useCallback(
         (connection: Connection) => {
-            if (connection.source && connection.target && connection.source !== connection.target) {
-                // Check if relationship exists (bi-directional check for ERD)
-                const existingRel = relationships.find(r =>
+            if (!connection.source || !connection.target) {
+                setReconnectingEdgeId(null);
+                return;
+            }
+
+            const isSelfRef = isSelfReferencingRelationship(connection.source, connection.target);
+            const existingRel = isSelfRef
+                ? relationships.find(r => r.source === connection.source && r.target === connection.target)
+                : relationships.find(r =>
                     (r.source === connection.source && r.target === connection.target) ||
                     (r.source === connection.target && r.target === connection.source)
                 );
 
-                if (existingRel) {
-                    // B→A로 드래그 시 기존 A→B 관계와 방향이 반대인 경우 핸들을 스왑해야 함
-                    // 예) existingRel: source=A, target=B
-                    //     connection: source=B(sourceHandle=b2), target=A(targetHandle=a3)
-                    //     → existingRel.source=A에 적용해야 할 핸들은 a3(connection.targetHandle)
-                    //     → existingRel.target=B에 적용해야 할 핸들은 b2(connection.sourceHandle)
+            if (existingRel) {
+                if (isSelfRef) {
+                    const handles = normalizeSelfRefHandles(
+                        connection.sourceHandle ?? undefined,
+                        connection.targetHandle ?? undefined,
+                    );
+                    const updates = {
+                        sourceHandle: handles.sourceHandle,
+                        targetHandle: handles.targetHandle,
+                    };
+                    updateRelationship(existingRel.id, updates, user);
+                    sendOperation({
+                        type: 'RELATIONSHIP_UPDATE',
+                        targetId: existingRel.id,
+                        userId: user?.id || 'anonymous',
+                        userName: user?.name || 'Anonymous',
+                        payload: updates as unknown as Record<string, unknown>,
+                    });
+                } else {
                     const isReversed =
                         existingRel.source === connection.target &&
                         existingRel.target === connection.source;
@@ -1230,25 +1258,34 @@ const ERDCanvasContent: React.FC = () => {
                         userName: user?.name || 'Anonymous',
                         payload: updates as unknown as Record<string, unknown>
                     });
-                } else {
-                    const newRelationship = {
-                        id: `rel_${Date.now()}`,
-                        source: connection.source,
-                        target: connection.target,
+                }
+            } else {
+                const handles = isSelfRef
+                    ? normalizeSelfRefHandles(
+                        connection.sourceHandle ?? undefined,
+                        connection.targetHandle ?? undefined,
+                    )
+                    : {
                         sourceHandle: connection.sourceHandle || undefined,
                         targetHandle: connection.targetHandle || undefined,
-                        type: '1:N' as const, // Default relationship type
                     };
-                    addRelationship(newRelationship, user);
+                const newRelationship = {
+                    id: `rel_${Date.now()}`,
+                    source: connection.source,
+                    target: connection.target,
+                    sourceHandle: handles.sourceHandle,
+                    targetHandle: handles.targetHandle,
+                    type: '1:N' as const,
+                };
+                addRelationship(newRelationship, user);
 
-                    sendOperation({
-                        type: 'RELATIONSHIP_CREATE',
-                        targetId: newRelationship.id,
-                        userId: user?.id || 'anonymous',
-                        userName: user?.name || 'Anonymous',
-                        payload: newRelationship as unknown as Record<string, unknown>
-                    });
-                }
+                sendOperation({
+                    type: 'RELATIONSHIP_CREATE',
+                    targetId: newRelationship.id,
+                    userId: user?.id || 'anonymous',
+                    userName: user?.name || 'Anonymous',
+                    payload: newRelationship as unknown as Record<string, unknown>
+                });
             }
             setReconnectingEdgeId(null);
         },
@@ -1268,11 +1305,24 @@ const ERDCanvasContent: React.FC = () => {
 
     const onEdgeUpdate = useCallback(
         (oldEdge: Edge, newConnection: Connection) => {
+            const source = newConnection.source || oldEdge.source;
+            const target = newConnection.target || oldEdge.target;
+            const isSelfRef = isSelfReferencingRelationship(source, target);
+            const handles = isSelfRef
+                ? normalizeSelfRefHandles(
+                    newConnection.sourceHandle ?? oldEdge.sourceHandle ?? undefined,
+                    newConnection.targetHandle ?? oldEdge.targetHandle ?? undefined,
+                )
+                : {
+                    sourceHandle: newConnection.sourceHandle || undefined,
+                    targetHandle: newConnection.targetHandle || undefined,
+                };
+
             const updates = {
-                source: newConnection.source || oldEdge.source,
-                target: newConnection.target || oldEdge.target,
-                sourceHandle: newConnection.sourceHandle || undefined,
-                targetHandle: newConnection.targetHandle || undefined,
+                source,
+                target,
+                sourceHandle: handles.sourceHandle,
+                targetHandle: handles.targetHandle,
             };
 
             updateRelationship(oldEdge.id, updates, user);
@@ -1435,19 +1485,26 @@ const ERDCanvasContent: React.FC = () => {
     }, [entitiesById, sendOperation, updateEntity, user]);
 
     const handleAddRelationshipFromExcel = useCallback((sourceId: string, targetId: string, type: Relationship['type']) => {
+        const isSelfRef = isSelfReferencingRelationship(sourceId, targetId);
         const existingRel = relationships.find((r) =>
-            (r.source === sourceId && r.target === targetId) ||
-            (r.source === targetId && r.target === sourceId)
+            isSelfRef
+                ? r.source === sourceId && r.target === targetId
+                : (r.source === sourceId && r.target === targetId) ||
+                  (r.source === targetId && r.target === sourceId)
         );
         if (existingRel) {
-            alert('이미 동일한 테이블 간 관계가 존재합니다.');
+            alert(isSelfRef
+                ? '이미 동일 테이블의 자기 참조 관계가 존재합니다.'
+                : '이미 동일한 테이블 간 관계가 존재합니다.');
             return;
         }
+        const handles = isSelfRef ? normalizeSelfRefHandles() : {};
         const newRel: Relationship = {
             id: `rel_${Date.now()}`,
             source: sourceId,
             target: targetId,
             type,
+            ...handles,
         };
         addRelationship(newRel, user);
         sendOperation({
@@ -2321,6 +2378,8 @@ const ERDCanvasContent: React.FC = () => {
                         relationship={editingRelationship}
                         sourceEntityName={entities.find(e => e.id === editingRelationship.source)?.name || 'Unknown'}
                         targetEntityName={entities.find(e => e.id === editingRelationship.target)?.name || 'Unknown'}
+                        sourceAttributes={entities.find(e => e.id === editingRelationship.source)?.attributes}
+                        targetAttributes={entities.find(e => e.id === editingRelationship.target)?.attributes}
                         onSave={(updated) => {
                             updateRelationship(updated.id, updated, user);
                             sendOperation({

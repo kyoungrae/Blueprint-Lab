@@ -36,6 +36,8 @@ interface PremiumTooltipProps {
      */
     bodyZIndexExact?: boolean;
     screenId?: string;
+    /** React Flow 노드 등 부모 드래그 허용 — nodrag/nopan·mousedown 차단 생략 */
+    passThroughDrag?: boolean;
 }
 
 const PremiumTooltip: React.FC<PremiumTooltipProps> = ({
@@ -49,6 +51,7 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({
     forceBodyPortal: forceBodyPortalProp,
     bodyZIndexExact = false,
     screenId,
+    passThroughDrag = false,
 }) => {
     const [visible, setVisible] = useState(false);
     const [portalPos, setPortalPos] = useState({ left: 0, top: 0 });
@@ -160,8 +163,12 @@ const PremiumTooltip: React.FC<PremiumTooltipProps> = ({
             ref={wrapperRef}
             data-premium-tooltip
             data-screen-id={screenId}
-            className={`nodrag nopan relative inline-flex items-center justify-center ${wrapperClassName ?? ''}`.trim()}
-            onMouseDown={(e) => e.stopPropagation()}
+            className={
+                passThroughDrag
+                    ? `relative ${wrapperClassName ?? ''}`.trim()
+                    : `nodrag nopan relative inline-flex items-center justify-center ${wrapperClassName ?? ''}`.trim()
+            }
+            onMouseDown={passThroughDrag ? undefined : (e) => e.stopPropagation()}
             onClickCapture={handleClickCapture}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}

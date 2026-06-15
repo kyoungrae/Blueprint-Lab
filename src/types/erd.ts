@@ -54,6 +54,10 @@ export interface Relationship {
     sourceEnd?: RelationshipEndType;
     /** 타겟 쪽 끝 기호 (미지정 시 type에서 유도) */
     targetEnd?: RelationshipEndType;
+    /** 소스 엔티티에서 참조되는 컬럼명 (보통 PK) */
+    sourceKey?: string;
+    /** 타겟 엔티티에서 FK 역할을 하는 컬럼명 */
+    targetKey?: string;
 }
 
 export type DBType = 'MySQL' | 'PostgreSQL' | 'Oracle' | 'MSSQL';

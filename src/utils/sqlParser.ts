@@ -414,12 +414,16 @@ export const parseSQLToERD = (sql: string): { entities: Entity[], relationships:
                 if (targetEntity) {
                     const relKey = `${entity.id}-${targetEntity.id}`;
                     if (!relTracker.has(relKey)) {
+                        const isSelfRef = entity.id === targetEntity.id;
+                        const handles = isSelfRef
+                            ? { sourceHandle: 'right' as const, targetHandle: 'top' as const }
+                            : { sourceHandle: 'right' as const, targetHandle: 'left' as const };
                         finalRelationships.push({
                             id: `rel_${Date.now()}_${finalRelationships.length}`,
                             source: entity.id,
                             target: targetEntity.id,
-                            sourceHandle: 'right', // Default to right-to-left
-                            targetHandle: 'left',
+                            sourceHandle: handles.sourceHandle,
+                            targetHandle: handles.targetHandle,
                             type: '1:N'
                         });
                         relTracker.add(relKey);
@@ -438,12 +442,13 @@ export const parseSQLToERD = (sql: string): { entities: Entity[], relationships:
         if (sourceEntity && targetEntity) {
             const relKey = `${sourceEntity.id}-${targetEntity.id}`;
             if (!relTracker.has(relKey)) {
+                const isSelfRef = sourceEntity.id === targetEntity.id;
                 finalRelationships.push({
                     ...rel,
                     source: sourceEntity.id,
                     target: targetEntity.id,
                     sourceHandle: 'right',
-                    targetHandle: 'left'
+                    targetHandle: isSelfRef ? 'top' : 'left',
                 });
                 relTracker.add(relKey);
             }

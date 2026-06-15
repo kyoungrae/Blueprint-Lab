@@ -460,6 +460,7 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
         <PremiumTooltip
             label={tooltipLabel}
             forceBodyPortal
+            passThroughDrag
             placement="top"
             zIndex={99999}
             wrapperClassName="block min-w-[300px]"

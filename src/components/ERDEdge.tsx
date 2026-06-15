@@ -5,6 +5,7 @@ import {
 } from 'reactflow';
 import type { RelationshipEndType } from '../types/erd';
 import PremiumTooltip from './screenNode/PremiumTooltip';
+import { buildSelfLoopPath } from '../utils/erdSelfLoop';
 
 const STROKE_W = 1.5;
 
@@ -118,6 +119,8 @@ function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndTy
 
 const ERDEdge = ({
     id,
+    source,
+    target,
     sourceX,
     sourceY,
     targetX,
@@ -133,6 +136,7 @@ const ERDEdge = ({
     const relType = data?.type || '1:N';
     const sourceEnd = (data?.sourceEnd ?? getEndsFromType(relType).sourceEnd) as RelationshipEndType;
     const targetEnd = (data?.targetEnd ?? getEndsFromType(relType).targetEnd) as RelationshipEndType;
+    const isSelfLoop = source === target || data?.isSelfRef === true;
 
     const [sx, sy] = (() => {
         switch (sourcePosition) {
@@ -153,16 +157,18 @@ const ERDEdge = ({
         }
     })();
 
-    const [edgePath, labelX, labelY] = getSmoothStepPath({
-        sourceX: sx,
-        sourceY: sy,
-        sourcePosition,
-        targetX: tx,
-        targetY: ty,
-        targetPosition,
-        borderRadius: 16,   // 코너를 둥글게 → 엣지 경로가 시각적으로 더 구분됨
-        offset: 50,         // 노드에서 나온 후 50px 직진 후 꺾임 → 같은 계층에서 나오는 선들이 퍼짐
-    });
+    const [edgePath, labelX, labelY] = isSelfLoop
+        ? buildSelfLoopPath(sx, sy, tx, ty, sourcePosition, targetPosition)
+        : getSmoothStepPath({
+            sourceX: sx,
+            sourceY: sy,
+            sourcePosition,
+            targetX: tx,
+            targetY: ty,
+            targetPosition,
+            borderRadius: 16,
+            offset: 50,
+        });
 
     const markerStartId = `erd-start-${sourceEnd}-${id}`;
     const markerEndId = `erd-end-${targetEnd}-${id}`;

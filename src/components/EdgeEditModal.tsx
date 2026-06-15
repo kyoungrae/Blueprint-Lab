@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
-import type { Relationship, RelationshipEndType } from '../types/erd';
+import { X, Key } from 'lucide-react';
+import type { Relationship, RelationshipEndType, Attribute } from '../types/erd';
 
 const END_OPTIONS: { value: RelationshipEndType; label: string }[] = [
     { value: '1', label: '일 필수 (1)' },
@@ -22,6 +22,8 @@ interface EdgeEditModalProps {
     relationship: Relationship;
     sourceEntityName: string;
     targetEntityName: string;
+    sourceAttributes?: Attribute[];
+    targetAttributes?: Attribute[];
     onSave: (updatedRelationship: Relationship) => void;
     onDelete: () => void;
     onClose: () => void;
@@ -31,6 +33,8 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
     relationship,
     sourceEntityName,
     targetEntityName,
+    sourceAttributes = [],
+    targetAttributes = [],
     onSave,
     onDelete,
     onClose,
@@ -39,6 +43,21 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
     const [type, setType] = useState<'1:1' | '1:N' | 'N:M'>(relationship.type);
     const [sourceEnd, setSourceEnd] = useState<RelationshipEndType>(relationship.sourceEnd ?? defaults.sourceEnd);
     const [targetEnd, setTargetEnd] = useState<RelationshipEndType>(relationship.targetEnd ?? defaults.targetEnd);
+
+    // 기본값: sourceKey는 소스 엔티티의 첫 번째 PK, targetKey는 타겟 엔티티의 첫 번째 FK
+    const defaultSourceKey =
+        relationship.sourceKey ??
+        sourceAttributes.find(a => a.isPK)?.name ??
+        sourceAttributes[0]?.name ??
+        '';
+    const defaultTargetKey =
+        relationship.targetKey ??
+        targetAttributes.find(a => a.isFK)?.name ??
+        targetAttributes[0]?.name ??
+        '';
+
+    const [sourceKey, setSourceKey] = useState<string>(defaultSourceKey);
+    const [targetKey, setTargetKey] = useState<string>(defaultTargetKey);
 
     const handleTypeChange = (newType: '1:1' | '1:N' | 'N:M') => {
         setType(newType);
@@ -53,9 +72,13 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
             type,
             sourceEnd,
             targetEnd,
+            sourceKey: sourceKey || undefined,
+            targetKey: targetKey || undefined,
         });
         onClose();
     };
+
+    const hasAttributes = sourceAttributes.length > 0 || targetAttributes.length > 0;
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -111,6 +134,7 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                             ))}
                         </div>
                     </div>
+
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
@@ -141,6 +165,73 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                             </select>
                         </div>
                     </div>
+
+                    {hasAttributes && (
+                        <div>
+                            <div className="flex items-center gap-2 mb-3">
+                                <Key size={13} className="text-gray-400" />
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                    키 컬럼 설정
+                                </label>
+                            </div>
+                            <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
+                                {sourceAttributes.length > 0 && (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+                                            {sourceEntityName} — 참조 키 (PK)
+                                        </label>
+                                        <select
+                                            value={sourceKey}
+                                            onChange={(e) => setSourceKey(e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white font-medium"
+                                        >
+                                            <option value="">미지정</option>
+                                            {sourceAttributes.map((attr) => (
+                                                <option key={attr.id} value={attr.name}>
+                                                    {attr.name}
+                                                    {attr.isPK ? ' 🔑' : ''}
+                                                    {attr.isFK ? ' (FK)' : ''}
+                                                    {attr.type ? ` · ${attr.type}` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                                {targetAttributes.length > 0 && (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+                                            {targetEntityName} — FK 컬럼
+                                        </label>
+                                        <select
+                                            value={targetKey}
+                                            onChange={(e) => setTargetKey(e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white font-medium"
+                                        >
+                                            <option value="">미지정</option>
+                                            {targetAttributes.map((attr) => (
+                                                <option key={attr.id} value={attr.name}>
+                                                    {attr.name}
+                                                    {attr.isPK ? ' 🔑' : ''}
+                                                    {attr.isFK ? ' (FK)' : ''}
+                                                    {attr.type ? ` · ${attr.type}` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                                {(sourceKey || targetKey) && (
+                                    <div className="text-[11px] text-gray-400 pt-1 border-t border-gray-200">
+                                        {sourceKey && targetKey
+                                            ? `${sourceEntityName}.${sourceKey} → ${targetEntityName}.${targetKey}`
+                                            : sourceKey
+                                                ? `참조: ${sourceEntityName}.${sourceKey}`
+                                                : `FK: ${targetEntityName}.${targetKey}`
+                                        }
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Footer */}

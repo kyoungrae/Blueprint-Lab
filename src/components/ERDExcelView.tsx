@@ -105,10 +105,6 @@ const ERDExcelView = forwardRef<HTMLDivElement, ERDExcelViewProps>(function ERDE
             alert('관계 소스/타겟 테이블을 선택하세요.');
             return;
         }
-        if (newRelSource === newRelTarget) {
-            alert('같은 테이블끼리는 관계를 생성할 수 없습니다.');
-            return;
-        }
         onAddRelationship(newRelSource, newRelTarget, newRelType);
     };
 
