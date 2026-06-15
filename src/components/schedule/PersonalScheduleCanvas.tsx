@@ -375,6 +375,20 @@ const ALLDAY_BAR_MIN_H = 24;
 const ALLDAY_BAR_GAP = 3;
 const ALLDAY_SUB_INDENT = 10;
 
+/** Ctrl+휠 → 가로 스크롤, 트랙패드 가로 스와이프도 지원 */
+function applyHorizontalWheelScroll(el: HTMLElement, e: WheelEvent): void {
+    if (e.ctrlKey) {
+        const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+        if (delta === 0) return;
+        e.preventDefault();
+        el.scrollLeft += delta;
+        return;
+    }
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    el.scrollLeft += e.deltaX;
+}
+
 function getCalendarParentId(e: CalendarEvent): string | undefined {
     return e._sourceEventId ?? e.parentId;
 }
@@ -1249,9 +1263,7 @@ const WeekView: React.FC<{
         const el = scrollRef.current;
         if (!el) return;
         const onWheel = (e: WheelEvent) => {
-            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-            e.preventDefault();
-            el.scrollLeft += e.deltaX;
+            applyHorizontalWheelScroll(el, e);
         };
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
@@ -1454,11 +1466,14 @@ const MonthView: React.FC<{
         const THRESHOLD = 50;
         const COOLDOWN  = 600;
         const onWheel = (e: WheelEvent) => {
-            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+            const delta = e.ctrlKey
+                ? (e.deltaY !== 0 ? e.deltaY : e.deltaX)
+                : (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0);
+            if (delta === 0) return;
             e.preventDefault();
             const now = Date.now();
             if (now - lastNavRef.current < COOLDOWN) { accRef.current = 0; return; }
-            accRef.current += e.deltaX;
+            accRef.current += delta;
             if (Math.abs(accRef.current) >= THRESHOLD) {
                 onNavigate(accRef.current > 0 ? 'next' : 'prev');
                 accRef.current = 0;
@@ -1545,11 +1560,14 @@ const DayView: React.FC<{
         const THRESHOLD = 50;
         const COOLDOWN  = 600;
         const onWheel = (e: WheelEvent) => {
-            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+            const delta = e.ctrlKey
+                ? (e.deltaY !== 0 ? e.deltaY : e.deltaX)
+                : (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0);
+            if (delta === 0) return;
             e.preventDefault();
             const now = Date.now();
             if (now - lastNavRef.current < COOLDOWN) { accRef.current = 0; return; }
-            accRef.current += e.deltaX;
+            accRef.current += delta;
             if (Math.abs(accRef.current) >= THRESHOLD) {
                 onNavigate(accRef.current > 0 ? 'next' : 'prev');
                 accRef.current = 0;
@@ -1900,9 +1918,7 @@ const GanttView: React.FC<{
         const el = rightRef.current;
         if (!el) return;
         const onWheel = (e: WheelEvent) => {
-            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-            e.preventDefault();
-            el.scrollLeft += e.deltaX;
+            applyHorizontalWheelScroll(el, e);
         };
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
