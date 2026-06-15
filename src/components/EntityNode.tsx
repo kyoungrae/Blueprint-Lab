@@ -88,10 +88,15 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
         else setLocalLength(value);
     };
 
+    // 공통 행 스타일 — CSS subgrid로 부모 grid 트랙 상속
+    const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'subgrid', gridColumn: '1 / -1', alignItems: 'center' };
+    const rowCls = `nodrag group/attr rounded cursor-default transition-colors py-0.5 ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'} ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`;
+
     if (!isSelected) {
         return (
             <div
-                className={`nodrag flex items-center gap-1 py-1 px-2 rounded group/attr relative cursor-default transition-all ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'} ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'}`}
+                style={rowStyle}
+                className={rowCls}
                 draggable={!isLocked}
                 onMouseDown={(e) => !isLocked && e.stopPropagation()}
                 onDragStart={onDragStart}
@@ -99,55 +104,65 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                 onDragOver={onDragOver}
                 onDrop={onDrop}
             >
-                {!isLocked && (
-                    <div className="w-4 flex-shrink-0 flex justify-center opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
-                        <GripVertical size={13} className="text-gray-300" />
-                    </div>
-                )}
-                <div className="w-8 flex-shrink-0 flex justify-center">
+                {/* Col 1: Grip */}
+                <div className="flex justify-center">
+                    {!isLocked && (
+                        <div className="opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                            <GripVertical size={13} className="text-gray-300" />
+                        </div>
+                    )}
+                </div>
+                {/* Col 2: PK */}
+                <div className="flex justify-center">
                     <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
                         <Key size={14} />
                     </span>
                 </div>
-                <div className="flex-1 min-w-0 mx-1">
-                    <span className={`text-sm px-1.5 py-0.5 block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
+                {/* Col 3: Name */}
+                <div className="px-1.5 py-0.5">
+                    <span className={`text-sm whitespace-nowrap ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
                         {attr.name}
                     </span>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="w-16 flex-shrink-0 flex items-center h-4">
-                        <span className={`text-sm w-full block truncate ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
-                            {attr.type.split('(')[0]}
-                        </span>
-                    </div>
-                    <div className="w-10 flex-shrink-0">
-                        <span className={`block w-full text-sm px-1 py-0.5 border border-transparent truncate ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
-                            {attr.length || ''}
-                        </span>
-                    </div>
-                    <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
-                        <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
-                            <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
-                        </div>
-                        <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
-                    </div>
-                    <div className="w-24 flex-shrink-0 flex items-center gap-1 bg-gray-50/30 px-1 rounded h-[18px]">
-                        {attr.comment && <span className="text-sm text-blue-500 italic truncate">{attr.comment}</span>}
-                    </div>
-                    <div className="w-8 flex-shrink-0 flex justify-center">
-                        <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
-                            <Link size={14} />
-                        </span>
-                    </div>
-                    {!isLocked && <div className="w-[20px]" />}
+                {/* Col 4: Type */}
+                <div className="flex items-center">
+                    <span className={`text-sm whitespace-nowrap ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
+                        {attr.type.split('(')[0]}
+                    </span>
                 </div>
+                {/* Col 5: Length */}
+                <div>
+                    <span className={`text-sm px-1 ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                        {attr.length || ''}
+                    </span>
+                </div>
+                {/* Col 6: NN */}
+                <div className="flex items-center justify-center gap-1">
+                    <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
+                        <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                    </div>
+                    <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                </div>
+                {/* Col 7: Comment */}
+                <div className="flex items-center px-1 bg-gray-50/30 rounded h-[18px]">
+                    {attr.comment && <span className="text-sm text-blue-500 italic whitespace-nowrap">{attr.comment}</span>}
+                </div>
+                {/* Col 8: FK */}
+                <div className="flex justify-center">
+                    <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
+                        <Link size={14} />
+                    </span>
+                </div>
+                {/* Col 9: Delete placeholder */}
+                <div />
             </div>
         );
     }
 
     return (
         <div
-            className={`nodrag flex items-center gap-1 py-1 px-2 rounded group/attr transition-colors relative cursor-default ${!isLocked ? 'hover:bg-blue-50' : 'hover:bg-gray-50'} ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'}`}
+            style={rowStyle}
+            className={rowCls}
             draggable={!isLocked}
             onMouseDown={(e) => !isLocked && e.stopPropagation()}
             onDragStart={onDragStart}
@@ -155,18 +170,20 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             onDragOver={onDragOver}
             onDrop={onDrop}
         >
-            {/* Drag Handle */}
-            {!isLocked && (
-                <div
-                    className="w-4 flex-shrink-0 flex justify-center opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
-                    onMouseDown={(e) => e.stopPropagation()}
-                >
-                    <GripVertical size={13} className="text-gray-300" />
-                </div>
-            )}
+            {/* Col 1: Grip */}
+            <div className="flex justify-center">
+                {!isLocked && (
+                    <div
+                        className="opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        <GripVertical size={13} className="text-gray-300" />
+                    </div>
+                )}
+            </div>
 
-            {/* PK Icon/Toggle */}
-            <div className="w-8 flex-shrink-0 flex justify-center">
+            {/* Col 2: PK Toggle */}
+            <div className="flex justify-center">
                 <PremiumTooltip label={attr.isPK ? "기본 키 (클릭 해제)" : "기본 키 (클릭 설정)"} dotColor="#eab308">
                     <button
                         onClick={() => onUpdate(attr.id, { isPK: !attr.isPK })}
@@ -179,8 +196,14 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                 </PremiumTooltip>
             </div>
 
-            {/* Name Input - Local state buffering */}
-            <div className="flex-1 min-w-0 mx-1">
+            {/* Col 3: Name — hidden span으로 그리드 트랙 크기 결정 */}
+            <div className="relative py-0.5">
+                <span
+                    className={`text-sm px-1.5 block whitespace-nowrap invisible pointer-events-none ${attr.isPK ? 'font-bold underline' : ''}`}
+                    aria-hidden
+                >
+                    {displayValue('name', localName) || '컬럼 명'}
+                </span>
                 <input
                     type="text"
                     value={displayValue('name', localName)}
@@ -190,89 +213,95 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     onKeyDown={(e) => e.key === 'Enter' && handleCommitName()}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
-                    className={`${!isLocked ? 'nodrag bg-blue-50/50 hover:bg-blue-50 focus:bg-white' : 'bg-transparent pointer-events-none'} w-full border-none focus:ring-1 focus:ring-blue-100 text-sm outline-none px-1.5 py-0.5 rounded transition-all ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'} disabled:text-gray-600`}
+                    className={`absolute inset-0 w-full ${!isLocked ? 'nodrag bg-blue-50/50 hover:bg-blue-50 focus:bg-white' : 'bg-transparent pointer-events-none'} border-none focus:ring-1 focus:ring-blue-100 text-sm outline-none px-1.5 rounded transition-all ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'} disabled:text-gray-600`}
                     placeholder="컬럼 명"
                     spellCheck={false}
                 />
             </div>
 
-            <div className="flex items-center gap-2 flex-shrink-0">
-                {/* Type Column */}
-                <div className="w-16 flex-shrink-0">
-                    <select
-                        value={attr.type.includes('(') ? attr.type.split('(')[0] : attr.type}
-                        onChange={(e) => onUpdate(attr.id, { type: e.target.value })}
-                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
+            {/* Col 4: Type */}
+            <div>
+                <select
+                    value={attr.type.includes('(') ? attr.type.split('(')[0] : attr.type}
+                    onChange={(e) => onUpdate(attr.id, { type: e.target.value })}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                    disabled={isLocked}
+                    className={`bg-transparent border-none focus:ring-0 text-sm outline-none w-full appearance-none transition-colors ${!isLocked ? 'nodrag text-blue-600 hover:text-blue-800 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}
+                >
+                    {availableTypes.map(type => (
+                        <option key={type} value={type}>{type}</option>
+                    ))}
+                </select>
+            </div>
+
+            {/* Col 5: Length */}
+            <div>
+                <input
+                    type="text"
+                    value={displayValue('length', localLength)}
+                    onChange={(e) => handleChange('length', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('length', (e.target as HTMLInputElement).value)}
+                    onBlur={handleCommitLength}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCommitLength()}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                    disabled={isLocked}
+                    className={`w-full bg-gray-50/50 border-gray-100 border rounded text-sm px-1 py-0.5 outline-none focus:border-blue-300 focus:bg-white transition-all ${isLocked ? 'text-gray-400 opacity-50' : 'text-blue-500'}`}
+                    placeholder="len"
+                />
+            </div>
+
+            {/* Col 6: NN */}
+            <div className="flex items-center justify-center gap-1">
+                <PremiumTooltip label={attr.isNullable ? "NULL 허용 (클릭 시 NOT NULL)" : "NOT NULL (클릭 시 NULL 허용)"} dotColor={!attr.isNullable ? '#ef4444' : undefined}>
+                    <button
+                        onClick={() => onUpdate(attr.id, { isNullable: !attr.isNullable })}
                         disabled={isLocked}
-                        className={`bg-transparent border-none focus:ring-0 text-sm outline-none w-full appearance-none transition-colors ${!isLocked ? 'nodrag text-blue-600 hover:text-blue-800 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}
+                        className={`relative w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
                     >
-                        {availableTypes.map(type => (
-                            <option key={type} value={type}>{type}</option>
-                        ))}
-                    </select>
-                </div>
+                        <div className={`w-2.5 h-2.5 bg-white rounded-full transition-transform shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                    </button>
+                </PremiumTooltip>
+                <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+            </div>
 
-                {/* Length Column */}
-                <div className="w-10 flex-shrink-0">
-                    <input
-                        type="text"
-                        value={displayValue('length', localLength)}
-                        onChange={(e) => handleChange('length', e.target.value, e)}
-                        onCompositionEnd={(e) => handleCompositionEnd('length', (e.target as HTMLInputElement).value)}
-                        onBlur={handleCommitLength}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCommitLength()}
+            {/* Col 7: Comment */}
+            <div className="relative flex items-center bg-gray-50/30 px-1 rounded hover:bg-gray-50 py-0.5">
+                <span
+                    className="text-sm italic block whitespace-nowrap invisible pointer-events-none"
+                    aria-hidden
+                >
+                    {displayValue('comment', localComment) || '설명...'}
+                </span>
+                <input
+                    type="text"
+                    value={displayValue('comment', localComment)}
+                    onChange={(e) => handleChange('comment', e.target.value, e)}
+                    onCompositionEnd={(e) => handleCompositionEnd('comment', (e.target as HTMLInputElement).value)}
+                    onBlur={handleCommitComment}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCommitComment()}
+                    onMouseDown={(e) => !isLocked && e.stopPropagation()}
+                    disabled={isLocked}
+                    className={`absolute inset-0 w-full text-sm bg-transparent border-none focus:ring-0 px-1 outline-none italic placeholder-gray-300 transition-all ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}
+                    placeholder="설명..."
+                />
+            </div>
+
+            {/* Col 8: FK */}
+            <div className="flex justify-center">
+                <PremiumTooltip label={attr.isFK ? "외래 키 (클릭 해제)" : "외래 키 (클릭 설정)"} dotColor="#a855f7">
+                    <button
+                        onClick={() => onUpdate(attr.id, { isFK: !attr.isFK })}
                         onMouseDown={(e) => !isLocked && e.stopPropagation()}
                         disabled={isLocked}
-                        className={`w-full bg-gray-50/50 border-gray-100 border rounded text-sm px-1 py-0.5 outline-none focus:border-blue-300 focus:bg-white transition-all ${isLocked ? 'text-gray-400 opacity-50' : 'text-blue-500'}`}
-                        placeholder="len"
-                    />
-                </div>
+                        className={`${!isLocked ? 'nodrag' : 'pointer-events-auto cursor-grab'} p-1 rounded transition-colors ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}
+                    >
+                        <Link size={14} />
+                    </button>
+                </PremiumTooltip>
+            </div>
 
-                {/* NN Toggle */}
-                <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
-                    <PremiumTooltip label={attr.isNullable ? "NULL 허용 (클릭 시 NOT NULL)" : "NOT NULL (클릭 시 NULL 허용)"} dotColor={!attr.isNullable ? '#ef4444' : undefined}>
-                        <button
-                            onClick={() => onUpdate(attr.id, { isNullable: !attr.isNullable })}
-                            disabled={isLocked}
-                            className={`relative w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
-                        >
-                            <div className={`w-2.5 h-2.5 bg-white rounded-full transition-transform shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
-                        </button>
-                    </PremiumTooltip>
-                    <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
-                </div>
-
-                {/* Comment Column */}
-                <div className="w-24 flex-shrink-0 flex items-center gap-1 group/cmt bg-gray-50/30 px-1 rounded transition-all hover:bg-gray-50">
-                    <input
-                        type="text"
-                        value={displayValue('comment', localComment)}
-                        onChange={(e) => handleChange('comment', e.target.value, e)}
-                        onCompositionEnd={(e) => handleCompositionEnd('comment', (e.target as HTMLInputElement).value)}
-                        onBlur={handleCommitComment}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCommitComment()}
-                        onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                        disabled={isLocked}
-                        className={`text-sm bg-transparent border-none focus:ring-0 p-0 outline-none italic placeholder-gray-300 w-full transition-all ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}
-                        placeholder="설명..."
-                    />
-                </div>
-
-                {/* FK Toggle */}
-                <div className="w-8 flex-shrink-0 flex justify-center">
-                    <PremiumTooltip label={attr.isFK ? "외래 키 (클릭 해제)" : "외래 키 (클릭 설정)"} dotColor="#a855f7">
-                        <button
-                            onClick={() => onUpdate(attr.id, { isFK: !attr.isFK })}
-                            onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                            disabled={isLocked}
-                            className={`${!isLocked ? 'nodrag' : 'pointer-events-auto cursor-grab'} p-1 rounded transition-colors ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}
-                        >
-                            <Link size={14} />
-                        </button>
-                    </PremiumTooltip>
-                </div>
-
-                {/* Delete Column */}
+            {/* Col 9: Delete */}
+            <div className="flex justify-center">
                 {!isLocked && (
                     <PremiumTooltip label="컬럼 삭제" dotColor="#ef4444">
                         <button
@@ -301,8 +330,8 @@ const EntityAttributeRowSkeleton: React.FC<{ attr: Attribute; isLocked: boolean 
         <div className="w-8 flex-shrink-0 flex justify-center">
             <span className="invisible p-1 rounded"><Key size={14} /></span>
         </div>
-        <div className="flex-1 min-w-0 mx-1">
-            <span className="invisible text-sm px-1.5 py-0.5 block truncate">{attr.name || 'column'}</span>
+        <div className="shrink-0 mx-1">
+            <span className="invisible text-sm px-1.5 py-0.5 block whitespace-nowrap">{attr.name || 'column'}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
             <div className="w-16 flex-shrink-0 flex items-center h-4">
@@ -339,8 +368,8 @@ const EntityHeaderTextSkeleton: React.FC<{ entity: Entity; isLocked: boolean; is
         {isView ? (
             <span className="invisible text-[9px] font-black uppercase tracking-wider shrink-0">VIEW</span>
         ) : null}
-        <span className="invisible font-bold text-lg flex-1 min-w-0 truncate">{entity.name || 'table'}</span>
-        <span className="invisible font-bold text-lg flex-1 min-w-0 truncate">{entity.comment || 'comment'}</span>
+        <span className="invisible font-bold text-lg shrink-0 whitespace-nowrap">{entity.name || 'table'}</span>
+        <span className="invisible font-bold text-lg shrink-0 whitespace-nowrap">{entity.comment || 'comment'}</span>
         <div className="invisible flex items-center gap-1 shrink-0">
             <span className="p-1"><Lock size={16} /></span>
             {!isLocked && <span className="p-1"><X size={16} /></span>}
@@ -360,7 +389,7 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] relative overflow-visible ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[320px] w-max relative overflow-visible ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
@@ -381,52 +410,63 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
                         {entity.isMaterializedView ? 'MAT VIEW' : 'VIEW'}
                     </span>
                 ) : null}
-                <span className="font-bold text-lg flex-1 min-w-0 truncate">{entity.name}</span>
-                <span className="font-bold text-lg flex-1 min-w-0 truncate">{entity.comment || ''}</span>
+                <span className="font-bold text-lg shrink-0 whitespace-nowrap">{entity.name}</span>
+                <span className="font-bold text-lg shrink-0 whitespace-nowrap">{entity.comment || ''}</span>
             </div>
 
-            {/* ── 컬럼 목록 (span으로 정적 표시 — input 없음) ── */}
-            <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
+            {/* ── 컬럼 목록 — CSS Grid로 모든 행 정렬 ── */}
+            <div
+                className="px-2 pb-1 rounded-b-[calc(0.5rem-2px)]"
+                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 64px 40px 48px minmax(6rem,auto) 32px 20px', alignItems: 'center' }}
+            >
                 {entity.attributes.map((attr) => (
-                    <div key={attr.id} className={`flex items-center gap-1 py-1 px-2 rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
-                        {/* PK */}
-                        <div className="w-8 flex-shrink-0 flex justify-center">
+                    <React.Fragment key={attr.id}>
+                        {/* Col 1: grip placeholder */}
+                        <div />
+                        {/* Col 2: PK */}
+                        <div className="flex justify-center py-0.5">
                             <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
                                 <Key size={14} />
                             </span>
                         </div>
-                        {/* 컬럼명 */}
-                        <div className="flex-1 min-w-0 mx-1">
-                            <span className={`text-sm px-1.5 py-0.5 block truncate ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
+                        {/* Col 3: Name */}
+                        <div className="px-1.5 py-0.5">
+                            <span className={`text-sm whitespace-nowrap ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
                                 {attr.name}
                             </span>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            {/* 타입 */}
-                            <div className="w-16 flex-shrink-0">
-                                <span className={`text-[10px] ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
-                                    {attr.type.split('(')[0]}{attr.length ? `(${attr.length})` : ''}
-                                </span>
-                            </div>
-                            {/* NN (표시만) */}
-                            <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
-                                <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'}`}>
-                                    <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
-                                </div>
-                                <span className={`text-[8px] font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
-                            </div>
-                            {/* 코멘트 */}
-                            <div className="w-24 flex-shrink-0 flex items-center gap-1 px-1">
-                                {attr.comment && <span className="text-sm text-blue-500 italic truncate">{attr.comment}</span>}
-                            </div>
-                            {/* FK */}
-                            <div className="w-8 flex-shrink-0 flex justify-center">
-                                <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
-                                    <Link size={14} />
-                                </span>
-                            </div>
+                        {/* Col 4: Type */}
+                        <div>
+                            <span className={`text-sm whitespace-nowrap ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
+                                {attr.type.split('(')[0]}
+                            </span>
                         </div>
-                    </div>
+                        {/* Col 5: Length */}
+                        <div>
+                            <span className={`text-sm px-1 ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                                {attr.length || ''}
+                            </span>
+                        </div>
+                        {/* Col 6: NN */}
+                        <div className="flex items-center justify-center gap-1">
+                            <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'}`}>
+                                <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
+                            </div>
+                            <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                        </div>
+                        {/* Col 7: Comment */}
+                        <div className="px-1">
+                            {attr.comment && <span className="text-sm text-blue-500 italic whitespace-nowrap">{attr.comment}</span>}
+                        </div>
+                        {/* Col 8: FK */}
+                        <div className="flex justify-center">
+                            <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
+                                <Link size={14} />
+                            </span>
+                        </div>
+                        {/* Col 9: placeholder */}
+                        <div />
+                    </React.Fragment>
                 ))}
             </div>
 
@@ -496,10 +536,10 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
             passThroughDrag
             placement="top"
             zIndex={99999}
-            wrapperClassName="block min-w-[300px]"
+            wrapperClassName="block min-w-[320px] w-max"
         >
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] relative overflow-visible ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[320px] w-max relative overflow-visible ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
@@ -771,7 +811,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 min-w-[300px] group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''} ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[320px] w-max group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''} ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
@@ -870,7 +910,11 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
                 </div>
             </div>
 
-            <div className="p-2 space-y-1 rounded-b-[calc(0.5rem-2px)]">
+            {/* CSS Grid — subgrid로 모든 행의 컬럼 위치를 동기화 */}
+            <div
+                className="px-2 pb-1 rounded-b-[calc(0.5rem-2px)]"
+                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 64px 40px 48px minmax(6rem,auto) 32px 20px' }}
+            >
                 {entity.attributes.map((attr, index) => (
                     <AttributeRow
                         key={attr.id}

@@ -51,13 +51,11 @@ function getConnectedComponents(nodes: Node[], edges: Edge[]): Node[][] {
 }
 
 /**
- * 방사형 레이아웃 — 연결수가 가장 많은 노드를 중심에 놓고
- * 나머지를 BFS 레벨별 동심원으로 배치.
- *
- * 각 링의 반지름은:
- *   r = max(  innerRadius + gap + maxNodeDiag/2,
- *             N * (avgNodeDiag + gap) / (2π)  )
- * 로 결정하여 노드끼리 겹치지 않도록 보장.
+ * 방사형 트리 레이아웃.
+ * - 중심(루트): 연결수 최다 노드
+ * - 각 노드는 BFS 부모의 각도 구간(angular slice) 안에 배치
+ *   → 부모-자식이 항상 같은 방향에 있어 연결선이 다른 엔티티를 관통하지 않음
+ * - 각 링 반지름은 원주에 충분한 공간이 확보되도록 자동 계산
  */
 function layoutRadial(
     compNodes: Node[],
@@ -65,8 +63,8 @@ function layoutRadial(
 ): { nodes: Node[]; edges: Edge[]; width: number; height: number } {
     if (compNodes.length === 0) return { nodes: [], edges: compEdges, width: 0, height: 0 };
 
-    const RING_GAP = 100;   // 링 사이 최소 여백
-    const NODE_GAP = 60;    // 같은 링 내 노드 간 최소 여백
+    const RING_GAP = 120;   // 링 간 최소 여백 (px)
+    const NODE_GAP = 50;    // 같은 링 내 노드 간 최소 여백 (px)
 
     if (compNodes.length === 1) {
         const { width, height } = getNodeSize(compNodes[0]);
@@ -86,21 +84,24 @@ function layoutRadial(
         adj.get(e.target)?.add(e.source);
     });
 
-    // 중심 = 연결수 최대 노드
+    // 중심 = 연결수 최다 노드
     const center = [...compNodes].sort(
         (a, b) => (adj.get(b.id)?.size ?? 0) - (adj.get(a.id)?.size ?? 0),
     )[0];
 
-    // BFS 레벨 할당
-    const levelOf = new Map<string, number>();
-    const queue: string[] = [center.id];
+    // BFS — 레벨 + 부모 기록
+    const levelOf  = new Map<string, number>();
+    const parentOf = new Map<string, string | null>();
+    const bfsQueue: string[] = [center.id];
     levelOf.set(center.id, 0);
-    while (queue.length) {
-        const cur = queue.shift()!;
+    parentOf.set(center.id, null);
+    while (bfsQueue.length) {
+        const cur = bfsQueue.shift()!;
         for (const nb of adj.get(cur) ?? []) {
             if (!levelOf.has(nb)) {
                 levelOf.set(nb, (levelOf.get(cur) ?? 0) + 1);
-                queue.push(nb);
+                parentOf.set(nb, cur);
+                bfsQueue.push(nb);
             }
         }
     }
@@ -110,43 +111,79 @@ function layoutRadial(
     const rings: Node[][] = Array.from({ length: maxLevel + 1 }, () => []);
     compNodes.forEach(n => rings[levelOf.get(n.id) ?? 0].push(n));
 
-    // 각 링의 반지름 계산 (겹침 방지)
-    const posMap = new Map<string, { x: number; y: number }>();
-    const centerNode = rings[0][0];
-    const { width: cw, height: ch } = getNodeSize(centerNode);
-    posMap.set(centerNode.id, { x: -cw / 2, y: -ch / 2 });
+    // 각 노드의 서브트리 크기 계산 → 부모가 자식에게 각도 구간을 배분할 때 사용
+    const subtreeSize = new Map<string, number>();
+    // 잎부터 위로 올라가며 계산
+    for (let lvl = maxLevel; lvl >= 0; lvl--) {
+        for (const n of rings[lvl]) {
+            const childSizes = [...(adj.get(n.id) ?? [])]
+                .filter(nb => (levelOf.get(nb) ?? 0) > lvl)
+                .reduce((s, nb) => s + (subtreeSize.get(nb) ?? 1), 0);
+            subtreeSize.set(n.id, Math.max(1, childSizes));
+        }
+    }
 
-    let prevOuterRadius = Math.max(nodeRadius(centerNode), 80);
+    // 각 노드에 할당된 각도 구간 [angleStart, angleEnd]
+    const angleSlice = new Map<string, { start: number; end: number }>();
+    angleSlice.set(center.id, { start: 0, end: 2 * Math.PI });
+
+    // 각 링의 반지름 (겹침 없도록 동적 계산)
+    const ringRadius: number[] = [0]; // 링 0 = 중심 (r=0)
+    let prevOuterR = nodeRadius(rings[0][0]);
 
     for (let lvl = 1; lvl <= maxLevel; lvl++) {
         const ring = rings[lvl];
         const avgDiag = ring.reduce((s, n) => s + nodeRadius(n) * 2, 0) / ring.length;
-
-        // 이 링이 차지해야 할 최소 원주 = N * (avgDiag + gap)
-        const minCircumference = ring.length * (avgDiag + NODE_GAP);
-        const rByCirc = minCircumference / (2 * Math.PI);
-
-        // 이전 링의 바깥 경계 + 갭 + 이 링 최대 노드 반지름
         const maxDiag = Math.max(...ring.map(n => nodeRadius(n)));
-        const rByGap = prevOuterRadius + RING_GAP + maxDiag;
+
+        // 원주 기반 반지름
+        const rByCirc = (ring.length * (avgDiag + NODE_GAP)) / (2 * Math.PI);
+        // 이전 링에서 갭 확보
+        const rByGap  = prevOuterR + RING_GAP + maxDiag;
 
         const r = Math.max(rByCirc, rByGap);
+        ringRadius.push(r);
+        prevOuterR = r + maxDiag;
+    }
 
-        // 이 링의 노드 배치 — 균등 각도 분할
-        // 시작 각도: 정상(12시)에서 시작, 첫 노드가 너무 중심 위에 오지 않도록 약간 회전
-        const angleStep = (2 * Math.PI) / ring.length;
-        const startAngle = ring.length === 1 ? Math.PI / 2 * 3 : -Math.PI / 2; // 12시 방향
+    // 위치 계산
+    const posMap = new Map<string, { x: number; y: number }>();
+    const { width: cw, height: ch } = getNodeSize(center);
+    posMap.set(center.id, { x: -cw / 2, y: -ch / 2 });
 
-        ring.forEach((n, i) => {
-            const angle = startAngle + i * angleStep;
-            const { width, height } = getNodeSize(n);
-            posMap.set(n.id, {
-                x: Math.cos(angle) * r - width / 2,
-                y: Math.sin(angle) * r - height / 2,
-            });
+    for (let lvl = 1; lvl <= maxLevel; lvl++) {
+        const r = ringRadius[lvl];
+        const ring = rings[lvl];
+
+        // 부모별로 그룹화
+        const byParent = new Map<string, Node[]>();
+        for (const n of ring) {
+            const p = parentOf.get(n.id) ?? center.id;
+            if (!byParent.has(p)) byParent.set(p, []);
+            byParent.get(p)!.push(n);
+        }
+
+        // 각 부모의 구간 안에서 자식 노드를 서브트리 크기 비례로 배치
+        byParent.forEach((children, parentId) => {
+            const { start, end } = angleSlice.get(parentId) ?? { start: 0, end: 2 * Math.PI };
+            const span = end - start;
+            const totalSize = children.reduce((s, c) => s + (subtreeSize.get(c.id) ?? 1), 0);
+
+            let cursor = start;
+            for (const child of children) {
+                const size = subtreeSize.get(child.id) ?? 1;
+                const childSpan = (size / totalSize) * span;
+                const childMid = cursor + childSpan / 2;
+                angleSlice.set(child.id, { start: cursor, end: cursor + childSpan });
+                cursor += childSpan;
+
+                const { width, height } = getNodeSize(child);
+                posMap.set(child.id, {
+                    x: Math.cos(childMid) * r - width / 2,
+                    y: Math.sin(childMid) * r - height / 2,
+                });
+            }
         });
-
-        prevOuterRadius = r + maxDiag;
     }
 
     const layoutedNodes = compNodes.map(n => ({
@@ -164,37 +201,26 @@ function layoutRadial(
         maxY = Math.max(maxY, n.position.y + height);
     });
 
-    // 정규화 (0, 0) 기준
     const normalized = layoutedNodes.map(n => ({
         ...n,
         position: { x: n.position.x - minX, y: n.position.y - minY },
     }));
 
-    // 포지션 맵 (center 기준) — 핸들 할당에 사용
-    const centerOf = (n: Node) => {
-        const p = posMap.get(n.id) ?? n.position;
+    // 핸들 할당 — 배치 후 상대 각도 기반
+    const centerPosOf = (n: Node) => {
+        const p = posMap.get(n.id) ?? { x: 0, y: 0 };
         const { width, height } = getNodeSize(n);
         return { x: p.x + width / 2, y: p.y + height / 2 };
     };
 
-    // 두 노드의 중심 간 각도로 최적 핸들 결정
     const assignHandles = (src: Node, tgt: Node): { sourceHandle: string; targetHandle: string } => {
-        const sc = centerOf(src);
-        const tc = centerOf(tgt);
-        const dx = tc.x - sc.x;
-        const dy = tc.y - sc.y;
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI); // -180 ~ 180
-
-        // 45도 구간으로 4방향 분류
-        if (angle > -45 && angle <= 45) {
-            return { sourceHandle: 'right', targetHandle: 'left' };
-        } else if (angle > 45 && angle <= 135) {
-            return { sourceHandle: 'bottom', targetHandle: 'top' };
-        } else if (angle > 135 || angle <= -135) {
-            return { sourceHandle: 'left', targetHandle: 'right' };
-        } else {
-            return { sourceHandle: 'top', targetHandle: 'bottom' };
-        }
+        const sc = centerPosOf(src);
+        const tc = centerPosOf(tgt);
+        const deg = Math.atan2(tc.y - sc.y, tc.x - sc.x) * (180 / Math.PI);
+        if (deg > -45 && deg <= 45)         return { sourceHandle: 'right',  targetHandle: 'left'   };
+        if (deg > 45  && deg <= 135)        return { sourceHandle: 'bottom', targetHandle: 'top'    };
+        if (deg > 135 || deg <= -135)       return { sourceHandle: 'left',   targetHandle: 'right'  };
+        /* -135 ~ -45 */                    return { sourceHandle: 'top',    targetHandle: 'bottom' };
     };
 
     const nodeMap = new Map(compNodes.map(n => [n.id, n]));
