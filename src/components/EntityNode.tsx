@@ -195,17 +195,17 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     </span>
                 </div>
                 {/* Col 5: Length */}
-                <div className="pr-2 border-r border-gray-100 h-full flex items-center">
-                    <span className={`text-sm px-1 ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                <div className="px-2 border-r border-gray-100 h-full flex items-center">
+                    <span className={`text-sm ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
                         {attr.length || ''}
                     </span>
                 </div>
                 {/* Col 6: NN */}
-                <div className="flex items-center justify-center gap-1 border-r border-gray-100 h-full">
-                    <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
+                <div className="flex items-center justify-center gap-1.5 px-1 border-r border-gray-100 h-full">
+                    <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 flex-shrink-0 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
                         <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
                     </div>
-                    <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                    <span className={`text-sm font-black tracking-tighter flex-shrink-0 ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                 </div>
                 {/* Col 7: Comment */}
                 <div className="flex items-center px-1 bg-gray-50/30 rounded h-[22px] border-r border-gray-100">
@@ -300,7 +300,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 5: Length */}
-            <div className="pr-2 border-r border-gray-100 h-full flex items-center">
+            <div className="px-2 border-r border-gray-100 h-full flex items-center">
                 <input
                     type="text"
                     value={displayValue('length', localLength)}
@@ -310,23 +310,23 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     onKeyDown={(e) => e.key === 'Enter' && handleCommitLength()}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
-                    className={`w-full h-[22px] bg-gray-50/50 border-gray-100 border rounded text-sm px-1 outline-none focus:border-blue-300 focus:bg-white transition-all ${isLocked ? 'text-gray-400 opacity-50' : 'text-blue-500'}`}
+                    className={`w-full h-[22px] bg-gray-50/50 border-gray-100 border rounded text-sm px-1.5 outline-none focus:border-blue-300 focus:bg-white transition-all ${isLocked ? 'text-gray-400 opacity-50' : 'text-blue-500'}`}
                     placeholder="len"
                 />
             </div>
 
             {/* Col 6: NN */}
-            <div className="flex items-center justify-center gap-1 border-r border-gray-100 h-full">
+            <div className="flex items-center justify-center gap-1.5 px-1 border-r border-gray-100 h-full">
                 <PremiumTooltip label={attr.isNullable ? "NULL 허용 (클릭 시 NOT NULL)" : "NOT NULL (클릭 시 NULL 허용)"} dotColor={!attr.isNullable ? '#ef4444' : undefined}>
                     <button
                         onClick={() => onUpdate(attr.id, { isNullable: !attr.isNullable })}
                         disabled={isLocked}
-                        className={`relative w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
+                        className={`relative w-6 h-3.5 rounded-full transition-colors flex items-center px-0.5 flex-shrink-0 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
                     >
                         <div className={`w-2.5 h-2.5 bg-white rounded-full transition-transform shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
                     </button>
                 </PremiumTooltip>
-                <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                <span className={`text-sm font-black tracking-tighter flex-shrink-0 ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
             </div>
 
             {/* Col 7: Comment */}
@@ -487,7 +487,7 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
             {/* ── 컬럼 목록 — CSS Grid로 모든 행 정렬 ── */}
             <div
                 className="px-2 pb-1 rounded-b-[calc(0.5rem-2px)]"
-                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 100px 56px 48px minmax(6rem,auto) 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
+                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px 96px 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
             >
                 {entity.attributes.map((attr) => (
                     <React.Fragment key={attr.id}>
@@ -512,17 +512,17 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
                             </span>
                         </div>
                         {/* Col 5: Length */}
-                        <div className="border-b border-r border-gray-100 h-full flex items-center">
-                            <span className={`text-sm px-1 ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
+                        <div className="border-b border-r border-gray-100 h-full flex items-center px-2">
+                            <span className={`text-sm ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
                                 {attr.length || ''}
                             </span>
                         </div>
                         {/* Col 6: NN */}
-                        <div className="flex items-center justify-center gap-1 border-b border-r border-gray-100 h-full">
-                            <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'}`}>
+                        <div className="flex items-center justify-center gap-1.5 px-1 border-b border-r border-gray-100 h-full">
+                            <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 flex-shrink-0 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'}`}>
                                 <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
                             </div>
-                            <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
+                            <span className={`text-sm font-black tracking-tighter flex-shrink-0 ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                         </div>
                         {/* Col 7: Comment */}
                         <div className="px-1 border-b border-r border-gray-100 h-full flex items-center">
@@ -983,7 +983,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
             {/* CSS Grid — subgrid로 모든 행의 컬럼 위치를 동기화 */}
             <div
                 className="px-2 pb-1 rounded-b-[calc(0.5rem-2px)]"
-                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 100px 56px 48px minmax(6rem,auto) 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
+                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px 96px 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
             >
                 {entity.attributes.map((attr, index) => (
                     <AttributeRow
