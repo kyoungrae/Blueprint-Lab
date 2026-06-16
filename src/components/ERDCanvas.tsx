@@ -16,6 +16,7 @@ import ReactFlow, {
     useReactFlow,
     useOnViewportChange,
     useUpdateNodeInternals,
+    useNodesInitialized,
     reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -452,6 +453,8 @@ const ERDCanvasContent: React.FC = () => {
 
     const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes, fitView } = useReactFlow();
     const updateNodeInternals = useUpdateNodeInternals();
+    // 노드 크기 측정 완료 여부 — 측정 전/후로 slot 분산 계산이 달라지므로 측정 완료 시 엣지를 재계산
+    const nodesInitialized = useNodesInitialized();
 
     // Pane size for viewport culling
     useEffect(() => {
@@ -1356,7 +1359,7 @@ const ERDCanvasContent: React.FC = () => {
         if (connectedChanged) setConnectedHandleIds(nextConnected);
 
         setEdges(flowEdges);
-    }, [relationships, setEdges, reconnectingEdgeId, visibleNodeIds, connectionViewMode, entitiesById, setConnectedHandleIds]);
+    }, [relationships, setEdges, reconnectingEdgeId, visibleNodeIds, connectionViewMode, entitiesById, setConnectedHandleIds, nodesInitialized]);
 
     // 연결 보기 모드가 바뀌면 노드에 컬럼 핸들이 추가/제거되므로
     // ReactFlow가 핸들 위치를 다시 측정하도록 강제한다.
