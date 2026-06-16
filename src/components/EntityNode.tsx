@@ -477,7 +477,7 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
             {/* ── 컬럼 목록 — CSS Grid로 모든 행 정렬 ── */}
             <div
                 className="px-2 pb-1 rounded-b-[calc(0.5rem-2px)]"
-                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px 96px 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
+                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px minmax(96px, auto) 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
             >
                 {entity.attributes.map((attr) => (
                     <React.Fragment key={attr.id}>
@@ -640,7 +640,7 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
                 </div>
                 <div
                     className="px-2 pb-1"
-                    style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px 96px 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
+                    style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px minmax(96px, auto) 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
                 >
                     {entity.attributes.map((attr) => (
                         <EntityAttributeRowSkeleton key={attr.id} attr={attr} isLocked={isLocked} />
@@ -976,7 +976,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
             {/* CSS Grid — subgrid로 모든 행의 컬럼 위치를 동기화 */}
             <div
                 className="px-2 pb-1 rounded-b-[calc(0.5rem-2px)]"
-                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px 96px 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
+                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px minmax(96px, auto) 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
             >
                 {entity.attributes.map((attr, index) => (
                     <AttributeRow
