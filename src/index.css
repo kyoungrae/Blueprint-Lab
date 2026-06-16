@@ -139,34 +139,24 @@ body {
   }
 }
 
-/* ERD: "연결선 보기" 드롭다운 — macOS 지니 램프(genie) 효과로 펼쳐짐 */
+/* ERD: "연결선 보기" 드롭다운 — transform/opacity만 사용해 GPU 합성 최적화 */
 @keyframes erd-genie-drop {
   0% {
     opacity: 0;
-    transform: translateX(-50%) scaleX(0.18) scaleY(0.02);
-    filter: blur(1.5px);
-  }
-  30% {
-    opacity: 1;
-    transform: translateX(-50%) scaleX(0.55) scaleY(0.42);
-    filter: blur(0.5px);
+    transform: translateX(-50%) scaleX(0.7) scaleY(0.5);
   }
   60% {
-    transform: translateX(-50%) scaleX(0.92) scaleY(0.88);
-    filter: blur(0);
-  }
-  80% {
-    transform: translateX(-50%) scaleX(1.03) scaleY(1.05);
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1.03) scaleY(1.04);
   }
   100% {
     opacity: 1;
     transform: translateX(-50%) scaleX(1) scaleY(1);
-    filter: blur(0);
   }
 }
 
 .erd-genie-drop {
   transform-origin: top center;
-  animation: erd-genie-drop 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  will-change: transform, opacity, filter;
+  animation: erd-genie-drop 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  will-change: transform, opacity;
 }

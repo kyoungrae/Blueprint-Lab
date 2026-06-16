@@ -2285,7 +2285,7 @@ const ERDCanvasContent: React.FC = () => {
                         <PremiumTooltip placement="bottom" offsetBottom={30} label="연결선 표시 방식">
                             <button
                                 onClick={() => setIsConnViewMenuOpen((v) => !v)}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-bold shadow-sm active:scale-95 ${isConnViewMenuOpen ? 'bg-purple-600 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-bold shadow-sm active:scale-95 border ${isConnViewMenuOpen ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
                             >
                                 <Spline size={16} className={`shrink-0 ${isConnViewMenuOpen ? 'text-white' : 'text-purple-500'}`} />
                                 <span className="whitespace-nowrap hidden sm:inline">연결선 보기</span>
