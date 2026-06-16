@@ -11,7 +11,24 @@ import { EntityLockBadge, useEntityLock } from './collaboration';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 
 const DATA_TYPES: Record<DBType, string[]> = {
-    MySQL: ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'DATETIME', 'DATE', 'DECIMAL', 'ENUM', 'JSON', 'BOOLEAN', 'TINYINT', 'BLOB'],
+    MySQL: [
+        // 정수
+        'TINYINT', 'SMALLINT', 'MEDIUMINT', 'INT', 'BIGINT',
+        // 실수
+        'FLOAT', 'DOUBLE', 'DECIMAL',
+        // 비트
+        'BIT', 'BOOLEAN',
+        // 문자
+        'CHAR', 'VARCHAR',
+        'TINYTEXT', 'TEXT', 'MEDIUMTEXT', 'LONGTEXT',
+        // 이진
+        'BINARY', 'VARBINARY',
+        'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB',
+        // 날짜/시간
+        'DATE', 'TIME', 'DATETIME', 'TIMESTAMP', 'YEAR',
+        // 기타
+        'ENUM', 'SET', 'JSON',
+    ],
     PostgreSQL: ['INTEGER', 'BIGINT', 'VARCHAR', 'TEXT', 'TIMESTAMP', 'DATE', 'NUMERIC', 'BOOLEAN', 'UUID', 'JSONB', 'BYTEA', 'SERIAL'],
     Oracle: ['NUMBER', 'VARCHAR2', 'CLOB', 'DATE', 'TIMESTAMP', 'RAW', 'BLOB', 'CHAR'],
     MSSQL: ['INT', 'BIGINT', 'VARCHAR', 'NVARCHAR', 'TEXT', 'DATETIME', 'DATE', 'DECIMAL', 'BIT', 'UNIQUEIDENTIFIER', 'IMAGE']
@@ -90,7 +107,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
 
     // 공통 행 스타일 — CSS subgrid로 부모 grid 트랙 상속
     const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'subgrid', gridColumn: '1 / -1', alignItems: 'center' };
-    const rowCls = `nodrag group/attr rounded cursor-default transition-colors py-0.5 ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'} ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`;
+    const rowCls = `nodrag group/attr rounded cursor-default transition-colors h-[28px] ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'} ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`;
 
     if (!isSelected) {
         return (
@@ -119,7 +136,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     </span>
                 </div>
                 {/* Col 3: Name */}
-                <div className="px-1.5 py-0.5">
+                <div className="px-1.5 flex items-center h-full">
                     <span className={`text-sm whitespace-nowrap ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
                         {attr.name}
                     </span>
@@ -131,7 +148,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     </span>
                 </div>
                 {/* Col 5: Length */}
-                <div>
+                <div className="pr-2">
                     <span className={`text-sm px-1 ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
                         {attr.length || ''}
                     </span>
@@ -144,7 +161,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                 </div>
                 {/* Col 7: Comment */}
-                <div className="flex items-center px-1 bg-gray-50/30 rounded h-[18px]">
+                <div className="flex items-center px-1 bg-gray-50/30 rounded h-[22px]">
                     {attr.comment && <span className="text-sm text-blue-500 italic whitespace-nowrap">{attr.comment}</span>}
                 </div>
                 {/* Col 8: FK */}
@@ -197,7 +214,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 3: Name — hidden span으로 그리드 트랙 크기 결정 */}
-            <div className="relative py-0.5">
+            <div className="relative">
                 <span
                     className={`text-sm px-1.5 block whitespace-nowrap invisible pointer-events-none ${attr.isPK ? 'font-bold underline' : ''}`}
                     aria-hidden
@@ -226,7 +243,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     onChange={(e) => onUpdate(attr.id, { type: e.target.value })}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
-                    className={`bg-transparent border-none focus:ring-0 text-sm outline-none w-full appearance-none transition-colors ${!isLocked ? 'nodrag text-blue-600 hover:text-blue-800 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}
+                    className={`bg-transparent border-none focus:ring-0 text-sm outline-none w-full h-[28px] appearance-none overflow-hidden transition-colors ${!isLocked ? 'nodrag text-blue-600 hover:text-blue-800 cursor-pointer' : 'text-gray-400 pointer-events-none'}`}
                 >
                     {availableTypes.map(type => (
                         <option key={type} value={type}>{type}</option>
@@ -235,7 +252,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 5: Length */}
-            <div>
+            <div className="pr-2">
                 <input
                     type="text"
                     value={displayValue('length', localLength)}
@@ -245,7 +262,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     onKeyDown={(e) => e.key === 'Enter' && handleCommitLength()}
                     onMouseDown={(e) => !isLocked && e.stopPropagation()}
                     disabled={isLocked}
-                    className={`w-full bg-gray-50/50 border-gray-100 border rounded text-sm px-1 py-0.5 outline-none focus:border-blue-300 focus:bg-white transition-all ${isLocked ? 'text-gray-400 opacity-50' : 'text-blue-500'}`}
+                    className={`w-full h-[22px] bg-gray-50/50 border-gray-100 border rounded text-sm px-1 outline-none focus:border-blue-300 focus:bg-white transition-all ${isLocked ? 'text-gray-400 opacity-50' : 'text-blue-500'}`}
                     placeholder="len"
                 />
             </div>
@@ -265,7 +282,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 7: Comment */}
-            <div className="relative flex items-center bg-gray-50/30 px-1 rounded hover:bg-gray-50 py-0.5">
+            <div className="relative flex items-center bg-gray-50/30 px-1 rounded hover:bg-gray-50">
                 <span
                     className="text-sm italic block whitespace-nowrap invisible pointer-events-none"
                     aria-hidden
@@ -334,10 +351,10 @@ const EntityAttributeRowSkeleton: React.FC<{ attr: Attribute; isLocked: boolean 
             <span className="invisible text-sm px-1.5 py-0.5 block whitespace-nowrap">{attr.name || 'column'}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-16 flex-shrink-0 flex items-center h-4">
+            <div className="w-20 flex-shrink-0 flex items-center h-4">
                 <span className="invisible text-[10px] w-full block">type</span>
             </div>
-            <div className="w-10 flex-shrink-0">
+            <div className="w-11 flex-shrink-0">
                 <span className="invisible text-[9px] block">len</span>
             </div>
             <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
@@ -389,7 +406,7 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 min-w-[320px] w-max relative overflow-visible ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[460px] w-max relative overflow-visible ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
@@ -417,7 +434,7 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
             {/* ── 컬럼 목록 — CSS Grid로 모든 행 정렬 ── */}
             <div
                 className="px-2 pb-1 rounded-b-[calc(0.5rem-2px)]"
-                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 64px 40px 48px minmax(6rem,auto) 32px 20px', alignItems: 'center' }}
+                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 100px 56px 48px minmax(6rem,auto) 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
             >
                 {entity.attributes.map((attr) => (
                     <React.Fragment key={attr.id}>
@@ -536,10 +553,10 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
             passThroughDrag
             placement="top"
             zIndex={99999}
-            wrapperClassName="block min-w-[320px] w-max"
+            wrapperClassName="block min-w-[460px] w-max"
         >
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 min-w-[320px] w-max relative overflow-visible ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[460px] w-max relative overflow-visible ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
@@ -811,7 +828,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-xl border-2 min-w-[320px] w-max group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''} ${selected
+            className={`bg-white rounded-lg shadow-xl border-2 min-w-[460px] w-max group relative overflow-visible ${isLockedByOther ? 'nodrag' : ''} ${selected
                 ? 'border-orange-500 shadow-orange-200 shadow-lg ring-2 ring-orange-300 ring-offset-2'
                 : isLocked
                     ? 'border-gray-200 shadow-sm'
@@ -913,7 +930,7 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
             {/* CSS Grid — subgrid로 모든 행의 컬럼 위치를 동기화 */}
             <div
                 className="px-2 pb-1 rounded-b-[calc(0.5rem-2px)]"
-                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 64px 40px 48px minmax(6rem,auto) 32px 20px' }}
+                style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 100px 56px 48px minmax(6rem,auto) 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
             >
                 {entity.attributes.map((attr, index) => (
                     <AttributeRow

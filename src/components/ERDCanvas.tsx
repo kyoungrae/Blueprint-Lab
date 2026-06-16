@@ -2398,6 +2398,8 @@ const ERDCanvasContent: React.FC = () => {
                         relationship={editingRelationship}
                         sourceEntityName={entities.find(e => e.id === editingRelationship.source)?.name || 'Unknown'}
                         targetEntityName={entities.find(e => e.id === editingRelationship.target)?.name || 'Unknown'}
+                        sourceEntityComment={entities.find(e => e.id === editingRelationship.source)?.comment}
+                        targetEntityComment={entities.find(e => e.id === editingRelationship.target)?.comment}
                         sourceAttributes={entities.find(e => e.id === editingRelationship.source)?.attributes}
                         targetAttributes={entities.find(e => e.id === editingRelationship.target)?.attributes}
                         isNew={newRelationshipId === editingRelationship.id}

@@ -203,16 +203,30 @@ export const getUserProjects = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: '회원 ID가 필요합니다.' });
         }
 
+        const userObjectId = new Types.ObjectId(id);
         const projects = await Project.find({
-            'members.userId': new Types.ObjectId(id),
+            'members.userId': userObjectId,
         })
             .populate('members.userId', 'name email picture')
             .sort({ updatedAt: -1 })
             .lean();
 
+        // 선택한 회원이 각 프로젝트에 마지막으로 접속(활동)한 시각을 project_access_logs에서 집계.
+        // userId+projectId 복합 인덱스를 사용하며, 회원별로 독립 집계되므로 다른 회원의 시간과 섞이지 않는다.
+        // ※ 로그는 약 5일만 보관되므로, 그 이전 접속은 기록이 없어 null이 될 수 있다.
+        const projectObjectIds = projects.map((p: any) => p._id);
+        const lastAccessRows = await ProjectAccessLog.aggregate([
+            { $match: { userId: userObjectId, projectId: { $in: projectObjectIds } } },
+            { $group: { _id: '$projectId', lastAccessAt: { $max: '$eventAt' } } },
+        ]);
+        const lastAccessMap = new Map<string, Date>(
+            lastAccessRows.map((r: any) => [r._id.toString(), r.lastAccessAt])
+        );
+
         const uid = id.toString();
         const data = projects.map((p: any) => {
             const member = (p.members || []).find((m: any) => m.userId?.toString?.() === uid);
+            const lastAccessAt = lastAccessMap.get(p._id?.toString?.() || String(p._id)) ?? null;
             return {
                 id: p._id?.toString?.() || p._id,
                 name: p.name,
@@ -222,6 +236,8 @@ export const getUserProjects = async (req: AuthRequest, res: Response) => {
                 updatedAt: p.updatedAt,
                 /** 선택한 회원이 이 프로젝트에서 마지막으로 저장한 시각 */
                 memberLastEditedAt: member?.lastEditedAt ?? null,
+                /** 선택한 회원이 이 프로젝트에 마지막으로 접속(활동)한 시각 (약 5일 보관, 없으면 null) */
+                memberLastAccessAt: lastAccessAt,
                 memberCount: p.members?.length || 0,
             };
         });

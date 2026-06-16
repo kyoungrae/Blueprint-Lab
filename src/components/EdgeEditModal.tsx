@@ -22,6 +22,8 @@ interface EdgeEditModalProps {
     relationship: Relationship;
     sourceEntityName: string;
     targetEntityName: string;
+    sourceEntityComment?: string;
+    targetEntityComment?: string;
     sourceAttributes?: Attribute[];
     targetAttributes?: Attribute[];
     isNew?: boolean;
@@ -34,6 +36,8 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
     relationship,
     sourceEntityName,
     targetEntityName,
+    sourceEntityComment,
+    targetEntityComment,
     sourceAttributes = [],
     targetAttributes = [],
     isNew = false,
@@ -99,9 +103,15 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                     <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                         <div className="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-2">연결 정보</div>
                         <div className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                            <span>{sourceEntityName}</span>
-                            <span className="text-gray-400">→</span>
-                            <span>{targetEntityName}</span>
+                            <span className="flex flex-col">
+                                <span>{sourceEntityName}</span>
+                                {sourceEntityComment && <span className="text-xs font-normal text-gray-400">{sourceEntityComment}</span>}
+                            </span>
+                            <span className="text-gray-400 shrink-0">→</span>
+                            <span className="flex flex-col">
+                                <span>{targetEntityName}</span>
+                                {targetEntityComment && <span className="text-xs font-normal text-gray-400">{targetEntityComment}</span>}
+                            </span>
                         </div>
                     </div>
 
@@ -109,11 +119,11 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                             관계 유형
                         </label>
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-3 gap-2">
                             {(['1:1', '1:N', 'N:M'] as const).map((relType) => (
                                 <label
                                     key={relType}
-                                    className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${type === relType
+                                    className={`flex flex-col items-center justify-center gap-1 p-3 border-2 rounded-lg cursor-pointer transition-all ${type === relType
                                         ? 'border-blue-500 bg-blue-50'
                                         : 'border-gray-200 hover:border-gray-300'
                                         }`}
@@ -126,8 +136,8 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                                         onChange={() => handleTypeChange(relType)}
                                         className="w-4 h-4 text-blue-500"
                                     />
-                                    <span className="ml-3 font-medium text-gray-800">{relType}</span>
-                                    <span className="ml-auto text-xs text-gray-400 font-medium">
+                                    <span className="font-medium text-gray-800">{relType}</span>
+                                    <span className="text-xs text-gray-400 font-medium">
                                         {relType === '1:1' && '일대일'}
                                         {relType === '1:N' && '일대다'}
                                         {relType === 'N:M' && '다대다'}
@@ -139,8 +149,9 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                                {sourceEntityName} 쪽
+                            <label className="block mb-2">
+                                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{sourceEntityName} 쪽</span>
+                                {sourceEntityComment && <span className="block text-xs font-normal text-gray-400">{sourceEntityComment}</span>}
                             </label>
                             <select
                                 value={sourceEnd}
@@ -153,8 +164,9 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                                {targetEntityName} 쪽
+                            <label className="block mb-2">
+                                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{targetEntityName} 쪽</span>
+                                {targetEntityComment && <span className="block text-xs font-normal text-gray-400">{targetEntityComment}</span>}
                             </label>
                             <select
                                 value={targetEnd}
@@ -190,7 +202,7 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                                             <option value="">미지정</option>
                                             {sourceAttributes.map((attr) => (
                                                 <option key={attr.id} value={attr.name}>
-                                                    {attr.name}
+                                                    {attr.name}{attr.comment ? ` (${attr.comment})` : ''}
                                                     {attr.isPK ? ' 🔑' : ''}
                                                     {attr.isFK ? ' (FK)' : ''}
                                                 </option>
@@ -211,7 +223,7 @@ const EdgeEditModal: React.FC<EdgeEditModalProps> = ({
                                             <option value="">미지정</option>
                                             {targetAttributes.map((attr) => (
                                                 <option key={attr.id} value={attr.name}>
-                                                    {attr.name}
+                                                    {attr.name}{attr.comment ? ` (${attr.comment})` : ''}
                                                     {attr.isPK ? ' 🔑' : ''}
                                                     {attr.isFK ? ' (FK)' : ''}
                                                 </option>

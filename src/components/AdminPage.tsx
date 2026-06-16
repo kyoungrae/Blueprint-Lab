@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, Languages, RefreshCw, Download, Upload } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, ChevronDown, Languages, RefreshCw, Download, Upload } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
 import { canManageTranslationMemory } from '../utils/tierAccess';
@@ -243,6 +243,8 @@ interface AdminProject {
     updatedAt: string;
     /** 관리자가 선택한 회원 기준 마지막 편집(저장) 시각 */
     memberLastEditedAt?: string | null;
+    /** 선택한 회원이 이 프로젝트에 마지막으로 접속(활동)한 시각 (약 5일 보관, 없으면 null) */
+    memberLastAccessAt?: string | null;
     memberCount: number;
 }
 
@@ -323,6 +325,75 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
     const [accessLogsPageSize, setAccessLogsPageSize] = useState<AccessLogPageSize>(50);
     const [accessLogsTotal, setAccessLogsTotal] = useState(0);
     const [accessLogsTotalPages, setAccessLogsTotalPages] = useState(1);
+    /** 로그관리: 이름별 그룹 펼침 상태 (그룹 key 집합) */
+    const [expandedLogGroups, setExpandedLogGroups] = useState<Set<string>>(new Set());
+    const toggleLogGroup = (key: string) =>
+        setExpandedLogGroups((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    /** 현재 페이지 로그를 이름(회원)별로 그룹화. 그룹 내부는 활동일시 내림차순, 그룹 자체는 최근 활동 순. */
+    /**
+     * 기술적인 로그 유형(SOCKET_JOIN/YJS_CONNECT/MEMBER_SAVE/EXPORT_PPT)을
+     * 관리자가 한눈에 이해할 수 있는 큰 분류(접속/수정/내보내기)로 묶는다.
+     */
+    const accessLogCategory = (kind: string | undefined): { key: string; label: string; className: string } => {
+        switch (kind) {
+            case 'MEMBER_SAVE':
+                return { key: 'EDIT', label: '수정', className: 'bg-amber-50 text-amber-700 border border-amber-200' };
+            case 'EXPORT_PPT':
+                return { key: 'EXPORT', label: '내보내기', className: 'bg-blue-50 text-blue-700 border border-blue-200' };
+            case 'SOCKET_JOIN':
+            case 'YJS_CONNECT':
+            default:
+                return { key: 'ACCESS', label: '접속', className: 'bg-gray-100 text-gray-600 border border-gray-200' };
+        }
+    };
+
+    const groupedAccessLogs = useMemo(() => {
+        const ts = (d: string | null) => (d ? new Date(d).getTime() : 0);
+        const groups = new Map<
+            string,
+            { key: string; userName: string; userEmail: string; rows: AdminAccessLogRow[]; lastActivity: number }
+        >();
+        for (const row of accessLogs) {
+            const key = row.userId || row.userEmail || row.userName || 'unknown';
+            let g = groups.get(key);
+            if (!g) {
+                g = { key, userName: row.userName, userEmail: row.userEmail, rows: [], lastActivity: 0 };
+                groups.set(key, g);
+            }
+            g.rows.push(row);
+            const t = ts(row.accessedAt);
+            if (t > g.lastActivity) g.lastActivity = t;
+        }
+        // 같은 프로젝트·같은 큰분류(접속/수정/내보내기) 로그가 짧은 간격(10분) 내 연속되면
+        // 한 행으로 합쳐 노이즈를 줄인다. (SOCKET_JOIN+YJS_CONNECT가 '접속' 2건으로 보이는 문제 등)
+        const MERGE_WINDOW_MS = 10 * 60 * 1000;
+        const catKey = (kind: string | undefined) => accessLogCategory(kind).key;
+        const arr = Array.from(groups.values());
+        arr.forEach((g) => {
+            g.rows.sort((a, b) => ts(b.accessedAt) - ts(a.accessedAt));
+            const merged: AdminAccessLogRow[] = [];
+            for (const row of g.rows) {
+                const prev = merged[merged.length - 1];
+                if (
+                    prev &&
+                    prev.projectId === row.projectId &&
+                    catKey(prev.kind) === catKey(row.kind) &&
+                    ts(prev.accessedAt) - ts(row.accessedAt) <= MERGE_WINDOW_MS
+                ) {
+                    continue; // 더 최근(prev) 행만 유지
+                }
+                merged.push(row);
+            }
+            g.rows = merged;
+        });
+        arr.sort((a, b) => b.lastActivity - a.lastActivity);
+        return arr;
+    }, [accessLogs]);
 
     type TranslationDoc = {
         _id: string;
@@ -798,21 +869,6 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
     const historyTypeLabel = (operationType: string) =>
         isDeleteHistoryType(operationType) ? '삭제' : '저장';
 
-    const accessLogKindLabel = (kind: string | undefined) => {
-        switch (kind) {
-            case 'SOCKET_JOIN':
-                return '협업 소켓 입장';
-            case 'YJS_CONNECT':
-                return 'Yjs 연결';
-            case 'MEMBER_SAVE':
-                return '저장·동기화';
-            case 'EXPORT_PPT':
-                return '내보내기(PPT)';
-            default:
-                return kind || '—';
-        }
-    };
-
     const projectTypeIcon = (type: string) => {
         switch (type) {
             case 'SCREEN_DESIGN': return <Monitor size={16} className="text-purple-500" />;
@@ -1077,7 +1133,7 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                                 <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">유형</th>
                                                 <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">DB</th>
                                                 <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">멤버 수</th>
-                                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">회원 수정일</th>
+                                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">마지막 접속일</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1094,13 +1150,12 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                                     <td className="px-4 py-3 text-gray-600">{p.memberCount}</td>
                                                     <td
                                                         className="px-4 py-3 text-gray-500 text-sm"
-                                                        title={p.memberLastEditedAt ? undefined : '이 회원의 편집 기록이 없어 프로젝트 전체 수정일을 표시합니다.'}
+                                                        title={p.memberLastAccessAt ? undefined : '최근 약 5일 내 이 회원의 접속 기록이 없습니다.'}
                                                     >
-                                                        {p.memberLastEditedAt
-                                                            ? formatDate(p.memberLastEditedAt)
-                                                            : formatDate(p.updatedAt)}
-                                                        {!p.memberLastEditedAt && (
-                                                            <span className="block text-[10px] text-gray-400 font-medium mt-0.5">(프로젝트 기준)</span>
+                                                        {p.memberLastAccessAt ? (
+                                                            formatDate(p.memberLastAccessAt)
+                                                        ) : (
+                                                            <span className="text-gray-400">기록 없음</span>
                                                         )}
                                                     </td>
                                                 </tr>
@@ -1128,7 +1183,7 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                             회원–프로젝트 활동 로그
                         </div>
                         <p className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 leading-relaxed">
-                            서버의 <code className="text-gray-600">project_access_logs</code>에 기록되며, <strong className="text-gray-600">약 5일 보관</strong> 후 삭제됩니다(관리자 목록 조회 시에도 만료분 정리). 최신 순입니다. 협업 소켓 입장(SOCKET_JOIN)은 사용자·프로젝트당 최신 1건만 남깁니다. 그 외 유형은 짧은 간격(접속 2분·저장 10분) 내 중복 기록을 생략합니다.
+                            서버의 <code className="text-gray-600">project_access_logs</code>에 기록되며, <strong className="text-gray-600">약 5일 보관</strong> 후 삭제됩니다(관리자 목록 조회 시에도 만료분 정리). <strong className="text-gray-600">이름(회원)별로 그룹</strong>되며, 이름을 클릭하면 해당 회원이 어떤 프로젝트에 접속했는지 로그를 <strong className="text-gray-600">활동일시 내림차순</strong>으로 펼쳐 볼 수 있습니다. 유형은 <strong className="text-gray-600">접속·수정·내보내기</strong>로 단순화해 표시하며, 같은 프로젝트의 동일 유형이 10분 내 연속되면 한 건으로 묶습니다.
                         </p>
                         <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/80">
                             <span className="text-sm text-gray-600 font-medium">
@@ -1179,34 +1234,65 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                             <div className="flex items-center justify-center py-16">
                                 <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
                             </div>
+                        ) : accessLogs.length === 0 ? (
+                            <div className="py-12 text-center text-gray-500 font-medium">표시할 로그가 없습니다.</div>
                         ) : (
-                            <>
-                                <table className="w-full text-left">
-                                    <thead className="bg-gray-50 border-b border-gray-200">
-                                        <tr>
-                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">이름</th>
-                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">이메일</th>
-                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">활동 일시</th>
-                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">프로젝트명</th>
-                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">유형</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {accessLogs.map((row) => (
-                                            <tr key={row.id || `${row.userId}-${row.projectId}-${row.accessedAt}`} className="border-b border-gray-100 hover:bg-gray-50">
-                                                <td className="px-4 py-3 font-medium text-gray-900">{row.userName}</td>
-                                                <td className="px-4 py-3 text-gray-600">{row.userEmail}</td>
-                                                <td className="px-4 py-3 text-gray-500 text-sm">{formatDate(row.accessedAt ?? '')}</td>
-                                                <td className="px-4 py-3 text-gray-900">{row.projectName || '—'}</td>
-                                                <td className="px-4 py-3 text-gray-600 text-sm">{accessLogKindLabel(row.kind)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                {accessLogs.length === 0 && (
-                                    <div className="py-12 text-center text-gray-500 font-medium">표시할 로그가 없습니다.</div>
-                                )}
-                            </>
+                            <div className="divide-y divide-gray-100">
+                                {groupedAccessLogs.map((group) => {
+                                    const expanded = expandedLogGroups.has(group.key);
+                                    return (
+                                        <div key={group.key}>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleLogGroup(group.key)}
+                                                aria-expanded={expanded}
+                                                className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors"
+                                            >
+                                                <ChevronDown
+                                                    size={18}
+                                                    className={`text-gray-400 shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`}
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="font-bold text-gray-900 truncate">{group.userName || '—'}</div>
+                                                    <div className="text-xs text-gray-500 truncate">{group.userEmail || '—'}</div>
+                                                </div>
+                                                <span className="text-xs text-gray-400 font-medium whitespace-nowrap hidden sm:block">
+                                                    최근 {formatDate(group.rows[0]?.accessedAt ?? '')}
+                                                </span>
+                                                <span className="inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-bold tabular-nums">
+                                                    {group.rows.length}
+                                                </span>
+                                            </button>
+                                            {expanded && (
+                                                <div className="overflow-x-auto bg-gray-50/50">
+                                                    <table className="w-full text-left">
+                                                        <thead className="border-y border-gray-200">
+                                                            <tr>
+                                                                <th className="pl-12 pr-4 py-2 text-xs font-bold text-gray-500 uppercase">활동 일시</th>
+                                                                <th className="px-4 py-2 text-xs font-bold text-gray-500 uppercase">프로젝트명</th>
+                                                                <th className="px-4 py-2 text-xs font-bold text-gray-500 uppercase">유형</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {group.rows.map((row) => (
+                                                                <tr key={row.id || `${row.userId}-${row.projectId}-${row.accessedAt}`} className="border-b border-gray-100 last:border-b-0 hover:bg-white">
+                                                                    <td className="pl-12 pr-4 py-2.5 text-gray-500 text-sm whitespace-nowrap">{formatDate(row.accessedAt ?? '')}</td>
+                                                                    <td className="px-4 py-2.5 text-gray-900">{row.projectName || '—'}</td>
+                                                                    <td className="px-4 py-2.5 text-sm">
+                                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${accessLogCategory(row.kind).className}`}>
+                                                                            {accessLogCategory(row.kind).label}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         )}
                     </div>
                 )}
