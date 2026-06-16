@@ -390,35 +390,25 @@ export interface EntityNodeData {
     inView?: boolean;
 }
 
-/** Lite/Full 공통 — 컬럼 행 높이를 맞추기 위한 보이지 않는 스켈레톤 */
+/** Lite/Full 공통 — 컬럼 행 높이를 맞추기 위한 보이지 않는 스켈레톤
+ *  Full 모드 그리드(16px 32px auto 80px 60px 64px 96px 32px 20px)와 동일한 구조로
+ *  subgrid를 사용해 행 높이를 정확히 28px로 고정합니다. */
 const EntityAttributeRowSkeleton: React.FC<{ attr: Attribute; isLocked: boolean }> = ({ attr, isLocked }) => {
     const isColumnMode = useConnectionViewStore((s) => s.mode === 'column');
     return (
-    <div className={`relative group/attr flex items-center gap-1 py-1 px-2 rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
-        <div className="w-8 flex-shrink-0 flex justify-center">
-            <span className="invisible p-1 rounded"><Key size={14} /></span>
-        </div>
-        <div className="shrink-0 mx-1">
-            <span className="invisible text-sm px-1.5 py-0.5 block whitespace-nowrap">{attr.name || 'column'}</span>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-20 flex-shrink-0 flex items-center h-4">
-                <span className="invisible text-[10px] w-full block">type</span>
-            </div>
-            <div className="w-11 flex-shrink-0">
-                <span className="invisible text-[9px] block">len</span>
-            </div>
-            <div className="w-12 flex-shrink-0 flex items-center justify-center gap-1">
-                <span className="invisible text-[8px]">NN</span>
-            </div>
-            <div className="w-24 flex-shrink-0 flex items-center gap-1 bg-gray-50/30 px-1 rounded h-[18px]">
-                <span className="invisible text-[9px]">comment</span>
-            </div>
-            <div className="w-8 flex-shrink-0 flex justify-center">
-                <span className="invisible p-1 rounded"><Link size={14} /></span>
-            </div>
-            {!isLocked && <div className="w-[20px]" />}
-        </div>
+    <div
+        className={`relative group/attr rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}
+        style={{ display: 'grid', gridTemplateColumns: 'subgrid', gridColumn: '1 / -1', alignItems: 'center', height: 28 }}
+    >
+        <div className="invisible" />
+        <div className="invisible flex justify-center"><span className="p-1"><Key size={14} /></span></div>
+        <div className="invisible px-1.5"><span className="text-sm whitespace-nowrap">{attr.name || 'column'}</span></div>
+        <div className="invisible" />
+        <div className="invisible" />
+        <div className="invisible" />
+        <div className="invisible" />
+        <div className="invisible flex justify-center"><span className="p-1"><Link size={14} /></span></div>
+        <div className="invisible" />
         {isColumnMode && <ColumnRowHandles attrId={attr.id} />}
     </div>
     );
@@ -648,7 +638,10 @@ const EntityNodeLite: React.FC<{ entityId: string; selected?: boolean }> = memo(
                         </span>
                     </div>
                 </div>
-                <div className="p-2 space-y-1">
+                <div
+                    className="px-2 pb-1"
+                    style={{ display: 'grid', gridTemplateColumns: '16px 32px auto 80px 60px 64px 96px 32px 20px', gridAutoRows: '28px', alignItems: 'center' }}
+                >
                     {entity.attributes.map((attr) => (
                         <EntityAttributeRowSkeleton key={attr.id} attr={attr} isLocked={isLocked} />
                     ))}
