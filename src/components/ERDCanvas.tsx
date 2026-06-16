@@ -1957,12 +1957,16 @@ const ERDCanvasContent: React.FC = () => {
             sections,
         });
 
+        // 저장/브로드캐스트는 importData 직후 store의 "확정된" 스냅샷을 사용한다.
+        // (closure의 updatedEntities 대신 store 진실값을 써서 누락/불일치를 방지)
+        const snapshot = useERDStore.getState().exportData();
+
         // 관계 정렬 직후에는 autosave 디바운스/초기 가드 타이밍으로 저장이 누락될 수 있어 즉시 저장
-        if (currentProjectId && updatedEntities.length > 0) {
+        if (currentProjectId && (snapshot.entities?.length ?? 0) > 0) {
             updateProjectData(currentProjectId, {
-                entities: updatedEntities,
-                relationships: updatedRelationships,
-                sections,
+                entities: snapshot.entities,
+                relationships: snapshot.relationships,
+                sections: snapshot.sections,
             });
         }
 
@@ -1973,9 +1977,9 @@ const ERDCanvasContent: React.FC = () => {
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
             payload: {
-                entities: updatedEntities,
-                relationships: updatedRelationships,
-                sections: sections,
+                entities: snapshot.entities,
+                relationships: snapshot.relationships,
+                sections: snapshot.sections,
                 overwrite: true,
             },
         });

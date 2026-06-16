@@ -23,11 +23,11 @@ const safeStateStorage: StateStorage<void> = {
             localStorage.setItem(name, value);
         } catch (err: any) {
             // Typically: QuotaExceededError / DOMException
-            try {
-                localStorage.removeItem(name);
-            } catch {
-                // ignore
-            }
+            // ⚠️ 이전에는 여기서 localStorage.removeItem(name)으로 'project-storage' 전체를
+            //    삭제했는데, 한 번의 용량 초과로 모든 프로젝트의 영속 데이터가 날아가
+            //    새로고침 시 (정렬 결과 등) 작업이 통째로 사라지는 원인이 됐다.
+            //    => 기존에 저장된 값은 보존하고, 이번 쓰기만 건너뛴다.
+            console.warn('[project-storage] localStorage 저장 실패(용량 초과 가능). 기존 데이터는 유지합니다.', err);
         }
         return undefined;
     },
