@@ -11,7 +11,12 @@ const EntityItem: React.FC<{ entity: Entity; onFocus: (e: React.MouseEvent, node
             <summary className="list-none flex items-center gap-2 p-2 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors group/summary">
                 <ChevronRight size={14} className="text-gray-400 group-open:rotate-90 transition-transform shrink-0" />
                 <TableIcon size={16} className="text-blue-500 shrink-0" />
-                <span className="text-sm font-semibold text-gray-700 truncate flex-1 min-w-0">{entity.name}</span>
+                <span className="flex flex-col min-w-0 flex-1">
+                    <span className="text-sm font-semibold text-gray-700 truncate">{entity.name}</span>
+                    {entity.comment && (
+                        <span className="text-[11px] text-gray-400 truncate leading-tight">{entity.comment}</span>
+                    )}
+                </span>
             </summary>
             <div className="pl-8 pr-2 py-2 space-y-2 border-l border-gray-100 ml-4 mb-2 mt-1">
                 {entity.attributes.map(attr => (
@@ -55,8 +60,10 @@ const Sidebar: React.FC = () => {
     const [colorPickerOpen, setColorPickerOpen] = useState<string | null>(null);
     const displaySearch = composing !== null ? composing : search;
 
+    const q = search.trim().toLowerCase();
     const filteredEntities = entities.filter(e =>
-        e.name.toLowerCase().includes(search.toLowerCase())
+        e.name.toLowerCase().includes(q) ||
+        (e.comment ?? '').toLowerCase().includes(q)
     );
     const sectionList = sections as Section[];
     const rootSections = sectionList.filter((s) => !s.parentId);

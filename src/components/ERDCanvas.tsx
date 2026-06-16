@@ -148,6 +148,8 @@ const ViewportDebounceUpdater: React.FC<{ onViewportIdle: (viewport: { x: number
 const HANDLE_SIZE = 8;
 const ERD_UI_COMPACT_SCALE = 0.8;
 const ERD_SIDEBAR_DEFAULT_WIDTH = Math.round(280 * ERD_UI_COMPACT_SCALE);
+const ERD_SIDEBAR_MIN_WIDTH = Math.round(200 * ERD_UI_COMPACT_SCALE);
+const ERD_SIDEBAR_MAX_WIDTH = Math.round(600 * ERD_UI_COMPACT_SCALE);
 interface SectionOverlayLayerProps {
     sections: Section[];
     hoveredSectionId: string | null;
@@ -405,7 +407,36 @@ const ERDCanvasContent: React.FC = () => {
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [sidebarWidth] = useState(ERD_SIDEBAR_DEFAULT_WIDTH);
+    const [sidebarWidth, setSidebarWidth] = useState(ERD_SIDEBAR_DEFAULT_WIDTH);
+    const sidebarResizingRef = useRef(false);
+
+    // ── 사이드바 너비 조절 (화면 설계와 동일) ──
+    const startSidebarResize = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        sidebarResizingRef.current = true;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        const onMouseMove = (moveEvent: MouseEvent) => {
+            if (!sidebarResizingRef.current) return;
+            const newWidth = Math.max(
+                ERD_SIDEBAR_MIN_WIDTH,
+                Math.min(ERD_SIDEBAR_MAX_WIDTH, moveEvent.clientX),
+            );
+            setSidebarWidth(newWidth);
+        };
+
+        const onMouseUp = () => {
+            sidebarResizingRef.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    }, []);
     const [editingRelationship, setEditingRelationship] = useState<Relationship | null>(null);
     const [newRelationshipId, setNewRelationshipId] = useState<string | null>(null);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -2078,8 +2109,8 @@ const ERDCanvasContent: React.FC = () => {
             {/* Left Sidebar wrapper with compact scale (화면 설계와 동일) */}
             <div className="relative flex h-full min-w-0">
                 <div
-                    className={`relative h-full transition-all duration-300 ease-in-out border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'flex-shrink-0' : 'w-0 border-none'}`}
-                    style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
+                    className={`relative h-full border-r border-gray-200 overflow-hidden bg-white shadow-xl z-[10001] ${isSidebarOpen ? 'flex-shrink-0' : 'w-0 border-none'}`}
+                    style={{ width: isSidebarOpen ? sidebarWidth : 0, transition: sidebarResizingRef.current ? 'none' : 'width 0.3s ease-in-out' }}
                 >
                     <div
                         className="h-full min-w-0"
@@ -2092,6 +2123,14 @@ const ERDCanvasContent: React.FC = () => {
                     >
                         <Sidebar />
                     </div>
+
+                    {/* Sidebar Resizer Handle (화면 설계와 동일) */}
+                    {isSidebarOpen && (
+                        <div
+                            onMouseDown={startSidebarResize}
+                            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-500/30 transition-colors z-[10002]"
+                        />
+                    )}
                 </div>
 
                 {/* Attached Toggle Button */}
