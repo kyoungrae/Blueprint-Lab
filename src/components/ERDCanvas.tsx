@@ -15,6 +15,7 @@ import ReactFlow, {
     PanOnScrollMode,
     useReactFlow,
     useOnViewportChange,
+    useUpdateNodeInternals,
     reconnectEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -64,13 +65,14 @@ import ImportModal from './ImportModal';
 import Sidebar from './Sidebar';
 import HistoryModal from './HistoryModal';
 import { useERDStore } from '../store/erdStore';
+import { useConnectionViewStore, columnHandleId, parseColumnHandle } from '../store/connectionViewStore';
 import { type Relationship, type Section, type Attribute, type Entity } from '../types/erd';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import { useSyncStore } from '../store/syncStore';
 import { OnlineUsers, UserCursors } from './collaboration';
 import PremiumTooltip from './screenNode/PremiumTooltip';
-import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Undo2, Redo2, History, Square, Link, Palette } from 'lucide-react';
+import { Plus, Download, Upload, ChevronLeft, ChevronRight, LogOut, User as UserIcon, Home, Layout, ArrowDown, ArrowRight, ChevronDown, Frame, Undo2, Redo2, History, Square, Link, Palette, Spline, Table, Columns, Check } from 'lucide-react';
 import { getLayoutedElements } from '../utils/layout';
 import { getRelationshipLayoutedElements } from '../utils/relationshipLayout';
 import { generateSQLFromERD } from '../utils/sqlGenerator';
@@ -411,6 +413,10 @@ const ERDCanvasContent: React.FC = () => {
     const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'diagram' | 'excel'>('diagram');
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+    const [isConnViewMenuOpen, setIsConnViewMenuOpen] = useState(false);
+    const connectionViewMode = useConnectionViewStore((s) => s.mode);
+    const setConnectionViewMode = useConnectionViewStore((s) => s.setMode);
+    const setConnectedHandleIds = useConnectionViewStore((s) => s.setConnectedHandleIds);
     const [isSectionDrawMode, setIsSectionDrawMode] = useState(false);
     const [sectionDrag, setSectionDrag] = useState<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
     const [sectionMoveState, setSectionMoveState] = useState<{
@@ -445,6 +451,7 @@ const ERDCanvasContent: React.FC = () => {
     entitiesRef.current = entities;
 
     const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes, fitView } = useReactFlow();
+    const updateNodeInternals = useUpdateNodeInternals();
 
     // Pane size for viewport culling
     useEffect(() => {
@@ -1216,23 +1223,85 @@ const ERDCanvasContent: React.FC = () => {
             targetGroups.set(key, arr.sort((a, b) => a.sortVal - b.sortVal).map(x => x.id));
         });
 
+        // 연결할 소스 컬럼 attribute id 결정
+        // 우선순위: 명시된 sourceKey > 첫 번째 PK > 첫 번째 컬럼
+        const resolveSourceAttrId = (entityId: string, colName?: string): string | undefined => {
+            const ent = entitiesById[entityId];
+            if (!ent || ent.attributes.length === 0) return undefined;
+            if (colName) {
+                const byName = ent.attributes.find((a) => a.name === colName);
+                if (byName) return byName.id;
+            }
+            return (ent.attributes.find((a) => a.isPK) ?? ent.attributes[0]).id;
+        };
+        // 연결할 타겟 컬럼 attribute id 결정
+        // 우선순위: 명시된 targetKey > 첫 번째 FK > 첫 번째 PK > 첫 번째 컬럼
+        const resolveTargetAttrId = (entityId: string, colName?: string): string | undefined => {
+            const ent = entitiesById[entityId];
+            if (!ent || ent.attributes.length === 0) return undefined;
+            if (colName) {
+                const byName = ent.attributes.find((a) => a.name === colName);
+                if (byName) return byName.id;
+            }
+            return (ent.attributes.find((a) => a.isFK) ?? ent.attributes.find((a) => a.isPK) ?? ent.attributes[0]).id;
+        };
+
+        // 저장된 핸들이 컬럼 핸들(col__...)이면 엔티티 모드에선 변(left/right)으로 환산해
+        // 존재하지 않는 핸들로 인해 선이 끊기는 것을 방지
+        const sanitizeEntityHandle = (h?: string): string | undefined => {
+            const p = parseColumnHandle(h);
+            return p ? p.side : h;
+        };
+
         const flowEdges: Edge[] = rels.map((rel) => {
             const isSelfRef = isSelfReferencingRelationship(rel.source, rel.target);
+            const safeSrcHandle = sanitizeEntityHandle(rel.sourceHandle);
+            const safeTgtHandle = sanitizeEntityHandle(rel.targetHandle);
             const handles = isSelfRef
-                ? normalizeSelfRefHandles(rel.sourceHandle, rel.targetHandle)
-                : { sourceHandle: rel.sourceHandle, targetHandle: rel.targetHandle };
+                ? normalizeSelfRefHandles(safeSrcHandle, safeTgtHandle)
+                : { sourceHandle: safeSrcHandle, targetHandle: safeTgtHandle };
 
-            const sk = `${rel.source}::${rel.sourceHandle ?? ''}`;
-            const tk = `${rel.target}::${rel.targetHandle ?? ''}`;
+            const sk = `${rel.source}::${safeSrcHandle ?? ''}`;
+            const tk = `${rel.target}::${safeTgtHandle ?? ''}`;
             const srcGroup = sourceGroups.get(sk) ?? [rel.id];
             const tgtGroup = targetGroups.get(tk) ?? [rel.id];
+
+            // ── 컬럼설정으로 보기: 컬럼 핸들에 연결 ──
+            let sourceHandle = handles.sourceHandle;
+            let targetHandle = handles.targetHandle;
+            let useColumnEndpoints = false;
+            if (connectionViewMode === 'column' && !isSelfRef) {
+                const srcColHandle = parseColumnHandle(rel.sourceHandle);
+                const tgtColHandle = parseColumnHandle(rel.targetHandle);
+                if (srcColHandle && tgtColHandle) {
+                    // 사용자가 컬럼 핸들끼리 직접 드래그해 만든 연결 → 저장된 컬럼 그대로 사용
+                    sourceHandle = rel.sourceHandle;
+                    targetHandle = rel.targetHandle;
+                    useColumnEndpoints = true;
+                } else {
+                    // sourceKey/targetKey(없으면 PK/FK 추론) 기준으로 컬럼 핸들 계산
+                    const srcAttrId = resolveSourceAttrId(rel.source, rel.sourceKey);
+                    const tgtAttrId = resolveTargetAttrId(rel.target, rel.targetKey);
+                    if (srcAttrId && tgtAttrId) {
+                        // 두 엔티티의 좌우 위치로 어느 변에서 선이 나갈지 결정
+                        const srcCenter = nodeCenter(rel.source);
+                        const tgtCenter = nodeCenter(rel.target);
+                        const srcIsLeftOfTgt = srcCenter.x <= tgtCenter.x;
+                        const srcSide: 'left' | 'right' = srcIsLeftOfTgt ? 'right' : 'left';
+                        const tgtSide: 'left' | 'right' = srcIsLeftOfTgt ? 'left' : 'right';
+                        sourceHandle = columnHandleId(srcAttrId, srcSide);
+                        targetHandle = columnHandleId(tgtAttrId, tgtSide);
+                        useColumnEndpoints = true;
+                    }
+                }
+            }
 
             return {
             id: rel.id,
             source: rel.source,
             target: rel.target,
-            sourceHandle: handles.sourceHandle,
-            targetHandle: handles.targetHandle,
+            sourceHandle,
+            targetHandle,
             type: 'erd',
             label: rel.type,
             animated: false,
@@ -1246,15 +1315,59 @@ const ERDCanvasContent: React.FC = () => {
                 sourceEnd: rel.sourceEnd,
                 targetEnd: rel.targetEnd,
                 isSelfRef,
-                sourceIndex: srcGroup.indexOf(rel.id),
-                sourceCount: srcGroup.length,
-                targetIndex: tgtGroup.indexOf(rel.id),
-                targetCount: tgtGroup.length,
+                // 컬럼 연결 시에는 각 컬럼이 고유 핸들을 쓰므로 분산(spread)을 끔
+                sourceIndex: useColumnEndpoints ? 0 : srcGroup.indexOf(rel.id),
+                sourceCount: useColumnEndpoints ? 1 : srcGroup.length,
+                targetIndex: useColumnEndpoints ? 0 : tgtGroup.indexOf(rel.id),
+                targetCount: useColumnEndpoints ? 1 : tgtGroup.length,
             },
         };
         });
+        // 컬럼 모드: 실제 관계선이 붙은 컬럼 핸들 집합 계산 (연결된 컬럼에만 점 표시)
+        // 화면 컬링(visibleNodeIds)과 무관하게 전체 relationships 로 계산해 pan 중 불필요한 갱신 방지
+        const nextConnected = new Set<string>();
+        if (connectionViewMode === 'column') {
+            for (const rel of relationships) {
+                if (isSelfReferencingRelationship(rel.source, rel.target)) continue;
+                const srcColHandle = parseColumnHandle(rel.sourceHandle);
+                const tgtColHandle = parseColumnHandle(rel.targetHandle);
+                if (srcColHandle && tgtColHandle && rel.sourceHandle && rel.targetHandle) {
+                    nextConnected.add(rel.sourceHandle);
+                    nextConnected.add(rel.targetHandle);
+                    continue;
+                }
+                const srcAttrId = resolveSourceAttrId(rel.source, rel.sourceKey);
+                const tgtAttrId = resolveTargetAttrId(rel.target, rel.targetKey);
+                if (!srcAttrId || !tgtAttrId) continue;
+                const srcCenter = nodeCenter(rel.source);
+                const tgtCenter = nodeCenter(rel.target);
+                const srcIsLeftOfTgt = srcCenter.x <= tgtCenter.x;
+                nextConnected.add(columnHandleId(srcAttrId, srcIsLeftOfTgt ? 'right' : 'left'));
+                nextConnected.add(columnHandleId(tgtAttrId, srcIsLeftOfTgt ? 'left' : 'right'));
+            }
+        }
+        const prevConnected = useConnectionViewStore.getState().connectedHandleIds;
+        let connectedChanged = prevConnected.size !== nextConnected.size;
+        if (!connectedChanged) {
+            for (const id of nextConnected) {
+                if (!prevConnected.has(id)) { connectedChanged = true; break; }
+            }
+        }
+        if (connectedChanged) setConnectedHandleIds(nextConnected);
+
         setEdges(flowEdges);
-    }, [relationships, setEdges, reconnectingEdgeId, visibleNodeIds]);
+    }, [relationships, setEdges, reconnectingEdgeId, visibleNodeIds, connectionViewMode, entitiesById, setConnectedHandleIds]);
+
+    // 연결 보기 모드가 바뀌면 노드에 컬럼 핸들이 추가/제거되므로
+    // ReactFlow가 핸들 위치를 다시 측정하도록 강제한다.
+    useEffect(() => {
+        const ids = getNodes().map((n) => n.id);
+        // 핸들 DOM이 커밋된 다음 프레임에 재측정
+        const raf = requestAnimationFrame(() => {
+            ids.forEach((id) => updateNodeInternals(id));
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [connectionViewMode, getNodes, updateNodeInternals]);
 
     const isValidConnection = useCallback((connection: Connection) => {
         return Boolean(connection.source && connection.target);
@@ -2119,6 +2232,44 @@ const ERDCanvasContent: React.FC = () => {
                                 <option value="excel">Excel 형태</option>
                             </select>
                         </PremiumTooltip>
+                    </div>
+
+                    {/* 연결선 보기 — 지니 램프 드롭다운 */}
+                    <div className="relative shrink-0">
+                        <PremiumTooltip placement="bottom" offsetBottom={30} label="연결선 표시 방식">
+                            <button
+                                onClick={() => setIsConnViewMenuOpen((v) => !v)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm font-bold shadow-sm active:scale-95 ${isConnViewMenuOpen ? 'bg-purple-600 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}
+                            >
+                                <Spline size={16} className={`shrink-0 ${isConnViewMenuOpen ? 'text-white' : 'text-purple-500'}`} />
+                                <span className="whitespace-nowrap hidden sm:inline">연결선 보기</span>
+                                <ChevronDown size={14} className={`transition-transform shrink-0 ${isConnViewMenuOpen ? 'rotate-180 text-white' : 'text-gray-400'}`} />
+                            </button>
+                        </PremiumTooltip>
+
+                        {isConnViewMenuOpen && (
+                            <div
+                                className="erd-genie-drop absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 z-50 flex flex-col gap-1"
+                                style={{ transformOrigin: 'top center' }}
+                            >
+                                <button
+                                    onClick={() => { setConnectionViewMode('entity'); setIsConnViewMenuOpen(false); }}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left ${connectionViewMode === 'entity' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                >
+                                    <Table size={16} className="text-blue-500 shrink-0" />
+                                    <span className="flex-1">엔티티 설정으로 보기</span>
+                                    {connectionViewMode === 'entity' && <Check size={15} className="text-blue-600 shrink-0" />}
+                                </button>
+                                <button
+                                    onClick={() => { setConnectionViewMode('column'); setIsConnViewMenuOpen(false); }}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left ${connectionViewMode === 'column' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                >
+                                    <Columns size={16} className="text-purple-500 shrink-0" />
+                                    <span className="flex-1">컬럼설정으로 보기</span>
+                                    {connectionViewMode === 'column' && <Check size={15} className="text-purple-600 shrink-0" />}
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="w-px h-6 bg-gray-200 shrink-0 hidden sm:block" />

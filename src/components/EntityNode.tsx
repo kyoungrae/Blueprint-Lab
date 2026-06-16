@@ -9,6 +9,49 @@ import { useAuthStore } from '../store/authStore';
 import type { DBType } from '../types/erd';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import PremiumTooltip from './screenNode/PremiumTooltip';
+import { useConnectionViewStore, columnHandleId } from '../store/connectionViewStore';
+
+/**
+ * 컬럼 단위 연결 핸들 — '컬럼설정으로 보기' 모드에서 각 컬럼 행 좌/우에 표시.
+ * 각 변(side)마다 source/target 핸들을 같은 id로 겹쳐 둬서 양방향 연결을 허용.
+ * 부모 행(div)에는 position:relative 가 적용되어 있어 top:50% 가 행 중앙을 가리킴.
+ */
+const ColumnRowHandles: React.FC<{ attrId: string }> = ({ attrId }) => {
+    const connectedHandleIds = useConnectionViewStore((s) => s.connectedHandleIds);
+    return (
+    <>
+        {(['left', 'right'] as const).map((side) => {
+            const pos = side === 'left' ? Position.Left : Position.Right;
+            const edgeOffset = side === 'left' ? { left: -7 } : { right: -7 };
+            const id = columnHandleId(attrId, side);
+            const isConnected = connectedHandleIds.has(id);
+            return (
+                <React.Fragment key={side}>
+                    <Handle
+                        type="source"
+                        position={pos}
+                        id={id}
+                        className="!bg-transparent !border-none flex items-center justify-center !cursor-pointer group/colh"
+                        style={{ top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, zIndex: 60, ...edgeOffset }}
+                    >
+                        {/* 연결된 컬럼이면 항상 표시, 아니면 행 hover 시에만 표시 (hover 중에는 연결 드래그 가능) */}
+                        <div
+                            className={`w-2.5 h-2.5 bg-purple-500 border-2 border-white rounded-full shadow-sm pointer-events-none transition-all group-hover/colh:scale-150 ${isConnected ? 'opacity-100' : 'opacity-0 group-hover/attr:opacity-100'}`}
+                        />
+                    </Handle>
+                    <Handle
+                        type="target"
+                        position={pos}
+                        id={id}
+                        className="!bg-transparent !border-none"
+                        style={{ top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, zIndex: 59, ...edgeOffset }}
+                    />
+                </React.Fragment>
+            );
+        })}
+    </>
+    );
+};
 
 const DATA_TYPES: Record<DBType, string[]> = {
     MySQL: [
@@ -106,7 +149,8 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
     };
 
     // 공통 행 스타일 — CSS subgrid로 부모 grid 트랙 상속
-    const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'subgrid', gridColumn: '1 / -1', alignItems: 'center' };
+    const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'subgrid', gridColumn: '1 / -1', alignItems: 'center', position: 'relative' };
+    const isColumnMode = useConnectionViewStore((s) => s.mode === 'column');
     const rowCls = `nodrag group/attr rounded cursor-default transition-colors h-[28px] ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'} ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`;
 
     if (!isSelected) {
@@ -114,17 +158,20 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             <div
                 style={rowStyle}
                 className={rowCls}
-                draggable={!isLocked}
                 onMouseDown={(e) => !isLocked && e.stopPropagation()}
-                onDragStart={onDragStart}
-                onDragEnd={onDragEnd}
                 onDragOver={onDragOver}
                 onDrop={onDrop}
             >
-                {/* Col 1: Grip */}
+                {/* Col 1: Grip — 이 아이콘을 드래그해야만 컬럼 순서 변경 */}
                 <div className="flex justify-center">
                     {!isLocked && (
-                        <div className="opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                        <div
+                            className="opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                            draggable
+                            onDragStart={onDragStart}
+                            onDragEnd={onDragEnd}
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
                             <GripVertical size={13} className="text-gray-300" />
                         </div>
                     )}
@@ -172,6 +219,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                 </div>
                 {/* Col 9: Delete placeholder */}
                 <div />
+                {isColumnMode && <ColumnRowHandles attrId={attr.id} />}
             </div>
         );
     }
@@ -180,18 +228,18 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
         <div
             style={rowStyle}
             className={rowCls}
-            draggable={!isLocked}
             onMouseDown={(e) => !isLocked && e.stopPropagation()}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
             onDragOver={onDragOver}
             onDrop={onDrop}
         >
-            {/* Col 1: Grip */}
+            {/* Col 1: Grip — 이 아이콘을 드래그해야만 컬럼 순서 변경 */}
             <div className="flex justify-center">
                 {!isLocked && (
                     <div
                         className="opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                        draggable
+                        onDragStart={onDragStart}
+                        onDragEnd={onDragEnd}
                         onMouseDown={(e) => e.stopPropagation()}
                     >
                         <GripVertical size={13} className="text-gray-300" />
@@ -331,6 +379,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     </PremiumTooltip>
                 )}
             </div>
+            {isColumnMode && <ColumnRowHandles attrId={attr.id} />}
         </div>
     );
 });
@@ -342,8 +391,10 @@ export interface EntityNodeData {
 }
 
 /** Lite/Full 공통 — 컬럼 행 높이를 맞추기 위한 보이지 않는 스켈레톤 */
-const EntityAttributeRowSkeleton: React.FC<{ attr: Attribute; isLocked: boolean }> = ({ attr, isLocked }) => (
-    <div className={`flex items-center gap-1 py-1 px-2 rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
+const EntityAttributeRowSkeleton: React.FC<{ attr: Attribute; isLocked: boolean }> = ({ attr, isLocked }) => {
+    const isColumnMode = useConnectionViewStore((s) => s.mode === 'column');
+    return (
+    <div className={`relative group/attr flex items-center gap-1 py-1 px-2 rounded ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`}>
         <div className="w-8 flex-shrink-0 flex justify-center">
             <span className="invisible p-1 rounded"><Key size={14} /></span>
         </div>
@@ -368,8 +419,10 @@ const EntityAttributeRowSkeleton: React.FC<{ attr: Attribute; isLocked: boolean 
             </div>
             {!isLocked && <div className="w-[20px]" />}
         </div>
+        {isColumnMode && <ColumnRowHandles attrId={attr.id} />}
     </div>
-);
+    );
+};
 
 /** Lite/Full 공통 — 컬럼 추가 버튼 영역 높이 */
 const EntityAddAttributeSkeleton: React.FC = () => (
