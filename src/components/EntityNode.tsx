@@ -151,7 +151,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
     // 공통 행 스타일 — CSS subgrid로 부모 grid 트랙 상속
     const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'subgrid', gridColumn: '1 / -1', alignItems: 'center', position: 'relative' };
     const isColumnMode = useConnectionViewStore((s) => s.mode === 'column');
-    const rowCls = `nodrag group/attr rounded cursor-default transition-colors h-[28px] ${isDragOver ? 'border-t-2 border-blue-400' : 'border-t-2 border-transparent'} ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`;
+    const rowCls = `nodrag group/attr cursor-default transition-colors h-[28px] border-b border-gray-100 ${isDragOver ? 'border-t-2 border-t-blue-400' : ''} ${isLocked ? 'hover:bg-gray-50' : 'hover:bg-blue-50'}`;
 
     if (!isSelected) {
         return (
@@ -163,7 +163,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                 onDrop={onDrop}
             >
                 {/* Col 1: Grip — 이 아이콘을 드래그해야만 컬럼 순서 변경 */}
-                <div className="flex justify-center">
+                <div className="flex justify-center border-r border-gray-100 h-full items-center">
                     {!isLocked && (
                         <div
                             className="opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
@@ -177,42 +177,42 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
                     )}
                 </div>
                 {/* Col 2: PK */}
-                <div className="flex justify-center">
+                <div className="flex justify-center border-r border-gray-100 h-full items-center">
                     <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
                         <Key size={14} />
                     </span>
                 </div>
                 {/* Col 3: Name */}
-                <div className="px-1.5 flex items-center h-full">
+                <div className="px-1.5 flex items-center h-full border-r border-gray-100">
                     <span className={`text-sm whitespace-nowrap ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
                         {attr.name}
                     </span>
                 </div>
                 {/* Col 4: Type */}
-                <div className="flex items-center">
+                <div className="flex items-center border-r border-gray-100 h-full">
                     <span className={`text-sm whitespace-nowrap ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
                         {attr.type.split('(')[0]}
                     </span>
                 </div>
                 {/* Col 5: Length */}
-                <div className="pr-2">
+                <div className="pr-2 border-r border-gray-100 h-full flex items-center">
                     <span className={`text-sm px-1 ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
                         {attr.length || ''}
                     </span>
                 </div>
                 {/* Col 6: NN */}
-                <div className="flex items-center justify-center gap-1">
+                <div className="flex items-center justify-center gap-1 border-r border-gray-100 h-full">
                     <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'} ${isLocked ? 'opacity-40' : ''}`}>
                         <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
                     </div>
                     <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                 </div>
                 {/* Col 7: Comment */}
-                <div className="flex items-center px-1 bg-gray-50/30 rounded h-[22px]">
+                <div className="flex items-center px-1 bg-gray-50/30 rounded h-[22px] border-r border-gray-100">
                     {attr.comment && <span className="text-sm text-blue-500 italic whitespace-nowrap">{attr.comment}</span>}
                 </div>
                 {/* Col 8: FK */}
-                <div className="flex justify-center">
+                <div className="flex justify-center border-r border-gray-100 h-full items-center">
                     <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
                         <Link size={14} />
                     </span>
@@ -233,7 +233,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             onDrop={onDrop}
         >
             {/* Col 1: Grip — 이 아이콘을 드래그해야만 컬럼 순서 변경 */}
-            <div className="flex justify-center">
+            <div className="flex justify-center border-r border-gray-100 h-full items-center">
                 {!isLocked && (
                     <div
                         className="opacity-0 group-hover/attr:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
@@ -248,7 +248,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 2: PK Toggle */}
-            <div className="flex justify-center">
+            <div className="flex justify-center border-r border-gray-100 h-full items-center">
                 <PremiumTooltip label={attr.isPK ? "기본 키 (클릭 해제)" : "기본 키 (클릭 설정)"} dotColor="#eab308">
                     <button
                         onClick={() => onUpdate(attr.id, { isPK: !attr.isPK })}
@@ -262,7 +262,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 3: Name — hidden span으로 그리드 트랙 크기 결정 */}
-            <div className="relative">
+            <div className="relative border-r border-gray-100">
                 <span
                     className={`text-sm px-1.5 block whitespace-nowrap invisible pointer-events-none ${attr.isPK ? 'font-bold underline' : ''}`}
                     aria-hidden
@@ -285,7 +285,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 4: Type */}
-            <div>
+            <div className="border-r border-gray-100 h-full flex items-center">
                 <select
                     value={attr.type.includes('(') ? attr.type.split('(')[0] : attr.type}
                     onChange={(e) => onUpdate(attr.id, { type: e.target.value })}
@@ -300,7 +300,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 5: Length */}
-            <div className="pr-2">
+            <div className="pr-2 border-r border-gray-100 h-full flex items-center">
                 <input
                     type="text"
                     value={displayValue('length', localLength)}
@@ -316,7 +316,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 6: NN */}
-            <div className="flex items-center justify-center gap-1">
+            <div className="flex items-center justify-center gap-1 border-r border-gray-100 h-full">
                 <PremiumTooltip label={attr.isNullable ? "NULL 허용 (클릭 시 NOT NULL)" : "NOT NULL (클릭 시 NULL 허용)"} dotColor={!attr.isNullable ? '#ef4444' : undefined}>
                     <button
                         onClick={() => onUpdate(attr.id, { isNullable: !attr.isNullable })}
@@ -330,7 +330,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 7: Comment */}
-            <div className="relative flex items-center bg-gray-50/30 px-1 rounded hover:bg-gray-50">
+            <div className="relative flex items-center bg-gray-50/30 px-1 rounded hover:bg-gray-50 border-r border-gray-100">
                 <span
                     className="text-sm italic block whitespace-nowrap invisible pointer-events-none"
                     aria-hidden
@@ -352,7 +352,7 @@ const AttributeRow: React.FC<AttributeRowProps> = memo(({ attr, isLocked, isSele
             </div>
 
             {/* Col 8: FK */}
-            <div className="flex justify-center">
+            <div className="flex justify-center border-r border-gray-100 h-full items-center">
                 <PremiumTooltip label={attr.isFK ? "외래 키 (클릭 해제)" : "외래 키 (클릭 설정)"} dotColor="#a855f7">
                     <button
                         onClick={() => onUpdate(attr.id, { isFK: !attr.isFK })}
@@ -492,50 +492,50 @@ export const EntityNodePlaceholder: React.FC<NodeProps<{ entityId: string; entit
                 {entity.attributes.map((attr) => (
                     <React.Fragment key={attr.id}>
                         {/* Col 1: grip placeholder */}
-                        <div />
+                        <div className="border-b border-r border-gray-100 h-full" />
                         {/* Col 2: PK */}
-                        <div className="flex justify-center py-0.5">
+                        <div className="flex justify-center py-0.5 border-b border-r border-gray-100 h-full items-center">
                             <span className={`p-1 rounded ${attr.isPK ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300'}`}>
                                 <Key size={14} />
                             </span>
                         </div>
                         {/* Col 3: Name */}
-                        <div className="px-1.5 py-0.5">
+                        <div className="px-1.5 py-0.5 border-b border-r border-gray-100 flex items-center">
                             <span className={`text-sm whitespace-nowrap ${attr.isPK ? 'font-bold underline text-blue-900' : 'text-gray-700'}`}>
                                 {attr.name}
                             </span>
                         </div>
                         {/* Col 4: Type */}
-                        <div>
+                        <div className="border-b border-r border-gray-100 h-full flex items-center">
                             <span className={`text-sm whitespace-nowrap ${isLocked ? 'text-gray-400' : 'text-blue-600'}`}>
                                 {attr.type.split('(')[0]}
                             </span>
                         </div>
                         {/* Col 5: Length */}
-                        <div>
+                        <div className="border-b border-r border-gray-100 h-full flex items-center">
                             <span className={`text-sm px-1 ${isLocked ? 'text-gray-400' : 'text-blue-500'}`}>
                                 {attr.length || ''}
                             </span>
                         </div>
                         {/* Col 6: NN */}
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-1 border-b border-r border-gray-100 h-full">
                             <div className={`relative w-6 h-3.5 rounded-full flex items-center px-0.5 ${!attr.isNullable ? 'bg-red-500' : 'bg-gray-200'}`}>
                                 <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm ${!attr.isNullable ? 'translate-x-2.5' : 'translate-x-0'}`} />
                             </div>
                             <span className={`text-sm font-black tracking-tighter ${!attr.isNullable ? 'text-red-500' : 'text-gray-300'}`}>NN</span>
                         </div>
                         {/* Col 7: Comment */}
-                        <div className="px-1">
+                        <div className="px-1 border-b border-r border-gray-100 h-full flex items-center">
                             {attr.comment && <span className="text-sm text-blue-500 italic whitespace-nowrap">{attr.comment}</span>}
                         </div>
                         {/* Col 8: FK */}
-                        <div className="flex justify-center">
+                        <div className="flex justify-center border-b border-r border-gray-100 h-full items-center">
                             <span className={`p-1 rounded ${attr.isFK ? 'text-purple-500 bg-purple-50' : 'text-gray-300'}`}>
                                 <Link size={14} />
                             </span>
                         </div>
                         {/* Col 9: placeholder */}
-                        <div />
+                        <div className="border-b border-gray-100 h-full" />
                     </React.Fragment>
                 ))}
             </div>
