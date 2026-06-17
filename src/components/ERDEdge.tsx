@@ -215,9 +215,9 @@ const ERDEdge = ({
     );
 
     // 엔드포인트 점 위치 — EdgeLabelRenderer 좌표계 (flowX, flowY)
-    // 핸들 위치 기준: adjSrc/adjTgt (spread 적용된 좌표)
+    // 자기 참조: 우측 FK 행 + 상단 핸들, 일반: 핸들 위치(spread 적용)
     const dotSrcX = adjSrcX;
-    const dotSrcY = adjSrcY;
+    const dotSrcY = isSelfLoop ? adjSrcY + fkYOffset : adjSrcY;
     const dotTgtX = adjTgtX;
     const dotTgtY = adjTgtY;
 
@@ -308,12 +308,8 @@ const ERDEdge = ({
             </g>
             <EdgeLabelRenderer>
                 {/* 분산 연결 점 — DOM 레이어에서 렌더링해 노드 위에 표시 */}
-                {!isSelfLoop && (
-                    <>
-                        <div style={{ ...dotStyle(edgeColor), transform: `translate(-50%, -50%) translate(${dotSrcX}px, ${dotSrcY}px)` }} />
-                        <div style={{ ...dotStyle(edgeColor), transform: `translate(-50%, -50%) translate(${dotTgtX}px, ${dotTgtY}px)` }} />
-                    </>
-                )}
+                <div style={{ ...dotStyle(edgeColor), transform: `translate(-50%, -50%) translate(${dotSrcX}px, ${dotSrcY}px)` }} />
+                <div style={{ ...dotStyle(edgeColor), transform: `translate(-50%, -50%) translate(${dotTgtX}px, ${dotTgtY}px)` }} />
                 <div
                     style={{
                         position: 'absolute',
