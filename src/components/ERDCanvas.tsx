@@ -60,7 +60,7 @@ const FigmaStyleZoomControls: React.FC = () => {
 
 import EntityNode, { EntityNodePlaceholder } from './EntityNode';
 import ERDEdge from './ERDEdge';
-import { normalizeSelfRefHandles, isSelfReferencingRelationship } from '../utils/erdSelfLoop';
+import { normalizeSelfRefHandles, isSelfReferencingRelationship, resolveFkRowIndex, computeFkOffsetFromNodeCenter } from '../utils/erdSelfLoop';
 import EdgeEditModal from './EdgeEditModal';
 import ImportModal from './ImportModal';
 import Sidebar from './Sidebar';
@@ -121,24 +121,6 @@ const GlobalViewportUpdater: React.FC = () => {
             document.querySelectorAll('.erd-viewport-sync').forEach(el => {
                 (el as HTMLElement).style.transform = transform;
             });
-        }
-    });
-
-    return null;
-};
-
-/** Reports viewport to parent only when zoom/pan has been idle for VIEWPORT_DEBOUNCE_MS (no parent re-renders during gesture). */
-const VIEWPORT_DEBOUNCE_MS = 200;
-const ViewportDebounceUpdater: React.FC<{ onViewportIdle: (viewport: { x: number; y: number; zoom: number }) => void }> = ({ onViewportIdle }) => {
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    useOnViewportChange({
-        onChange: (vp) => {
-            if (debounceRef.current != null) clearTimeout(debounceRef.current);
-            debounceRef.current = setTimeout(() => {
-                debounceRef.current = null;
-                onViewportIdle(vp);
-            }, VIEWPORT_DEBOUNCE_MS);
         }
     });
 
@@ -475,29 +457,11 @@ const ERDCanvasContent: React.FC = () => {
     const sectionHeadersContainerRef = React.useRef<HTMLDivElement>(null);
     const isDraggingRef = React.useRef(false);
     const skipNextEntitySyncRef = React.useRef(false);
-    const [paneSize, setPaneSize] = useState<{ width: number; height: number } | null>(null);
-    const [visibleNodeIds, setVisibleNodeIds] = useState<Set<string>>(() => new Set());
-    const paneSizeRef = useRef<{ width: number; height: number } | null>(null);
-    const entitiesRef = useRef<typeof entities>([]);
-    paneSizeRef.current = paneSize;
-    entitiesRef.current = entities;
 
     const { getViewport, setViewport, screenToFlowPosition, flowToScreenPosition, getNodes, fitView } = useReactFlow();
     const updateNodeInternals = useUpdateNodeInternals();
     // 노드 크기 측정 완료 여부 — 측정 전/후로 slot 분산 계산이 달라지므로 측정 완료 시 엣지를 재계산
     const nodesInitialized = useNodesInitialized();
-
-    // Pane size for viewport culling
-    useEffect(() => {
-        const el = paneContainerRef.current;
-        if (!el) return;
-        const ro = new ResizeObserver((entries) => {
-            const { width, height } = entries[0]?.contentRect ?? { width: 0, height: 0 };
-            setPaneSize((prev) => (prev?.width === width && prev?.height === height ? prev : { width, height }));
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
 
     const syncExcelStickyHeaderTop = useCallback(() => {
         const scrollEl = erdExcelScrollRef.current;
@@ -523,57 +487,6 @@ const ERDCanvasContent: React.FC = () => {
             window.removeEventListener('resize', syncExcelStickyHeaderTop);
         };
     }, [syncExcelStickyHeaderTop, viewMode, isSidebarOpen]);
-
-    const computeInView = useCallback((viewport: { x: number; y: number; zoom: number }, pane: { width: number; height: number } | null, ents: typeof entities) => {
-        if (!pane || !ents.length) return new Set<string>();
-        const z = viewport.zoom || 1;
-        const left = -viewport.x / z;
-        const top = -viewport.y / z;
-        const w = pane.width / z;
-        const h = pane.height / z;
-        const margin = 280;
-        const inView = new Set<string>();
-        ents.forEach((e) => {
-            const px = e.position.x;
-            const py = e.position.y;
-            if (px >= left - margin && px <= left + w + margin && py >= top - margin && py <= top + h + margin) {
-                inView.add(e.id);
-            }
-        });
-        return inView;
-    }, []);
-
-    // Called only when zoom/pan has been idle 200ms (ViewportDebounceUpdater). Parent does not re-render during gesture.
-    const onViewportIdle = useCallback((viewport: { x: number; y: number; zoom: number }) => {
-        const pane = paneSizeRef.current;
-        const ents = entitiesRef.current;
-        if (!pane || !ents.length) {
-            setVisibleNodeIds((prev) => (prev.size === 0 ? prev : new Set()));
-            return;
-        }
-        const inView = computeInView(viewport, pane, ents);
-        setVisibleNodeIds((prev) => {
-            if (prev.size !== inView.size) return inView;
-            for (const id of prev) { if (!inView.has(id)) return inView; }
-            return prev;
-        });
-    }, [computeInView]);
-
-    // When paneSize or entities change (not viewport), recompute visibleNodeIds once using current viewport
-    useEffect(() => {
-        if (!paneSize || !entities.length) {
-            setVisibleNodeIds((prev) => (prev.size === 0 ? prev : new Set()));
-            return;
-        }
-        const vp = getViewport();
-        const inView = computeInView(vp, paneSize, entities);
-        setVisibleNodeIds((prev) => {
-            if (prev.size !== inView.size) return inView;
-            for (const id of prev) { if (!inView.has(id)) return inView; }
-            return prev;
-        });
-    }, [paneSize, entities, computeInView, getViewport]);
-
 
     // Collaboration Store
     const { updateCursor, sendOperation, isSynced } = useSyncStore();
@@ -1200,10 +1113,7 @@ const ERDCanvasContent: React.FC = () => {
                 default: return '#3b82f6';
             }
         };
-        const showAllEdges = visibleNodeIds.size === 0;
-        const rels = showAllEdges
-            ? relationships
-            : relationships.filter((rel) => visibleNodeIds.has(rel.source) || visibleNodeIds.has(rel.target));
+        const rels = relationships;
 
         // 같은 entity+side를 공유하는 엣지끼리 인덱스를 계산해 분산 오프셋에 사용
         // 상대 노드의 위치 기준으로 정렬해 가장 가까운 노드가 가장 가까운 핸들 슬롯을 쓰도록 함
@@ -1295,6 +1205,36 @@ const ERDCanvasContent: React.FC = () => {
                 ? normalizeSelfRefHandles(safeSrcHandle, safeTgtHandle)
                 : { sourceHandle: safeSrcHandle, targetHandle: safeTgtHandle };
 
+            const selfRefEntity = isSelfRef ? entitiesById[rel.source] : undefined;
+            const fkOffsetFromCenter = selfRefEntity
+                ? computeFkOffsetFromNodeCenter(
+                    resolveFkRowIndex(selfRefEntity.attributes, rel.targetKey),
+                    selfRefEntity.attributes.length,
+                    selfRefEntity.isLocked,
+                )
+                : 0;
+
+            const srcPos = nodePosMap.get(rel.source);
+            const nodeBounds = isSelfRef && srcPos
+                ? {
+                    id: rel.source,
+                    left: srcPos.x,
+                    top: srcPos.y,
+                    right: srcPos.x + srcPos.width,
+                    bottom: srcPos.y + srcPos.height,
+                }
+                : undefined;
+
+            const obstacleRects = Array.from(nodePosMap.entries())
+                .filter(([id]) => id !== rel.source && id !== rel.target)
+                .map(([id, p]) => ({
+                    id,
+                    left: p.x,
+                    top: p.y,
+                    right: p.x + p.width,
+                    bottom: p.y + p.height,
+                }));
+
             const sk = `${rel.source}::${safeSrcHandle ?? ''}`;
             const tk = `${rel.target}::${safeTgtHandle ?? ''}`;
             const srcGroup = sourceGroups.get(sk) ?? [rel.id];
@@ -1341,6 +1281,7 @@ const ERDCanvasContent: React.FC = () => {
             animated: false,
             reconnectable: true,
             hidden: rel.id === reconnectingEdgeId,
+            zIndex: isSelfRef ? 10 : 0,
             interactionWidth: 40,
             style: { stroke: getRelColor(rel.type), strokeWidth: 2, strokeDasharray: 'none' },
             data: {
@@ -1349,6 +1290,9 @@ const ERDCanvasContent: React.FC = () => {
                 sourceEnd: rel.sourceEnd,
                 targetEnd: rel.targetEnd,
                 isSelfRef,
+                fkOffsetFromCenter: isSelfRef ? fkOffsetFromCenter : undefined,
+                nodeBounds,
+                obstacleRects,
                 // 컬럼 연결 시에는 각 컬럼이 고유 핸들을 쓰므로 분산(spread)을 끔
                 sourceIndex: useColumnEndpoints ? 0 : srcGroup.indexOf(rel.id),
                 sourceCount: useColumnEndpoints ? 1 : srcGroup.length,
@@ -1358,7 +1302,6 @@ const ERDCanvasContent: React.FC = () => {
         };
         });
         // 컬럼 모드: 실제 관계선이 붙은 컬럼 핸들 집합 계산 (연결된 컬럼에만 점 표시)
-        // 화면 컬링(visibleNodeIds)과 무관하게 전체 relationships 로 계산해 pan 중 불필요한 갱신 방지
         const nextConnected = new Set<string>();
         if (connectionViewMode === 'column') {
             for (const rel of relationships) {
@@ -1390,7 +1333,7 @@ const ERDCanvasContent: React.FC = () => {
         if (connectedChanged) setConnectedHandleIds(nextConnected);
 
         setEdges(flowEdges);
-    }, [relationships, setEdges, reconnectingEdgeId, visibleNodeIds, connectionViewMode, entitiesById, setConnectedHandleIds, nodesInitialized]);
+    }, [relationships, setEdges, reconnectingEdgeId, connectionViewMode, entitiesById, setConnectedHandleIds, nodesInitialized]);
 
     // 연결 보기 모드가 바뀌면 노드에 컬럼 핸들이 추가/제거되므로
     // ReactFlow가 핸들 위치를 다시 측정하도록 강제한다.
@@ -2042,20 +1985,7 @@ const ERDCanvasContent: React.FC = () => {
             );
             const sectionId = containingSection?.id ?? undefined;
 
-            // [수정 4] 드래그 종료 후 뷰포트 culling 즉시 재계산 (200ms 디바운스 기다리지 않음)
-            const vp = getViewport();
-            const pane = paneSizeRef.current;
-            const ents = entitiesRef.current;
-            if (pane && ents.length) {
-                const inViewSet = computeInView(vp, pane, ents);
-                setVisibleNodeIds((prev) => {
-                    if (prev.size !== inViewSet.size) return inViewSet;
-                    for (const id of prev) { if (!inViewSet.has(id)) return inViewSet; }
-                    return prev;
-                });
-            }
-
-            // [수정 2] store 업데이트가 setNodes를 다시 실행하지 않도록 (ReactFlow가 이미 위치를 가짐)
+            // store 업데이트가 setNodes를 다시 실행하지 않도록 (ReactFlow가 이미 위치를 가짐)
             skipNextEntitySyncRef.current = true;
             updateEntity(node.id, { position: node.position, sectionId: sectionId || null }, user);
 
@@ -2067,7 +1997,7 @@ const ERDCanvasContent: React.FC = () => {
                 payload: { position: node.position, sectionId: sectionId ?? null },
             });
         },
-        [updateEntity, user, sendOperation, sections, getViewport, computeInView, paneSizeRef, entitiesRef]
+        [updateEntity, user, sendOperation, sections]
     );
 
     // ── 진입 로딩 화면: 데이터 로드 + (원격이면)동기화 + 노드 마운트가 끝날 때까지 표시 ──
@@ -2497,7 +2427,6 @@ const ERDCanvasContent: React.FC = () => {
                                 onPaneMouseMove={onPaneMouseMove}
                                 onPaneClick={() => setSelectedSectionId(null)}
                             >
-                                <ViewportDebounceUpdater onViewportIdle={onViewportIdle} />
                                 <GlobalViewportUpdater />
                                 <SectionOverlayLayer
                                     sections={sections}

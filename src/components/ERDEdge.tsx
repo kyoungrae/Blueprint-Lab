@@ -1,12 +1,12 @@
 import React from 'react';
 import {
     type EdgeProps,
-    getSmoothStepPath,
     EdgeLabelRenderer,
 } from 'reactflow';
 import type { RelationshipEndType } from '../types/erd';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { buildSelfLoopPath } from '../utils/erdSelfLoop';
+import { buildSmartStepPath, trimPathForMarkers, getMarkerExtent, type Rect } from '../utils/erdEdgeRouter';
 
 const STROKE_W = 1.5;
 
@@ -90,31 +90,39 @@ function MarkerManyOptional({ color }: { color: string }) {
     );
 }
 
-const MARKER_GAP = 0;
 /** ERDCanvas edgeUpdaterRadius와 동일 - 선이 edge updater 끝에서 시작/종료 */
 const EDGE_UPDATER_RADIUS = 36;
 
-function EndMarker({ endType, color, id, isStart }: { endType: RelationshipEndType; color: string; id: string; isStart?: boolean }) {
-    const content = {
-        '1': <MarkerOneRequired color={color} />,
-        '1o': <MarkerOneOptional color={color} />,
-        'N': <MarkerManyRequired color={color} />,
-        'No': <MarkerManyOptional color={color} />,
-    }[endType];
+function MarkerSymbol({ endType, color }: { endType: RelationshipEndType; color: string }) {
+    switch (endType) {
+        case '1': return <MarkerOneRequired color={color} />;
+        case '1o': return <MarkerOneOptional color={color} />;
+        case 'N': return <MarkerManyRequired color={color} />;
+        case 'No': return <MarkerManyOptional color={color} />;
+        default: return <MarkerOneRequired color={color} />;
+    }
+}
 
+function PlacedMarker({
+    endType,
+    color,
+    x,
+    y,
+    angle,
+    flip,
+}: {
+    endType: RelationshipEndType;
+    color: string;
+    x: number;
+    y: number;
+    angle: number;
+    flip?: boolean;
+}) {
+    const rotation = flip ? angle + 180 : angle;
     return (
-        <marker
-            id={id}
-            markerWidth={48}
-            markerHeight={48}
-            viewBox="-12 -12 24 24"
-            refX={isStart ? MARKER_GAP : MARKER_GAP + 1}
-            refY={0}
-            orient={isStart ? 'auto-start-reverse' : 'auto'}
-            markerUnits="userSpaceOnUse"
-        >
-            {content}
-        </marker>
+        <g transform={`translate(${x}, ${y}) rotate(${rotation})`} className="pointer-events-none">
+            <MarkerSymbol endType={endType} color={color} />
+        </g>
     );
 }
 
@@ -176,21 +184,35 @@ const ERDEdge = ({
         }
     })();
 
-    const [edgePath, labelX, labelY] = isSelfLoop
-        ? buildSelfLoopPath(sx, sy, tx, ty, sourcePosition, targetPosition)
-        : getSmoothStepPath({
-            sourceX: sx,
-            sourceY: sy,
-            sourcePosition,
-            targetX: tx,
-            targetY: ty,
-            targetPosition,
-            borderRadius: 16,
-            offset: 50,
-        });
+    const fkYOffset = (data?.fkOffsetFromCenter as number | undefined) ?? 0;
+    const nodeBounds = data?.nodeBounds as Rect | undefined;
+    const obstacleRects = (data?.obstacleRects as Rect[] | undefined) ?? [];
 
-    const markerStartId = `erd-start-${sourceEnd}-${id}`;
-    const markerEndId = `erd-end-${targetEnd}-${id}`;
+    const selfLoopResult = isSelfLoop
+        ? buildSelfLoopPath(sx, sy, tx, ty, sourcePosition, targetPosition, fkYOffset, nodeBounds)
+        : null;
+
+    const [rawPath, labelX, labelY] = selfLoopResult
+        ? [selfLoopResult.path, selfLoopResult.labelX, selfLoopResult.labelY]
+        : buildSmartStepPath(
+            {
+                sourceX: sx,
+                sourceY: sy,
+                targetX: tx,
+                targetY: ty,
+                sourcePosition,
+                targetPosition,
+            },
+            obstacleRects,
+        );
+
+    const startExtent = isSelfLoop ? 0 : getMarkerExtent(sourceEnd);
+    const endExtent = getMarkerExtent(targetEnd);
+    const { trimmedPath: edgePath, start: startMarker, end: endMarker } = trimPathForMarkers(
+        rawPath,
+        startExtent,
+        endExtent,
+    );
 
     // 엔드포인트 점 위치 — EdgeLabelRenderer 좌표계 (flowX, flowY)
     // 핸들 위치 기준: adjSrc/adjTgt (spread 적용된 좌표)
@@ -214,50 +236,66 @@ const ERDEdge = ({
     return (
         <>
             <g className="react-flow__edge-path">
-                <defs>
-                    <EndMarker endType={sourceEnd} color={edgeColor} id={markerStartId} isStart />
-                    <EndMarker endType={targetEnd} color={edgeColor} id={markerEndId} />
-                </defs>
                 <path
                     id={id}
                     d={edgePath}
                     style={{ ...style, fill: 'none', strokeLinecap: 'butt', strokeLinejoin: 'round' }}
                     className="react-flow__edge-path"
-                    markerStart={`url(#${markerStartId})`}
-                    markerEnd={`url(#${markerEndId})`}
                 />
-                {/* 빛이 시작점→끝점으로 이동하는 흐름 애니메이션 (2개) */}
-                <path
-                    d={edgePath}
-                    pathLength={1}
-                    fill="none"
-                    stroke={lightenColor(edgeColor)}
-                    strokeWidth={1.5}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeDasharray="0.02 0.08"
-                    style={{
-                        opacity: 0.9,
-                        animation: 'erd-flow-light 2s linear infinite',
-                    }}
-                    className="pointer-events-none"
-                />
-                <path
-                    d={edgePath}
-                    pathLength={1}
-                    fill="none"
-                    stroke={lightenColor(edgeColor)}
-                    strokeWidth={1.5}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeDasharray="0.02 0.08"
-                    style={{
-                        opacity: 0.9,
-                        animation: 'erd-flow-light 2s linear infinite',
-                        animationDelay: '1s',
-                    }}
-                    className="pointer-events-none"
-                />
+                {startMarker && !isSelfLoop && (
+                    <PlacedMarker
+                        endType={sourceEnd}
+                        color={edgeColor}
+                        x={startMarker.x}
+                        y={startMarker.y}
+                        angle={startMarker.angle}
+                        flip
+                    />
+                )}
+                {endMarker && (
+                    <PlacedMarker
+                        endType={targetEnd}
+                        color={edgeColor}
+                        x={endMarker.x}
+                        y={endMarker.y}
+                        angle={endMarker.angle}
+                    />
+                )}
+                {!isSelfLoop && (
+                    <>
+                        <path
+                            d={edgePath}
+                            pathLength={1}
+                            fill="none"
+                            stroke={lightenColor(edgeColor)}
+                            strokeWidth={1.5}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeDasharray="0.02 0.08"
+                            style={{
+                                opacity: 0.9,
+                                animation: 'erd-flow-light 2s linear infinite',
+                            }}
+                            className="pointer-events-none"
+                        />
+                        <path
+                            d={edgePath}
+                            pathLength={1}
+                            fill="none"
+                            stroke={lightenColor(edgeColor)}
+                            strokeWidth={1.5}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeDasharray="0.02 0.08"
+                            style={{
+                                opacity: 0.9,
+                                animation: 'erd-flow-light 2s linear infinite',
+                                animationDelay: '1s',
+                            }}
+                            className="pointer-events-none"
+                        />
+                    </>
+                )}
                 {interactionWidth != null && interactionWidth > 0 && (
                     <path
                         d={edgePath}
@@ -287,21 +325,21 @@ const ERDEdge = ({
                     <PremiumTooltip label="관계 설정 수정 (더블 클릭)" dotColor={edgeColor}>
                         <div
                             style={{
-                                borderColor: `${edgeColor}33`,
+                                borderColor: isSelfLoop ? edgeColor : `${edgeColor}33`,
                                 color: edgeColor,
-                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                backgroundColor: isSelfLoop ? `${edgeColor}14` : 'rgba(255, 255, 255, 0.95)',
                             }}
-                            className="px-2 py-0.5 backdrop-blur-sm border rounded shadow-sm text-[10px] font-bold cursor-pointer hover:scale-110 transition-all duration-200"
+                            className="px-2.5 py-0.5 backdrop-blur-sm border rounded-full shadow-sm text-[10px] font-bold cursor-pointer hover:scale-105 transition-all duration-200 whitespace-nowrap"
                             onMouseEnter={(e) => {
                                 e.currentTarget.style.borderColor = edgeColor;
-                                e.currentTarget.style.backgroundColor = `${edgeColor}11`;
+                                e.currentTarget.style.backgroundColor = `${edgeColor}22`;
                             }}
                             onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = `${edgeColor}33`;
-                                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+                                e.currentTarget.style.borderColor = isSelfLoop ? edgeColor : `${edgeColor}33`;
+                                e.currentTarget.style.backgroundColor = isSelfLoop ? `${edgeColor}14` : 'rgba(255, 255, 255, 0.95)';
                             }}
                         >
-                            {label}
+                            {isSelfLoop ? '자기 참조 (Self Reference)' : label}
                         </div>
                     </PremiumTooltip>
                 </div>
