@@ -1284,9 +1284,15 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 const hH = ADJUSTED_HEADER_H * scale;
                 const rH = hH / 3;
-                const leftW = slideWidth * 0.7;
-                const rightW = slideWidth * 0.3;
-                const cW = leftW / 6;
+                // 명세서 헤더는 화면(SpecNode)과 동일하게 슬라이드 전체 너비를 6열로 채운다.
+                // (설계서처럼 우측 30%를 비우지 않는다 — 명세서에는 미리보기 영역이 없다.)
+                const metaWidths = (screen.specMetaColumnWidths && screen.specMetaColumnWidths.length === 6)
+                    ? screen.specMetaColumnWidths
+                    : [100, 180, 80, 140, 90, 120];
+                const metaTotal = metaWidths.reduce((a, b) => a + b, 0) || 1;
+                const metaColW = metaWidths.map(w => (w / metaTotal) * slideWidth);
+                const metaColX: number[] = [];
+                { let acc = 0; for (const w of metaColW) { metaColX.push(acc); acc += w; } }
 
                 // pptxgenjs는 6자리 대문자 헥스(FFFFFF)만 색상으로 인식한다.
                 // 'white'/'#fff'/'rgba(...)' 등 어떤 표기든 6자리 헥스로 정규화하고,
@@ -1392,9 +1398,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     "2,1": screen.screenDescription || tr('화면에 대한 구체적인 설명을 입력하세요', translateToMN)
                 };
 
-                // ─── 상단 헤더 영역 (좌측만 표; 우측 상단은 빈 영역) ───
+                // ─── 상단 헤더 영역 (슬라이드 전체 너비) ───
                 slide.addShape(pptx.ShapeType.rect, {
-                    x: 0, y: 0, w: leftW, h: hH,
+                    x: 0, y: 0, w: slideWidth, h: hH,
                     fill: { color: "FFFFFF" },
                     line: { color: "E2E8F0", width: 1 }
                 });
@@ -1411,15 +1417,16 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         // '화면설명' 데이터 칸 (Row 2, Col 1~5) 병합
                         if (r === 2 && c >= 1) {
                             if (c === 1) {
+                                const mergedW = slideWidth - metaColX[1];
                                 slide.addShape(pptx.ShapeType.rect, {
-                                    x: c * cW, y: r * rH, w: cW * 5, h: rH,
+                                    x: metaColX[1], y: r * rH, w: mergedW, h: rH,
                                     fill: { color: "FFFFFF" },
                                     line: { color: "E2E8F0", width: 1 }
                                 });
                                 // 화면설명 내용 추가 (왼쪽 정렬)
                                 const { text, options: styleOpts } = parseStyles(textMap["2,1"]);
                                 slide.addText(tr(text, translateToMN), {
-                                    x: c * cW, y: r * rH, w: cW * 5, h: rH,
+                                    x: metaColX[1], y: r * rH, w: mergedW, h: rH,
                                     align: 'left', valign: 'middle',
                                     fontSize: baseFs(6.5), color: '94A3B8',
                                     bold: styleOpts?.bold,
@@ -1434,7 +1441,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                         // 일반 칸(도형) 생성
                         slide.addShape(pptx.ShapeType.rect, {
-                            x: c * cW, y: r * rH, w: cW, h: rH,
+                            x: metaColX[c], y: r * rH, w: metaColW[c], h: rH,
                             fill: { color: isLabel ? "2C3E7C" : "FFFFFF" },
                             line: { color: "E2E8F0", width: 1 }
                         });
@@ -1443,7 +1450,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         if (content) {
                             const { text, options: styleOpts } = parseStyles(content);
                             slide.addText(tr(text, translateToMN), {
-                                x: c * cW, y: r * rH, w: cW, h: rH,
+                                x: metaColX[c], y: r * rH, w: metaColW[c], h: rH,
                                 align: 'center', valign: 'middle',
                                 fontSize: baseFs(isLabel ? 6 : 6.5),
                                 color: isLabel ? 'FFFFFF' : '1E293B',
@@ -1456,13 +1463,6 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                         }
                     }
                 }
-
-                // 헤더 우측(표 밖) 상단 빈 공간 — 레이아웃보내기와 동일한 7:3 비율
-                slide.addShape(pptx.ShapeType.rect, {
-                    x: leftW, y: 0, w: rightW, h: hH,
-                    fill: { color: "FFFFFF" },
-                    line: { color: "E2E8F0", width: 0.5 }
-                });
 
                 // ─── 하단 본문 영역 ───
                 const bodyY = hH;
