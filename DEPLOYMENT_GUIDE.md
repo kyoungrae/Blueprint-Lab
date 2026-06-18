@@ -200,6 +200,7 @@ docker save blueprint-backend > blueprint-backend.tar
 ### 2단계: 신규 이미지 전송
 ```bash
 scp -P 22222 blueprint-frontend.tar blueprint-backend.tar vims@192.168.0.141:~/projects/blueprint-lab/
+# scp -P 22222 blueprint-frontend.tar vims@192.168.0.141:~/projects/blueprint-lab/
 ```
 
 ### 3단계: 운영 서버에서 기존 컨테이너 교체
