@@ -1476,41 +1476,22 @@ const WeekView: React.FC<{
 
     const allDayLayout = React.useMemo(() => layoutAllDayWeekBars(events, allDays), [events, allDays]);
 
+    // 개별 시간 일정 + 여러 날에 걸친 시간 일정(연속 바)을 같은 레인 체계로 배치한다.
+    // 같은 시간대에 겹치면 바 높이를 줄여 같은 시간 칸 안에 함께 표시한다.
     const timedLayout = React.useMemo(() => {
-        const hourHeights = hours.map(h => {
-            let maxRows = 1;
-            allDays.forEach(d => {
-                const ymd = toYMD(d);
-                const dayEs = events.filter(e => !isSpanningEvent(e) && !isMultiDayEvent(e) && e.startDate === ymd);
-                maxRows = Math.max(maxRows, maxOverlapRowsAtHour(dayEs, h));
-            });
-            return Math.max(HOUR_MIN_H, maxRows * (TIMED_BAR_MIN_H + TIMED_BAR_GAP) + 8);
-        });
-
-        const hourOffset: number[] = [0];
-        for (let i = 0; i < hourHeights.length; i++) {
-            hourOffset.push(hourOffset[i] + hourHeights[i]);
-        }
-        const totalH = hourOffset[hourHeights.length];
-
-        const dayLayouts = allDays.map(d => {
-            const ymd = toYMD(d);
-            const dayEvents = events.filter(e => !isSpanningEvent(e) && !isMultiDayEvent(e) && e.startDate === ymd);
-            return layoutDayTimedEvents(dayEvents, hourOffset, hourHeights, CALENDAR_PRIME_HOUR);
-        });
-
-        return { hourHeights, hourOffset, totalH, dayLayouts };
-    }, [events, allDays, hours]);
-
-    // 여러 날에 걸친 시간 일정 → 시간 그리드 위에 하나의 연속 바로 표시.
-    // 같은 시간대에 다른 일정(개별 시간 일정·다른 연속 바)이 있으면
-    // 겹치지 않도록 아래 레인으로 밀어 분리한다.
-    const spanningTimedBars = React.useMemo(() => {
+        const hourStart = CALENDAR_PRIME_HOUR;
         const rangeStartYmd = toYMD(allDays[0]);
         const rangeEndYmd = toYMD(allDays[allDays.length - 1]);
-        const GAP = TIMED_BAR_GAP;
+        const STEP = TIMED_BAR_MIN_H + TIMED_BAR_GAP;
+        const dur = (e: CalendarEvent) => {
+            const start = parseTimeMinutes(e.startTime);
+            return { start, end: Math.max(parseTimeMinutes(e.endTime), start + 30) };
+        };
+        const overlap = (a: { start: number; end: number }, b: { start: number; end: number }) =>
+            a.start < b.end && b.start < a.end;
 
-        const candidates = events
+        // 여러 날에 걸친 시간 일정
+        const spanItems = events
             .filter(e => !isSpanningEvent(e) && isMultiDayEvent(e)
                 && normEventYmd(e.startDate) <= rangeEndYmd
                 && normEventYmd(e.endDate) >= rangeStartYmd)
@@ -1519,48 +1500,102 @@ const WeekView: React.FC<{
                 const end = normEventYmd(e.endDate);
                 const visStart = s < rangeStartYmd ? rangeStartYmd : s;
                 const visEnd = end > rangeEndYmd ? rangeEndYmd : end;
-                const startCol = daysBetweenDates(allDays[0], parseDate(visStart));
-                const endCol = daysBetweenDates(allDays[0], parseDate(visEnd));
-                const baseTop = yFromMinutes(parseTimeMinutes(e.startTime), timedLayout.hourOffset, timedLayout.hourHeights, CALENDAR_PRIME_HOUR);
-                const bottom = yFromMinutes(parseTimeMinutes(e.endTime), timedLayout.hourOffset, timedLayout.hourHeights, CALENDAR_PRIME_HOUR);
-                const height = Math.max(bottom - baseTop, TIMED_BAR_MIN_H);
-                return { event: e, startCol, endCol, baseTop, height, isSub: isCalendarSubEvent(e) };
+                return {
+                    event: e,
+                    startCol: daysBetweenDates(allDays[0], parseDate(visStart)),
+                    endCol: daysBetweenDates(allDays[0], parseDate(visEnd)),
+                    ...dur(e),
+                    lane: 0,
+                };
             })
-            .sort((a, b) => a.baseTop - b.baseTop || a.startCol - b.startCol);
+            .sort((a, b) => a.start - b.start || a.startCol - b.startCol);
 
-        // 각 컬럼별로 이미 점유된 세로 구간 (개별 시간 일정에서 시작)
-        const occupied: Array<Array<[number, number]>> = allDays.map((_, di) =>
-            (timedLayout.dayLayouts[di] ?? []).map(b => [b.top, b.top + b.height] as [number, number]),
-        );
+        // 연속 바끼리 레인 배정 (열·시간이 겹치면 다른 레인)
+        const placedSpans: typeof spanItems = [];
+        for (const s of spanItems) {
+            const used = new Set<number>();
+            for (const p of placedSpans) {
+                if (s.startCol <= p.endCol && p.startCol <= s.endCol && overlap(s, p)) used.add(p.lane);
+            }
+            let lane = 0;
+            while (used.has(lane)) lane++;
+            s.lane = lane;
+            placedSpans.push(s);
+        }
 
-        return candidates.map(c => {
-            let top = c.baseTop;
-            // 겹치는 구간이 없을 때까지 아래로 밀어내기
-            let collided = true;
-            while (collided) {
-                collided = false;
-                for (let di = c.startCol; di <= c.endCol; di++) {
-                    for (const [o0, o1] of occupied[di] ?? []) {
-                        if (top < o1 && top + c.height > o0) {
-                            top = o1 + GAP;
-                            collided = true;
-                        }
-                    }
+        // 일자별 점유 레인 (연속 바가 먼저 차지) + 개별 시간 일정 레인 배정
+        const perDay = allDays.map((d, di) => {
+            const ymd = toYMD(d);
+            const occupants: { lane: number; start: number; end: number }[] = spanItems
+                .filter(s => s.startCol <= di && di <= s.endCol)
+                .map(s => ({ lane: s.lane, start: s.start, end: s.end }));
+            const items = events
+                .filter(e => !isSpanningEvent(e) && !isMultiDayEvent(e) && e.startDate === ymd)
+                .map(e => ({ event: e, ...dur(e), lane: 0 }))
+                .sort((a, b) => a.start - b.start);
+            for (const it of items) {
+                const used = new Set<number>();
+                for (const o of occupants) if (overlap(o, it)) used.add(o.lane);
+                let lane = 0;
+                while (used.has(lane)) lane++;
+                it.lane = lane;
+                occupants.push({ lane, start: it.start, end: it.end });
+            }
+            return { items, occupants };
+        });
+
+        // 시간별 최대 레인 수 → 시간 칸 높이
+        const hourHeights = hours.map(h => {
+            const hStart = h * 60;
+            const hEnd = (h + 1) * 60;
+            let maxRows = 1;
+            perDay.forEach(({ occupants }) => {
+                const n = occupants.filter(o => o.start < hEnd && o.end > hStart).length;
+                maxRows = Math.max(maxRows, n);
+            });
+            return Math.max(HOUR_MIN_H, maxRows * STEP + 8);
+        });
+        const hourOffset: number[] = [0];
+        for (let i = 0; i < hourHeights.length; i++) hourOffset.push(hourOffset[i] + hourHeights[i]);
+        const totalH = hourOffset[hourHeights.length];
+
+        const rowCountFor = (occList: { lane: number; start: number; end: number }[], it: { start: number; end: number }) =>
+            1 + Math.max(0, ...occList.filter(o => overlap(o, it)).map(o => o.lane));
+
+        const dayLayouts = perDay.map(({ items, occupants }) => items.map(it => {
+            const baseTop = yFromMinutes(it.start, hourOffset, hourHeights, hourStart);
+            const fullBottom = yFromMinutes(it.end, hourOffset, hourHeights, hourStart);
+            const reduced = rowCountFor(occupants, it) > 1;
+            return {
+                event: it.event,
+                top: baseTop + it.lane * STEP,
+                height: reduced ? TIMED_BAR_MIN_H : Math.max(fullBottom - baseTop, TIMED_BAR_MIN_H),
+                isSub: isCalendarSubEvent(it.event),
+            };
+        }));
+
+        // 연속 바 — 레인 고정, 겹치면 높이 축소해 같은 시간 칸에 함께 표시
+        const spanBars = spanItems.map(s => {
+            const baseTop = yFromMinutes(s.start, hourOffset, hourHeights, hourStart);
+            const fullBottom = yFromMinutes(s.end, hourOffset, hourHeights, hourStart);
+            let maxLane = s.lane;
+            for (let di = s.startCol; di <= s.endCol; di++) {
+                for (const o of perDay[di]?.occupants ?? []) {
+                    if (overlap(o, s)) maxLane = Math.max(maxLane, o.lane);
                 }
             }
-            for (let di = c.startCol; di <= c.endCol; di++) {
-                (occupied[di] ?? []).push([top, top + c.height]);
-            }
             return {
-                event: c.event,
-                startCol: c.startCol,
-                span: c.endCol - c.startCol + 1,
-                top,
-                height: c.height,
-                isSub: c.isSub,
+                event: s.event,
+                startCol: s.startCol,
+                span: s.endCol - s.startCol + 1,
+                top: baseTop + s.lane * STEP,
+                height: maxLane > 0 ? TIMED_BAR_MIN_H : Math.max(fullBottom - baseTop, TIMED_BAR_MIN_H),
+                isSub: isCalendarSubEvent(s.event),
             };
         });
-    }, [events, allDays, timedLayout]);
+
+        return { hourHeights, hourOffset, totalH, dayLayouts, spanBars };
+    }, [events, allDays, hours]);
 
     const todayDayIndex = React.useMemo(
         () => allDays.findIndex(d => toYMD(d) === todayYmd),
@@ -1813,7 +1848,7 @@ const WeekView: React.FC<{
                                 </div>
                             ))}
                             {/* 여러 날에 걸친 시간 일정 — 컬럼을 가로지르는 하나의 연속 바 */}
-                            {spanningTimedBars.map(({ event: e, startCol, span, top, height, isSub }) => {
+                            {timedLayout.spanBars.map(({ event: e, startCol, span, top, height, isSub }) => {
                                 const color = eventBarColor(e, categories);
                                 const inset = isSub ? ALLDAY_SUB_INDENT : 2;
                                 const timeLabel = e.startTime && e.endTime ? `${e.startTime} - ${e.endTime}` : undefined;
