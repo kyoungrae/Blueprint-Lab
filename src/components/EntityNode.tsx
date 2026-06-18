@@ -845,6 +845,10 @@ const EntityNodeFull: React.FC<{ entityId: string; selected?: boolean; nodeId: s
         const currentEntity = useERDStore.getState().entitiesById[entity.id];
         if (!currentEntity) return;
 
+        const target = currentEntity.attributes.find((attr) => attr.id === attrId);
+        const colName = target?.name?.trim() || '이 컬럼';
+        if (!window.confirm(`'${colName}' 컬럼을 삭제하시겠습니까?`)) return;
+
         const newAttributes = currentEntity.attributes.filter((attr) => attr.id !== attrId);
         sendOperation({
             type: 'ATTRIBUTE_DELETE',

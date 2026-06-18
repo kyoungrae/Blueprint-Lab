@@ -136,6 +136,12 @@ export interface SmartStepPathParams {
     targetY: number;
     sourcePosition: Position;
     targetPosition: Position;
+    /**
+     * 같은 두 엔티티 사이를 지나는 여러 엣지(특히 컬럼 매핑 모드)가
+     * 가운데 직각 채널에서 겹치지 않도록, 채널을 수직(=X) 또는 수평(=Y)으로 이동시키는 값.
+     */
+    channelDX?: number;
+    channelDY?: number;
 }
 
 /** 장애물(다른 엔티티)을 피하는 직각 연결 경로 */
@@ -143,17 +149,24 @@ export function buildSmartStepPath(
     params: SmartStepPathParams,
     obstacles: Rect[],
 ): [path: string, labelX: number, labelY: number] {
+    const { channelDX = 0, channelDY = 0, ...base } = params;
     const offsets = [40, 60, 80, 100, 130, 160, 200, 260, 320];
     let best: [string, number, number] | null = null;
 
     const pick = (result: ReturnType<typeof getSmoothStepPath>): [string, number, number] =>
         [result[0], result[1], result[2]];
 
+    // 채널 분리값이 있으면 가운데 채널 좌표를 그만큼 이동시켜 평행한 엣지끼리 간격을 둔다.
+    const centerX = channelDX ? (base.sourceX + base.targetX) / 2 + channelDX : undefined;
+    const centerY = channelDY ? (base.sourceY + base.targetY) / 2 + channelDY : undefined;
+
     for (const offset of offsets) {
         const result = getSmoothStepPath({
-            ...params,
+            ...base,
             offset,
             borderRadius: 16,
+            ...(centerX !== undefined ? { centerX } : {}),
+            ...(centerY !== undefined ? { centerY } : {}),
         });
         const picked = pick(result);
         if (!pathCrossesRects(picked[0], obstacles)) {
@@ -163,15 +176,16 @@ export function buildSmartStepPath(
     }
 
     // 여전히 교차하면 중간 채널을 위/아래로 밀어 재시도
-    const midY = (params.sourceY + params.targetY) / 2;
+    const midY = (base.sourceY + base.targetY) / 2;
     const channelOffsets = [-120, -80, -40, 40, 80, 120, 160];
     for (const shift of channelOffsets) {
         for (const offset of offsets) {
             const result = getSmoothStepPath({
-                ...params,
+                ...base,
                 offset,
                 borderRadius: 16,
                 centerY: midY + shift,
+                ...(centerX !== undefined ? { centerX } : {}),
             });
             const picked = pick(result);
             if (!pathCrossesRects(picked[0], obstacles)) {
@@ -180,7 +194,13 @@ export function buildSmartStepPath(
         }
     }
 
-    return best ?? pick(getSmoothStepPath({ ...params, offset: 200, borderRadius: 16 }));
+    return best ?? pick(getSmoothStepPath({
+        ...base,
+        offset: 200,
+        borderRadius: 16,
+        ...(centerX !== undefined ? { centerX } : {}),
+        ...(centerY !== undefined ? { centerY } : {}),
+    }));
 }
 
 const MARKER_STUB = 28;

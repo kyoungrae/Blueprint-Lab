@@ -1167,6 +1167,23 @@ const ERDCanvasContent: React.FC = () => {
             targetGroups.set(key, arr.sort((a, b) => a.sortVal - b.sortVal).map(x => x.id));
         });
 
+        // 컬럼 매핑 모드: 같은 두 엔티티(순서 무관) 사이를 지나는 엣지들을 묶어
+        // 가운데 채널에서 겹치지 않도록 인덱스를 매긴다.
+        const pairGroupMap = new Map<string, { id: string; sortVal: number }[]>();
+        for (const rel of rels) {
+            if (rel.source === rel.target) continue;
+            const pairKey = [rel.source, rel.target].sort().join('::');
+            const sc = nodeCenter(rel.source);
+            const tc = nodeCenter(rel.target);
+            if (!pairGroupMap.has(pairKey)) pairGroupMap.set(pairKey, []);
+            // 두 엔티티를 잇는 선들이 위→아래 순서로 정렬되도록 양 끝 Y 평균으로 정렬
+            pairGroupMap.get(pairKey)!.push({ id: rel.id, sortVal: (sc.y + tc.y) / 2 });
+        }
+        const pairGroups = new Map<string, string[]>();
+        pairGroupMap.forEach((arr, key) => {
+            pairGroups.set(key, arr.sort((a, b) => a.sortVal - b.sortVal).map(x => x.id));
+        });
+
         // 연결할 소스 컬럼 attribute id 결정
         // 우선순위: 명시된 sourceKey > 첫 번째 PK > 첫 번째 컬럼
         const resolveSourceAttrId = (entityId: string, colName?: string): string | undefined => {
@@ -1239,6 +1256,8 @@ const ERDCanvasContent: React.FC = () => {
             const tk = `${rel.target}::${safeTgtHandle ?? ''}`;
             const srcGroup = sourceGroups.get(sk) ?? [rel.id];
             const tgtGroup = targetGroups.get(tk) ?? [rel.id];
+            const pairKey = [rel.source, rel.target].sort().join('::');
+            const pairGroup = pairGroups.get(pairKey) ?? [rel.id];
 
             // ── 컬럼설정으로 보기: 컬럼 핸들에 연결 ──
             let sourceHandle = handles.sourceHandle;
@@ -1298,6 +1317,9 @@ const ERDCanvasContent: React.FC = () => {
                 sourceCount: useColumnEndpoints ? 1 : srcGroup.length,
                 targetIndex: useColumnEndpoints ? 0 : tgtGroup.indexOf(rel.id),
                 targetCount: useColumnEndpoints ? 1 : tgtGroup.length,
+                // 컬럼 매핑 모드: 같은 엔티티 쌍을 잇는 평행 엣지를 가운데 채널에서 분산
+                channelIndex: useColumnEndpoints ? pairGroup.indexOf(rel.id) : 0,
+                channelCount: useColumnEndpoints ? pairGroup.length : 1,
             },
         };
         });
@@ -1362,12 +1384,23 @@ const ERDCanvasContent: React.FC = () => {
             }
 
             const isSelfRef = isSelfReferencingRelationship(connection.source, connection.target);
+            // 컬럼 핸들끼리의 연결이면(컬럼 매핑 모드) 같은 엔티티 쌍이라도
+            // 컬럼 조합이 다르면 별개의 관계로 본다 → 두 엔티티 사이 2개 이상 연결 허용.
+            const isColumnConnection =
+                !!parseColumnHandle(connection.sourceHandle) && !!parseColumnHandle(connection.targetHandle);
             const existingRel = isSelfRef
                 ? relationships.find(r => r.source === connection.source && r.target === connection.target)
-                : relationships.find(r =>
-                    (r.source === connection.source && r.target === connection.target) ||
-                    (r.source === connection.target && r.target === connection.source)
-                );
+                : isColumnConnection
+                    ? relationships.find(r =>
+                        (r.source === connection.source && r.target === connection.target &&
+                            r.sourceHandle === connection.sourceHandle && r.targetHandle === connection.targetHandle) ||
+                        (r.source === connection.target && r.target === connection.source &&
+                            r.sourceHandle === connection.targetHandle && r.targetHandle === connection.sourceHandle)
+                    )
+                    : relationships.find(r =>
+                        (r.source === connection.source && r.target === connection.target) ||
+                        (r.source === connection.target && r.target === connection.source)
+                    );
 
             if (existingRel) {
                 if (isSelfRef) {
@@ -1627,6 +1660,9 @@ const ERDCanvasContent: React.FC = () => {
     const handleDeleteAttributeFromExcel = useCallback((entityId: string, attrId: string) => {
         const currentEntity = entitiesById[entityId];
         if (!currentEntity) return;
+        const target = currentEntity.attributes.find((attr) => attr.id === attrId);
+        const colName = target?.name?.trim() || '이 컬럼';
+        if (!window.confirm(`'${colName}' 컬럼을 삭제하시겠습니까?`)) return;
         const newAttributes = currentEntity.attributes.filter((attr) => attr.id !== attrId);
         sendOperation({
             type: 'ATTRIBUTE_DELETE',

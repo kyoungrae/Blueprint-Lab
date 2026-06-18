@@ -134,6 +134,14 @@ function computeSpreadOffset(index: number, count: number): number {
     return (index - (count - 1) / 2) * SPREAD;
 }
 
+/** 같은 두 엔티티를 잇는 평행 엣지들을 가운데 채널에서 분산시키는 간격 */
+const CHANNEL_SPREAD = 26;
+
+function computeChannelShift(index: number, count: number): number {
+    if (count <= 1) return 0;
+    return (index - (count - 1) / 2) * CHANNEL_SPREAD;
+}
+
 const ERDEdge = ({
     id,
     source,
@@ -158,6 +166,8 @@ const ERDEdge = ({
     // 분산 오프셋 계산 (left/right → Y축, top/bottom → X축)
     const srcSpread = computeSpreadOffset(data?.sourceIndex ?? 0, data?.sourceCount ?? 1);
     const tgtSpread = computeSpreadOffset(data?.targetIndex ?? 0, data?.targetCount ?? 1);
+    // 컬럼 매핑 모드에서 같은 엔티티 쌍을 잇는 평행 엣지 분산용
+    const channelShift = computeChannelShift(data?.channelIndex ?? 0, data?.channelCount ?? 1);
     const isVerticalSrc = sourcePosition === 'left' || sourcePosition === 'right';
     const isVerticalTgt = targetPosition === 'left' || targetPosition === 'right';
     const adjSrcX = sourceX + (isVerticalSrc ? 0 : srcSpread);
@@ -202,6 +212,10 @@ const ERDEdge = ({
                 targetY: ty,
                 sourcePosition,
                 targetPosition,
+                // 컬럼 매핑 모드: 같은 두 엔티티를 잇는 평행 엣지들이 가운데 채널에서
+                // 겹치지 않도록 채널을 좌우/상하로 분산시킨다.
+                channelDX: isVerticalSrc ? channelShift : 0,
+                channelDY: isVerticalSrc ? 0 : channelShift,
             },
             obstacleRects,
         );
