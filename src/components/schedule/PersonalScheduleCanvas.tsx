@@ -536,6 +536,20 @@ function eventActiveOnYmd(e: CalendarEvent, ymd: string) {
     return s <= ymd && end >= ymd;
 }
 
+/** 여러 날에 걸친 일정(시작일 ≠ 종료일) — 캘린더에서 연속된 하나의 바로 표시한다. */
+function isMultiDayEvent(e: CalendarEvent) {
+    return normEventYmd(e.endDate) > normEventYmd(e.startDate);
+}
+
+/**
+ * 상단 "종일" 영역에 연속 바로 올릴 일정 — "종일"이 체크된 일정만 해당.
+ * 종일이 아닌 일정은 시간대 그리드에 시간 위치로 배치된다.
+ * (여러 날에 걸친 시간 일정은 시간 그리드 안에서 하나의 연속 바로 표시)
+ */
+function isSpanningEvent(e: CalendarEvent) {
+    return !!e.allDay;
+}
+
 function sortCalendarEventsForDay(a: CalendarEvent, b: CalendarEvent) {
     const aSub = isCalendarSubEvent(a) ? 1 : 0;
     const bSub = isCalendarSubEvent(b) ? 1 : 0;
@@ -637,7 +651,8 @@ function layoutAllDayWeekBars(events: CalendarEvent[], days: Date[]): { bars: Al
     const weekEndYmd = toYMD(days[days.length - 1]);
 
     const inWeek = events.filter(e => {
-        if (!e.allDay) return false;
+        // 종일 일정뿐 아니라 여러 날에 걸친 일정도 연속 바로 표시
+        if (!isSpanningEvent(e)) return false;
         const s = normEventYmd(e.startDate);
         const end = normEventYmd(e.endDate);
         return s <= weekEndYmd && end >= weekStartYmd;
@@ -694,11 +709,43 @@ function layoutAllDayWeekBars(events: CalendarEvent[], days: Date[]): { bars: Al
     return { bars, rowHeight };
 }
 
-function calendarBarStyle(isSub: boolean, color: string): React.CSSProperties {
-    return isSub
-        ? { background: color + '18', color, boxShadow: `inset 0 0 0 1px ${color}40` }
-        : { background: color, color: '#fff' };
+/**
+ * 캘린더 일정 칩의 "트랙"(바탕) 스타일.
+ * 진행률 채움은 별도의 <CalendarChipFill> 엘리먼트로 그려, 부모 칩과
+ * 동일한 보더·보더 레디어스를 그대로 갖도록 한다.
+ */
+function calendarBarStyle(isSub: boolean, color: string, progress = 0): React.CSSProperties {
+    const pct = Math.max(0, Math.min(100, Math.round(progress)));
+    if (isSub) {
+        // 하위 일정: 옅은 트랙
+        return { backgroundColor: color + '18', color, boxShadow: `inset 0 0 0 1px ${color}40` };
+    }
+    // 일반 일정: 옅은 트랙 + 보더 (간트 바와 동일한 느낌)
+    return {
+        backgroundColor: color + '33',
+        border: `1px solid ${color}66`,
+        color: ganttBarTextColor(color, pct),
+    };
 }
+
+/**
+ * 진행률 채움 영역. 부모 칩과 동일한 보더 레디어스(rounded-md)와 보더를 적용해
+ * 채워지는 부분이 부모 영역처럼 보이도록 한다.
+ */
+const CalendarChipFill: React.FC<{ color: string; isSub?: boolean; progress?: number }> = ({ color, isSub = false, progress = 0 }) => {
+    const pct = Math.max(0, Math.min(100, Math.round(progress)));
+    if (pct <= 0) return null;
+    return (
+        <div
+            className="absolute inset-y-0 left-0 rounded-md pointer-events-none z-0"
+            style={{
+                width: `${pct}%`,
+                backgroundColor: isSub ? color + '55' : color,
+                border: `1px solid ${color}66`,
+            }}
+        />
+    );
+};
 
 type TimedBarLayout = {
     event: CalendarEvent;
@@ -1159,8 +1206,32 @@ const EventForm: React.FC<{
                 {/* 일정 */}
                 <div>
                     <label className="block text-xs font-bold text-gray-600 mb-1">일정</label>
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                        className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50 mb-1.5" />
+                    <div className="grid grid-cols-2 gap-2 mb-1.5">
+                        <div>
+                            <span className="block text-[10px] font-bold text-gray-400 mb-0.5">시작일</span>
+                            <WheelDatePicker
+                                value={normEventYmd(startDate)}
+                                onChange={v => {
+                                    setStartDate(v);
+                                    if (normEventYmd(endDate) < v) setEndDate(v);
+                                }}
+                                placeholder="시작일"
+                                className="w-full text-xs"
+                            />
+                        </div>
+                        <div>
+                            <span className="block text-[10px] font-bold text-gray-400 mb-0.5">종료일</span>
+                            <WheelDatePicker
+                                value={normEventYmd(endDate)}
+                                onChange={v => {
+                                    setEndDate(v);
+                                    if (v < normEventYmd(startDate)) setStartDate(v);
+                                }}
+                                placeholder="종료일"
+                                className="w-full text-xs"
+                            />
+                        </div>
+                    </div>
                     {!allDay && (
                         <div className="grid grid-cols-2 gap-2">
                             <WheelTimePicker value={startTime} onChange={setStartTime} variant="panel" placeholder="시작" />
@@ -1253,8 +1324,34 @@ const EventForm: React.FC<{
 
                     <div>
                         <label className="block text-xs font-bold text-gray-600 mb-1">일정</label>
-                        <input type="date" value={s.startDate} onChange={e => updateSubEvent(idx, { startDate: e.target.value })}
-                            className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-xl outline-none focus:border-rose-400 bg-gray-50 mb-1.5" />
+                        <div className="grid grid-cols-2 gap-2 mb-1.5">
+                            <div>
+                                <span className="block text-[10px] font-bold text-gray-400 mb-0.5">시작일</span>
+                                <WheelDatePicker
+                                    value={normEventYmd(s.startDate)}
+                                    onChange={v => {
+                                        const patch: Partial<SubEvent> = { startDate: v };
+                                        if (normEventYmd(s.endDate) < v) patch.endDate = v;
+                                        updateSubEvent(idx, patch);
+                                    }}
+                                    placeholder="시작일"
+                                    className="w-full text-xs"
+                                />
+                            </div>
+                            <div>
+                                <span className="block text-[10px] font-bold text-gray-400 mb-0.5">종료일</span>
+                                <WheelDatePicker
+                                    value={normEventYmd(s.endDate || s.startDate)}
+                                    onChange={v => {
+                                        const patch: Partial<SubEvent> = { endDate: v };
+                                        if (v < normEventYmd(s.startDate)) patch.startDate = v;
+                                        updateSubEvent(idx, patch);
+                                    }}
+                                    placeholder="종료일"
+                                    className="w-full text-xs"
+                                />
+                            </div>
+                        </div>
                         {!s.allDay && (
                             <div className="grid grid-cols-2 gap-2">
                                 <WheelTimePicker
@@ -1384,7 +1481,7 @@ const WeekView: React.FC<{
             let maxRows = 1;
             allDays.forEach(d => {
                 const ymd = toYMD(d);
-                const dayEs = events.filter(e => !e.allDay && e.startDate === ymd);
+                const dayEs = events.filter(e => !isSpanningEvent(e) && !isMultiDayEvent(e) && e.startDate === ymd);
                 maxRows = Math.max(maxRows, maxOverlapRowsAtHour(dayEs, h));
             });
             return Math.max(HOUR_MIN_H, maxRows * (TIMED_BAR_MIN_H + TIMED_BAR_GAP) + 8);
@@ -1398,12 +1495,72 @@ const WeekView: React.FC<{
 
         const dayLayouts = allDays.map(d => {
             const ymd = toYMD(d);
-            const dayEvents = events.filter(e => !e.allDay && e.startDate === ymd);
+            const dayEvents = events.filter(e => !isSpanningEvent(e) && !isMultiDayEvent(e) && e.startDate === ymd);
             return layoutDayTimedEvents(dayEvents, hourOffset, hourHeights, CALENDAR_PRIME_HOUR);
         });
 
         return { hourHeights, hourOffset, totalH, dayLayouts };
     }, [events, allDays, hours]);
+
+    // 여러 날에 걸친 시간 일정 → 시간 그리드 위에 하나의 연속 바로 표시.
+    // 같은 시간대에 다른 일정(개별 시간 일정·다른 연속 바)이 있으면
+    // 겹치지 않도록 아래 레인으로 밀어 분리한다.
+    const spanningTimedBars = React.useMemo(() => {
+        const rangeStartYmd = toYMD(allDays[0]);
+        const rangeEndYmd = toYMD(allDays[allDays.length - 1]);
+        const GAP = TIMED_BAR_GAP;
+
+        const candidates = events
+            .filter(e => !isSpanningEvent(e) && isMultiDayEvent(e)
+                && normEventYmd(e.startDate) <= rangeEndYmd
+                && normEventYmd(e.endDate) >= rangeStartYmd)
+            .map(e => {
+                const s = normEventYmd(e.startDate);
+                const end = normEventYmd(e.endDate);
+                const visStart = s < rangeStartYmd ? rangeStartYmd : s;
+                const visEnd = end > rangeEndYmd ? rangeEndYmd : end;
+                const startCol = daysBetweenDates(allDays[0], parseDate(visStart));
+                const endCol = daysBetweenDates(allDays[0], parseDate(visEnd));
+                const baseTop = yFromMinutes(parseTimeMinutes(e.startTime), timedLayout.hourOffset, timedLayout.hourHeights, CALENDAR_PRIME_HOUR);
+                const bottom = yFromMinutes(parseTimeMinutes(e.endTime), timedLayout.hourOffset, timedLayout.hourHeights, CALENDAR_PRIME_HOUR);
+                const height = Math.max(bottom - baseTop, TIMED_BAR_MIN_H);
+                return { event: e, startCol, endCol, baseTop, height, isSub: isCalendarSubEvent(e) };
+            })
+            .sort((a, b) => a.baseTop - b.baseTop || a.startCol - b.startCol);
+
+        // 각 컬럼별로 이미 점유된 세로 구간 (개별 시간 일정에서 시작)
+        const occupied: Array<Array<[number, number]>> = allDays.map((_, di) =>
+            (timedLayout.dayLayouts[di] ?? []).map(b => [b.top, b.top + b.height] as [number, number]),
+        );
+
+        return candidates.map(c => {
+            let top = c.baseTop;
+            // 겹치는 구간이 없을 때까지 아래로 밀어내기
+            let collided = true;
+            while (collided) {
+                collided = false;
+                for (let di = c.startCol; di <= c.endCol; di++) {
+                    for (const [o0, o1] of occupied[di] ?? []) {
+                        if (top < o1 && top + c.height > o0) {
+                            top = o1 + GAP;
+                            collided = true;
+                        }
+                    }
+                }
+            }
+            for (let di = c.startCol; di <= c.endCol; di++) {
+                (occupied[di] ?? []).push([top, top + c.height]);
+            }
+            return {
+                event: c.event,
+                startCol: c.startCol,
+                span: c.endCol - c.startCol + 1,
+                top,
+                height: c.height,
+                isSub: c.isSub,
+            };
+        });
+    }, [events, allDays, timedLayout]);
 
     const todayDayIndex = React.useMemo(
         () => allDays.findIndex(d => toYMD(d) === todayYmd),
@@ -1561,17 +1718,18 @@ const WeekView: React.FC<{
                                     <div
                                         key={e.id}
                                         onClick={() => onSelectEvent(e)}
-                                        className={`absolute text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer z-10 leading-snug ${isSub ? '' : 'shadow-sm'}`}
+                                        className={`absolute overflow-hidden text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer z-10 leading-snug ${isSub ? '' : 'shadow-sm'}`}
                                         style={{
                                             left: startCol * dayW + inset,
                                             width: span * dayW - inset * 2,
                                             top: lane * (ALLDAY_BAR_MIN_H + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP,
                                             minHeight: ALLDAY_BAR_MIN_H,
-                                            ...calendarBarStyle(isSub, color),
+                                            ...calendarBarStyle(isSub, color, e.progress ?? 0),
                                         }}
                                         title={e.title}
                                     >
-                                        <span className="flex items-center gap-0.5 min-w-0">
+                                        <CalendarChipFill color={color} isSub={isSub} progress={e.progress ?? 0} />
+                                        <span className="relative z-[1] flex items-center gap-0.5 min-w-0">
                                             {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
                                             <span className="truncate">{e.title}</span>
                                         </span>
@@ -1634,23 +1792,60 @@ const WeekView: React.FC<{
                                                     height: Math.max(height - 2, TIMED_BAR_MIN_H),
                                                     left: inset,
                                                     right: 2,
-                                                    ...calendarBarStyle(isSub, color),
+                                                    ...calendarBarStyle(isSub, color, e.progress ?? 0),
                                                 }}
                                             >
-                                                {timeLabel && (
-                                                    <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
-                                                        {timeLabel}
+                                                <CalendarChipFill color={color} isSub={isSub} progress={e.progress ?? 0} />
+                                                <div className="relative z-[1]">
+                                                    {timeLabel && (
+                                                        <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
+                                                            {timeLabel}
+                                                        </div>
+                                                    )}
+                                                    <div className="flex items-center gap-0.5 min-w-0">
+                                                        {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
+                                                        <span className="truncate">{e.title}</span>
                                                     </div>
-                                                )}
-                                                <div className="flex items-center gap-0.5 min-w-0">
-                                                    {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
-                                                    <span className="truncate">{e.title}</span>
                                                 </div>
                                             </div>
                                         );
                                     })}
                                 </div>
                             ))}
+                            {/* 여러 날에 걸친 시간 일정 — 컬럼을 가로지르는 하나의 연속 바 */}
+                            {spanningTimedBars.map(({ event: e, startCol, span, top, height, isSub }) => {
+                                const color = eventBarColor(e, categories);
+                                const inset = isSub ? ALLDAY_SUB_INDENT : 2;
+                                const timeLabel = e.startTime && e.endTime ? `${e.startTime} - ${e.endTime}` : undefined;
+                                return (
+                                    <div
+                                        key={`span-${e.id}`}
+                                        onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
+                                        className={`absolute rounded-md px-2 py-1 text-[10px] font-bold cursor-pointer z-[2] overflow-hidden leading-snug ${isSub ? '' : 'shadow-sm'}`}
+                                        style={{
+                                            left: startCol * dayW + inset,
+                                            width: span * dayW - inset * 2,
+                                            top: top + 1,
+                                            height: Math.max(height - 2, TIMED_BAR_MIN_H),
+                                            ...calendarBarStyle(isSub, color, e.progress ?? 0),
+                                        }}
+                                        title={e.title}
+                                    >
+                                        <CalendarChipFill color={color} isSub={isSub} progress={e.progress ?? 0} />
+                                        <div className="relative z-[1]">
+                                            {timeLabel && (
+                                                <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
+                                                    {timeLabel}
+                                                </div>
+                                            )}
+                                            <div className="flex items-center gap-0.5 min-w-0">
+                                                {isSub && <span className="shrink-0 text-[11px] opacity-45 leading-none">↳</span>}
+                                                <span className="truncate">{e.title}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -1712,7 +1907,7 @@ const MonthView: React.FC<{
                     if (!d) return <div key={`empty-${i}`} className="border-r border-b border-gray-100 bg-gray-50/50" />;
                     const ymd = toYMD(d);
                     const dayEvents = events
-                        .filter(e => e.allDay ? eventActiveOnYmd(e, ymd) : e.startDate === ymd)
+                        .filter(e => isSpanningEvent(e) ? eventActiveOnYmd(e, ymd) : e.startDate === ymd)
                         .sort(sortCalendarEventsForDay);
                     const isToday = ymd === toYMD(new Date());
                     return (
@@ -1728,10 +1923,11 @@ const MonthView: React.FC<{
                                     const color = eventBarColor(e, categories);
                                     return (
                                     <div key={`${e.id}-${ymd}`} onClick={ev => { ev.stopPropagation(); onSelectEvent(e); }}
-                                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate cursor-pointer mb-0.5
+                                        className={`relative overflow-hidden text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate cursor-pointer mb-0.5
                                             ${isSub ? 'ml-2' : ''}`}
-                                        style={calendarBarStyle(isSub, color)}>
-                                        <span className="flex items-center gap-0.5 min-w-0">
+                                        style={calendarBarStyle(isSub, color, e.progress ?? 0)}>
+                                        <CalendarChipFill color={color} isSub={isSub} progress={e.progress ?? 0} />
+                                        <span className="relative z-[1] flex items-center gap-0.5 min-w-0">
                                             {isSub && <span className="shrink-0 opacity-45">↳</span>}
                                             <span className="truncate">
                                                 {e.startTime && !e.allDay ? `${e.startTime} ` : ''}{e.title}
@@ -1763,9 +1959,9 @@ const DayView: React.FC<{
     const now = useCalendarNow();
     const ymd = toYMD(date);
     const isToday = ymd === toYMD(now);
-    const timedEvents = events.filter(e => e.startDate === ymd && !e.allDay);
+    const timedEvents = events.filter(e => e.startDate === ymd && !isSpanningEvent(e));
     const allDayEvents = events
-        .filter(e => e.allDay && eventActiveOnYmd(e, ymd))
+        .filter(e => isSpanningEvent(e) && eventActiveOnYmd(e, ymd))
         .sort(sortCalendarEventsForDay);
     const containerRef = React.useRef<HTMLDivElement>(null);
     const accRef       = React.useRef(0);
@@ -1826,10 +2022,11 @@ const DayView: React.FC<{
                         const color = eventBarColor(e, categories);
                         return (
                             <div key={`${e.id}-${ymd}`} onClick={() => onSelectEvent(e)}
-                                className={`text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer leading-snug
+                                className={`relative overflow-hidden text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer leading-snug
                                     ${isSub ? 'ml-2' : 'shadow-sm'}`}
-                                style={calendarBarStyle(isSub, color)}>
-                                <span className="flex items-center gap-0.5 min-w-0">
+                                style={calendarBarStyle(isSub, color, e.progress ?? 0)}>
+                                <CalendarChipFill color={color} isSub={isSub} progress={e.progress ?? 0} />
+                                <span className="relative z-[1] flex items-center gap-0.5 min-w-0">
                                     {isSub && <span className="shrink-0 text-[11px] opacity-45">↳</span>}
                                     <span className="truncate">{e.title}</span>
                                 </span>
@@ -1877,17 +2074,20 @@ const DayView: React.FC<{
                                     height: Math.max(height - 2, TIMED_BAR_MIN_H),
                                     left: inset,
                                     right: 2,
-                                    ...calendarBarStyle(isSub, color),
+                                    ...calendarBarStyle(isSub, color, e.progress ?? 0),
                                 }}
                             >
-                                {timeLabel && (
-                                    <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
-                                        {timeLabel}
+                                <CalendarChipFill color={color} isSub={isSub} progress={e.progress ?? 0} />
+                                <div className="relative z-[1]">
+                                    {timeLabel && (
+                                        <div className={`truncate ${isSub ? 'text-[9px] opacity-70 font-medium' : 'text-[10px] opacity-90 font-medium'}`}>
+                                            {timeLabel}
+                                        </div>
+                                    )}
+                                    <div className="flex items-center gap-0.5 min-w-0">
+                                        {isSub && <span className="shrink-0 text-[11px] opacity-45">↳</span>}
+                                        <span className="truncate">{e.title}</span>
                                     </div>
-                                )}
-                                <div className="flex items-center gap-0.5 min-w-0">
-                                    {isSub && <span className="shrink-0 text-[11px] opacity-45">↳</span>}
-                                    <span className="truncate">{e.title}</span>
                                 </div>
                             </div>
                         );
@@ -2723,11 +2923,11 @@ const PersonalScheduleCanvas: React.FC = () => {
         [events, visibleCats],
     );
 
-    const calendarNow = useCalendarNow();
-
+    // 간트 작업영역에 표시할 기준일: 캘린더/차트에서 이동한 주(weekStart)
+    // → 다른 주로 이동하면 그 주기의 회차 데이터·하이라이트가 보이도록 한다.
     const ganttTasks = useMemo(
-        () => eventsToGanttTasks(filteredEvents, categories, calendarNow),
-        [filteredEvents, categories, calendarNow],
+        () => eventsToGanttTasks(filteredEvents, categories, startOfDay(weekStart)),
+        [filteredEvents, categories, weekStart],
     );
 
     const eventDates = useMemo(
@@ -2833,8 +3033,9 @@ const PersonalScheduleCanvas: React.FC = () => {
     };
 
     const handleUpdateGanttTask = useCallback((id: string, patch: Partial<GanttTask>) => {
-        setEvents(prev => prev.map(e => (e.id === id ? applyGanttPatchToEvent(e, patch) : e)));
-    }, []);
+        const refDate = startOfDay(weekStart);
+        setEvents(prev => prev.map(e => (e.id === id ? applyGanttPatchToEvent(e, patch, refDate) : e)));
+    }, [weekStart]);
 
     const handleDeleteGanttTask = useCallback((id: string) => {
         setEvents(prev => prev.filter(e => e.id !== id && e.parentId !== id));
@@ -2849,10 +3050,11 @@ const PersonalScheduleCanvas: React.FC = () => {
         const ev = events.find(e => e.id === taskId);
         if (!ev) return;
 
-        const today = startOfDay(new Date());
+        // 클릭 시 기준 회차: 캘린더/차트에서 이동한 주(weekStart)의 회차
+        const refDate = startOfDay(weekStart);
         const repeat = ev.repeat ?? 'none';
         const targetYmd = occYmd
-            ?? getCurrentPeriodOccurrenceYmd(ev, today)
+            ?? getCurrentPeriodOccurrenceYmd(ev, refDate)
             ?? normEventYmd(ev.startDate);
 
         const occDate = parseDate(targetYmd);
@@ -2886,7 +3088,7 @@ const PersonalScheduleCanvas: React.FC = () => {
         } else {
             setCalendarScrollHour(null);
         }
-    }, [events]);
+    }, [events, weekStart]);
 
     return (
         <div className="w-full h-screen flex flex-col bg-gray-50 overflow-hidden">
