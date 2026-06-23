@@ -74,6 +74,24 @@ function sanitizePptxFileNameSegment(raw: string): string {
     return s.slice(0, 120) || 'untitled';
 }
 
+const screenIdCollator = new Intl.Collator('ko-KR', {
+    numeric: true,
+    sensitivity: 'base',
+});
+
+function sortScreensByScreenIdAsc(screens: Screen[]): Screen[] {
+    return [...screens].sort((a, b) => {
+        const aScreenId = (a.screenId || '').trim();
+        const bScreenId = (b.screenId || '').trim();
+
+        if (aScreenId && !bScreenId) return -1;
+        if (!aScreenId && bScreenId) return 1;
+
+        const byScreenId = screenIdCollator.compare(aScreenId || a.id, bScreenId || b.id);
+        return byScreenId || screenIdCollator.compare(a.id, b.id);
+    });
+}
+
 /**
  * 선택된 화면이 속한 최상위 섹션 이름(여러 루트면 정렬 후 `_` 연결) + 다운로드 사용자 표시명
  */
@@ -1535,7 +1553,9 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
         const runExport = async () => {
             try {
                 const { screens, sections } = useScreenDesignStore.getState();
-                const selectedScreens = screens.filter(screen => screenIds.includes(screen.id));
+                const selectedScreens = sortScreensByScreenIdAsc(
+                    screens.filter(screen => screenIds.includes(screen.id))
+                );
                 if (selectedScreens.length === 0) throw new Error('선택된 화면을 찾을 수 없습니다.');
 
                 const pptFileName = buildPptBetaDownloadFileName(
@@ -1566,61 +1586,24 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
                 // 하나의 pptx 객체 생성
                 const pptx = new pptxgen();
+                const sectionById = new Map(sections.map((section) => [section.id, section]));
+                const addedSectionTitles = new Set<string>();
 
-                // 섹션 ID 기준으로 그룹핑
-                const sectionIds = [...new Set(selectedScreens.filter(s => s.sectionId).map(s => s.sectionId))];
-                const hasSections = sectionIds.length > 0;
+                for (const screen of selectedScreens) {
+                    const section = screen.sectionId ? sectionById.get(screen.sectionId) : undefined;
+                    const sectionTitle = screen.sectionId
+                        ? section?.name || `섹션 ${screen.sectionId}`
+                        : undefined;
 
-                if (hasSections) {
-                    // 섹션이 있는 경우 섹션별로 슬라이드 생성
-                    for (const sectionId of sectionIds) {
-                        const sectionScreens = selectedScreens.filter(screen => screen.sectionId === sectionId);
-                        const section = sections.find((s: any) => s.id === sectionId);
-                        if (sectionScreens.length > 0) {
-                            const uiScreens = sectionScreens.filter(screen => screen.variant !== 'SPEC');
-                            const specScreens = sectionScreens.filter(screen => screen.variant === 'SPEC');
-
-                            // 섹션 생성 (pptxgenjs 섹션 기능)
-                            const sectionTitle = section?.name || `섹션 ${sectionId}`;
-                            pptx.addSection({ title: sectionTitle });
-
-                            // 화면 설계 슬라이드 추가
-                            if (uiScreens.length > 0) {
-                                await exportLayoutToPPT(uiScreens, pptx, sectionTitle, pptFileName);
-                            }
-
-                            // 명세서 슬라이드 추가
-                            if (specScreens.length > 0) {
-                                await exportSpecLayoutToPPT(specScreens, pptx, sectionTitle, pptFileName);
-                            }
-                        }
+                    if (sectionTitle && !addedSectionTitles.has(sectionTitle)) {
+                        pptx.addSection({ title: sectionTitle });
+                        addedSectionTitles.add(sectionTitle);
                     }
 
-                    // 섹션에 속하지 않은 화면 처리
-                    const unsectionedScreens = selectedScreens.filter(screen => !screen.sectionId);
-                    if (unsectionedScreens.length > 0) {
-                        const uiScreens = unsectionedScreens.filter(screen => screen.variant !== 'SPEC');
-                        const specScreens = unsectionedScreens.filter(screen => screen.variant === 'SPEC');
-
-                        if (uiScreens.length > 0) {
-                            await exportLayoutToPPT(uiScreens, pptx, undefined, pptFileName);
-                        }
-
-                        if (specScreens.length > 0) {
-                            await exportSpecLayoutToPPT(specScreens, pptx, undefined, pptFileName);
-                        }
-                    }
-                } else {
-                    // 섹션이 없는 경우 기존 로직 사용
-                    const uiScreens = selectedScreens.filter(screen => screen.variant !== 'SPEC');
-                    const specScreens = selectedScreens.filter(screen => screen.variant === 'SPEC');
-
-                    if (uiScreens.length > 0) {
-                        await exportLayoutToPPT(uiScreens, pptx, undefined, pptFileName);
-                    }
-
-                    if (specScreens.length > 0) {
-                        await exportSpecLayoutToPPT(specScreens, pptx, undefined, pptFileName);
+                    if (screen.variant === 'SPEC') {
+                        await exportSpecLayoutToPPT([screen], pptx, sectionTitle, pptFileName);
+                    } else {
+                        await exportLayoutToPPT([screen], pptx, sectionTitle, pptFileName);
                     }
                 }
 
