@@ -306,6 +306,7 @@ export interface WbsMergeAnalysis {
     summary: WbsMergeSummary;
     addedRows: WbsDiffItem[];
     updatedRows: WbsDiffItem[];
+    updatedMenus: WbsDiffItem[];
     /** 웹에만 있는 행 목록 (엑셀에 없음 → 유지하되 표시) */
     onlyOnWebRows: WbsDiffItem[];
     onlyOnWebMenus: WbsDiffItem[];
@@ -338,7 +339,7 @@ const cell = (dr: Record<string, unknown>, ...keys: string[]): string => {
  * 다운로드한 형식의 엑셀(.xlsx)을 읽어 현재 WBS 데이터와 비교 분석한다.
  * - 행(개발상세)은 'ID(수정금지)'로 매칭하므로 기능명·구분을 바꿔도 정확히 갱신(누락·중복 방지).
  *   ID가 비었으면 (메뉴코드+구분+기능명) 키로 보조 매칭, 그래도 없으면 신규 추가.
- * - 메뉴는 메뉴코드 기준 upsert(이름·상위 갱신).
+ * - 메뉴는 'ID(수정금지)' 우선 매칭 후 메뉴코드·프로그램ID·메뉴명·상위를 갱신한다.
  * - 엑셀에 없는 항목은 삭제하지 않고 유지하되, onlyOnWeb 목록으로 표시한다.
  */
 export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promise<WbsMergeAnalysis> {
@@ -358,46 +359,100 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
 
     const menus: WbsMenuNode[] = current.menus.map((m) => ({ ...m }));
     const rows: WbsDevRow[] = current.rows.map((r) => ({ ...r }));
+    const menuById = new Map<string, WbsMenuNode>(menus.map((m) => [m.id, m]));
     const menuByCode = new Map<string, WbsMenuNode>(menus.map((m) => [m.menuCode, m]));
-    const originalMenuCodes = new Set<string>(current.menus.map((m) => m.menuCode));
-    const seenMenuCodes = new Set<string>();
+    const originalMenuIds = new Set<string>(current.menus.map((m) => m.id));
+    const seenMenuIds = new Set<string>();
 
     const summary: WbsMergeSummary = {
         menusAdded: 0, menusUpdated: 0, rowsAdded: 0, rowsUpdated: 0, rowsOnlyOnWeb: 0, menusOnlyOnWeb: 0, skipped: 0,
     };
     const addedRows: WbsDiffItem[] = [];
     const updatedRows: WbsDiffItem[] = [];
+    const updatedMenus: WbsDiffItem[] = [];
 
-    // ── 1) 메뉴 upsert (메뉴코드 기준) ──
+    const applyMenuFields = (
+        existing: WbsMenuNode,
+        fields: { name: string; menuCode: string; programId?: string },
+    ): boolean => {
+        let changed = false;
+        const changes: string[] = [];
+
+        if (existing.name !== fields.name) {
+            existing.name = fields.name;
+            changed = true;
+            changes.push('메뉴명');
+        }
+
+        if (fields.menuCode && existing.menuCode !== fields.menuCode) {
+            const conflict = menuByCode.get(fields.menuCode);
+            if (conflict && conflict.id !== existing.id) {
+                summary.skipped++;
+                changes.push(`코드 충돌(${fields.menuCode})`);
+            } else {
+                menuByCode.delete(existing.menuCode);
+                existing.menuCode = fields.menuCode;
+                menuByCode.set(fields.menuCode, existing);
+                changed = true;
+                changes.push(`코드→${fields.menuCode}`);
+            }
+        }
+
+        const nextProgramId = fields.programId;
+        if ((existing.programId ?? '') !== (nextProgramId ?? '')) {
+            existing.programId = nextProgramId;
+            changed = true;
+            changes.push(nextProgramId ? `PID→${nextProgramId}` : 'PID 삭제');
+        }
+
+        if (changed && changes.length > 0) {
+            updatedMenus.push({ label: `${existing.menuCode} · ${existing.name} (${changes.join(', ')})` });
+        }
+        return changed;
+    };
+
+    // ── 1) 메뉴 upsert (ID 우선, 메뉴코드 보조) ──
     if (menuWs) {
         const menuRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(menuWs, { raw: false, defval: '' });
         for (const mr of menuRows) {
+            const id = cell(mr, 'ID(수정금지)', 'ID');
             const code = cell(mr, '메뉴코드');
-            if (!code) continue;
-            seenMenuCodes.add(code);
+            if (!id && !code) continue;
+
             const name = cell(mr, '메뉴명') || '이름 없음';
-            const programId = cell(mr, '프로그램ID');
-            const existing = menuByCode.get(code);
+            const programId = cell(mr, '프로그램ID') || undefined;
+
+            let existing: WbsMenuNode | undefined;
+            if (id && menuById.has(id)) {
+                existing = menuById.get(id);
+            } else if (code) {
+                existing = menuByCode.get(code);
+            }
+
             if (existing) {
-                let changed = false;
-                if (existing.name !== name) { existing.name = name; changed = true; }
-                const nextProgramId = programId || undefined;
-                if ((existing.programId ?? '') !== (nextProgramId ?? '')) {
-                    existing.programId = nextProgramId;
-                    changed = true;
+                seenMenuIds.add(existing.id);
+                if (applyMenuFields(existing, { name, menuCode: code || existing.menuCode, programId })) {
+                    summary.menusUpdated++;
                 }
-                if (changed) summary.menusUpdated++;
             } else {
+                const newId = id && !menuById.has(id) ? id : uid('menu');
+                const newCode = code || `MENU-${String(summary.menusAdded + 1).padStart(4, '0')}`;
+                if (menuByCode.has(newCode)) {
+                    summary.skipped++;
+                    continue;
+                }
                 const created: WbsMenuNode = {
-                    id: uid('menu'),
+                    id: newId,
                     parentId: null,
                     name,
-                    menuCode: code,
-                    programId: programId || undefined,
+                    menuCode: newCode,
+                    programId,
                     order: 1_000_000 + summary.menusAdded,
                 };
                 menus.push(created);
-                menuByCode.set(code, created);
+                menuById.set(newId, created);
+                menuByCode.set(newCode, created);
+                seenMenuIds.add(newId);
                 summary.menusAdded++;
             }
         }
@@ -483,10 +538,10 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
 
     const onlyOnWebMenus: WbsDiffItem[] = menuWs
         ? menus
-              .filter((m) => originalMenuCodes.has(m.menuCode) && !seenMenuCodes.has(m.menuCode))
+              .filter((m) => originalMenuIds.has(m.id) && !seenMenuIds.has(m.id))
               .map((m) => ({ label: `${m.menuCode} · ${m.name}` }))
         : [];
     summary.menusOnlyOnWeb = onlyOnWebMenus.length;
 
-    return { data: { menus, rows }, summary, addedRows, updatedRows, onlyOnWebRows, onlyOnWebMenus };
+    return { data: { menus, rows }, summary, addedRows, updatedRows, updatedMenus, onlyOnWebRows, onlyOnWebMenus };
 }

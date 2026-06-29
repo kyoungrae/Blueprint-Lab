@@ -104,7 +104,7 @@ const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, pr
                     ) : !analysis ? (
                         <>
                             <p className="text-xs text-gray-500 mb-3 leading-relaxed">
-                                ‘엑셀 다운로드’로 받은 파일을 팀원이 수정한 뒤 올리면, 행의 <b>ID(수정금지)</b>로 정확히 매칭해 변경분을 반영합니다. 먼저 무엇이 바뀌는지 보여드립니다.
+                                ‘엑셀 다운로드’로 받은 파일을 수정한 뒤 올리면, <b>ID(수정금지)</b>로 메뉴·개발상세 행을 매칭해 변경분을 반영합니다. 메뉴코드·프로그램ID(PID)·메뉴명도 함께 갱신됩니다.
                             </p>
                             <div
                                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -143,6 +143,7 @@ const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, pr
                             </p>
 
                             <div className="space-y-2">
+                                <DiffSection icon={<RefreshCw size={13} />} title="수정될 메뉴" tone="text-violet-700 bg-violet-50/60" items={analysis.updatedMenus} />
                                 <DiffSection icon={<Plus size={13} />} title="추가될 행" tone="text-emerald-700 bg-emerald-50/60" items={analysis.addedRows} />
                                 <DiffSection icon={<RefreshCw size={13} />} title="수정될 행" tone="text-blue-700 bg-blue-50/60" items={analysis.updatedRows} />
                                 <DiffSection icon={<EyeOff size={13} />} title="엑셀에 없어 유지되는 행" tone="text-gray-600 bg-gray-50" items={analysis.onlyOnWebRows} />
