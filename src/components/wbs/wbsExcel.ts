@@ -249,7 +249,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
     // ─────────────────────────────────────────────
     // 시트3: 메뉴 데이터 (재업로드용)
     // ─────────────────────────────────────────────
-    const menuHdr = ['ID(수정금지)', '메뉴코드', '메뉴명', '전체경로', '상위메뉴코드'].map((v) => sc(v, hdrStyle('left')));
+    const menuHdr = ['ID(수정금지)', '메뉴코드', '메뉴명', '프로그램ID', '전체경로', '상위메뉴코드'].map((v) => sc(v, hdrStyle('left')));
     const menuBodyAoa: XAoa = [menuHdr, ...menus
         .slice()
         .sort((a, b) => (menuOrder.get(a.id) ?? 0) - (menuOrder.get(b.id) ?? 0))
@@ -257,12 +257,13 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
             sc(m.id, cellStyle('FFFFFF', { font: { name: '맑은 고딕', sz: 8, color: { rgb: '94A3B8' } } })),
             sc(m.menuCode,  cellStyle('FFFFFF', { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: '4F46E5' } } })),
             sc(m.name,      cellStyle('FFFFFF')),
+            sc(m.programId ?? '', cellStyle('FFFFFF', { font: { name: '맑은 고딕', sz: 9, color: { rgb: '64748B' } } })),
             sc(menuPath(menus, m.id), cellStyle('F8FAFC')),
             sc(m.parentId ? (menus.find((x) => x.id === m.parentId)?.menuCode ?? '') : '', cellStyle('FFFFFF')),
         ])
     ];
     const ws3 = XLSXStyle.utils.aoa_to_sheet(menuBodyAoa);
-    ws3['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 24 }, { wch: 40 }, { wch: 14 }];
+    ws3['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 24 }, { wch: 16 }, { wch: 40 }, { wch: 14 }];
 
     // ─────────────────────────────────────────────
     // 워크북 조립
@@ -375,11 +376,26 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
             if (!code) continue;
             seenMenuCodes.add(code);
             const name = cell(mr, '메뉴명') || '이름 없음';
+            const programId = cell(mr, '프로그램ID');
             const existing = menuByCode.get(code);
             if (existing) {
-                if (existing.name !== name) { existing.name = name; summary.menusUpdated++; }
+                let changed = false;
+                if (existing.name !== name) { existing.name = name; changed = true; }
+                const nextProgramId = programId || undefined;
+                if ((existing.programId ?? '') !== (nextProgramId ?? '')) {
+                    existing.programId = nextProgramId;
+                    changed = true;
+                }
+                if (changed) summary.menusUpdated++;
             } else {
-                const created: WbsMenuNode = { id: uid('menu'), parentId: null, name, menuCode: code, order: 1_000_000 + summary.menusAdded };
+                const created: WbsMenuNode = {
+                    id: uid('menu'),
+                    parentId: null,
+                    name,
+                    menuCode: code,
+                    programId: programId || undefined,
+                    order: 1_000_000 + summary.menusAdded,
+                };
                 menus.push(created);
                 menuByCode.set(code, created);
                 summary.menusAdded++;

@@ -40,6 +40,7 @@ function normalizeMenu(m: any, idx: number): WbsMenuNode {
         parentId: typeof m?.parentId === 'string' && m.parentId ? m.parentId : null,
         name: typeof m?.name === 'string' ? m.name : '이름 없음',
         menuCode: typeof m?.menuCode === 'string' && m.menuCode ? m.menuCode : `MENU-${String(idx + 1).padStart(4, '0')}`,
+        programId: typeof m?.programId === 'string' && m.programId.trim() ? m.programId.trim() : undefined,
         order: Number.isFinite(m?.order) ? Number(m.order) : idx,
     };
 }

@@ -20,6 +20,8 @@ export interface WbsMenuNode {
     name: string;
     /** 고유 메뉴 코드(개발 상세의 기본 정보 자동 세팅 기준) */
     menuCode: string;
+    /** 메뉴 프로그램 ID (화면/프로그램 식별자) */
+    programId?: string;
     /** 형제 간 정렬 순서 */
     order: number;
 }

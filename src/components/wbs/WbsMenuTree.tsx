@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Pencil, Check, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { useWbsStore, calcMenuProgress } from '../../store/wbsStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
@@ -47,6 +47,14 @@ function nodeMatchesFilter(node: TreeNode, activeAssignees: Set<string>, rowsByM
     if (assignees.some((a) => activeAssignees.has(a))) return true;
     return node.children.some((c) => nodeMatchesFilter(c, activeAssignees, rowsByMenu));
 }
+
+interface MenuEditDraft {
+    name: string;
+    menuCode: string;
+    programId: string;
+}
+
+const EMPTY_MENU_DRAFT: MenuEditDraft = { name: '', menuCode: '', programId: '' };
 
 interface WbsMenuTreeProps {
     selectedId?: string | null;
@@ -99,11 +107,18 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
     );
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [draftName, setDraftName] = useState('');
+    const [draft, setDraft] = useState<MenuEditDraft>(EMPTY_MENU_DRAFT);
     const [dragId, setDragId] = useState<string | null>(null);
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
     // 드롭 위치: 대상 위(형제 앞) / 가운데(하위로) / 아래(형제 뒤)
     const [dropPos, setDropPos] = useState<'before' | 'inside' | 'after' | null>(null);
+    const editContainerRef = useRef<HTMLDivElement>(null);
+
+    const handleEditBlur = (e: React.FocusEvent) => {
+        const next = e.relatedTarget as Node | null;
+        if (next && editContainerRef.current?.contains(next)) return;
+        commitEdit();
+    };
 
     const toggleCollapse = (id: string) =>
         setCollapsed((prev) => {
@@ -117,15 +132,39 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
         const entry = editingMap.get(`menu_${node.id}`);
         if (entry && entry.userId !== currentUserId) return; // 다른 사람이 수정 중이면 차단
         setEditingId(node.id);
-        setDraftName(node.name);
+        setDraft({
+            name: node.name,
+            menuCode: node.menuCode,
+            programId: node.programId ?? '',
+        });
         emitFocus(`menu_${node.id}`);
     };
-    const commitEdit = () => {
-        if (editingId) {
-            updateMenu(editingId, { name: draftName.trim() || '이름 없음' });
-            emitBlur(`menu_${editingId}`);
-        }
+    const cancelEdit = () => {
+        if (editingId) emitBlur(`menu_${editingId}`);
         setEditingId(null);
+        setDraft(EMPTY_MENU_DRAFT);
+    };
+    const commitEdit = () => {
+        if (!editingId) return;
+        const name = draft.name.trim() || '이름 없음';
+        const menuCode = draft.menuCode.trim();
+        if (!menuCode) {
+            window.alert('메뉴 코드를 입력해 주세요.');
+            return;
+        }
+        if (menus.some((m) => m.id !== editingId && m.menuCode === menuCode)) {
+            window.alert('이미 사용 중인 메뉴 코드입니다.');
+            return;
+        }
+        const programId = draft.programId.trim();
+        updateMenu(editingId, {
+            name,
+            menuCode,
+            programId: programId || undefined,
+        });
+        emitBlur(`menu_${editingId}`);
+        setEditingId(null);
+        setDraft(EMPTY_MENU_DRAFT);
     };
 
     const siblingsOrderEnd = (parentId: string | null) =>
@@ -248,22 +287,48 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
                     </button>
 
                     {editingId === node.id ? (
-                        <input
-                            autoFocus
-                            value={draftName}
-                            onChange={(e) => setDraftName(e.target.value)}
-                            onBlur={commitEdit}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') commitEdit();
-                                if (e.key === 'Escape') setEditingId(null);
-                            }}
+                        <div
+                            ref={editContainerRef}
+                            className="flex-1 min-w-0 flex flex-col gap-1"
                             onClick={(e) => e.stopPropagation()}
-                            className="flex-1 min-w-0 text-sm px-1.5 py-0.5 rounded border border-emerald-300 outline-none"
-                        />
+                            onBlur={handleEditBlur}
+                        >
+                            <input
+                                autoFocus
+                                value={draft.name}
+                                onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') commitEdit();
+                                    if (e.key === 'Escape') cancelEdit();
+                                }}
+                                placeholder="메뉴명"
+                                className="w-full text-sm px-1.5 py-0.5 rounded border border-emerald-300 outline-none"
+                            />
+                            <input
+                                value={draft.menuCode}
+                                onChange={(e) => setDraft((prev) => ({ ...prev, menuCode: e.target.value }))}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') commitEdit();
+                                    if (e.key === 'Escape') cancelEdit();
+                                }}
+                                placeholder="메뉴 코드"
+                                className="w-full text-[11px] font-mono px-1.5 py-0.5 rounded border border-emerald-200 outline-none text-indigo-700"
+                            />
+                            <input
+                                value={draft.programId}
+                                onChange={(e) => setDraft((prev) => ({ ...prev, programId: e.target.value }))}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') commitEdit();
+                                    if (e.key === 'Escape') cancelEdit();
+                                }}
+                                placeholder="프로그램 ID"
+                                className="w-full text-[11px] font-mono px-1.5 py-0.5 rounded border border-emerald-200 outline-none text-gray-600"
+                            />
+                        </div>
                     ) : (
                         <span
                             className={`flex-1 min-w-0 flex flex-col gap-0.5 ${editable ? 'cursor-text' : ''}`}
-                            title={editable ? '더블클릭하여 이름 수정' : node.name}
+                            title={editable ? '더블클릭하여 메뉴 정보 수정' : node.name}
                             onDoubleClick={(e) => {
                                 if (!editable) return;
                                 e.stopPropagation();
@@ -274,6 +339,11 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
                                 <span className="truncate text-sm text-gray-800">{node.name}</span>
                                 <span className="text-[10px] font-mono text-gray-400 shrink-0">{node.menuCode}</span>
                             </span>
+                            {node.programId && (
+                                <span className="text-[10px] font-mono text-gray-400 truncate" title={`프로그램 ID: ${node.programId}`}>
+                                    PID: {node.programId}
+                                </span>
+                            )}
                             {/* 담당자 뱃지 — 메뉴명 아래 */}
                             {menuAssignees.length > 0 && (
                                 <span className="flex flex-wrap gap-1">
@@ -304,7 +374,7 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
                                     <Check size={13} />
                                 </button>
                             ) : (
-                                <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(node); }} className="p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 rounded" title="이름 변경">
+                                <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(node); }} className="p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 rounded" title="메뉴 정보 변경">
                                     <Pencil size={12} />
                                 </button>
                             )}

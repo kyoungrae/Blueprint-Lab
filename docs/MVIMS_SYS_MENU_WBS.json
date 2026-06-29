@@ -1,0 +1,551 @@
+{
+  "type": "WBS",
+  "version": 1,
+  "exportedAt": "2026-06-29T15:55:20.608563",
+  "source": "NEW_MVIMS.SYS_MENU",
+  "menus": [
+    {
+      "id": "mvims_registerService",
+      "parentId": null,
+      "name": "전자업무",
+      "menuCode": "registerService",
+      "order": 0,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_E_WORK",
+      "parentId": "mvims_registerService",
+      "name": "전자업무",
+      "menuCode": "E_WORK",
+      "order": 0,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_E_NEW_REG_LIST",
+      "parentId": "mvims_E_WORK",
+      "name": "신규등록 신청 내역",
+      "menuCode": "E_NEW_REG_LIST",
+      "order": 0,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_E_TRNS_REG",
+      "parentId": "mvims_E_WORK",
+      "name": "이전등록 신청 내역",
+      "menuCode": "E_TRNS_REG",
+      "order": 1,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_E_ERSR_REG",
+      "parentId": "mvims_E_WORK",
+      "name": "말소등록 신청 내역",
+      "menuCode": "E_ERSR_REG",
+      "order": 2,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_E_CHNG_PLT",
+      "parentId": "mvims_E_WORK",
+      "name": "차량번호 변경 신청 내역",
+      "menuCode": "E_CHNG_PLT",
+      "order": 3,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_E_NOPLT_RISSU",
+      "parentId": "mvims_E_WORK",
+      "name": "번호판 재발급 신청 내역",
+      "menuCode": "E_NOPLT_RISSU",
+      "order": 4,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_E_VHCL_CERT_RISSU",
+      "parentId": "mvims_E_WORK",
+      "name": "자동차 등록증 재발급 신청 내역",
+      "menuCode": "E_VHCL_CERT_RISSU",
+      "order": 5,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_E_PLATE_RSV",
+      "parentId": "mvims_E_WORK",
+      "name": "자동차 번호 예약 신청 내역",
+      "menuCode": "E_PLATE_RSV",
+      "order": 6,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_E_WORK_PROC",
+      "parentId": "mvims_registerService",
+      "name": "전자 업무 최종 처리",
+      "menuCode": "E_WORK_PROC",
+      "order": 1,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_E_WORK_PROC_LIST",
+      "parentId": "mvims_E_WORK_PROC",
+      "name": "전자업무 최종처리",
+      "menuCode": "E_WORK_PROC_LIST",
+      "order": 0,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV",
+      "parentId": null,
+      "name": "서비스",
+      "menuCode": "SRV",
+      "order": 1,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_SRV_REG",
+      "parentId": "mvims_SRV",
+      "name": "등록 서비스",
+      "menuCode": "SRV_REG",
+      "order": 0,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_SRV_NEW_REG",
+      "parentId": "mvims_SRV_REG",
+      "name": "신규등록",
+      "menuCode": "SRV_NEW_REG",
+      "order": 0,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_TRNS_REG",
+      "parentId": "mvims_SRV_REG",
+      "name": "이전등록",
+      "menuCode": "SRV_TRNS_REG",
+      "order": 1,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_VHCL_CHNG_REG",
+      "parentId": "mvims_SRV_REG",
+      "name": "변경등록",
+      "menuCode": "SRV_VHCL_CHNG_REG",
+      "order": 2,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_ERSR_REG",
+      "parentId": "mvims_SRV_REG",
+      "name": "말소등록",
+      "menuCode": "SRV_ERSR_REG",
+      "order": 3,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_RCVRY_ERSR_REG",
+      "parentId": "mvims_SRV_REG",
+      "name": "복원등록",
+      "menuCode": "SRV_RCVRY_ERSR_REG",
+      "order": 4,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_MDFY_REG",
+      "parentId": "mvims_SRV_REG",
+      "name": "경정등록",
+      "menuCode": "SRV_MDFY_REG",
+      "order": 5,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_VHCL_PLT_MNG",
+      "parentId": "mvims_SRV",
+      "name": "자동차 등록 번호판 관리",
+      "menuCode": "SRV_VHCL_PLT_MNG",
+      "order": 1,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_PLT_REISSU",
+      "parentId": "mvims_SRV_VHCL_PLT_MNG",
+      "name": "번호판 분실 재발급",
+      "menuCode": "SRV_PLT_REISSU",
+      "order": 0,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_VHCL_USER_MNG",
+      "parentId": "mvims_SRV",
+      "name": "자동차 사용자 관리",
+      "menuCode": "SRV_VHCL_USER_MNG",
+      "order": 2,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_SRV_VHCL_USER",
+      "parentId": "mvims_SRV_VHCL_USER_MNG",
+      "name": "자동차 사용자 관리",
+      "menuCode": "SRV_VHCL_USER",
+      "order": 0,
+      "programId": "/reg"
+    },
+    {
+      "id": "mvims_test1",
+      "parentId": null,
+      "name": "테스트 페이지",
+      "menuCode": "test1",
+      "order": 4
+    },
+    {
+      "id": "mvims_test11",
+      "parentId": "mvims_test1",
+      "name": "테스트 페이지 목록",
+      "menuCode": "test11",
+      "order": 1,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_test111",
+      "parentId": "mvims_test11",
+      "name": "list",
+      "menuCode": "test111",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_testtest",
+      "parentId": "mvims_test11",
+      "name": "testest",
+      "menuCode": "testtest",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_test222",
+      "parentId": "mvims_test11",
+      "name": "detail",
+      "menuCode": "test222",
+      "order": 2,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_test333",
+      "parentId": "mvims_test11",
+      "name": "modify",
+      "menuCode": "test333",
+      "order": 3,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_test444",
+      "parentId": "mvims_test11",
+      "name": "register",
+      "menuCode": "test444",
+      "order": 4,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SETTINGS",
+      "parentId": null,
+      "name": "설정/관리",
+      "menuCode": "SETTINGS",
+      "order": 8
+    },
+    {
+      "id": "mvims_USER_MANAGEMENT",
+      "parentId": "mvims_SETTINGS",
+      "name": "사용자 관리",
+      "menuCode": "USER_MANAGEMENT",
+      "order": 1
+    },
+    {
+      "id": "mvims_USER_LIST",
+      "parentId": "mvims_USER_MANAGEMENT",
+      "name": "사용자 목록",
+      "menuCode": "USER_LIST",
+      "order": 0,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_USER_REQ",
+      "parentId": "mvims_USER_MANAGEMENT",
+      "name": "사용자 등록 신청",
+      "menuCode": "USER_REQ",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_GROUP_MANAGEMENT",
+      "parentId": "mvims_SETTINGS",
+      "name": "소속/그룹관리",
+      "menuCode": "GROUP_MANAGEMENT",
+      "order": 2
+    },
+    {
+      "id": "mvims_OFFICE_SETTINGS",
+      "parentId": "mvims_GROUP_MANAGEMENT",
+      "name": "소속설정",
+      "menuCode": "OFFICE_SETTINGS",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_GROUP_SETTINGS",
+      "parentId": "mvims_GROUP_MANAGEMENT",
+      "name": "그룹설정",
+      "menuCode": "GROUP_SETTINGS",
+      "order": 2,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_MENU_MANAGEMENT",
+      "parentId": "mvims_SETTINGS",
+      "name": "메뉴관리",
+      "menuCode": "MENU_MANAGEMENT",
+      "order": 3
+    },
+    {
+      "id": "mvims_MENU_SETTINGS",
+      "parentId": "mvims_MENU_MANAGEMENT",
+      "name": "메뉴설정",
+      "menuCode": "MENU_SETTINGS",
+      "order": 0,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SYSTEM_MANAGEMENT",
+      "parentId": "mvims_SETTINGS",
+      "name": "시스템관리",
+      "menuCode": "SYSTEM_MANAGEMENT",
+      "order": 4
+    },
+    {
+      "id": "mvims_COM_CODE_SETTINGS",
+      "parentId": "mvims_SYSTEM_MANAGEMENT",
+      "name": "코드설정",
+      "menuCode": "COM_CODE_SETTINGS",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SYSTEM_SETTINGS",
+      "parentId": "mvims_SYSTEM_MANAGEMENT",
+      "name": "시스템설정",
+      "menuCode": "SYSTEM_SETTINGS",
+      "order": 2,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_COM_EVENT_LOG",
+      "parentId": "mvims_SYSTEM_MANAGEMENT",
+      "name": "로그 확인",
+      "menuCode": "COM_EVENT_LOG",
+      "order": 3,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SYS_ACS_LOG",
+      "parentId": "mvims_SYSTEM_MANAGEMENT",
+      "name": "접속 로그 확인",
+      "menuCode": "SYS_ACS_LOG",
+      "order": 4,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SYS_BBS_MST",
+      "parentId": "mvims_SETTINGS",
+      "name": "게시판 관리",
+      "menuCode": "SYS_BBS_MST",
+      "order": 5,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_SYS_BBS_MST_LIST",
+      "parentId": "mvims_SYS_BBS_MST",
+      "name": "게시판 유형 관리",
+      "menuCode": "SYS_BBS_MST_LIST",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SYS_BBS_POST_MNG",
+      "parentId": "mvims_SYS_BBS_MST",
+      "name": "게시판 관리",
+      "menuCode": "SYS_BBS_POST_MNG",
+      "order": 2,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SYS_BBS",
+      "parentId": null,
+      "name": "게시판",
+      "menuCode": "SYS_BBS",
+      "order": 8,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_BBS_LIST",
+      "parentId": "mvims_SYS_BBS",
+      "name": "게시판 목록",
+      "menuCode": "BBS_LIST",
+      "order": 1,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_BASIC",
+      "parentId": "mvims_BBS_LIST",
+      "name": "기본형 게시판",
+      "menuCode": "BASIC",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_6d827cc7-f881-4a72-b482-2e48c3268637",
+      "parentId": "mvims_BBS_LIST",
+      "name": "자유게시판",
+      "menuCode": "6d827cc7-f881-4a72-b482-2e48c3268637",
+      "order": 1,
+      "programId": "cms"
+    },
+    {
+      "id": "mvims_ec9302c6-e509-4250-a518-e2c7fe9fe161",
+      "parentId": "mvims_BBS_LIST",
+      "name": "갤러리",
+      "menuCode": "ec9302c6-e509-4250-a518-e2c7fe9fe161",
+      "order": 1,
+      "programId": "cms"
+    },
+    {
+      "id": "mvims_99de7413-878a-4db4-8549-6f8004b35064",
+      "parentId": "mvims_BBS_LIST",
+      "name": "공지 게시판",
+      "menuCode": "99de7413-878a-4db4-8549-6f8004b35064",
+      "order": 1,
+      "programId": "cms"
+    },
+    {
+      "id": "mvims_GALLERY",
+      "parentId": "mvims_BBS_LIST",
+      "name": "갤러리형 게시판",
+      "menuCode": "GALLERY",
+      "order": 2,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_NOTICE",
+      "parentId": "mvims_BBS_LIST",
+      "name": "공지형 게시판",
+      "menuCode": "NOTICE",
+      "order": 3,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_DEVELOPER_GUID_MANAGEMENT",
+      "parentId": null,
+      "name": "개발가이드",
+      "menuCode": "DEVELOPER_GUID_MANAGEMENT",
+      "order": 9
+    },
+    {
+      "id": "mvims_DEVELOPER_FUNCTION",
+      "parentId": "mvims_DEVELOPER_GUID_MANAGEMENT",
+      "name": "기능 가이드",
+      "menuCode": "DEVELOPER_FUNCTION",
+      "order": 1,
+      "programId": "#"
+    },
+    {
+      "id": "mvims_JS_FUNCTION_LIST",
+      "parentId": "mvims_DEVELOPER_FUNCTION",
+      "name": "JS 기능 목록",
+      "menuCode": "JS_FUNCTION_LIST",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_DEVELOPER_GUID",
+      "parentId": "mvims_DEVELOPER_GUID_MANAGEMENT",
+      "name": "개발가이드",
+      "menuCode": "DEVELOPER_GUID",
+      "order": 2
+    },
+    {
+      "id": "mvims_JS_FUNC_DEV_GUID",
+      "parentId": "mvims_DEVELOPER_GUID",
+      "name": "JS 개발 가이드 목록",
+      "menuCode": "JS_FUNC_DEV_GUID",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_CSS_DEVELOP_GUID",
+      "parentId": "mvims_DEVELOPER_GUID",
+      "name": "CSS 개발 가이드 목록",
+      "menuCode": "CSS_DEVELOP_GUID",
+      "order": 2,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_BACKEND_DEVELOP_GUID",
+      "parentId": "mvims_DEVELOPER_GUID",
+      "name": "BACK-END 개발 가이드 목록",
+      "menuCode": "BACKEND_DEVELOP_GUID",
+      "order": 3,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SAMPLE",
+      "parentId": null,
+      "name": "샘플페이지",
+      "menuCode": "SAMPLE",
+      "order": 9
+    },
+    {
+      "id": "mvims_SAMPLE_PAGE",
+      "parentId": "mvims_SAMPLE",
+      "name": "샘플페이지",
+      "menuCode": "SAMPLE_PAGE",
+      "order": 1
+    },
+    {
+      "id": "mvims_SAMPLE_REG",
+      "parentId": "mvims_SAMPLE_PAGE",
+      "name": "등록페이지 샘플",
+      "menuCode": "SAMPLE_REG",
+      "order": 1,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SAMPLE_MOD",
+      "parentId": "mvims_SAMPLE_PAGE",
+      "name": "수정페이지 샘플",
+      "menuCode": "SAMPLE_MOD",
+      "order": 2,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SAMPLE_DETAIL",
+      "parentId": "mvims_SAMPLE_PAGE",
+      "name": "상세페이지 샘플",
+      "menuCode": "SAMPLE_DETAIL",
+      "order": 3,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SAMPLE_LIST",
+      "parentId": "mvims_SAMPLE_PAGE",
+      "name": "목록페이지 샘플(팝업형)",
+      "menuCode": "SAMPLE_LIST",
+      "order": 4,
+      "programId": "/cms"
+    },
+    {
+      "id": "mvims_SAMPLE_R_LIST",
+      "parentId": "mvims_SAMPLE_PAGE",
+      "name": "목록페이지 샘플(이동형)",
+      "menuCode": "SAMPLE_R_LIST",
+      "order": 5,
+      "programId": "/cms"
+    }
+  ],
+  "rows": []
+}

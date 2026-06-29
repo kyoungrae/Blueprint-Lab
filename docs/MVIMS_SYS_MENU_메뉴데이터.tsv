@@ -1,0 +1,70 @@
+메뉴코드	메뉴명	프로그램ID	전체경로	상위메뉴코드
+registerService	전자업무	/reg	전자업무	
+SRV	서비스	#	서비스	
+test1	테스트 페이지		테스트 페이지	
+SETTINGS	설정/관리		설정/관리	
+SYS_BBS	게시판	#	게시판	
+DEVELOPER_GUID_MANAGEMENT	개발가이드		개발가이드	
+SAMPLE	샘플페이지		샘플페이지	
+DEVELOPER_FUNCTION	기능 가이드	#	개발가이드 > 기능 가이드	DEVELOPER_GUID_MANAGEMENT
+DEVELOPER_GUID	개발가이드		개발가이드 > 개발가이드	DEVELOPER_GUID_MANAGEMENT
+SAMPLE_PAGE	샘플페이지		샘플페이지 > 샘플페이지	SAMPLE
+USER_MANAGEMENT	사용자 관리		설정/관리 > 사용자 관리	SETTINGS
+GROUP_MANAGEMENT	소속/그룹관리		설정/관리 > 소속/그룹관리	SETTINGS
+MENU_MANAGEMENT	메뉴관리		설정/관리 > 메뉴관리	SETTINGS
+SYSTEM_MANAGEMENT	시스템관리		설정/관리 > 시스템관리	SETTINGS
+SYS_BBS_MST	게시판 관리	#	설정/관리 > 게시판 관리	SETTINGS
+SRV_REG	등록 서비스	#	서비스 > 등록 서비스	SRV
+SRV_VHCL_PLT_MNG	자동차 등록 번호판 관리	/reg	서비스 > 자동차 등록 번호판 관리	SRV
+SRV_VHCL_USER_MNG	자동차 사용자 관리	/reg	서비스 > 자동차 사용자 관리	SRV
+BBS_LIST	게시판 목록	#	게시판 > 게시판 목록	SYS_BBS
+E_WORK	전자업무	#	전자업무 > 전자업무	registerService
+E_WORK_PROC	전자 업무 최종 처리	#	전자업무 > 전자 업무 최종 처리	registerService
+test11	테스트 페이지 목록	#	테스트 페이지 > 테스트 페이지 목록	test1
+BASIC	기본형 게시판	/cms	게시판 > 게시판 목록 > 기본형 게시판	BBS_LIST
+6d827cc7-f881-4a72-b482-2e48c3268637	자유게시판	cms	게시판 > 게시판 목록 > 자유게시판	BBS_LIST
+ec9302c6-e509-4250-a518-e2c7fe9fe161	갤러리	cms	게시판 > 게시판 목록 > 갤러리	BBS_LIST
+99de7413-878a-4db4-8549-6f8004b35064	공지 게시판	cms	게시판 > 게시판 목록 > 공지 게시판	BBS_LIST
+GALLERY	갤러리형 게시판	/cms	게시판 > 게시판 목록 > 갤러리형 게시판	BBS_LIST
+NOTICE	공지형 게시판	/cms	게시판 > 게시판 목록 > 공지형 게시판	BBS_LIST
+JS_FUNCTION_LIST	JS 기능 목록	/cms	개발가이드 > 기능 가이드 > JS 기능 목록	DEVELOPER_FUNCTION
+JS_FUNC_DEV_GUID	JS 개발 가이드 목록	/cms	개발가이드 > 개발가이드 > JS 개발 가이드 목록	DEVELOPER_GUID
+CSS_DEVELOP_GUID	CSS 개발 가이드 목록	/cms	개발가이드 > 개발가이드 > CSS 개발 가이드 목록	DEVELOPER_GUID
+BACKEND_DEVELOP_GUID	BACK-END 개발 가이드 목록	/cms	개발가이드 > 개발가이드 > BACK-END 개발 가이드 목록	DEVELOPER_GUID
+E_NEW_REG_LIST	신규등록 신청 내역	/reg	전자업무 > 전자업무 > 신규등록 신청 내역	E_WORK
+E_TRNS_REG	이전등록 신청 내역	/reg	전자업무 > 전자업무 > 이전등록 신청 내역	E_WORK
+E_ERSR_REG	말소등록 신청 내역	/reg	전자업무 > 전자업무 > 말소등록 신청 내역	E_WORK
+E_CHNG_PLT	차량번호 변경 신청 내역	/reg	전자업무 > 전자업무 > 차량번호 변경 신청 내역	E_WORK
+E_NOPLT_RISSU	번호판 재발급 신청 내역	/reg	전자업무 > 전자업무 > 번호판 재발급 신청 내역	E_WORK
+E_VHCL_CERT_RISSU	자동차 등록증 재발급 신청 내역	/reg	전자업무 > 전자업무 > 자동차 등록증 재발급 신청 내역	E_WORK
+E_PLATE_RSV	자동차 번호 예약 신청 내역	/reg	전자업무 > 전자업무 > 자동차 번호 예약 신청 내역	E_WORK
+E_WORK_PROC_LIST	전자업무 최종처리	/reg	전자업무 > 전자 업무 최종 처리 > 전자업무 최종처리	E_WORK_PROC
+OFFICE_SETTINGS	소속설정	/cms	설정/관리 > 소속/그룹관리 > 소속설정	GROUP_MANAGEMENT
+GROUP_SETTINGS	그룹설정	/cms	설정/관리 > 소속/그룹관리 > 그룹설정	GROUP_MANAGEMENT
+MENU_SETTINGS	메뉴설정	/cms	설정/관리 > 메뉴관리 > 메뉴설정	MENU_MANAGEMENT
+SAMPLE_REG	등록페이지 샘플	/cms	샘플페이지 > 샘플페이지 > 등록페이지 샘플	SAMPLE_PAGE
+SAMPLE_MOD	수정페이지 샘플	/cms	샘플페이지 > 샘플페이지 > 수정페이지 샘플	SAMPLE_PAGE
+SAMPLE_DETAIL	상세페이지 샘플	/cms	샘플페이지 > 샘플페이지 > 상세페이지 샘플	SAMPLE_PAGE
+SAMPLE_LIST	목록페이지 샘플(팝업형)	/cms	샘플페이지 > 샘플페이지 > 목록페이지 샘플(팝업형)	SAMPLE_PAGE
+SAMPLE_R_LIST	목록페이지 샘플(이동형)	/cms	샘플페이지 > 샘플페이지 > 목록페이지 샘플(이동형)	SAMPLE_PAGE
+SRV_NEW_REG	신규등록	/reg	서비스 > 등록 서비스 > 신규등록	SRV_REG
+SRV_TRNS_REG	이전등록	/reg	서비스 > 등록 서비스 > 이전등록	SRV_REG
+SRV_VHCL_CHNG_REG	변경등록	/reg	서비스 > 등록 서비스 > 변경등록	SRV_REG
+SRV_ERSR_REG	말소등록	/reg	서비스 > 등록 서비스 > 말소등록	SRV_REG
+SRV_RCVRY_ERSR_REG	복원등록	/reg	서비스 > 등록 서비스 > 복원등록	SRV_REG
+SRV_MDFY_REG	경정등록	/reg	서비스 > 등록 서비스 > 경정등록	SRV_REG
+SRV_PLT_REISSU	번호판 분실 재발급	/reg	서비스 > 자동차 등록 번호판 관리 > 번호판 분실 재발급	SRV_VHCL_PLT_MNG
+SRV_VHCL_USER	자동차 사용자 관리	/reg	서비스 > 자동차 사용자 관리 > 자동차 사용자 관리	SRV_VHCL_USER_MNG
+COM_CODE_SETTINGS	코드설정	/cms	설정/관리 > 시스템관리 > 코드설정	SYSTEM_MANAGEMENT
+SYSTEM_SETTINGS	시스템설정	/cms	설정/관리 > 시스템관리 > 시스템설정	SYSTEM_MANAGEMENT
+COM_EVENT_LOG	로그 확인	/cms	설정/관리 > 시스템관리 > 로그 확인	SYSTEM_MANAGEMENT
+SYS_ACS_LOG	접속 로그 확인	/cms	설정/관리 > 시스템관리 > 접속 로그 확인	SYSTEM_MANAGEMENT
+SYS_BBS_MST_LIST	게시판 유형 관리	/cms	설정/관리 > 게시판 관리 > 게시판 유형 관리	SYS_BBS_MST
+SYS_BBS_POST_MNG	게시판 관리	/cms	설정/관리 > 게시판 관리 > 게시판 관리	SYS_BBS_MST
+USER_LIST	사용자 목록	/cms	설정/관리 > 사용자 관리 > 사용자 목록	USER_MANAGEMENT
+USER_REQ	사용자 등록 신청	/cms	설정/관리 > 사용자 관리 > 사용자 등록 신청	USER_MANAGEMENT
+test111	list	/cms	테스트 페이지 > 테스트 페이지 목록 > list	test11
+testtest	testest	/cms	테스트 페이지 > 테스트 페이지 목록 > testest	test11
+test222	detail	/cms	테스트 페이지 > 테스트 페이지 목록 > detail	test11
+test333	modify	/cms	테스트 페이지 > 테스트 페이지 목록 > modify	test11
+test444	register	/cms	테스트 페이지 > 테스트 페이지 목록 > register	test11

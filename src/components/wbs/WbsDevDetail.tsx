@@ -674,8 +674,13 @@ const WbsDevDetail: React.FC = () => {
                         {/* 헤더 */}
                         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white">
                             <div className="min-w-0">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">{selectedMenu.menuCode}</span>
+                                    {selectedMenu.programId && (
+                                        <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded" title="프로그램 ID">
+                                            PID: {selectedMenu.programId}
+                                        </span>
+                                    )}
                                     <h3 className="text-base font-black text-gray-900 truncate">{selectedMenu.name}</h3>
                                 </div>
                                 <p className="text-[11px] text-gray-400 mt-0.5">선택한 메뉴의 산출물·기능별 일정을 입력합니다.</p>
