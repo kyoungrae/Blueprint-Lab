@@ -306,6 +306,7 @@ import ScreenEdge from './ScreenEdge';
 import ScreenSidebar from './ScreenSidebar';
 import ScreenExportModal from './ScreenExportModal';
 import ScreenProjectSearchReplacePanel, { type ProjectSearchNavigateHit } from './ScreenProjectSearchReplacePanel';
+import ScreenProjectEditGrid from './ScreenProjectEditGrid';
 import AddScreenModal from './AddScreenModal';
 import AdminPage from './AdminPage';
 import { canManageTranslationMemory } from '../utils/tierAccess';
@@ -444,6 +445,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isTranslationPopupOpen, setIsTranslationPopupOpen] = useState(false);
     const [isProjectSearchReplaceOpen, setIsProjectSearchReplaceOpen] = useState(false);
+    const [isProjectEditGridOpen, setIsProjectEditGridOpen] = useState(false);
     const [importJsonText, setImportJsonText] = useState('');
     const [importError, setImportError] = useState<string | null>(null);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
@@ -2275,11 +2277,28 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                         <button
                                             id="screen-project-search-open-btn"
                                             type="button"
-                                            onClick={() => setIsProjectSearchReplaceOpen((v) => !v)}
+                                            onClick={() => {
+                                                setIsProjectEditGridOpen(false);
+                                                setIsProjectSearchReplaceOpen((v) => !v);
+                                            }}
                                             className={`relative flex items-center justify-center w-8 h-8 rounded-lg bg-white text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all border border-gray-200 shadow-sm active:scale-95 shrink-0 ${isProjectSearchReplaceOpen ? 'ring-2 ring-violet-300 text-violet-600' : ''}`}
                                             title="프로젝트 검색·치환"
                                         >
                                             <Search size={16} />
+                                        </button>
+                                    </PremiumTooltip>
+                                    <PremiumTooltip placement="bottom" offsetBottom={10} label="화면 편집 모드">
+                                        <button
+                                            id="screen-project-edit-grid-open-btn"
+                                            type="button"
+                                            onClick={() => {
+                                                setIsProjectSearchReplaceOpen(false);
+                                                setIsProjectEditGridOpen((v) => !v);
+                                            }}
+                                            className={`relative flex items-center justify-center w-8 h-8 rounded-lg bg-white text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition-all border border-gray-200 shadow-sm active:scale-95 shrink-0 ${isProjectEditGridOpen ? 'ring-2 ring-emerald-300 text-emerald-600' : ''}`}
+                                            title="화면 편집 모드"
+                                        >
+                                            <Edit3 size={16} />
                                         </button>
                                     </PremiumTooltip>
 
@@ -2327,6 +2346,13 @@ const ScreenDesignCanvasContent: React.FC = () => {
                     />
                 </div>
                 </div>
+                <ScreenProjectEditGrid
+                    isOpen={isProjectEditGridOpen}
+                    onClose={() => setIsProjectEditGridOpen(false)}
+                    screens={screens}
+                    currentProjectId={currentProjectId}
+                    yjsIsSynced={yjsIsSynced}
+                />
 
                                 <ChatPanel
                                     isOpen={isChatOpen}
