@@ -44,7 +44,8 @@ const WbsCanvas: React.FC = () => {
 
     const { user } = useAuthStore();
     const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
-    const isAdmin = user?.tier === 'ADMIN';
+    // 엑셀/JSON 업로드 권한: PRO tier 이상 (PRO / MASTER / ADMIN)
+    const canUpload = user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN';
 
     const project = projects.find((p) => p.id === currentProjectId);
     const [tab, setTab] = useState<WbsTab>('hierarchy');
@@ -371,7 +372,7 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadScheduleExcel(detailSchedules, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '일정 WBS를 엑셀로 다운로드',
                                     },
-                                    ...(isAdmin ? [{
+                                    ...(canUpload ? [{
                                         delay: '55ms',
                                         icon: <FileUp size={14} />,
                                         label: '엑셀 업로드',
@@ -387,7 +388,7 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadScheduleJson(detailSchedules, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '일정 WBS 데이터를 JSON으로 다운로드',
                                     },
-                                    ...(isAdmin ? [{
+                                    ...(canUpload ? [{
                                         delay: '165ms',
                                         icon: <FileJson size={14} />,
                                         label: 'JSON 업로드',
@@ -420,7 +421,7 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadWbsExcel({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '현재 WBS를 엑셀로 다운로드',
                                     },
-                                    ...(isAdmin ? [{
+                                    ...(canUpload ? [{
                                         delay: '55ms',
                                         icon: <FileUp size={14} />,
                                         label: '엑셀 업로드',
@@ -436,7 +437,7 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadWbsJson({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '현재 WBS 데이터를 JSON으로 다운로드',
                                     },
-                                    ...(isAdmin ? [{
+                                    ...(canUpload ? [{
                                         delay: '165ms',
                                         icon: <FileJson size={14} />,
                                         label: 'JSON 업로드',

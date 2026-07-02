@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { X, UploadCloud, Loader2, AlertCircle, FileSpreadsheet, Plus, RefreshCw, EyeOff, ShieldCheck } from 'lucide-react';
 import type { WbsData } from '../../types/wbs';
-import { analyzeWbsExcelMerge, type WbsMergeAnalysis } from './wbsExcel';
+import { analyzeWbsExcelMerge, downloadWbsExcel, type WbsMergeAnalysis, type WbsDiffItem } from './wbsExcel';
 import { downloadWbsJson } from './wbsIO';
 
 interface WbsExcelSyncModalProps {
@@ -12,7 +12,7 @@ interface WbsExcelSyncModalProps {
     onClose: () => void;
 }
 
-const DiffSection: React.FC<{ icon: React.ReactNode; title: string; tone: string; items: { label: string }[] }> = ({ icon, title, tone, items }) => {
+const DiffSection: React.FC<{ icon: React.ReactNode; title: string; tone: string; items: WbsDiffItem[] }> = ({ icon, title, tone, items }) => {
     if (items.length === 0) return null;
     return (
         <div className="rounded-lg border border-gray-100">
@@ -20,9 +20,20 @@ const DiffSection: React.FC<{ icon: React.ReactNode; title: string; tone: string
                 {icon}
                 {title} <span className="tabular-nums">{items.length}</span>건
             </div>
-            <div className="max-h-32 overflow-auto px-3 pb-2 space-y-0.5">
+            <div className="max-h-40 overflow-auto px-3 pb-2 space-y-1">
                 {items.slice(0, 200).map((it, i) => (
-                    <div key={i} className="text-[11px] text-gray-600 truncate" title={it.label}>· {it.label}</div>
+                    <div key={i} className="text-[11px]">
+                        <div className="text-gray-700 font-semibold truncate" title={it.label}>· {it.label}</div>
+                        {it.changes && it.changes.length > 0 && (
+                            <ul className="mt-0.5 ml-3 space-y-0.5">
+                                {it.changes.map((c, ci) => (
+                                    <li key={ci} className="text-[10px] text-gray-500 leading-relaxed break-all">
+                                        <span className="text-gray-400">↳</span> {c}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
                 ))}
                 {items.length > 200 && <div className="text-[11px] text-gray-400">… 외 {items.length - 200}건</div>}
             </div>
@@ -77,8 +88,10 @@ const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, pr
 
     const apply = () => {
         if (!analysis) return;
-        // 적용 직전 현재 데이터를 JSON으로 자동 백업(롤백용)
-        downloadWbsJson(current, `${projectName}_백업_${new Date().toISOString().slice(0, 10)}`);
+        // 적용 직전 현재 데이터를 백업(롤백용) — JSON + 엑셀 두 형식 모두 다운로드
+        const backupTag = `${projectName}_백업_${new Date().toISOString().slice(0, 10)}`;
+        downloadWbsJson(current, backupTag);
+        downloadWbsExcel(current, backupTag);
         onApply(analysis.data);
         setApplied(true);
     };
@@ -99,7 +112,7 @@ const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, pr
                         <div className="flex flex-col items-center gap-2 py-6 text-center">
                             <ShieldCheck size={36} className="text-emerald-500" />
                             <p className="text-sm font-bold text-gray-800">반영 완료</p>
-                            <p className="text-xs text-gray-500">현재 데이터 백업(JSON)이 자동 다운로드되었습니다. 문제가 있으면 ‘JSON 업로드’로 되돌릴 수 있습니다.</p>
+                            <p className="text-xs text-gray-500">현재 데이터 백업(JSON·엑셀)이 자동 다운로드되었습니다. 문제가 있으면 ‘JSON 업로드’로 되돌릴 수 있습니다.</p>
                         </div>
                     ) : !analysis ? (
                         <>

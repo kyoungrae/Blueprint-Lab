@@ -299,6 +299,8 @@ export interface WbsMergeSummary {
 
 export interface WbsDiffItem {
     label: string;
+    /** 어떤 필드가 어떻게 바뀌었는지 (변경 전 → 후) — '수정' 항목에서 사용 */
+    changes?: string[];
 }
 
 export interface WbsMergeAnalysis {
@@ -480,7 +482,7 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
 
     const menuCodeById = new Map<string, string>(menus.map((m) => [m.id, m.menuCode]));
     const labelFor = (menuCode: string, category: string, featureName: string) =>
-        `${menuCode || '?'} · ${featureName || category || '(미입력)'}`;
+        `${menuCode || '?'} · ${featureName || category || menuByCode.get(menuCode)?.name || '(미입력)'}`;
 
     // ── 2) 개발상세 upsert (ID 우선, 키 보조) ──
     const originalRowIds = new Set<string>(current.rows.map((r) => r.id));
@@ -512,10 +514,29 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
             else if (!id) target = rowByKey.get(rowKey(code, category, featureName)); // 보조 매칭
 
             if (target && !seenRowIds.has(target.id)) {
+                // 실제 값이 바뀐 필드만 수집 (동일 파일 재업로드 시 오탐 방지 + 변경 내역 표시)
+                const q = (v: string) => (v && v.length ? `'${v}'` : '(빈값)');
+                const changes: string[] = [];
+                if (target.menuId !== menu.id) {
+                    changes.push(`메뉴 ${q(menuCodeById.get(target.menuId) ?? '')} → ${q(code)}`);
+                }
+                if (target.category !== category) changes.push(`구분 ${q(target.category)} → ${q(category)}`);
+                if (target.featureName !== featureName) changes.push(`기능명 ${q(target.featureName)} → ${q(featureName)}`);
+                if (target.assignee !== next.assignee) changes.push(`담당자 ${q(target.assignee)} → ${q(next.assignee)}`);
+                if (target.startDate !== next.startDate) changes.push(`시작일 ${q(target.startDate)} → ${q(next.startDate)}`);
+                if (target.endDate !== next.endDate) changes.push(`종료일 ${q(target.endDate)} → ${q(next.endDate)}`);
+                if (target.status !== next.status) {
+                    changes.push(`상태 '${WBS_STATUS_LABEL[target.status]}' → '${WBS_STATUS_LABEL[next.status]}'`);
+                }
+                if (target.progress !== next.progress) changes.push(`진행율 ${target.progress}% → ${next.progress}%`);
+                if ((target.note ?? '') !== (next.note ?? '')) changes.push(`비고 ${q(target.note ?? '')} → ${q(next.note ?? '')}`);
+
                 Object.assign(target, next, { menuId: menu.id, category, featureName });
                 seenRowIds.add(target.id);
-                summary.rowsUpdated++;
-                updatedRows.push({ label: labelFor(code, category, featureName) });
+                if (changes.length > 0) {
+                    summary.rowsUpdated++;
+                    updatedRows.push({ label: labelFor(code, category, featureName), changes });
+                }
             } else {
                 // 신규: 엑셀의 ID가 웹에 없으면 그 ID를 유지(재업로드 안정), 없으면 새로 발급
                 const newId = id && !rowById.has(id) ? id : uid('row');
