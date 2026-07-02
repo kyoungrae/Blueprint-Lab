@@ -11,9 +11,11 @@ interface TreeNode extends WbsMenuNode {
 }
 
 function buildTree(menus: WbsMenuNode[]): TreeNode[] {
+    const validIds = new Set(menus.map((m) => m.id));
     const byParent = new Map<string | null, WbsMenuNode[]>();
     for (const m of menus) {
-        const key = m.parentId ?? null;
+        // 부모 ID가 실제로 존재하지 않으면(계층 깨짐) 최상위로 취급해 숨기지 않는다
+        const key = m.parentId && validIds.has(m.parentId) ? m.parentId : null;
         if (!byParent.has(key)) byParent.set(key, []);
         byParent.get(key)!.push(m);
     }

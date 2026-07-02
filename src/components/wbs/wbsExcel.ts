@@ -209,9 +209,9 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
             sc(r.featureName, cellStyle(bg)),
             // 담당자
             sc(r.assignee,    cellStyle(bg)),
-            // 시작일·종료일
-            sc(r.startDate,   cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
-            sc(r.endDate,     cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            // 시작일·종료일 (YYYY-MM-DD → YYYY.MM.DD 표기)
+            sc(toDotDate(r.startDate), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(toDotDate(r.endDate),   cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
             // 상태
             sc(statusLbl, cellStyle(bg, { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: sfg } }, alignment: { horizontal: 'center', vertical: 'center' } })),
             // 진행율
@@ -338,6 +338,66 @@ const cell = (dr: Record<string, unknown>, ...keys: string[]): string => {
 };
 
 /**
+ * 엑셀에서 읽은 날짜 값을 화면(WheelDatePicker)이 이해하는 YYYY-MM-DD 형식으로 정규화한다.
+ * - 엑셀에서 날짜 칸을 수정하면 형식이 제각각(2026. 7. 2 / 7/2/2026 / 날짜 일련번호 등)으로 저장되므로
+ *   여기서 통일하지 않으면 웹 화면에 날짜가 표시되지 않는다.
+ * - 파싱 불가한 값은 원본을 그대로 반환한다.
+ */
+function normalizeDate(v: string): string {
+    let s = String(v ?? '').trim();
+    if (!s) return '';
+
+    const toIso = (y: number, m: number, d: number) => {
+        if (isNaN(y) || isNaN(m) || isNaN(d) || m < 1 || m > 12 || d < 1 || d > 31) return null;
+        const yyyy = y < 100 ? 2000 + y : y;
+        return `${yyyy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    };
+
+    // 엑셀 날짜 일련번호(예: "46204")
+    if (/^\d+(\.\d+)?$/.test(s)) {
+        const serial = Number(s);
+        // 20000(≈1954년) ~ 80000(≈2119년) 범위만 날짜로 간주 (진행율 등 일반 숫자 오인 방지)
+        if (serial > 20000 && serial < 80000) {
+            const parsed = (XLSX as { SSF?: { parse_date_code?: (n: number) => { y: number; m: number; d: number } | null } }).SSF?.parse_date_code?.(serial);
+            if (parsed && parsed.y) {
+                const iso = toIso(parsed.y, parsed.m, parsed.d);
+                if (iso) return iso;
+            }
+        }
+        return s;
+    }
+
+    // 시간 부분 제거 후 공백 제거 ("2026-07-02 00:00:00", "2026. 7. 2" 등)
+    s = s.split(/[T ]/)[0].replace(/\s/g, '');
+
+    const m = s.match(/^(\d{1,4})[.\-/](\d{1,2})[.\-/](\d{1,4})$/);
+    if (m) {
+        const [, a, b, c] = m;
+        let iso: string | null;
+        if (a.length === 4) {
+            // YYYY-MM-DD
+            iso = toIso(parseInt(a, 10), parseInt(b, 10), parseInt(c, 10));
+        } else {
+            // MM-DD-YYYY / M/D/YY (미국식 가정)
+            iso = toIso(parseInt(c, 10), parseInt(a, 10), parseInt(b, 10));
+        }
+        if (iso) return iso;
+    }
+
+    return s;
+}
+
+/** 저장 형식(YYYY-MM-DD)을 엑셀 표기용 YYYY.MM.DD로 변환. 형식이 다르면 원본 유지 */
+function toDotDate(v: string): string {
+    const s = String(v ?? '').trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[1]}.${m[2]}.${m[3]}` : s;
+}
+
+/** 변경 내역 표시용: 빈 값은 (빈값)으로 감싼다 */
+const quote = (v: string) => (v && v.length ? `'${v}'` : '(빈값)');
+
+/**
  * 다운로드한 형식의 엑셀(.xlsx)을 읽어 현재 WBS 데이터와 비교 분석한다.
  * - 행(개발상세)은 'ID(수정금지)'로 매칭하므로 기능명·구분을 바꿔도 정확히 갱신(누락·중복 방지).
  *   ID가 비었으면 (메뉴코드+구분+기능명) 키로 보조 매칭, 그래도 없으면 신규 추가.
@@ -372,45 +432,40 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
     const addedRows: WbsDiffItem[] = [];
     const updatedRows: WbsDiffItem[] = [];
     const updatedMenus: WbsDiffItem[] = [];
+    // 메뉴별 변경 내역 (메뉴명·코드·PID·상위(계층) 변경을 한 곳에 모아 집계/표시)
+    const menuChanges = new Map<string, string[]>();
+    const addMenuChange = (id: string, change: string) => {
+        const arr = menuChanges.get(id);
+        if (arr) arr.push(change);
+        else menuChanges.set(id, [change]);
+    };
 
     const applyMenuFields = (
         existing: WbsMenuNode,
         fields: { name: string; menuCode: string; programId?: string },
-    ): boolean => {
-        let changed = false;
-        const changes: string[] = [];
-
+    ): void => {
         if (existing.name !== fields.name) {
+            addMenuChange(existing.id, `메뉴명 ${quote(existing.name)} → ${quote(fields.name)}`);
             existing.name = fields.name;
-            changed = true;
-            changes.push('메뉴명');
         }
 
         if (fields.menuCode && existing.menuCode !== fields.menuCode) {
             const conflict = menuByCode.get(fields.menuCode);
             if (conflict && conflict.id !== existing.id) {
                 summary.skipped++;
-                changes.push(`코드 충돌(${fields.menuCode})`);
             } else {
+                addMenuChange(existing.id, `코드 ${quote(existing.menuCode)} → ${quote(fields.menuCode)}`);
                 menuByCode.delete(existing.menuCode);
                 existing.menuCode = fields.menuCode;
                 menuByCode.set(fields.menuCode, existing);
-                changed = true;
-                changes.push(`코드→${fields.menuCode}`);
             }
         }
 
         const nextProgramId = fields.programId;
         if ((existing.programId ?? '') !== (nextProgramId ?? '')) {
+            addMenuChange(existing.id, nextProgramId ? `프로그램ID ${quote(existing.programId ?? '')} → ${quote(nextProgramId)}` : '프로그램ID 삭제');
             existing.programId = nextProgramId;
-            changed = true;
-            changes.push(nextProgramId ? `PID→${nextProgramId}` : 'PID 삭제');
         }
-
-        if (changed && changes.length > 0) {
-            updatedMenus.push({ label: `${existing.menuCode} · ${existing.name} (${changes.join(', ')})` });
-        }
-        return changed;
     };
 
     // ── 1) 메뉴 upsert (ID 우선, 메뉴코드 보조) ──
@@ -433,9 +488,7 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
 
             if (existing) {
                 seenMenuIds.add(existing.id);
-                if (applyMenuFields(existing, { name, menuCode: code || existing.menuCode, programId })) {
-                    summary.menusUpdated++;
-                }
+                applyMenuFields(existing, { name, menuCode: code || existing.menuCode, programId });
             } else {
                 const newId = id && !menuById.has(id) ? id : uid('menu');
                 const newCode = code || `MENU-${String(summary.menusAdded + 1).padStart(4, '0')}`;
@@ -458,7 +511,7 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
                 summary.menusAdded++;
             }
         }
-        // 상위(부모) 코드 반영
+        // 상위(부모) 코드 반영 — 계층(상위 메뉴) 변경도 감지·집계한다
         for (const mr of menuRows) {
             const code = cell(mr, '메뉴코드');
             if (!code) continue;
@@ -468,7 +521,15 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
             const parent = parentCode ? menuByCode.get(parentCode) : null;
             if (parentCode && !parent) continue;
             const newParentId = parent ? parent.id : null;
-            if (m.parentId !== newParentId && m.id !== newParentId) m.parentId = newParentId;
+            if (m.parentId !== newParentId && m.id !== newParentId) {
+                // 기존 메뉴의 계층 변경만 '수정'으로 집계 (신규 메뉴는 추가로 이미 집계됨)
+                if (originalMenuIds.has(m.id)) {
+                    const oldParentCode = m.parentId ? (menuById.get(m.parentId)?.menuCode ?? '') : '';
+                    const newParentCode = parent ? parent.menuCode : '';
+                    addMenuChange(m.id, `상위 ${oldParentCode ? `'${oldParentCode}'` : '(최상위)'} → ${newParentCode ? `'${newParentCode}'` : '(최상위)'}`);
+                }
+                m.parentId = newParentId;
+            }
         }
         // 부모별 order 정규화
         const orderByParent = new Map<string | null, number>();
@@ -478,6 +539,12 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
             m.order = idx;
             orderByParent.set(key, idx + 1);
         }
+        // 메뉴 변경 내역 → 요약/미리보기 반영
+        for (const [id, changes] of menuChanges) {
+            const m = menuById.get(id);
+            updatedMenus.push({ label: m ? `${m.menuCode} · ${m.name}` : id, changes });
+        }
+        summary.menusUpdated = menuChanges.size;
     }
 
     const menuCodeById = new Map<string, string>(menus.map((m) => [m.id, m.menuCode]));
@@ -502,8 +569,8 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
             const featureName = cell(dr, '기능명');
             const next = {
                 assignee: cell(dr, '담당자'),
-                startDate: cell(dr, '시작일'),
-                endDate: cell(dr, '종료일'),
+                startDate: normalizeDate(cell(dr, '시작일')),
+                endDate: normalizeDate(cell(dr, '종료일')),
                 status: toStatus(dr['상태']),
                 progress: Math.min(100, Math.max(0, Number(dr['진행율(%)'] ?? dr['진행율']) || 0)),
                 note: cell(dr, '비고'),

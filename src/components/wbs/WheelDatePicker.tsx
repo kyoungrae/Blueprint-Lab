@@ -42,7 +42,7 @@ function computeWheelPopupPosition(
 
 function useWheelPopupPosition(
     open: boolean,
-    triggerRef: React.RefObject<HTMLButtonElement | null>,
+    triggerRef: React.RefObject<HTMLElement | null>,
     popupRef: React.RefObject<HTMLDivElement | null>,
     minW: number,
     fallbackH = 320,
@@ -208,24 +208,42 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     variant = 'default',
 }) => {
     const today = new Date();
-    const parseValue = (v: string) => {
-        const parts = v.split('-');
+    const isValidYmd = (y: number, m: number, d: number) =>
+        !isNaN(y) && !isNaN(m) && !isNaN(d) && m >= 1 && m <= 12 && d >= 1 && d <= 31;
+    // 값을 파싱 (성공 시 {y,m,d}, 실패 시 null).
+    // 지원: YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD / YYYYMMDD(구분자 없는 8자리)
+    const tryParse = (v: string): { y: number; m: number; d: number } | null => {
+        const s = String(v ?? '').trim();
+        if (!s) return null;
+        const parts = s.split(/\s*[-./]\s*/);
         if (parts.length === 3) {
-            const y = parseInt(parts[0]);
-            const m = parseInt(parts[1]);
-            const d = parseInt(parts[2]);
-            if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return { y, m, d };
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            const d = parseInt(parts[2], 10);
+            if (isValidYmd(y, m, d)) return { y, m, d };
         }
-        return { y: today.getFullYear(), m: today.getMonth() + 1, d: today.getDate() };
+        // 구분자 없는 8자리 숫자 (YYYYMMDD)
+        const digits = s.replace(/\D/g, '');
+        if (digits.length === 8) {
+            const y = parseInt(digits.slice(0, 4), 10);
+            const m = parseInt(digits.slice(4, 6), 10);
+            const d = parseInt(digits.slice(6, 8), 10);
+            if (isValidYmd(y, m, d)) return { y, m, d };
+        }
+        return null;
     };
+    const parseValue = (v: string) =>
+        tryParse(v) ?? { y: today.getFullYear(), m: today.getMonth() + 1, d: today.getDate() };
 
     const initial = parseValue(value);
     const [year, setYear] = useState(initial.y);
     const [month, setMonth] = useState(initial.m);
     const [day, setDay] = useState(initial.d);
     const [open, setOpen] = useState(false);
+    const [editing, setEditing] = useState(false);
+    const [text, setText] = useState('');
     const rootRef = useRef<HTMLDivElement>(null);
-    const triggerRef = useRef<HTMLButtonElement>(null);
+    const triggerRef = useRef<HTMLInputElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
     const popupPos = useWheelPopupPosition(open, triggerRef, popupRef, 260, 320);
 
@@ -257,33 +275,57 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
         const mm = String(month).padStart(2, '0');
         const dd = String(day).padStart(2, '0');
         onChange(`${year}-${mm}-${dd}`);
+        setEditing(false);
         setOpen(false);
     };
 
-    const clear = () => { onChange(''); setOpen(false); };
+    const clear = () => { onChange(''); setEditing(false); setOpen(false); };
 
     const years = range(2000, today.getFullYear() + 5);
     const months = range(1, 12);
     const days = range(1, maxDay);
 
-    const displayValue = value
-        ? (() => { const p = parseValue(value); return `${p.y}.${String(p.m).padStart(2,'0')}.${String(p.d).padStart(2,'0')}`; })()
-        : '';
+    // 파싱되면 YYYY-MM-DD로, 파싱 불가한 값은 (오늘 날짜 대체 대신) 원본을 그대로 표시
+    const displayValue = (() => {
+        const p = tryParse(value);
+        if (p) return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
+        return value ? String(value).trim() : '';
+    })();
+
+    // 입력창에 직접 타이핑한 값을 확정 (YYYY-MM-DD로 정규화하여 저장)
+    const commitText = () => {
+        const p = tryParse(text);
+        if (p) {
+            onChange(`${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`);
+            setYear(p.y); setMonth(p.m); setDay(p.d);
+        } else if (text.trim() === '') {
+            onChange('');
+        }
+        // 파싱 실패(빈 값 아님)면 저장하지 않고, 편집 종료 시 기존 표시값으로 복귀
+        setEditing(false);
+    };
 
     return (
         <div ref={rootRef} className={`relative inline-block ${className}`}>
-            {/* 트리거 */}
-            <button
+            {/* 트리거 — 직접 입력 가능 + 클릭 시 휠 피커 */}
+            <input
                 ref={triggerRef}
-                type="button"
-                onClick={() => setOpen((v) => !v)}
+                type="text"
+                inputMode="numeric"
+                value={editing ? text : displayValue}
+                placeholder={placeholder}
+                onFocus={() => { setEditing(true); setText(displayValue); setOpen(true); }}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitText(); setOpen(false); (e.target as HTMLInputElement).blur(); }
+                    else if (e.key === 'Escape') { setEditing(false); setOpen(false); (e.target as HTMLInputElement).blur(); }
+                }}
+                onBlur={() => { if (editing) commitText(); }}
                 className={variant === 'ghost'
-                    ? "w-full text-center text-sm outline-none bg-transparent border-none p-0 cursor-pointer"
-                    : "w-full text-left px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white hover:border-emerald-300 transition-colors outline-none focus:border-emerald-400"
+                    ? "w-full text-center text-sm outline-none bg-transparent border-none p-0 cursor-pointer placeholder:text-gray-400"
+                    : "w-full text-left px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white hover:border-emerald-300 transition-colors outline-none focus:border-emerald-400 placeholder:text-gray-400"
                 }
-            >
-                {displayValue || <span className="text-gray-400">{placeholder}</span>}
-            </button>
+            />
 
             {/* 팝업 — body 최상위 포털 */}
             {open && createPortal(
