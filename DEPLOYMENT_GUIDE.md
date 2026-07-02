@@ -68,7 +68,7 @@ exit
 
 #### 1) 프론트엔드 빌드 및 이미지화
 ```bash
-cd ~/BluePrint-Lab
+cd ~/work/Project/Blueprint-Lab
 
 # 이미지 빌드 (.env.production 설정이 자동 포함됨)
 # Mac(M1/M2)에서 빌드 시 서버(Linux/AMD64) 호환성을 위해 --platform 지정이 중요합니다.
@@ -81,7 +81,7 @@ docker save blueprint-frontend > blueprint-frontend.tar
 
 #### 2) 백엔드 이미지화
 ```bash
-cd ~/BLUEPRINT-LAB
+cd ~/work/Project/Blueprint-Lab
 
 # 서버 폴더에서 이미지 빌드
 docker build --platform linux/amd64 -t blueprint-backend -f server/Dockerfile ./server
@@ -100,7 +100,7 @@ DB와 Redis는 운영 서버에서 직접 다운로드(Pull)하므로 로컬에�
 
 ```bash
 # 로컬 터미널에서 실행
-cd ~/BLUEPRINT-LAB
+cd ~/work/Project/Blueprint-Lab
 
 # 이미지(.tar)와 실행 파일(yml) 전송
 scp -P 22222 blueprint-frontend.tar blueprint-backend.tar vims@192.168.0.141:~/projects/blueprint-lab/
@@ -186,7 +186,7 @@ sudo nginx -s reload
 
 ### 1단계: 로컬(Mac)에서 이미지 재빌드 및 추출
 ```bash
-cd ~/BLUEPRINT-LAB
+cd ~/work/Project/Blueprint-Lab
 
 # (선택) 프론트엔드/백엔드 수정 사항에 맞춰 빌드 (플랫폼 주의!)
 docker build --platform linux/amd64 -t blueprint-frontend -f Dockerfile.frontend .
