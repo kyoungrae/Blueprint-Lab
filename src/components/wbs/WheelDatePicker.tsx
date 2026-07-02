@@ -83,6 +83,50 @@ function daysInMonth(year: number, month: number) {
     return new Date(year, month, 0).getDate();
 }
 
+/** 타이핑 중 숫자만 받아 YYYY-MM-DD 형태로 자동 포맷.
+ *  autoTrailSep=false(삭제 중)이면 끝 `-`를 자동으로 붙이지 않아 백스페이스로 월/일 수정 가능 */
+function formatDateInput(raw: string, autoTrailSep = true): string {
+    const digits = raw.replace(/\D/g, '').slice(0, 8);
+    if (digits.length === 0) return '';
+
+    const y = digits.slice(0, 4);
+    if (digits.length <= 4) {
+        return digits.length === 4 && autoTrailSep ? `${y}-` : y;
+    }
+
+    const mDigits = digits.slice(4, 6);
+    let monthStr: string;
+    let sepAfterMonth = '';
+
+    if (mDigits.length === 1) {
+        const m1 = parseInt(mDigits, 10);
+        // 월 한 자리(2~9)는 0 패딩 후 구분자 추가
+        if (m1 >= 2 && m1 <= 9) {
+            monthStr = `0${mDigits}`;
+            sepAfterMonth = autoTrailSep ? '-' : '';
+        } else {
+            monthStr = mDigits;
+        }
+    } else {
+        monthStr = mDigits;
+        sepAfterMonth = autoTrailSep ? '-' : '';
+    }
+
+    const result = `${y}-${monthStr}${sepAfterMonth}`;
+    if (digits.length <= 6) return result;
+
+    const dDigits = digits.slice(6, 8);
+    if (dDigits.length === 1) {
+        const d1 = parseInt(dDigits, 10);
+        // 일 한 자리(4~9)는 0 패딩
+        if (d1 >= 4 && d1 <= 9) {
+            return `${y}-${monthStr}-0${dDigits}`;
+        }
+        return `${y}-${monthStr}-${dDigits}`;
+    }
+    return `${y}-${monthStr}-${dDigits}`;
+}
+
 // ── WheelColumn ───────────────────────────────────────────────────────────
 interface WheelColumnProps {
     items: number[];
@@ -242,6 +286,7 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState(false);
     const [text, setText] = useState('');
+    const prevTextLenRef = useRef(0);
     const rootRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLInputElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
@@ -305,6 +350,19 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
         setEditing(false);
     };
 
+    const handleTextChange = (raw: string) => {
+        const isDeleting = raw.length < prevTextLenRef.current;
+        const formatted = formatDateInput(raw, !isDeleting);
+        prevTextLenRef.current = formatted.length;
+        setText(formatted);
+        const p = tryParse(formatted);
+        if (p) {
+            setYear(p.y);
+            setMonth(p.m);
+            setDay(p.d);
+        }
+    };
+
     return (
         <div ref={rootRef} className={`relative inline-block ${className}`}>
             {/* 트리거 — 직접 입력 가능 + 클릭 시 휠 피커 */}
@@ -314,8 +372,14 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
                 inputMode="numeric"
                 value={editing ? text : displayValue}
                 placeholder={placeholder}
-                onFocus={() => { setEditing(true); setText(displayValue); setOpen(true); }}
-                onChange={(e) => setText(e.target.value)}
+                maxLength={10}
+                onFocus={() => {
+                    setEditing(true);
+                    setText(displayValue);
+                    prevTextLenRef.current = displayValue.length;
+                    setOpen(true);
+                }}
+                onChange={(e) => handleTextChange(e.target.value)}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') { e.preventDefault(); commitText(); setOpen(false); (e.target as HTMLInputElement).blur(); }
                     else if (e.key === 'Escape') { setEditing(false); setOpen(false); (e.target as HTMLInputElement).blur(); }
