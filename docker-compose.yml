@@ -35,6 +35,9 @@ services:
       - REDIS_PORT=6379
       - FRONTEND_URL=http://host.containers.internal:8085 # 호스트 내부 주소 사용
       - JWT_SECRET=production-secret-change-me
+      - BACKUP_DIR=/app/backups
+    volumes:
+      - backup_data:/app/backups
     depends_on:
       - mongodb
       - redis
@@ -68,3 +71,4 @@ services:
 volumes:
   mongodb_data:
   redis_data:
+  backup_data:

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, ChevronDown, Languages, RefreshCw, Download, Upload, KeyRound } from 'lucide-react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, ChevronDown, Languages, RefreshCw, Download, Upload, KeyRound, Archive } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
 import { canManageTranslationMemory } from '../utils/tierAccess';
@@ -248,7 +248,7 @@ interface AdminProject {
     memberCount: number;
 }
 
-export type AdminTab = 'members' | 'projects' | 'accessLogs' | 'rollback' | 'ddl' | 'translation';
+export type AdminTab = 'members' | 'projects' | 'accessLogs' | 'rollback' | 'ddl' | 'translation' | 'backups';
 
 type AdminAccessLogRow = {
     id: string;
@@ -280,6 +280,29 @@ interface AdminHistoryEntry {
     operationPayload?: Record<string, unknown> | null;
     operationPreviousState?: Record<string, unknown> | null;
     timestamp: string;
+}
+
+interface AdminBackupRow {
+    filename: string;
+    projectId: string;
+    projectName: string;
+    backupKind: 'wbs-detail' | 'wbs-schedule';
+    backupKindLabel: string;
+    backedUpAt: string;
+    wbsVersion?: number;
+    sizeBytes: number;
+}
+
+function backupDownloadFilename(projectName: string, backedUpAt: string, ext: 'json' | 'xlsx'): string {
+    const d = new Date(backedUpAt);
+    const y = Number.isNaN(d.getTime()) ? new Date() : d;
+    const ymd = [
+        y.getFullYear(),
+        String(y.getMonth() + 1).padStart(2, '0'),
+        String(y.getDate()).padStart(2, '0'),
+    ].join('');
+    const safeName = (projectName || 'WBS').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+    return `${safeName}_backup_${ymd}.${ext}`;
 }
 
 const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?: boolean }> = ({
@@ -329,6 +352,12 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
     const [accessLogsTotalPages, setAccessLogsTotalPages] = useState(1);
     /** 로그관리: 이름별 그룹 펼침 상태 (그룹 key 집합) */
     const [expandedLogGroups, setExpandedLogGroups] = useState<Set<string>>(new Set());
+
+    const [backups, setBackups] = useState<AdminBackupRow[]>([]);
+    const [backupsLoading, setBackupsLoading] = useState(false);
+    const [backupSearch, setBackupSearch] = useState('');
+    const [backupRunLoading, setBackupRunLoading] = useState(false);
+
     const toggleLogGroup = (key: string) =>
         setExpandedLogGroups((prev) => {
             const next = new Set(prev);
@@ -624,6 +653,84 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
             void fetchAccessLogs(accessLogsPage, accessLogsPageSize);
         }
     }, [activeTab, accessLogsPage, accessLogsPageSize, fetchAccessLogs]);
+
+    const fetchBackups = useCallback(async () => {
+        setBackupsLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/backups`);
+            if (!res.ok) {
+                if (res.status === 403) {
+                    setError('관리자 권한이 없습니다.');
+                    return;
+                }
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '백업 목록을 불러오지 못했습니다.');
+            }
+            const data = await res.json();
+            setBackups(Array.isArray(data) ? data : []);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+            setBackups([]);
+            if (err.message?.includes('세션')) onBackRef.current();
+        } finally {
+            setBackupsLoading(false);
+        }
+    }, []);
+
+    const runBackupNow = async () => {
+        setBackupRunLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/backups/run`, { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || '백업 실행에 실패했습니다.');
+            await fetchBackups();
+        } catch (err: any) {
+            setError(err.message || '백업 실행 중 오류가 발생했습니다.');
+        } finally {
+            setBackupRunLoading(false);
+        }
+    };
+
+    const downloadBackupFile = async (url: string, fallbackName: string) => {
+        const res = await fetchWithAuth(url);
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || '다운로드에 실패했습니다.');
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get('Content-Disposition') ?? '';
+        let name = fallbackName;
+        const utfMatch = cd.match(/filename\*=UTF-8''([^;]+)/i);
+        const plainMatch = cd.match(/filename="([^"]+)"/);
+        if (utfMatch) name = decodeURIComponent(utfMatch[1]);
+        else if (plainMatch) name = decodeURIComponent(plainMatch[1]);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+
+    const filteredBackups = useMemo(() => {
+        const q = backupSearch.trim().toLowerCase();
+        if (!q) return backups;
+        return backups.filter((b) =>
+            b.projectName.toLowerCase().includes(q)
+            || b.projectId.toLowerCase().includes(q)
+            || b.backupKindLabel.toLowerCase().includes(q)
+            || b.filename.toLowerCase().includes(q),
+        );
+    }, [backups, backupSearch]);
+
+    useEffect(() => {
+        if (activeTab === 'backups') {
+            void fetchBackups();
+        }
+    }, [activeTab, fetchBackups]);
 
     useEffect(() => {
         if (activeTab === 'rollback' && rollbackSelectedProjectId) {
@@ -977,6 +1084,15 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                         >
                             <Languages size={16} className="inline-block mr-2 align-middle" />
                             번역관리
+                        </button>
+                        <button
+                            onClick={() => { setActiveTab('backups'); setBackupSearch(''); }}
+                            className={`px-4 py-2.5 rounded-t-lg font-bold text-sm transition-all ${activeTab === 'backups'
+                                ? 'bg-white border border-b-0 border-gray-200 text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                        >
+                            <Archive size={16} className="inline-block mr-2 align-middle" />
+                            백업 관리
                         </button>
                     </div>
                 </div>
@@ -1571,6 +1687,149 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                 </pre>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {activeTab === 'backups' && (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col min-h-0">
+                        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <h2 className="font-bold text-sm text-gray-800">WBS 자동 백업</h2>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    일정 관리(WBS) 프로젝트를 3시간마다 자동 백업합니다. 변경이 없으면 파일을 만들지 않습니다.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => void fetchBackups()}
+                                    disabled={backupsLoading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                    <RefreshCw size={16} className={backupsLoading ? 'animate-spin' : ''} />
+                                    새로고침
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void runBackupNow()}
+                                    disabled={backupRunLoading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                                >
+                                    <Archive size={16} />
+                                    {backupRunLoading ? '백업 중…' : '지금 백업'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="px-4 py-3 border-b border-gray-100">
+                            <div className="relative max-w-md">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <input
+                                    type="search"
+                                    value={backupSearch}
+                                    onChange={(e) => setBackupSearch(e.target.value)}
+                                    placeholder="프로젝트명 · 유형 · 파일명 검색"
+                                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                                />
+                            </div>
+                        </div>
+
+                        {backupsLoading ? (
+                            <div className="flex items-center justify-center py-20">
+                                <div className="w-10 h-10 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin" />
+                            </div>
+                        ) : filteredBackups.length === 0 ? (
+                            <div className="py-16 text-center text-gray-500 text-sm">
+                                {backups.length === 0
+                                    ? '백업 파일이 없습니다. WBS 프로젝트 데이터가 변경되면 자동으로 생성됩니다.'
+                                    : '검색 결과가 없습니다.'}
+                            </div>
+                        ) : (
+                            <div className="overflow-auto">
+                                <table className="w-full text-left min-w-[900px]">
+                                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">백업 일시</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">프로젝트</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">백업 유형</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">버전</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">크기</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase w-48">다운로드</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredBackups.map((b) => (
+                                            <tr key={b.filename} className="border-b border-gray-100 hover:bg-gray-50/80">
+                                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap tabular-nums">
+                                                    {new Date(b.backedUpAt).toLocaleString('ko-KR')}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="font-bold text-sm text-gray-900">{b.projectName}</div>
+                                                    <div className="text-xs text-gray-400 font-mono mt-0.5 truncate max-w-[240px]" title={b.projectId}>
+                                                        {b.projectId}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                        b.backupKind === 'wbs-detail'
+                                                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                                            : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                                    }`}>
+                                                        {b.backupKindLabel}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600 tabular-nums">
+                                                    {b.wbsVersion != null ? `v${b.wbsVersion}` : '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-500 tabular-nums whitespace-nowrap">
+                                                    {b.sizeBytes >= 1024 * 1024
+                                                        ? `${(b.sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+                                                        : `${Math.max(1, Math.round(b.sizeBytes / 1024))} KB`}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void downloadBackupFile(
+                                                                `${API_BASE}/admin/backups/${encodeURIComponent(b.filename)}/json`,
+                                                                backupDownloadFilename(b.projectName, b.backedUpAt, 'json'),
+                                                            ).catch((e) => setError(e.message))}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border border-gray-200 text-gray-700 hover:bg-white"
+                                                            title={b.filename}
+                                                        >
+                                                            <Download size={14} />
+                                                            JSON
+                                                        </button>
+                                                        {b.backupKind === 'wbs-detail' && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void downloadBackupFile(
+                                                                    `${API_BASE}/admin/backups/${encodeURIComponent(b.filename)}/excel`,
+                                                                    backupDownloadFilename(b.projectName, b.backedUpAt, 'xlsx'),
+                                                                ).catch((e) => setError(e.message))}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                                                            >
+                                                                <FileSpreadsheet size={14} />
+                                                                엑셀
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-[11px] text-gray-500">
+                            <p>
+                                * <strong className="text-gray-600">메뉴·개발상세</strong>: menus + rows JSON · WBS 화면 엑셀 다운로드와 동일한 3시트(개발상세·메뉴구조·메뉴데이터)로 변환 가능
+                            </p>
+                            <p className="mt-1">
+                                * <strong className="text-gray-600">간트·일정</strong>: projectSchedule + detailSchedules JSON (간트/일정 탭 데이터)
+                            </p>
+                        </div>
                     </div>
                 )}
 

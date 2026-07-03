@@ -15,6 +15,12 @@ import {
     getAdminAccessLogs,
 } from '../controllers/adminController';
 import {
+    getAdminBackups,
+    triggerAdminBackup,
+    downloadAdminBackupJson,
+    downloadAdminBackupExcel,
+} from '../controllers/adminBackupController';
+import {
     listTranslations,
     syncTranslations,
     importTranslations,
@@ -45,5 +51,10 @@ router.delete('/users/:id', deleteUser);
 router.get('/projects', getAdminProjects);
 router.get('/projects/:projectId/history', getProjectHistory);
 router.post('/projects/:projectId/rollback', rollbackProjectHistory);
+
+router.get('/backups', getAdminBackups);
+router.post('/backups/run', triggerAdminBackup);
+router.get('/backups/:filename/json', downloadAdminBackupJson);
+router.get('/backups/:filename/excel', downloadAdminBackupExcel);
 
 export default router;

@@ -7,3 +7,5 @@ dist/
 
 # 이미지 업로드 폴더 (로컬 개발 시 생성됨)
 server/upload/
+# WBS 자동 백업 JSON
+server/backups/

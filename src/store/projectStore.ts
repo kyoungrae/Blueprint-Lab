@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
 import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { mapServerProjectResponse } from '../utils/mapServerProject';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -47,7 +48,10 @@ const safeStateStorage: StateStorage<void> = {
 interface ProjectStore {
     projects: Project[];
     currentProjectId: string | null;
+    isOpeningProject: boolean;
+    openingProjectName: string | null;
     fetchProjects: () => Promise<void>;
+    openProject: (id: string) => Promise<void>;
     addProject: (name: string, dbType: DBType, members: ProjectMember[], description?: string, projectType?: ProjectType) => Promise<Project>;
     addRemoteProject: (id: string) => Promise<void>;
     deleteProject: (id: string) => Promise<void>;
@@ -64,6 +68,8 @@ export const useProjectStore = create<ProjectStore>()(
         (set, get) => ({
             projects: [],
             currentProjectId: null,
+            isOpeningProject: false,
+            openingProjectName: null,
 
             fetchProjects: async () => {
                 const token = localStorage.getItem('auth-token');
@@ -76,132 +82,62 @@ export const useProjectStore = create<ProjectStore>()(
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        // Map Mongo _id to id
                         const currentProjects = get().projects;
-
-                        const mergeBugReports = (server: any[], local: any[]) => {
-                            const localById = new Map((local || []).map((b: any) => [b.id, b]));
-                            return (server || []).map((b: any) => {
-                                const lb = localById.get(b.id);
-                                if (!lb) return b;
-                                const serverReplies = b.replies;
-                                const localReplies = lb.replies;
-                                const replies = (Array.isArray(serverReplies) && serverReplies.length > 0)
-                                    ? serverReplies
-                                    : (Array.isArray(localReplies) ? localReplies : undefined);
-                                return { ...lb, ...b, replies };
-                            });
-                        };
-
-                        const projects = data.map((p: any) => {
-                            const pt = p.projectType || 'ERD';
-                            // 로컬에 저장된 기존 프로젝트 (persist로 유지됨)
-                            const localProject = currentProjects.find((lp) => lp.id === p._id);
-                            let projData: any;
-
-                            if (pt === 'COMPONENT') {
-                                // 컴포넌트 캔버스: 한 번이라도 로컬에 components가 생기면,
-                                // 이후에는 항상 localProject.data를 우선 사용해 snapshot이 격자 정보를 덮어쓰지 않게 한다.
-                                if (localProject?.data && (localProject.data as any).components) {
-                                    projData = localProject.data;
-                                } else if (p.data && (p.data as any).components) {
-                                    projData = p.data;
-                                } else if (p.componentSnapshot) {
-                                    projData = {
-                                        components: p.componentSnapshot.components || [],
-                                        flows: p.componentSnapshot.flows || [],
-                                    };
-                                } else {
-                                    projData = { components: [], flows: [] };
-                                }
-                            } else if (pt === 'SCREEN_DESIGN') {
-                                // 화면 설계: 서버에 screens가 없는데 로컬에 있으면 로컬 유지 (가져오기 후 섹션 추가·새로고침 시 데이터 유지)
-                                const serverTs = new Date(p.updatedAt || 0).getTime();
-                                const localTs = new Date(localProject?.updatedAt || 0).getTime();
-                                const serverScreens = (p.data as any)?.screens ?? (p.screenSnapshot as any)?.screens ?? [];
-                                const serverFlows = (p.data as any)?.flows ?? (p.screenSnapshot as any)?.flows ?? [];
-                                const serverSections = (p.screenSnapshot as any)?.sections ?? (p.data as any)?.sections ?? [];
-                                const localScreens = (localProject?.data as any)?.screens;
-                                const localHasScreens = Array.isArray(localScreens) && localScreens.length > 0;
-                                const serverHasScreens = Array.isArray(serverScreens) && serverScreens.length > 0;
-
-                                if (localProject?.data && localHasScreens && !serverHasScreens) {
-                                    // 서버에 화면 목록이 없고 로컬에만 있으면 로컬 screens/flows 유지, 섹션은 서버 것 우선(섹션 추가 반영)
-                                    projData = {
-                                        screens: (localProject.data as any).screens ?? [],
-                                        flows: (localProject.data as any).flows ?? [],
-                                        sections: Array.isArray(serverSections) && serverSections.length > 0 ? serverSections : ((localProject.data as any).sections ?? []),
-                                    };
-                                } else if (localProject?.data && (localProject.data as any).screens && localTs > serverTs) {
-                                    projData = localProject.data;
-                                } else if (p.data && (p.data as any).screens) {
-                                    projData = p.data;
-                                } else if (p.screenSnapshot || serverScreens.length || serverFlows.length || (Array.isArray(serverSections) && serverSections.length)) {
-                                    projData = {
-                                        screens: serverScreens || [],
-                                        flows: serverFlows || [],
-                                        sections: Array.isArray(serverSections) ? serverSections : [],
-                                    };
-                                } else {
-                                    projData = { screens: [], flows: [], sections: [] };
-                                }
-                            } else if (pt === 'WBS') {
-                                // WBS: 항상 서버 wbsSnapshot을 정본으로 사용 (다중 세션 동기화 보장)
-                                if (p.wbsSnapshot) {
-                                    projData = {
-                                        menus: p.wbsSnapshot.menus || [],
-                                        rows: p.wbsSnapshot.rows || [],
-                                        projectSchedule: (p.wbsSnapshot as any).projectSchedule ?? undefined,
-                                        detailSchedules: (p.wbsSnapshot as any).detailSchedules || [],
-                                    };
-                                } else {
-                                    projData = { menus: [], rows: [] };
-                                }
-                            } else if (pt === 'PERSONAL_SCHEDULE') {
-                                if (p.personalScheduleSnapshot) {
-                                    projData = {
-                                        events: p.personalScheduleSnapshot.events || [],
-                                        todos: p.personalScheduleSnapshot.todos || [],
-                                        categories: p.personalScheduleSnapshot.categories || {},
-                                        visibleCats: p.personalScheduleSnapshot.visibleCats || [],
-                                    };
-                                } else {
-                                    projData = { events: [], todos: [], categories: {}, visibleCats: [] };
-                                }
-                            } else {
-                                // ERD: 서버 currentSnapshot 사용
-                                const snap = p.currentSnapshot;
-                                projData = snap
-                                    ? {
-                                        entities: snap.entities || [],
-                                        relationships: snap.relationships || [],
-                                        sections: snap.sections || [],
-                                    }
-                                    : { entities: [], relationships: [], sections: [] };
-                            }
-                            return {
-                                ...p,
-                                id: p._id,
-                                projectType: pt,
-                                author: p.author || '',
-                                linkedErdProjectIds: (p.linkedErdProjectIds && p.linkedErdProjectIds.length) ? p.linkedErdProjectIds : (p.linkedErdProjectId ? [p.linkedErdProjectId] : []),
-                                linkedErdProjectId: p.linkedErdProjectId || (p.linkedErdProjectIds && p.linkedErdProjectIds[0]),
-                                linkedComponentProjectId: p.linkedComponentProjectId,
-                                members: p.members?.map((m: any) => ({
-                                    id: m.userId?._id || m.userId,
-                                    name: m.userId?.name || 'Unknown',
-                                    email: m.userId?.email || '',
-                                    picture: m.userId?.picture,
-                                    role: m.role || 'MEMBER'
-                                })),
-                                data: projData,
-                                bugReports: mergeBugReports(p.bugReports || [], localProject?.bugReports || [])
-                            };
-                        });
+                        const projects = data.map((p: any) =>
+                            mapServerProjectResponse(p, currentProjects.find((lp) => lp.id === p._id)),
+                        );
                         set({ projects });
                     }
-                } catch (error) {
-                    // console.error('Fetch projects error:', error);
+                } catch {
+                    // ignore
+                }
+            },
+
+            openProject: async (id) => {
+                const existing = get().projects.find((p) => p.id === id);
+                set({
+                    isOpeningProject: true,
+                    openingProjectName: existing?.name ?? '프로젝트',
+                });
+
+                try {
+                    if (id.startsWith('local_')) {
+                        const local = get().projects.find((p) => p.id === id);
+                        if (local?.projectType === 'WBS') {
+                            const { useWbsStore } = await import('./wbsStore');
+                            useWbsStore.getState().loadProject(id, (local.data ?? { menus: [], rows: [] }) as unknown as import('../types/wbs').WbsData);
+                        }
+                        set({ currentProjectId: id });
+                        return;
+                    }
+
+                    const token = localStorage.getItem('auth-token');
+                    if (token) {
+                        const response = await fetchWithAuth(`${API_URL}/${id}?t=${Date.now()}`, {
+                            headers: { 'Cache-Control': 'no-cache' },
+                            cache: 'no-store',
+                        });
+                        if (response.ok) {
+                            const p = await response.json();
+                            const mapped = mapServerProjectResponse(p, existing);
+                            set((state) => ({
+                                projects: state.projects.some((x) => x.id === id)
+                                    ? state.projects.map((x) => (x.id === id ? { ...x, ...mapped } : x))
+                                    : [mapped, ...state.projects],
+                            }));
+
+                            if (mapped.projectType === 'WBS') {
+                                const { useWbsStore } = await import('./wbsStore');
+                                useWbsStore.getState().loadProject(id, (mapped.data ?? { menus: [], rows: [] }) as unknown as import('../types/wbs').WbsData);
+                            }
+                        }
+                    }
+
+                    set({ currentProjectId: id });
+                } catch {
+                    alert('프로젝트를 불러오지 못했습니다. 다시 시도해 주세요.');
+                } finally {
+                    set({ isOpeningProject: false, openingProjectName: null });
                 }
             },
 

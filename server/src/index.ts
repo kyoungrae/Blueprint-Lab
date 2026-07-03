@@ -17,6 +17,7 @@ import adminRoutes from './routes/adminRoutes';
 import translationRoutes from './routes/translationRoutes';
 import logger from './utils/logger';
 import { isAllowedCorsOrigin } from './utils/corsOrigins';
+import { startWbsBackupScheduler } from './services/wbsBackupService';
 
 const app = express();
 const httpServer = createServer(app);
@@ -91,6 +92,8 @@ async function start() {
         fs.mkdirSync(uploadDir, { recursive: true });
         fs.mkdirSync(fontDir, { recursive: true });
         logger.info(`✅ Upload directory ready: ${uploadDir}`);
+
+        startWbsBackupScheduler();
 
         // Start HTTP server
         httpServer.listen(config.port, () => {

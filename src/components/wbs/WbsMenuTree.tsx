@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Pencil, Check, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Pencil, Check, ChevronsDownUp, ChevronsUpDown, Search, X } from 'lucide-react';
 import { useWbsStore, calcMenuProgress } from '../../store/wbsStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
 import { useSyncStore } from '../../store/syncStore';
@@ -29,6 +29,56 @@ function buildTree(menus: WbsMenuNode[]): TreeNode[] {
 
 function flattenTree(nodes: TreeNode[]): TreeNode[] {
     return nodes.flatMap((n) => [n, ...flattenTree(n.children)]);
+}
+
+function normalizeSearch(q: string) {
+    return q.trim().toLowerCase();
+}
+
+function menuMatchesSearch(m: WbsMenuNode, q: string): boolean {
+    if (!q) return true;
+    const needle = normalizeSearch(q);
+    return (
+        m.name.toLowerCase().includes(needle) ||
+        m.menuCode.toLowerCase().includes(needle) ||
+        (m.programId ?? '').toLowerCase().includes(needle)
+    );
+}
+
+/** 검색어가 있을 때 표시할 메뉴 ID 집합 (매칭 + 상위·하위 포함). null이면 전체 표시 */
+function buildSearchVisibleIds(menus: WbsMenuNode[], query: string): Set<string> | null {
+    const q = normalizeSearch(query);
+    if (!q) return null;
+
+    const matching = menus.filter((m) => menuMatchesSearch(m, q));
+    if (matching.length === 0) return new Set();
+
+    const byId = new Map(menus.map((m) => [m.id, m]));
+    const visible = new Set<string>();
+
+    const addAncestors = (id: string) => {
+        let cur = byId.get(id);
+        while (cur) {
+            visible.add(cur.id);
+            cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+        }
+    };
+
+    const addDescendants = (parentId: string) => {
+        for (const m of menus) {
+            if (m.parentId === parentId) {
+                visible.add(m.id);
+                addDescendants(m.id);
+            }
+        }
+    };
+
+    for (const m of matching) {
+        addAncestors(m.id);
+        addDescendants(m.id);
+    }
+
+    return visible;
 }
 
 /** 담당자 색상 팔레트 */
@@ -73,11 +123,14 @@ interface WbsMenuTreeProps {
     assigneeColorIdx?: Map<string, number>;
     /** editable=false 상태에서도 전체 접기/펼치기 버튼 표시 */
     showCollapseButtons?: boolean;
+    /** 메뉴명·PID·메뉴코드 검색 */
+    showSearch?: boolean;
 }
 
 const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
     selectedId, onSelect, editable = true, showProgress = false,
     showAssignee = false, activeAssignees, assigneeColorIdx, showCollapseButtons = false,
+    showSearch = true,
 }) => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
@@ -114,7 +167,31 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
     // 드롭 위치: 대상 위(형제 앞) / 가운데(하위로) / 아래(형제 뒤)
     const [dropPos, setDropPos] = useState<'before' | 'inside' | 'after' | null>(null);
+    const [menuSearch, setMenuSearch] = useState('');
     const editContainerRef = useRef<HTMLDivElement>(null);
+
+    const searchVisibleIds = useMemo(
+        () => buildSearchVisibleIds(menus, menuSearch),
+        [menus, menuSearch],
+    );
+    const hasSearch = normalizeSearch(menuSearch).length > 0;
+
+    // 검색 시 매칭 경로의 부모 노드는 자동 펼침
+    useEffect(() => {
+        if (!hasSearch || !searchVisibleIds || searchVisibleIds.size === 0) return;
+        const byId = new Map(menus.map((m) => [m.id, m]));
+        setCollapsed((prev) => {
+            const next = new Set(prev);
+            for (const id of searchVisibleIds) {
+                let cur = byId.get(id);
+                while (cur?.parentId) {
+                    next.delete(cur.parentId);
+                    cur = byId.get(cur.parentId);
+                }
+            }
+            return next;
+        });
+    }, [menuSearch, menus, hasSearch, searchVisibleIds]);
 
     const handleEditBlur = (e: React.FocusEvent) => {
         const next = e.relatedTarget as Node | null;
@@ -189,6 +266,11 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
 
         // 담당자 필터: 이 노드(or 자손)에 일치하는 담당자 없으면 숨김
         if (activeAssignees && activeAssignees.size > 0 && !nodeMatchesFilter(node, activeAssignees, rowsByMenu)) {
+            return null;
+        }
+
+        // 메뉴명·PID·메뉴코드 검색 필터
+        if (searchVisibleIds !== null && !searchVisibleIds.has(node.id)) {
             return null;
         }
 
@@ -466,11 +548,37 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
                     </div>
                 </div>
             )}
+            {showSearch && (
+                <div className="relative px-1 pb-2 mb-1 border-b border-gray-100">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    <input
+                        type="search"
+                        value={menuSearch}
+                        onChange={(e) => setMenuSearch(e.target.value)}
+                        placeholder="메뉴명 · PID · 메뉴코드 검색"
+                        className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 placeholder:text-gray-400"
+                    />
+                    {menuSearch && (
+                        <button
+                            type="button"
+                            onClick={() => setMenuSearch('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                            title="검색 초기화"
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
+                </div>
+            )}
             <div className="flex-1 overflow-auto pr-1">
                 {tree.length === 0 ? (
                     <div className="text-center text-sm text-gray-400 py-10 px-4 leading-relaxed">
                         메뉴가 없습니다.<br />
                         {editable ? '“최상위 추가”로 첫 메뉴를 만들어 보세요.' : ''}
+                    </div>
+                ) : hasSearch && searchVisibleIds?.size === 0 ? (
+                    <div className="text-center text-sm text-gray-400 py-10 px-4">
+                        검색 결과가 없습니다.
                     </div>
                 ) : (
                     tree.map((n) => renderNode(n, 0))

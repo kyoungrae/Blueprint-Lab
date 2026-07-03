@@ -6,6 +6,7 @@ import WbsCanvas from './components/wbs/WbsCanvas';
 import PersonalScheduleCanvas from './components/schedule/PersonalScheduleCanvas';
 import LoginPage from './components/LoginPage';
 import ProjectListPage from './components/ProjectListPage';
+import ProjectLoadingScreen from './components/ProjectLoadingScreen';
 import { useAuthStore } from './store/authStore';
 import { useProjectStore } from './store/projectStore';
 import { useSyncStore } from './store/syncStore';
@@ -16,7 +17,7 @@ const AUTH_API = import.meta.env.VITE_AUTH_API_URL || 'http://localhost:3001/api
 
 function App() {
   const { isAuthenticated, user, logout, updateUser } = useAuthStore();
-  const { currentProjectId, projects } = useProjectStore();
+  const { currentProjectId, projects, isOpeningProject, openingProjectName } = useProjectStore();
   const { isConnected, isAuthenticatedOnSocket, connect, disconnect, authenticate, joinProject, leaveProject } = useSyncStore();
 
   // 401 시 자동 로그아웃 (토큰 만료 등)
@@ -107,6 +108,7 @@ function App() {
   }, [isConnected, isAuthenticatedOnSocket, currentProjectId, joinProject, leaveProject]);
 
   if (!isAuthenticated) return <LoginPage />;
+  if (isOpeningProject) return <ProjectLoadingScreen projectName={openingProjectName} />;
   if (!currentProjectId) return <ProjectListPage />;
 
   // Determine project type and render appropriate canvas

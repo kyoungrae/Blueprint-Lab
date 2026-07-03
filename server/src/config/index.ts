@@ -32,6 +32,13 @@ export const config = {
         dir: process.env.UPLOAD_DIR || path.join(SERVER_ROOT, 'upload'),
     },
 
+    /** WBS 자동 백업 저장 경로 */
+    backup: {
+        dir: process.env.BACKUP_DIR || path.join(SERVER_ROOT, 'backups'),
+        /** 백업 주기 (ms). 기본 3시간 */
+        intervalMs: parseInt(process.env.BACKUP_INTERVAL_MS || String(3 * 60 * 60 * 1000), 10),
+    },
+
     email: {
         host: process.env.EMAIL_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.EMAIL_PORT || '587', 10),

@@ -76,7 +76,7 @@ function roundedOrthoPath(rawPts: { x: number; y: number }[], r = 9): string {
 }
 
 const ProjectListPage: React.FC = () => {
-    const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, setCurrentProject, currentProjectId, updateProjectMembers, updateProjectMetadata, inviteMember, joinWithCode } = useProjectStore();
+    const { projects, fetchProjects, addProject, addRemoteProject, deleteProject, openProject, setCurrentProject, currentProjectId, updateProjectMembers, updateProjectMetadata, inviteMember, joinWithCode } = useProjectStore();
     const { user, logout } = useAuthStore();
 
     // UI States
@@ -437,7 +437,7 @@ const ProjectListPage: React.FC = () => {
             setNewProjectDesc('');
             setNewProjectMembers([]);
             setIsCreateModalOpen(false);
-            setCurrentProject(project.id);
+            void openProject(project.id);
         } catch (err: any) {
             setCreateError(err.message || '프로젝트 생성에 실패했습니다.');
         } finally {
@@ -534,7 +534,7 @@ const ProjectListPage: React.FC = () => {
                                     data-project-id={project.id}
                                     className="project-card group relative bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col items-center gap-1.5 cursor-pointer hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-0.5 transition-all animate-project-card-in shrink-0"
                                     style={{ width: 150, animationDelay: `${groupIndex * 120 + cardIdx * 80}ms` }}
-                                    onClick={() => setCurrentProject(project.id)}
+                                    onClick={() => void openProject(project.id)}
                                 >
                                     {/* 호버 액션 */}
                                     <div className="absolute top-1.5 right-1.5 hidden group-hover:flex gap-0.5 z-20">
@@ -845,7 +845,7 @@ const ProjectListPage: React.FC = () => {
                                                 data-project-id={comp.id}
                                                 className="project-card group relative bg-white rounded-2xl border border-gray-100 shadow-md px-7 py-5 flex flex-col items-center gap-2.5 cursor-pointer hover:shadow-xl hover:-translate-y-0.5 transition-all animate-project-card-in"
                                                 style={{ minWidth: 200, animationDelay: `${ci * 100}ms` }}
-                                                onClick={() => setCurrentProject(comp.id)}
+                                                onClick={() => void openProject(comp.id)}
                                             >
                                                 {/* 연결 수 뱃지 */}
                                                 {linkedFromCount > 0 && (
