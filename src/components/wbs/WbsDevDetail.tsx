@@ -815,6 +815,9 @@ const WbsDevDetail: React.FC = () => {
                                                     <WheelDatePicker
                                                         value={r.startDate}
                                                         onChange={(v) => updateRow(r.id, { startDate: v })}
+                                                        rangeStart={r.startDate}
+                                                        rangeEnd={r.endDate}
+                                                        onRangeChange={(start, end) => updateRow(r.id, { startDate: start, endDate: end })}
                                                         className="w-full"
                                                         menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                                     />
@@ -823,6 +826,9 @@ const WbsDevDetail: React.FC = () => {
                                                     <WheelDatePicker
                                                         value={r.endDate}
                                                         onChange={(v) => updateRow(r.id, { endDate: v })}
+                                                        rangeStart={r.startDate}
+                                                        rangeEnd={r.endDate}
+                                                        onRangeChange={(start, end) => updateRow(r.id, { startDate: start, endDate: end })}
                                                         className="w-full"
                                                         menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                                     />

@@ -5,6 +5,7 @@ import {
     addMonths, eachDayOfInterval, endOfMonth, format, isToday, startOfMonth, subMonths,
 } from 'date-fns';
 import type { AssigneeMenuDateRange } from './wbsDateUtils';
+import { isWeekendDate, isWeekendYmd, isWeekdayInRangeSpan, normalizeYmd, sortRangeBounds } from './wbsDateUtils';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────
 const ITEM_H = 36; // px per row
@@ -265,7 +266,13 @@ interface CalendarGridProps {
     selectedYmd: string;
     draftYmd: string;
     menuDateRanges: AssigneeMenuDateRange[];
+    rangeMode: boolean;
+    draftRangeStart: string;
+    draftRangeEnd: string;
+    hoverYmd: string | null;
+    onHoverYmd: (ymd: string | null) => void;
     onSelectDay: (y: number, m: number, d: number) => void;
+    onSelectRangeDay: (ymd: string) => void;
     onPrevMonth: () => void;
     onNextMonth: () => void;
     onViewMonthChange: (y: number, m: number) => void;
@@ -277,7 +284,13 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({
     selectedYmd,
     draftYmd,
     menuDateRanges,
+    rangeMode,
+    draftRangeStart,
+    draftRangeEnd,
+    hoverYmd,
+    onHoverYmd,
     onSelectDay,
+    onSelectRangeDay,
     onPrevMonth,
     onNextMonth,
     onViewMonthChange,
@@ -289,8 +302,20 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({
     const paddingDays = Array(start.getDay()).fill(null);
     const years = range(2000, new Date().getFullYear() + 5);
 
+    const previewEnd = rangeMode
+        ? (draftRangeEnd || (draftRangeStart && hoverYmd ? hoverYmd : '') || draftRangeStart)
+        : '';
+    const previewStart = draftRangeStart;
+    const hasPreviewSpan = !!(rangeMode && previewStart && previewEnd);
+
     return (
         <div className="flex flex-col gap-2">
+            {rangeMode && (
+                <p className="text-[10px] text-gray-500 text-center leading-snug px-1">
+                    시작일·종료일을 순서대로 선택하세요
+                    <span className="block text-red-400 font-semibold">주말은 선택·표시에서 제외됩니다</span>
+                </p>
+            )}
             <div className="flex items-center justify-between px-0.5">
                 <button
                     type="button"
@@ -343,46 +368,74 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({
                 {days.map((d) => {
                     const ymd = format(d, 'yyyy-MM-dd');
                     const dayRanges = rangesForDay(ymd, menuDateRanges);
-                    const isSelected = draftYmd === ymd || (!draftYmd && selectedYmd === ymd);
-                    const weekend = d.getDay() === 0 || d.getDay() === 6;
+                    const weekend = isWeekendDate(d);
+
+                    const inAssigneeRange = dayRanges.length > 0;
+                    const assigneeRangeBg = !weekend && inAssigneeRange
+                        ? `${dayRanges[0].color}22`
+                        : undefined;
+
+                    const inDraftSpan = hasPreviewSpan && isWeekdayInRangeSpan(ymd, previewStart, previewEnd);
+                    const { start: spanStart, end: spanEnd } = hasPreviewSpan
+                        ? sortRangeBounds(previewStart, previewEnd)
+                        : { start: '', end: '' };
+                    const isRangeStart = inDraftSpan && ymd === spanStart;
+                    const isRangeEnd = inDraftSpan && ymd === spanEnd;
+                    const isRangeMiddle = inDraftSpan && !isRangeStart && !isRangeEnd;
+
+                    const isSingleSelected = !rangeMode && (draftYmd === ymd || (!draftYmd && selectedYmd === ymd));
+
                     const isStart = dayRanges.some((r) => r.startDate === ymd);
                     const isEnd = dayRanges.some((r) => r.endDate === ymd);
 
-                    const inRange = dayRanges.length > 0;
-                    const rangeBg = !isSelected && inRange
-                        ? `${dayRanges[0].color}22`
-                        : undefined;
+                    const handleClick = () => {
+                        if (rangeMode) {
+                            if (weekend) return;
+                            onSelectRangeDay(ymd);
+                        } else {
+                            onSelectDay(d.getFullYear(), d.getMonth() + 1, d.getDate());
+                        }
+                    };
 
                     return (
                         <button
                             key={ymd}
                             type="button"
-                            onClick={() => onSelectDay(d.getFullYear(), d.getMonth() + 1, d.getDate())}
-                            style={{ backgroundColor: rangeBg }}
+                            disabled={rangeMode && weekend}
+                            onClick={handleClick}
+                            onMouseEnter={() => { if (rangeMode && !weekend) onHoverYmd(ymd); }}
+                            onMouseLeave={() => { if (rangeMode) onHoverYmd(null); }}
+                            style={{ backgroundColor: inDraftSpan ? undefined : assigneeRangeBg }}
                             className={`relative h-9 flex flex-col items-center justify-center rounded-lg text-[11px] font-bold transition-all ${
-                                isSelected
-                                    ? 'bg-emerald-500 text-white ring-2 ring-emerald-200'
-                                    : isToday(d)
-                                        ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                        : weekend
-                                            ? 'text-red-500 hover:bg-red-50'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                rangeMode && weekend
+                                    ? 'text-gray-300 cursor-not-allowed bg-gray-50/80 line-through decoration-gray-300'
+                                    : isRangeStart || isRangeEnd
+                                        ? 'bg-emerald-500 text-white ring-2 ring-emerald-200 z-[1]'
+                                        : isRangeMiddle
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : isSingleSelected
+                                                ? 'bg-emerald-500 text-white ring-2 ring-emerald-200'
+                                                : isToday(d)
+                                                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                                    : weekend
+                                                        ? 'text-red-400 hover:bg-red-50'
+                                                        : 'text-gray-700 hover:bg-gray-100'
                             }`}
                         >
                             <span className="leading-none">{format(d, 'd')}</span>
-                            {dayRanges.length > 0 && (
+                            {inAssigneeRange && !inDraftSpan && (
                                 <span className="absolute bottom-0.5 left-0.5 right-0.5 flex gap-px justify-center">
                                     {dayRanges.slice(0, 3).map((r) => (
                                         <span
                                             key={r.menuId}
                                             className="h-1 flex-1 max-w-[10px] rounded-full"
-                                            style={{ backgroundColor: isSelected ? 'rgba(255,255,255,0.85)' : r.color }}
+                                            style={{ backgroundColor: isSingleSelected ? 'rgba(255,255,255,0.85)' : r.color }}
                                             title={`${r.menuName}${r.startDate ? ` ${r.startDate}` : ''}${r.endDate ? ` ~ ${r.endDate}` : ''}`}
                                         />
                                     ))}
                                 </span>
                             )}
-                            {(isStart || isEnd) && !isSelected && (
+                            {(isStart || isEnd) && !inDraftSpan && !isSingleSelected && (
                                 <span className="absolute top-0.5 right-0.5 text-[7px] font-black leading-none text-gray-500">
                                     {isStart && isEnd ? '●' : isStart ? 'S' : 'E'}
                                 </span>
@@ -391,6 +444,13 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({
                     );
                 })}
             </div>
+
+            {rangeMode && previewStart && (
+                <p className="text-center text-[11px] font-bold text-emerald-700 tabular-nums">
+                    {previewStart}
+                    {previewEnd && previewEnd !== previewStart ? ` ~ ${previewEnd}` : ''}
+                </p>
+            )}
 
             {menuDateRanges.length > 0 && (
                 <div className="border-t border-gray-100 pt-2 max-h-24 overflow-y-auto">
@@ -429,6 +489,10 @@ interface WheelDatePickerProps {
     variant?: 'default' | 'ghost';
     /** 담당자가 배정된 메뉴의 시작·종료일 (달력 표시용) */
     menuDateRanges?: AssigneeMenuDateRange[];
+    /** 달력 모드 range 선택 — 시작·종료일 동시 설정 */
+    rangeStart?: string;
+    rangeEnd?: string;
+    onRangeChange?: (start: string, end: string) => void;
 }
 
 const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
@@ -438,7 +502,11 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     placeholder = '날짜 선택',
     variant = 'default',
     menuDateRanges = [],
+    rangeStart = '',
+    rangeEnd = '',
+    onRangeChange,
 }) => {
+    const calendarRangeMode = !!onRangeChange;
     const today = new Date();
     const isValidYmd = (y: number, m: number, d: number) =>
         !isNaN(y) && !isNaN(m) && !isNaN(d) && m >= 1 && m <= 12 && d >= 1 && d <= 31;
@@ -473,6 +541,8 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     const [day, setDay] = useState(initial.d);
     const [open, setOpen] = useState(false);
     const [pickerMode, setPickerMode] = useState<'wheel' | 'calendar'>('wheel');
+    const [draftRange, setDraftRange] = useState({ start: '', end: '' });
+    const [hoverYmd, setHoverYmd] = useState<string | null>(null);
     const [editing, setEditing] = useState(false);
     const [text, setText] = useState('');
     const prevTextLenRef = useRef(0);
@@ -481,16 +551,51 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     const popupRef = useRef<HTMLDivElement>(null);
     const popupPos = useWheelPopupPosition(open, triggerRef, popupRef, pickerMode === 'calendar' ? 300 : 260, pickerMode === 'calendar' ? 420 : 320);
 
-    // 팝업 열릴 때 휠 모드로 초기화
     useEffect(() => {
-        if (open) setPickerMode('wheel');
-    }, [open]);
+        if (!open) {
+            setHoverYmd(null);
+            return;
+        }
+        setPickerMode('wheel');
+        if (calendarRangeMode) {
+            setDraftRange({
+                start: normalizeYmd(rangeStart),
+                end: normalizeYmd(rangeEnd),
+            });
+        }
+    }, [open, calendarRangeMode, rangeStart, rangeEnd]);
+
+    useEffect(() => {
+        if (!open || pickerMode !== 'calendar' || !calendarRangeMode) return;
+        setDraftRange({
+            start: normalizeYmd(rangeStart),
+            end: normalizeYmd(rangeEnd),
+        });
+        setHoverYmd(null);
+    }, [pickerMode, open, calendarRangeMode, rangeStart, rangeEnd]);
 
     const draftYmd = ymdFromParts(year, month, day);
     const selectedYmd = (() => {
         const p = tryParse(value);
         return p ? ymdFromParts(p.y, p.m, p.d) : '';
     })();
+
+    const handleCalendarRangeDaySelect = (ymd: string) => {
+        if (isWeekendYmd(ymd)) return;
+        setDraftRange((prev) => {
+            if (!prev.start || prev.end) {
+                return { start: ymd, end: '' };
+            }
+            return sortRangeBounds(prev.start, ymd);
+        });
+        setHoverYmd(null);
+        const p = tryParse(ymd);
+        if (p) {
+            setYear(p.y);
+            setMonth(p.m);
+            setDay(p.d);
+        }
+    };
 
     const handleCalendarDaySelect = (y: number, m: number, d: number) => {
         setYear(y);
@@ -540,6 +645,15 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     }, [open]);
 
     const confirm = () => {
+        if (pickerMode === 'calendar' && calendarRangeMode) {
+            const start = draftRange.start;
+            if (!start) return;
+            const end = draftRange.end || start;
+            onRangeChange!(start, end);
+            setEditing(false);
+            setOpen(false);
+            return;
+        }
         const mm = String(month).padStart(2, '0');
         const dd = String(day).padStart(2, '0');
         onChange(`${year}-${mm}-${dd}`);
@@ -547,7 +661,15 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
         setOpen(false);
     };
 
-    const clear = () => { onChange(''); setEditing(false); setOpen(false); };
+    const clear = () => {
+        if (pickerMode === 'calendar' && calendarRangeMode) {
+            setDraftRange({ start: '', end: '' });
+            onRangeChange!('', '');
+        }
+        onChange('');
+        setEditing(false);
+        setOpen(false);
+    };
 
     const years = range(2000, today.getFullYear() + 5);
     const months = range(1, 12);
@@ -656,7 +778,13 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
                             selectedYmd={selectedYmd}
                             draftYmd={draftYmd}
                             menuDateRanges={menuDateRanges}
+                            rangeMode={calendarRangeMode}
+                            draftRangeStart={draftRange.start}
+                            draftRangeEnd={draftRange.end}
+                            hoverYmd={hoverYmd}
+                            onHoverYmd={setHoverYmd}
                             onSelectDay={handleCalendarDaySelect}
+                            onSelectRangeDay={handleCalendarRangeDaySelect}
                             onPrevMonth={handlePrevMonth}
                             onNextMonth={handleNextMonth}
                             onViewMonthChange={handleViewMonthChange}

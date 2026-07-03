@@ -82,5 +82,33 @@ export function buildAssigneeMenuDateRanges(
         });
     }
 
-    return result.sort((a, b) => a.menuName.localeCompare(b.menuName, 'ko'));
+    return result.sort((a, b) => {
+        const aKey = a.startDate || a.endDate;
+        const bKey = b.startDate || b.endDate;
+        if (aKey !== bKey) return bKey.localeCompare(aKey);
+        return b.menuName.localeCompare(a.menuName, 'ko');
+    });
+}
+
+export function isWeekendDate(d: Date): boolean {
+    const dow = d.getDay();
+    return dow === 0 || dow === 6;
+}
+
+export function isWeekendYmd(ymd: string): boolean {
+    if (!ymd) return false;
+    const parts = ymd.split('-').map(Number);
+    if (parts.length !== 3 || parts.some((n) => isNaN(n))) return false;
+    return isWeekendDate(new Date(parts[0], parts[1] - 1, parts[2]));
+}
+
+export function sortRangeBounds(a: string, b: string): { start: string; end: string } {
+    return a <= b ? { start: a, end: b } : { start: b, end: a };
+}
+
+/** 달력 range 하이라이트 — 주말은 구간에서 제외 */
+export function isWeekdayInRangeSpan(ymd: string, rangeStart: string, rangeEnd: string): boolean {
+    if (!rangeStart || !rangeEnd || isWeekendYmd(ymd)) return false;
+    const { start, end } = sortRangeBounds(rangeStart, rangeEnd);
+    return ymd >= start && ymd <= end;
 }
