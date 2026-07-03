@@ -1052,14 +1052,17 @@ const ERDCanvasContent: React.FC = () => {
 
                         if (window.confirm(confirmMsg)) {
                             selectedNodes.forEach(node => {
-                                deleteEntity(node.id, user);
+                                const entity = entitiesById[node.id];
+                                if (!entity) return;
                                 sendOperation({
                                     type: 'ENTITY_DELETE',
                                     targetId: node.id,
                                     userId: user?.id || 'anonymous',
                                     userName: user?.name || 'Anonymous',
-                                    payload: {}
+                                    payload: {},
+                                    previousState: entity as unknown as Record<string, unknown>,
                                 });
+                                deleteEntity(node.id, user);
                             });
                         }
                     }
@@ -1067,14 +1070,17 @@ const ERDCanvasContent: React.FC = () => {
                     if (selectedEdges.length > 0) {
                         if (window.confirm(`${selectedEdges.length}개의 관계를 삭제하시겠습니까?`)) {
                             selectedEdges.forEach(edge => {
-                                deleteRelationship(edge.id, user);
+                                const rel = relationshipsById[edge.id];
+                                if (!rel) return;
                                 sendOperation({
                                     type: 'RELATIONSHIP_DELETE',
                                     targetId: edge.id,
                                     userId: user?.id || 'anonymous',
                                     userName: user?.name || 'Anonymous',
-                                    payload: {}
+                                    payload: {},
+                                    previousState: rel as unknown as Record<string, unknown>,
                                 });
+                                deleteRelationship(edge.id, user);
                             });
                         }
                     }
@@ -1101,7 +1107,7 @@ const ERDCanvasContent: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [undo, redo, deleteEntity, deleteRelationship, edges, sendOperation, user, getNodes]);
+    }, [undo, redo, deleteEntity, deleteRelationship, edges, sendOperation, user, getNodes, entitiesById, relationshipsById]);
 
     // Convert relationships to ReactFlow edges (cull edges whose nodes are both off-screen)
     useEffect(() => {
@@ -1708,15 +1714,18 @@ const ERDCanvasContent: React.FC = () => {
     }, [relationships, addRelationship, user, sendOperation]);
 
     const handleDeleteRelationshipFromExcel = useCallback((relationshipId: string) => {
-        deleteRelationship(relationshipId, user);
+        const rel = relationshipsById[relationshipId];
+        if (!rel) return;
         sendOperation({
             type: 'RELATIONSHIP_DELETE',
             targetId: relationshipId,
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
             payload: {},
+            previousState: rel as unknown as Record<string, unknown>,
         });
-    }, [deleteRelationship, user, sendOperation]);
+        deleteRelationship(relationshipId, user);
+    }, [relationshipsById, deleteRelationship, user, sendOperation]);
 
     const handleEditRelationshipFromExcel = useCallback((relationshipId: string) => {
         const rel = relationships.find((r) => r.id === relationshipId);
@@ -2577,14 +2586,15 @@ const ERDCanvasContent: React.FC = () => {
                             setNewRelationshipId(null);
                         }}
                         onDelete={() => {
-                            deleteRelationship(editingRelationship.id, user);
                             sendOperation({
                                 type: 'RELATIONSHIP_DELETE',
                                 targetId: editingRelationship.id,
                                 userId: user?.id || 'anonymous',
                                 userName: user?.name || 'Anonymous',
                                 payload: {},
+                                previousState: editingRelationship as unknown as Record<string, unknown>,
                             });
+                            deleteRelationship(editingRelationship.id, user);
                             setEditingRelationship(null);
                             setNewRelationshipId(null);
                         }}

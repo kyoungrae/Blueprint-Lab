@@ -309,6 +309,7 @@ import ScreenProjectSearchReplacePanel, { type ProjectSearchNavigateHit } from '
 import ScreenProjectEditGrid from './ScreenProjectEditGrid';
 import AddScreenModal from './AddScreenModal';
 import AdminPage from './AdminPage';
+import { emitScreenDeleteHistory, emitFlowDeleteHistory } from '../utils/screenHistory';
 import { canManageTranslationMemory } from '../utils/tierAccess';
 import { useScreenDesignStore } from '../store/screenDesignStore';
 import { renderTextWithSearchHighlight } from '../utils/projectSearchHighlight';
@@ -404,7 +405,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
     const { user, logout } = useAuthStore();
     const canManageTranslations = canManageTranslationMemory(user?.tier);
-    const { updateCursor, isSynced, isConnected } = useSyncStore();
+    const { updateCursor, isSynced, isConnected, sendOperation } = useSyncStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
@@ -1289,16 +1290,25 @@ const ScreenDesignCanvasContent: React.FC = () => {
                             : `${selectedNodes.length}개의 화면을 삭제하시겠습니까?`;
 
                         if (window.confirm(confirmMsg)) {
-                            selectedNodes.forEach(node => {
+                            selectedNodes.forEach((node) => {
+                                const screen =
+                                    screens.find((s) => s.id === node.id)
+                                    ?? (node.data as { screen?: Screen })?.screen;
+                                if (screen) {
+                                    emitScreenDeleteHistory(sendOperation, screen, user);
+                                }
                                 deleteScreen(node.id);
-                                // Yjs CRDT가 자동으로 다른 사용자에게 전파합니다.
                             });
                         }
                     }
 
                     if (selectedEdges.length > 0) {
                         if (window.confirm(`${selectedEdges.length}개의 연결을 삭제하시겠습니까?`)) {
-                            selectedEdges.forEach(edge => {
+                            selectedEdges.forEach((edge) => {
+                                const flow = flows.find((f) => f.id === edge.id);
+                                if (flow) {
+                                    emitFlowDeleteHistory(sendOperation, flow, user);
+                                }
                                 deleteFlow(edge.id);
                             });
                         }
@@ -1309,7 +1319,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [deleteScreen, deleteFlow, getNodes, edges, screens, flows]);
+    }, [deleteScreen, deleteFlow, getNodes, edges, screens, flows, sendOperation, user]);
 
     const onConnect = useCallback((params: any) => {
         if (params.source === params.target) return;

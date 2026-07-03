@@ -4,6 +4,7 @@ import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
 import { canManageTranslationMemory } from '../utils/tierAccess';
 import * as XLSX from 'xlsx';
+import { sanitizeHistoryPayloadForDisplay } from '../utils/screenHistory';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects').replace(/\/projects\/?$/, '');
 
@@ -1935,11 +1936,11 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                         <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
                                                             <div className="text-[10px] font-bold text-gray-500 mb-1">PAYLOAD(JSON)</div>
-                                                            <pre className="text-[11px] text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-auto">{JSON.stringify(entry.operationPayload ?? {}, null, 2)}</pre>
+                                                            <pre className="text-[11px] text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-auto">{JSON.stringify(sanitizeHistoryPayloadForDisplay(entry.operationPayload ?? {}), null, 2)}</pre>
                                                         </div>
                                                         <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
                                                             <div className="text-[10px] font-bold text-gray-500 mb-1">PREVIOUS_STATE(JSON)</div>
-                                                            <pre className="text-[11px] text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-auto">{JSON.stringify(entry.operationPreviousState ?? {}, null, 2)}</pre>
+                                                            <pre className="text-[11px] text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-auto">{JSON.stringify(sanitizeHistoryPayloadForDisplay(entry.operationPreviousState ?? {}), null, 2)}</pre>
                                                         </div>
                                                     </div>
                                                     <div className="text-[11px] text-gray-500">

@@ -12,6 +12,7 @@ import { useAuthStore } from '../store/authStore';
 import { EntityLockBadge, useEntityLock } from './collaboration';
 import { useScreenDesignUndoRedo } from '../contexts/ScreenDesignUndoRedoContext';
 import { renderTextWithSearchHighlight, textMatchesSearchHighlight } from '../utils/projectSearchHighlight';
+import { buildScreenHistoryFromPatch, isLockOnlyScreenPatch, emitScreenDeleteHistory } from '../utils/screenHistory';
 
 // 명세 그리드 기본 컬럼 너비(px): [테이블명(한글), 테이블명(영어), 항목명(한글), 필드명(영문), 항목타입, Format, 자릿수, 초기값, Validation, 비고]
 const DEFAULT_SPEC_COLUMN_WIDTHS = [110, 110, 128, 128, 96, 80, 64, 64, 80, 96];
@@ -426,12 +427,32 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     });
 
     const syncUpdate = (updates: Partial<Screen>) => {
+        if (isLockOnlyScreenPatch(updates as Record<string, unknown>)) {
+            sendOperation({
+                type: 'SCREEN_UPDATE',
+                targetId: screen.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: updates,
+            });
+            return;
+        }
+
+        const hist = buildScreenHistoryFromPatch(screen, updates);
+        if (!hist) return;
+
         sendOperation({
             type: 'SCREEN_UPDATE',
             targetId: screen.id,
             userId: user?.id || 'anonymous',
             userName: user?.name || 'Anonymous',
-            payload: updates
+            payload: {
+                ...hist.payload,
+                name: screen.name,
+                screenId: screen.screenId,
+                historyLog: hist.historyLog,
+            },
+            previousState: hist.previousState,
         });
     };
 
@@ -615,14 +636,7 @@ const SpecNode: React.FC<NodeProps<SpecNodeData>> = ({ data, selected }) => {
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (window.confirm(`기능명세서 "${screen.name}"을(를) 삭제하시겠습니까?`)) {
-            sendOperation({
-                type: 'SCREEN_DELETE',
-                targetId: screen.id,
-                userId: user?.id || 'anonymous',
-                userName: user?.name || 'Anonymous',
-                payload: {},
-                previousState: screen as unknown as Record<string, unknown>,
-            });
+            emitScreenDeleteHistory(sendOperation, screen, user);
             deleteScreen(screen.id);
         }
     };

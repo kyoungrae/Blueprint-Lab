@@ -6,7 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useEntityLock } from '../collaboration';
 import { useYjsStore } from '../../store/yjsStore';
 
-/** Socket 히스토리용 등 Y.Doc에 넣으면 안 되는 필드 제거 */
+import { buildScreenHistoryFromPatch, isLockOnlyScreenPatch, emitScreenDeleteHistory } from '../../utils/screenHistory';
 function screenPatchForYjs(updates: Partial<Screen>): Partial<Screen> {
     const { historyLog: _, ...rest } = updates as Partial<Screen> & { historyLog?: unknown };
     return rest;
@@ -42,10 +42,9 @@ export const useScreenLockAndSync = (screen: Screen) => {
         (updates: Partial<Screen>) => {
             const yjsPatch = screenPatchForYjs(updates);
             if (Object.keys(yjsPatch).length === 0) return;
-            // Yjs: 데이터 영속성 + 실시간 브로드캐스트 (단일 채널)
             yjsUpdate(screen.id, yjsPatch);
-            // Socket.IO: 잠금 상태 변경만 즉시 전파 (락 UI 실시간 반영)
-            if ('isLocked' in updates || 'unlockedAt' in updates) {
+
+            if (isLockOnlyScreenPatch(yjsPatch as Record<string, unknown>)) {
                 sendOperation({
                     type: 'SCREEN_UPDATE',
                     targetId: screen.id,
@@ -56,39 +55,24 @@ export const useScreenLockAndSync = (screen: Screen) => {
                 return;
             }
 
-            const hasHistoryTargetFields =
-                'initialSettings' in updates ||
-                'functionDetails' in updates ||
-                'relatedTables' in updates ||
-                'rightPaneRatios' in updates;
+            const hist = buildScreenHistoryFromPatch(screen, yjsPatch);
+            if (!hist) return;
 
-            if (hasHistoryTargetFields) {
-                const previousState: Record<string, unknown> = {};
-                if ('initialSettings' in updates) previousState.initialSettings = screen.initialSettings ?? '';
-                if ('functionDetails' in updates) previousState.functionDetails = screen.functionDetails ?? '';
-                if ('relatedTables' in updates) previousState.relatedTables = screen.relatedTables ?? '';
-                if ('rightPaneRatios' in updates) previousState.rightPaneRatios = screen.rightPaneRatios ?? null;
-
-                sendOperation({
-                    type: 'SCREEN_UPDATE',
-                    targetId: screen.id,
-                    userId: user?.id || 'anonymous',
-                    userName: user?.name || 'Anonymous',
-                    payload: {
-                        ...yjsPatch,
-                        name: screen.name,
-                        screenId: screen.screenId,
-                        historyLog: {
-                            details: '우측 패널 데이터 저장',
-                            targetName: `${screen.name} (${screen.screenId})`,
-                            targetType: 'SCREEN',
-                        },
-                    },
-                    previousState,
-                });
-            }
+            sendOperation({
+                type: 'SCREEN_UPDATE',
+                targetId: screen.id,
+                userId: user?.id || 'anonymous',
+                userName: user?.name || 'Anonymous',
+                payload: {
+                    ...hist.payload,
+                    name: screen.name,
+                    screenId: screen.screenId,
+                    historyLog: hist.historyLog,
+                },
+                previousState: hist.previousState,
+            });
         },
-        [yjsUpdate, sendOperation, screen.id, screen.name, screen.screenId, screen.initialSettings, screen.functionDetails, screen.relatedTables, screen.rightPaneRatios, user?.id, user?.name],
+        [yjsUpdate, sendOperation, screen, user?.id, user?.name],
     );
 
     // drawElements 전용 동기화 → Yjs 직접 호출 (Socket.IO 이중 전송 제거)
@@ -205,15 +189,7 @@ export const useScreenLockAndSync = (screen: Screen) => {
                 deleteScreen(screen.id);
                 // 2. Yjs 삭제: 다른 클라이언트 실시간 반영 + MongoDB 저장 (BUG-08 수정)
                 yjsDelete(screen.id);
-                // 3. Socket.IO: 히스토리 기록 전용
-                sendOperation({
-                    type: 'SCREEN_DELETE',
-                    targetId: screen.id,
-                    userId: user?.id || 'anonymous',
-                    userName: user?.name || 'Anonymous',
-                    payload: { name: screen.name },
-                    previousState: screen as unknown as Record<string, unknown>,
-                });
+                emitScreenDeleteHistory(sendOperation, screen, user);
             }
         },
         [deleteScreen, yjsDelete, sendOperation, screen, user?.id, user?.name],

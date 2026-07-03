@@ -8,6 +8,7 @@ import { Project, History, User } from '../models';
 import { touchProjectMemberLastEditedAtMany } from '../services/projectMemberActivity';
 import { recordProjectAccessLog } from '../services/recordProjectAccessLog';
 import { isAllowedCorsOrigin } from '../utils/corsOrigins';
+import { isLockOnlyScreenPayload } from '../utils/historyUtils';
 
 interface UserInfo {
     id: string;
@@ -385,9 +386,19 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                             }
                         }
 
+                        // 잠금/해제만 변경된 SCREEN_UPDATE는 작업 이력에 남기지 않음
+                        if (operation.type === 'SCREEN_UPDATE' && isLockOnlyScreenPayload(histPayload)) {
+                            socket.to(`project:${projectId}`).emit('operation', operation);
+                            return;
+                        }
+
                         await History.create({
                             projectId: new Types.ObjectId(projectId),
-                            userId: new Types.ObjectId(operation.userId),
+                            userId: new Types.ObjectId(
+                                Types.ObjectId.isValid(operation.userId)
+                                    ? operation.userId
+                                    : socketData.user.id,
+                            ),
                             userName: operation.userName,
                             userPicture: histPayload.historyLog?.userPicture,
                             operationType: operation.type,

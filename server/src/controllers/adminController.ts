@@ -10,6 +10,7 @@ import { projectStateManager, presenceManager } from '../services/PresenceManage
 import { lockManager } from '../services/LockManager';
 import type { IEntity, IRelationship, IScreen, IScreenFlow, IERDSnapshot, IScreenSnapshot } from '../models/Project';
 import type { OperationType } from '../models/History';
+import { isLockOnlyScreenPayload, sanitizeHistoryPayload, sanitizeHistoryPreviousState } from '../utils/historyUtils';
 
 export const getAdminUsers = async (req: AuthRequest, res: Response) => {
     try {
@@ -345,7 +346,12 @@ export const getProjectHistory = async (req: AuthRequest, res: Response) => {
             }
         }
 
-        const data = list.map((h: any) => ({
+        const data = list
+            .filter((h: any) => {
+                if (h.operationType !== 'SCREEN_UPDATE') return true;
+                return !isLockOnlyScreenPayload(h.operation?.payload ?? {});
+            })
+            .map((h: any) => ({
             ...(function () {
                 const payload = h.operation?.payload ?? {};
                 const prev = h.operation?.previousState ?? {};
@@ -371,8 +377,8 @@ export const getProjectHistory = async (req: AuthRequest, res: Response) => {
             targetId: h.targetId,
             targetName: h.targetName,
             details: h.details,
-            operationPayload: h.operation?.payload ?? null,
-            operationPreviousState: h.operation?.previousState ?? null,
+            operationPayload: sanitizeHistoryPayload(h.operation?.payload ?? null),
+            operationPreviousState: sanitizeHistoryPreviousState(h.operation?.previousState ?? null),
             timestamp: h.timestamp?.toISOString?.(),
         }));
 
