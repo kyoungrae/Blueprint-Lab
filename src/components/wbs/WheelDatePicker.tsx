@@ -1,5 +1,10 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { CalendarDays, ChevronLeft, ChevronRight, Columns3 } from 'lucide-react';
+import {
+    addMonths, eachDayOfInterval, endOfMonth, format, isToday, startOfMonth, subMonths,
+} from 'date-fns';
+import type { AssigneeMenuDateRange } from './wbsDateUtils';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────
 const ITEM_H = 36; // px per row
@@ -60,7 +65,7 @@ function useWheelPopupPosition(
         updatePopupPos();
         const raf = requestAnimationFrame(updatePopupPos);
         return () => cancelAnimationFrame(raf);
-    }, [open, updatePopupPos]);
+    }, [open, updatePopupPos, minW, fallbackH]);
 
     useEffect(() => {
         if (!open) return;
@@ -235,6 +240,186 @@ const WheelColumn: React.FC<WheelColumnProps> = ({ items, selected, onSelect, fo
     );
 };
 
+function pad(n: number) {
+    return String(n).padStart(2, '0');
+}
+
+const CALENDAR_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+function ymdFromParts(y: number, m: number, d: number) {
+    return `${y}-${pad(m)}-${pad(d)}`;
+}
+
+function rangesForDay(ymd: string, ranges: AssigneeMenuDateRange[]) {
+    return ranges.filter((r) => {
+        if (!r.startDate && !r.endDate) return false;
+        const start = r.startDate || r.endDate;
+        const end = r.endDate || r.startDate;
+        return ymd >= start && ymd <= end;
+    });
+}
+
+interface CalendarGridProps {
+    viewYear: number;
+    viewMonth: number;
+    selectedYmd: string;
+    draftYmd: string;
+    menuDateRanges: AssigneeMenuDateRange[];
+    onSelectDay: (y: number, m: number, d: number) => void;
+    onPrevMonth: () => void;
+    onNextMonth: () => void;
+    onViewMonthChange: (y: number, m: number) => void;
+}
+
+const CalendarGrid: React.FC<CalendarGridProps> = ({
+    viewYear,
+    viewMonth,
+    selectedYmd,
+    draftYmd,
+    menuDateRanges,
+    onSelectDay,
+    onPrevMonth,
+    onNextMonth,
+    onViewMonthChange,
+}) => {
+    const viewDate = useMemo(() => new Date(viewYear, viewMonth - 1, 1), [viewYear, viewMonth]);
+    const start = startOfMonth(viewDate);
+    const end = endOfMonth(viewDate);
+    const days = eachDayOfInterval({ start, end });
+    const paddingDays = Array(start.getDay()).fill(null);
+    const years = range(2000, new Date().getFullYear() + 5);
+
+    return (
+        <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between px-0.5">
+                <button
+                    type="button"
+                    onClick={onPrevMonth}
+                    className="p-1 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                >
+                    <ChevronLeft size={16} />
+                </button>
+                <div className="flex gap-0.5">
+                    <select
+                        value={viewYear}
+                        onChange={(e) => onViewMonthChange(parseInt(e.target.value, 10), viewMonth)}
+                        className="text-xs font-bold text-gray-800 bg-transparent border-none cursor-pointer focus:outline-none rounded px-1"
+                    >
+                        {years.map((y) => (
+                            <option key={y} value={y}>{y}년</option>
+                        ))}
+                    </select>
+                    <select
+                        value={viewMonth}
+                        onChange={(e) => onViewMonthChange(viewYear, parseInt(e.target.value, 10))}
+                        className="text-xs font-bold text-gray-800 bg-transparent border-none cursor-pointer focus:outline-none rounded px-1"
+                    >
+                        {range(1, 12).map((m) => (
+                            <option key={m} value={m}>{m}월</option>
+                        ))}
+                    </select>
+                </div>
+                <button
+                    type="button"
+                    onClick={onNextMonth}
+                    className="p-1 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                >
+                    <ChevronRight size={16} />
+                </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-0.5">
+                {CALENDAR_WEEKDAYS.map((w, i) => (
+                    <div
+                        key={w}
+                        className={`text-[9px] font-bold text-center py-0.5 ${i === 0 || i === 6 ? 'text-red-400' : 'text-gray-400'}`}
+                    >
+                        {w}
+                    </div>
+                ))}
+                {paddingDays.map((_, i) => (
+                    <div key={`pad-${i}`} className="h-9" />
+                ))}
+                {days.map((d) => {
+                    const ymd = format(d, 'yyyy-MM-dd');
+                    const dayRanges = rangesForDay(ymd, menuDateRanges);
+                    const isSelected = draftYmd === ymd || (!draftYmd && selectedYmd === ymd);
+                    const weekend = d.getDay() === 0 || d.getDay() === 6;
+                    const isStart = dayRanges.some((r) => r.startDate === ymd);
+                    const isEnd = dayRanges.some((r) => r.endDate === ymd);
+
+                    const inRange = dayRanges.length > 0;
+                    const rangeBg = !isSelected && inRange
+                        ? `${dayRanges[0].color}22`
+                        : undefined;
+
+                    return (
+                        <button
+                            key={ymd}
+                            type="button"
+                            onClick={() => onSelectDay(d.getFullYear(), d.getMonth() + 1, d.getDate())}
+                            style={{ backgroundColor: rangeBg }}
+                            className={`relative h-9 flex flex-col items-center justify-center rounded-lg text-[11px] font-bold transition-all ${
+                                isSelected
+                                    ? 'bg-emerald-500 text-white ring-2 ring-emerald-200'
+                                    : isToday(d)
+                                        ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                        : weekend
+                                            ? 'text-red-500 hover:bg-red-50'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                        >
+                            <span className="leading-none">{format(d, 'd')}</span>
+                            {dayRanges.length > 0 && (
+                                <span className="absolute bottom-0.5 left-0.5 right-0.5 flex gap-px justify-center">
+                                    {dayRanges.slice(0, 3).map((r) => (
+                                        <span
+                                            key={r.menuId}
+                                            className="h-1 flex-1 max-w-[10px] rounded-full"
+                                            style={{ backgroundColor: isSelected ? 'rgba(255,255,255,0.85)' : r.color }}
+                                            title={`${r.menuName}${r.startDate ? ` ${r.startDate}` : ''}${r.endDate ? ` ~ ${r.endDate}` : ''}`}
+                                        />
+                                    ))}
+                                </span>
+                            )}
+                            {(isStart || isEnd) && !isSelected && (
+                                <span className="absolute top-0.5 right-0.5 text-[7px] font-black leading-none text-gray-500">
+                                    {isStart && isEnd ? '●' : isStart ? 'S' : 'E'}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {menuDateRanges.length > 0 && (
+                <div className="border-t border-gray-100 pt-2 max-h-24 overflow-y-auto">
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">담당 메뉴 일정</p>
+                    <ul className="flex flex-col gap-1">
+                        {menuDateRanges.map((r) => (
+                            <li key={r.menuId} className="flex items-start gap-1.5 text-[10px] leading-snug">
+                                <span
+                                    className="w-2 h-2 rounded-full shrink-0 mt-0.5"
+                                    style={{ backgroundColor: r.color }}
+                                />
+                                <span className="min-w-0 flex-1">
+                                    <span className="font-bold text-gray-700">{r.menuName}</span>
+                                    <span className="text-gray-400 font-mono ml-1">{r.menuCode}</span>
+                                    {(r.startDate || r.endDate) && (
+                                        <span className="block text-gray-500 tabular-nums">
+                                            {r.startDate || '?'} ~ {r.endDate || '?'}
+                                        </span>
+                                    )}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ── WheelDatePicker ───────────────────────────────────────────────────────
 interface WheelDatePickerProps {
     value: string;           // YYYY-MM-DD
@@ -242,6 +427,8 @@ interface WheelDatePickerProps {
     className?: string;
     placeholder?: string;
     variant?: 'default' | 'ghost';
+    /** 담당자가 배정된 메뉴의 시작·종료일 (달력 표시용) */
+    menuDateRanges?: AssigneeMenuDateRange[];
 }
 
 const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
@@ -250,6 +437,7 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     className = '',
     placeholder = '날짜 선택',
     variant = 'default',
+    menuDateRanges = [],
 }) => {
     const today = new Date();
     const isValidYmd = (y: number, m: number, d: number) =>
@@ -284,15 +472,50 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     const [month, setMonth] = useState(initial.m);
     const [day, setDay] = useState(initial.d);
     const [open, setOpen] = useState(false);
+    const [pickerMode, setPickerMode] = useState<'wheel' | 'calendar'>('wheel');
     const [editing, setEditing] = useState(false);
     const [text, setText] = useState('');
     const prevTextLenRef = useRef(0);
     const rootRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLInputElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
-    const popupPos = useWheelPopupPosition(open, triggerRef, popupRef, 260, 320);
+    const popupPos = useWheelPopupPosition(open, triggerRef, popupRef, pickerMode === 'calendar' ? 300 : 260, pickerMode === 'calendar' ? 420 : 320);
 
-    // value prop 외부 변경 시 동기화
+    // 팝업 열릴 때 휠 모드로 초기화
+    useEffect(() => {
+        if (open) setPickerMode('wheel');
+    }, [open]);
+
+    const draftYmd = ymdFromParts(year, month, day);
+    const selectedYmd = (() => {
+        const p = tryParse(value);
+        return p ? ymdFromParts(p.y, p.m, p.d) : '';
+    })();
+
+    const handleCalendarDaySelect = (y: number, m: number, d: number) => {
+        setYear(y);
+        setMonth(m);
+        setDay(d);
+    };
+
+    const handlePrevMonth = () => {
+        const d = subMonths(new Date(year, month - 1, 1), 1);
+        setYear(d.getFullYear());
+        setMonth(d.getMonth() + 1);
+    };
+
+    const handleNextMonth = () => {
+        const d = addMonths(new Date(year, month - 1, 1), 1);
+        setYear(d.getFullYear());
+        setMonth(d.getMonth() + 1);
+    };
+
+    const handleViewMonthChange = (y: number, m: number) => {
+        setYear(y);
+        setMonth(m);
+        const max = daysInMonth(y, m);
+        if (day > max) setDay(max);
+    };
     useEffect(() => {
         const p = parseValue(value);
         setYear(p.y); setMonth(p.m); setDay(p.d);
@@ -397,40 +620,49 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
                     ref={popupRef}
                     data-wheel-date-picker-popup
                     className="fixed z-[9999] bg-white border border-gray-100 rounded-2xl shadow-xl p-4 flex flex-col gap-3"
-                    style={{ top: popupPos.top, left: popupPos.left, minWidth: 260 }}
+                    style={{ top: popupPos.top, left: popupPos.left, minWidth: pickerMode === 'calendar' ? 300 : 260 }}
                     onWheel={(e) => e.stopPropagation()}
                 >
-                    {/* 컬럼 레이블 */}
-                    <div className="flex justify-around text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2">
-                        <span style={{ width: 72, textAlign: 'center' }}>년</span>
-                        <span style={{ width: 72, textAlign: 'center' }}>월</span>
-                        <span style={{ width: 72, textAlign: 'center' }}>일</span>
-                    </div>
+                    {pickerMode === 'wheel' ? (
+                        <>
+                            <div className="flex justify-around text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2">
+                                <span style={{ width: 72, textAlign: 'center' }}>년</span>
+                                <span style={{ width: 72, textAlign: 'center' }}>월</span>
+                                <span style={{ width: 72, textAlign: 'center' }}>일</span>
+                            </div>
 
-                    {/* 드럼롤 */}
-                    <div className="flex items-center gap-1 justify-center">
-                        <WheelColumn
-                            items={years}
-                            selected={year}
-                            onSelect={setYear}
+                            <div className="flex items-center gap-1 justify-center">
+                                <WheelColumn items={years} selected={year} onSelect={setYear} />
+                                <span className="text-gray-300 font-bold text-lg pb-0.5">/</span>
+                                <WheelColumn
+                                    items={months}
+                                    selected={month}
+                                    onSelect={setMonth}
+                                    format={(v) => String(v).padStart(2, '0')}
+                                />
+                                <span className="text-gray-300 font-bold text-lg pb-0.5">/</span>
+                                <WheelColumn
+                                    items={days}
+                                    selected={day}
+                                    onSelect={setDay}
+                                    format={(v) => String(v).padStart(2, '0')}
+                                />
+                            </div>
+                        </>
+                    ) : (
+                        <CalendarGrid
+                            viewYear={year}
+                            viewMonth={month}
+                            selectedYmd={selectedYmd}
+                            draftYmd={draftYmd}
+                            menuDateRanges={menuDateRanges}
+                            onSelectDay={handleCalendarDaySelect}
+                            onPrevMonth={handlePrevMonth}
+                            onNextMonth={handleNextMonth}
+                            onViewMonthChange={handleViewMonthChange}
                         />
-                        <span className="text-gray-300 font-bold text-lg pb-0.5">/</span>
-                        <WheelColumn
-                            items={months}
-                            selected={month}
-                            onSelect={setMonth}
-                            format={(v) => String(v).padStart(2, '0')}
-                        />
-                        <span className="text-gray-300 font-bold text-lg pb-0.5">/</span>
-                        <WheelColumn
-                            items={days}
-                            selected={day}
-                            onSelect={setDay}
-                            format={(v) => String(v).padStart(2, '0')}
-                        />
-                    </div>
+                    )}
 
-                    {/* 확인 / 초기화 */}
                     <div className="flex gap-2 pt-1">
                         <button
                             type="button"
@@ -442,9 +674,21 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
                         <button
                             type="button"
                             onClick={confirm}
-                            className="flex-2 flex-1 py-1.5 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
+                            className="flex-1 py-1.5 text-sm font-bold text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
                         >
                             확인
+                        </button>
+                        <button
+                            type="button"
+                            title={pickerMode === 'wheel' ? '달력으로 선택' : '휠로 선택'}
+                            onClick={() => setPickerMode((m) => (m === 'wheel' ? 'calendar' : 'wheel'))}
+                            className={`shrink-0 px-2.5 py-1.5 rounded-lg border transition-colors ${
+                                pickerMode === 'calendar'
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                            }`}
+                        >
+                            {pickerMode === 'wheel' ? <CalendarDays size={16} /> : <Columns3 size={16} />}
                         </button>
                     </div>
                 </div>,
@@ -580,10 +824,6 @@ export const WheelTimePicker: React.FC<WheelTimePickerProps> = ({
         </div>
     );
 };
-
-function pad(n: number) {
-    return String(n).padStart(2, '0');
-}
 
 export const WHEEL_BAR_COLORS = [
     '#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',

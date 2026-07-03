@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, Layers, User, CalendarDays, CalendarCheck, Activity, Percent, ChevronLeft, RotateCcw, Lock, PenLine } from 'lucide-react';
 import WheelDatePicker, { WheelProgressPicker } from './WheelDatePicker';
+import { buildAssigneeMenuDateRanges } from './wbsDateUtils';
 import { useWbsStore } from '../../store/wbsStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
@@ -547,6 +548,17 @@ const WbsDevDetail: React.FC = () => {
         setBulkValue('');
     };
 
+    /** 담당자별 메뉴 일정 (달력 표시용) */
+    const assigneeMenuRangesMap = useMemo(() => {
+        const map = new Map<string, ReturnType<typeof buildAssigneeMenuDateRanges>>();
+        for (const r of rows) {
+            const name = r.assignee.trim();
+            if (!name || map.has(name)) continue;
+            map.set(name, buildAssigneeMenuDateRanges(name, menus, rows));
+        }
+        return map;
+    }, [rows, menus]);
+
     const cellInput = 'w-full bg-transparent px-2 py-1.5 text-sm outline-none focus:bg-emerald-50/50 rounded';
 
     // Debugging 행의 상태/진행율 잠금 여부:
@@ -800,10 +812,20 @@ const WbsDevDetail: React.FC = () => {
                                                     />
                                                 </td>
                                                 <td className="align-middle">
-                                                    <WheelDatePicker value={r.startDate} onChange={(v) => updateRow(r.id, { startDate: v })} className="w-full" />
+                                                    <WheelDatePicker
+                                                        value={r.startDate}
+                                                        onChange={(v) => updateRow(r.id, { startDate: v })}
+                                                        className="w-full"
+                                                        menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
+                                                    />
                                                 </td>
                                                 <td className="align-middle">
-                                                    <WheelDatePicker value={r.endDate} onChange={(v) => updateRow(r.id, { endDate: v })} className="w-full" />
+                                                    <WheelDatePicker
+                                                        value={r.endDate}
+                                                        onChange={(v) => updateRow(r.id, { endDate: v })}
+                                                        className="w-full"
+                                                        menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
+                                                    />
                                                 </td>
                                                 <td className="align-middle">
                                                     {dbgLocked ? (
