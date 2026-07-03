@@ -8,6 +8,7 @@ import {
     updateUserTier,
     updateUserName,
     deleteUser,
+    resetUserPassword,
     getAdminProjects,
     getProjectHistory,
     rollbackProjectHistory,
@@ -38,6 +39,7 @@ router.get('/access-logs', getAdminAccessLogs);
 router.get('/users/:id/projects', getUserProjects);
 router.patch('/users/:id/tier', updateUserTier);
 router.patch('/users/:id/name', updateUserName);
+router.patch('/users/:id/reset-password', resetUserPassword);
 router.delete('/users/:id', deleteUser);
 
 router.get('/projects', getAdminProjects);

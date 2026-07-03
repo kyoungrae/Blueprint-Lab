@@ -141,10 +141,33 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     }
 };
 
+/** 관리자: 회원 비밀번호를 1234로 초기화 */
+export const resetUserPassword = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+
+        if (!id) {
+            return res.status(400).json({ message: '회원 ID가 필요합니다.' });
+        }
+
+        const user = await User.findById(id);
+        if (!user) {
+            return res.status(404).json({ message: '회원을 찾을 수 없습니다.' });
+        }
+
+        const hashedPassword = await bcrypt.hash('1234', 10);
+        user.password = hashedPassword;
+        await user.save();
+
+        res.json({ message: '비밀번호가 1234로 초기화되었습니다.' });
+    } catch (error) {
+        // console.error('Reset user password error:', error);
+        res.status(500).json({ message: '비밀번호 초기화 중 오류가 발생했습니다.' });
+    }
+};
+
 /** `project_access_logs` — 5일 TTL(모델 인덱스) + 관리자 조회 시 보관 기간 초과분 즉시 삭제 */
 export const getAdminAccessLogs = async (req: AuthRequest, res: Response) => {
-    try {
-        const allowedSizes = new Set([10, 50, 100]);
         let pageSize = parseInt(String(req.query.pageSize || '50'), 10) || 50;
         if (!allowedSizes.has(pageSize)) pageSize = 50;
         let page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);

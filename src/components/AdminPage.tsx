@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, ChevronDown, Languages, RefreshCw, Download, Upload } from 'lucide-react';
+import { ArrowLeft, Users, FolderOpen, Database, Monitor, Box, Trash2, RotateCcw, Search, FileSpreadsheet, Copy, Edit2, Check, X, ScrollText, ChevronLeft, ChevronRight, ChevronDown, Languages, RefreshCw, Download, Upload, KeyRound } from 'lucide-react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useAuthStore } from '../store/authStore';
 import { canManageTranslationMemory } from '../utils/tierAccess';
@@ -301,6 +301,8 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
     const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
     const [deletePassword, setDeletePassword] = useState('');
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const [resetPasswordTarget, setResetPasswordTarget] = useState<AdminUser | null>(null);
+    const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
     
     // 사용자 이름 편집 상태
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -773,6 +775,26 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
         }
     };
 
+    const handleResetPassword = async () => {
+        if (!resetPasswordTarget) return;
+        setResetPasswordLoading(true);
+        setError(null);
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/admin/users/${resetPasswordTarget.id}/reset-password`, {
+                method: 'PATCH',
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || '비밀번호 초기화에 실패했습니다.');
+            }
+            setResetPasswordTarget(null);
+        } catch (err: any) {
+            setError(err.message || '오류가 발생했습니다.');
+        } finally {
+            setResetPasswordLoading(false);
+        }
+    };
+
     const fetchRollbackProjects = async () => {
         setError(null);
         try {
@@ -991,7 +1013,7 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                     <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">티어</th>
                                     <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">가입일</th>
                                     <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">최근 로그인</th>
-                                    <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase w-20">삭제</th>
+                                    <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase w-28">관리</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1070,13 +1092,22 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                         <td className="px-4 py-3 text-gray-500 text-sm">{formatDate(u.createdAt)}</td>
                                         <td className="px-4 py-3 text-gray-500 text-sm">{formatDate(u.lastLoginAt)}</td>
                                         <td className="px-4 py-3">
-                                            <button
-                                                onClick={() => setDeleteTarget(u)}
-                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                title="회원 삭제"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => setResetPasswordTarget(u)}
+                                                    className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                    title="비밀번호 초기화 (1234)"
+                                                >
+                                                    <KeyRound size={18} />
+                                                </button>
+                                                <button
+                                                    onClick={() => setDeleteTarget(u)}
+                                                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                    title="회원 삭제"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -1699,6 +1730,33 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                 className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {deleteLoading ? '처리 중...' : '삭제'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 비밀번호 초기화 확인 모달 */}
+            {resetPasswordTarget && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                        <h3 className="text-lg font-bold text-gray-900 mb-2">비밀번호 초기화</h3>
+                        <p className="text-gray-600 text-sm mb-6">
+                            <span className="font-medium">{resetPasswordTarget.name}</span>({resetPasswordTarget.email}) 회원의 비밀번호를 <strong className="text-gray-900">1234</strong>로 초기화하시겠습니까?
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setResetPasswordTarget(null)}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleResetPassword}
+                                disabled={resetPasswordLoading}
+                                className="px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {resetPasswordLoading ? '처리 중...' : '초기화'}
                             </button>
                         </div>
                     </div>
