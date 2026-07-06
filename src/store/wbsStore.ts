@@ -3,6 +3,7 @@ import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule, Wb
 import { SCHEDULE_SEED, deriveStatus } from '../data/scheduleSeedData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from './projectStore';
+import { syncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -363,6 +364,8 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         const data = { menus, rows, ...(projectSchedule ? { projectSchedule } : {}), detailSchedules };
         // 전역 프로젝트 캐시 즉시 갱신(새로고침 전까지 데이터 유지)
         useProjectStore.getState().updateProjectData(currentProjectId, data);
+        // 연결된 개인일정 미러링 — 서버 저장 성공 여부와 무관하게 로컬 반영
+        await syncWbsToLinkedPersonalSchedules(currentProjectId);
         if (currentProjectId.startsWith('local_')) return;
         try {
             await fetchWithAuth(`${API_URL}/${currentProjectId}`, {

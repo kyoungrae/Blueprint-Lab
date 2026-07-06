@@ -157,7 +157,7 @@ export const deleteProject = async (req: AuthRequest, res: Response) => {
 export const updateProject = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { name, description, data, linkedErdProjectId, linkedErdProjectIds, linkedComponentProjectId, author, bugReports, groupLabel } = req.body;
+        const { name, description, data, linkedErdProjectId, linkedErdProjectIds, linkedComponentProjectId, linkedPersonalScheduleProjectIds, author, bugReports, groupLabel } = req.body;
         const userId = req.user?.id;
 
         if (!userId) {
@@ -209,6 +209,48 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
             project.linkedErdProjectIds = linkedErdProjectId ? [linkedErdProjectId] : [];
         }
         if (linkedComponentProjectId !== undefined) project.linkedComponentProjectId = linkedComponentProjectId;
+
+        if (linkedPersonalScheduleProjectIds !== undefined) {
+            if (member?.role !== 'OWNER') {
+                return res.status(403).json({ message: '개인일정 연결 설정은 프로젝트 소유자만 가능합니다.' });
+            }
+            if (project.projectType !== 'WBS') {
+                return res.status(400).json({ message: 'WBS 프로젝트만 개인일정을 연결할 수 있습니다.' });
+            }
+            const nextIds: string[] = Array.isArray(linkedPersonalScheduleProjectIds)
+                ? linkedPersonalScheduleProjectIds.filter((id: unknown) => typeof id === 'string' && id.trim())
+                : [];
+            const wbsId = project._id.toString();
+            const prevIds: string[] = project.linkedPersonalScheduleProjectIds ?? [];
+
+            for (const psId of nextIds) {
+                if (!Types.ObjectId.isValid(psId)) {
+                    return res.status(400).json({ message: '유효하지 않은 개인일정 프로젝트 ID입니다.' });
+                }
+                const psProject = await Project.findById(psId);
+                if (!psProject || psProject.projectType !== 'PERSONAL_SCHEDULE') {
+                    return res.status(400).json({ message: '개인일정 프로젝트만 연결할 수 있습니다.' });
+                }
+                const existingWbs = psProject.linkedWbsProjectId;
+                if (existingWbs && existingWbs !== wbsId) {
+                    return res.status(400).json({ message: `"${psProject.name}"은(는) 이미 다른 WBS 프로젝트와 연결되어 있습니다.` });
+                }
+            }
+
+            for (const oldId of prevIds) {
+                if (!nextIds.includes(oldId)) {
+                    await Project.updateOne(
+                        { _id: oldId, linkedWbsProjectId: wbsId },
+                        { $unset: { linkedWbsProjectId: 1 } },
+                    );
+                }
+            }
+            for (const psId of nextIds) {
+                await Project.updateOne({ _id: psId }, { linkedWbsProjectId: wbsId });
+            }
+            project.linkedPersonalScheduleProjectIds = nextIds;
+        }
+
         if (data) {
             if (project.projectType === 'COMPONENT' && (data.components !== undefined || data.flows !== undefined)) {
                 project.componentSnapshot = {

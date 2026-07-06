@@ -111,6 +111,8 @@ export function mapServerProjectResponse(p: any, localProject?: Project | null):
         linkedErdProjectIds: (p.linkedErdProjectIds && p.linkedErdProjectIds.length) ? p.linkedErdProjectIds : (p.linkedErdProjectId ? [p.linkedErdProjectId] : []),
         linkedErdProjectId: p.linkedErdProjectId || (p.linkedErdProjectIds && p.linkedErdProjectIds[0]),
         linkedComponentProjectId: p.linkedComponentProjectId,
+        linkedPersonalScheduleProjectIds: Array.isArray(p.linkedPersonalScheduleProjectIds) ? p.linkedPersonalScheduleProjectIds : [],
+        linkedWbsProjectId: p.linkedWbsProjectId || undefined,
         members: p.members?.map((m: any) => ({
             id: m.userId?._id || m.userId,
             name: m.userId?.name || 'Unknown',

@@ -1,5 +1,6 @@
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from './projectStore';
+import { syncPersonalProgressToWbs, type WbsMirrorScheduleEvent } from '../services/wbsPersonalScheduleSync';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -28,6 +29,7 @@ export async function flushPersonalScheduleSave() {
     pending = null;
     if (projectId.startsWith('local_')) return;
     try {
+        await syncPersonalProgressToWbs(projectId, data.events as WbsMirrorScheduleEvent[]);
         await fetchWithAuth(`${API_URL}/${projectId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },

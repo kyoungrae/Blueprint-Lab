@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, FolderOpen, Trash2, LogOut, Database, Users, UserMinus, UserPlus, X, Share2, AlertTriangle, Link, Monitor, ArrowLeft, Box, Shield, Crown, Pencil, GanttChartSquare, MoreHorizontal, CalendarDays } from 'lucide-react';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 import './ProjectListPage.css';
@@ -9,6 +10,8 @@ import { fetchWithAuth } from '../utils/fetchWithAuth';
 import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 import AdminPage from './AdminPage';
 import PremiumTooltip from './screenNode/PremiumTooltip';
+import { getLinkedPersonalScheduleIds } from '../utils/linkedPersonalScheduleProjects';
+import { syncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
 
 const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2, PROCESS_FLOW: 3, WBS: 4, PERSONAL_SCHEDULE: 5 };
 
@@ -49,6 +52,64 @@ const LegendItem: React.FC<{ icon: React.ReactNode; label: string }> = ({ icon, 
     </div>
 );
 
+/** 연결 수 뱃지 + 호버 툴팁 (컴포넌트/WBS 공통 패턴) */
+const LinkedCountBadge: React.FC<{
+    count: number;
+    heading: string;
+    names: string[];
+    colorClass?: string;
+}> = ({ count, heading, names, colorClass = 'bg-blue-500' }) => {
+    const [visible, setVisible] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+    const show = () => {
+        if (ref.current) {
+            const r = ref.current.getBoundingClientRect();
+            setPos({ top: r.bottom + 6, left: r.left + r.width / 2 });
+        }
+        setVisible(true);
+    };
+
+    if (count <= 0) return null;
+
+    return (
+        <>
+            <div
+                ref={ref}
+                className={`absolute top-0 right-0 w-6 h-6 rounded-full ${colorClass} text-white text-[10px] font-black flex items-center justify-center shadow z-10 pointer-events-auto`}
+                onMouseEnter={show}
+                onMouseLeave={() => setVisible(false)}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {count}
+            </div>
+            {visible && pos && createPortal(
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: pos.top,
+                        left: pos.left,
+                        transform: 'translateX(-50%)',
+                        zIndex: 99999,
+                        pointerEvents: 'none',
+                    }}
+                >
+                    <div className="bg-gray-900 text-white text-xs font-medium px-3 py-2 rounded-xl shadow-lg whitespace-nowrap max-w-[240px]">
+                        <div className="font-black mb-1">{heading} ({count})</div>
+                        <ul className="space-y-0.5 text-[11px] font-normal text-gray-200">
+                            {names.map((name, i) => (
+                                <li key={`${name}-${i}`}>· {name}</li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>,
+                document.body,
+            )}
+        </>
+    );
+};
+
 /** 화면 설계에 연결된 ERD 프로젝트 ID 목록 (단일/다중 모두 지원) */
 function getLinkedErdIds(project: Project): string[] {
     if (project.linkedErdProjectIds?.length) return project.linkedErdProjectIds;
@@ -85,7 +146,7 @@ const ProjectListPage: React.FC = () => {
     const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
     const [editingMembersProject, setEditingMembersProject] = useState<string | null>(null);
     const [linkingProjectId, setLinkingProjectId] = useState<string | null>(null);
-    const [linkingMode, setLinkingMode] = useState<'erd' | 'component' | null>(null);
+    const [linkingMode, setLinkingMode] = useState<'erd' | 'component' | 'personal-schedule' | null>(null);
     const [showAdminPage, setShowAdminPage] = useState(false);
 
     // Form States
@@ -205,6 +266,11 @@ const ProjectListPage: React.FC = () => {
         projects.forEach((p) => {
             if (p.projectType === 'SCREEN_DESIGN' || p.projectType === 'PROCESS_FLOW') {
                 getLinkedErdIds(p).forEach((erdId) => connections.push({ fromId: p.id, toId: erdId }));
+            }
+            if (p.projectType === 'WBS') {
+                getLinkedPersonalScheduleIds(p).forEach((psId) => {
+                    connections.push({ fromId: p.id, toId: psId });
+                });
             }
         });
         return connections;
@@ -482,7 +548,7 @@ const ProjectListPage: React.FC = () => {
             <div
                 key={group[0]?.id ?? groupIndex}
                 data-group-id={group[0]?.id}
-                className="project-group-box rounded-2xl border border-gray-200/70 bg-white p-6 shadow-sm animate-project-group-in w-fit"
+                className="project-group-box rounded-2xl border border-gray-200/70 bg-white p-6 shadow-sm animate-project-group-in w-fit overflow-visible"
                 style={{ animationDelay: `${groupIndex * 120}ms` }}
             >
                 {/* 그룹 헤더 */}
@@ -519,7 +585,7 @@ const ProjectListPage: React.FC = () => {
                 </div>
 
                 {/* 카드 + 그룹 내부 연결선 */}
-                <div className="flex items-center overflow-x-auto pb-1 gap-0">
+                <div className="project-group-cards flex items-start pt-3 pr-3 pb-2 pl-1 gap-0">
                     {group.map((project, cardIdx) => {
                         const typeInfo = getProjectTypeInfo(project);
                         const isLocal = project.id.startsWith('local_');
@@ -527,19 +593,42 @@ const ProjectListPage: React.FC = () => {
                         const isOwner = isLocal || user?.id === projectOwner?.id;
                         const isLinkable = project.projectType === 'SCREEN_DESIGN' || project.projectType === 'PROCESS_FLOW';
                         const erdCount = getLinkedErdIds(project).length;
+                        const linkedPsIds = project.projectType === 'WBS' ? getLinkedPersonalScheduleIds(project) : [];
+                        const linkedPsNames = linkedPsIds.map((id) => projects.find((p) => p.id === id)?.name || '(삭제됨)');
+                        const linkedWbsName = project.projectType === 'PERSONAL_SCHEDULE' && project.linkedWbsProjectId
+                            ? (projects.find((p) => p.id === project.linkedWbsProjectId)?.name || '(삭제됨)')
+                            : null;
                         return (
                             <React.Fragment key={project.id}>
-                                {cardIdx > 0 && <div className="w-10 shrink-0" />}
-                                <div
-                                    data-project-id={project.id}
-                                    className="project-card group relative bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col items-center gap-1.5 cursor-pointer hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-0.5 transition-all animate-project-card-in shrink-0"
-                                    style={{ width: 150, animationDelay: `${groupIndex * 120 + cardIdx * 80}ms` }}
-                                    onClick={() => void openProject(project.id)}
-                                >
+                                {cardIdx > 0 && <div className="w-10 shrink-0 self-center" />}
+                                <div className="relative shrink-0 project-card-badge-slot">
+                                    {linkedPsIds.length > 0 && (
+                                        <LinkedCountBadge
+                                            count={linkedPsIds.length}
+                                            heading="연결된 개인일정"
+                                            names={linkedPsNames}
+                                            colorClass="bg-rose-500"
+                                        />
+                                    )}
+                                    {linkedWbsName && (
+                                        <LinkedCountBadge
+                                            count={1}
+                                            heading="연결된 WBS"
+                                            names={[linkedWbsName]}
+                                            colorClass="bg-emerald-500"
+                                        />
+                                    )}
+                                    <div
+                                        data-project-id={project.id}
+                                        className="project-card group relative bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col items-center gap-1.5 cursor-pointer hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-0.5 transition-all animate-project-card-in"
+                                        style={{ width: 150, animationDelay: `${groupIndex * 120 + cardIdx * 80}ms` }}
+                                        onClick={() => void openProject(project.id)}
+                                    >
                                     {/* 호버 액션 */}
                                     <div className="absolute top-1.5 right-1.5 hidden group-hover:flex gap-0.5 z-20">
                                         {isLinkable && <button onClick={(e) => { e.stopPropagation(); setLinkingProjectId(project.id); setLinkingMode('erd'); }} className={`p-1 rounded-lg hover:bg-blue-50 ${erdCount > 0 ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`} title={erdCount > 0 ? `ERD 연결 (${erdCount})` : 'ERD 연결'}><Database size={11} /></button>}
                                         {project.projectType === 'SCREEN_DESIGN' && <button onClick={(e) => { e.stopPropagation(); setLinkingProjectId(project.id); setLinkingMode('component'); }} className={`p-1 rounded-lg hover:bg-teal-50 ${project.linkedComponentProjectId ? 'text-teal-500' : 'text-gray-300 hover:text-teal-500'}`} title="컴포넌트 연결"><Box size={11} /></button>}
+                                        {project.projectType === 'WBS' && <button onClick={(e) => { e.stopPropagation(); setLinkingProjectId(project.id); setLinkingMode('personal-schedule'); }} className={`p-1 rounded-lg hover:bg-rose-50 ${linkedPsIds.length > 0 ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`} title={linkedPsIds.length > 0 ? `개인일정 연결 (${linkedPsIds.length})` : '개인일정 연결'}><CalendarDays size={11} /></button>}
                                         {isOwner && <button onClick={(e) => { e.stopPropagation(); setEditingProjectInfo({ project, name: project.name, description: project.description ?? '' }); }} className="p-1 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg" title="수정"><Pencil size={11} /></button>}
                                         {!isLocal && <button onClick={(e) => { e.stopPropagation(); setEditingMembersProject(project.id); setTempMembers(project.members || []); setMemberInput(''); }} className="p-1 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg" title="팀원"><Users size={11} /></button>}
                                         {isOwner && <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmProject(project); setDeletePassword(''); setDeleteError(null); }} className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg" title="삭제"><Trash2 size={11} /></button>}
@@ -548,6 +637,7 @@ const ProjectListPage: React.FC = () => {
                                     <span className={`text-[10px] font-black uppercase tracking-wider ${typeInfo.color}`}>{typeInfo.label}</span>
                                     <span className="text-[12px] font-bold text-gray-800 text-center leading-snug px-1 w-full truncate mb-1">{project.name}</span>
                                     {isLocal && <div className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-full text-[8px] font-black border border-amber-100">Local</div>}
+                                    </div>
                                 </div>
                             </React.Fragment>
                         );
@@ -891,6 +981,10 @@ const ProjectListPage: React.FC = () => {
                             <LegendItem icon={<Users size={13} className="text-amber-500" />}              label="프로세스흐름" />
                             <LegendItem icon={<GanttChartSquare size={13} className="text-emerald-500" />} label="WBS" />
                             <LegendItem icon={<CalendarDays size={13} className="text-rose-500" />}        label="개인일정" />
+                            <div className="flex items-center gap-2 text-gray-500">
+                                <svg width="38" height="10"><line x1="1" y1="5" x2="37" y2="5" stroke="#F43F5E" strokeWidth="2" strokeLinecap="round"/></svg>
+                                <span className="text-[11px] font-bold">WBS ↔ 개인일정</span>
+                            </div>
                             <div className="flex items-center gap-2 text-gray-500">
                                 <svg width="38" height="10"><line x1="1" y1="5" x2="37" y2="5" stroke="#CBD5E1" strokeWidth="2" strokeDasharray="5,3" strokeLinecap="round"/></svg>
                                 <span className="text-[11px] font-bold">그룹 내부 관계</span>
@@ -1449,20 +1543,38 @@ const ProjectListPage: React.FC = () => {
             {linkingProjectId && linkingMode && (() => {
                 const linkingProject = projects.find(p => p.id === linkingProjectId);
                 const linkedErdIds = linkingProject ? getLinkedErdIds(linkingProject) : [];
+                const linkedPsIds = linkingProject ? getLinkedPersonalScheduleIds(linkingProject) : [];
                 const erdProjects = projects.filter(p => p.projectType === 'ERD');
                 const unlinkedErdProjects = erdProjects.filter(p => !linkedErdIds.includes(p.id));
+                const psProjects = projects.filter(p => p.projectType === 'PERSONAL_SCHEDULE');
+                const unlinkedPsProjects = psProjects.filter(
+                    (p) => !linkedPsIds.includes(p.id) && (!p.linkedWbsProjectId || p.linkedWbsProjectId === linkingProjectId),
+                );
+
+                const modalTitle = linkingMode === 'erd'
+                    ? 'ERD 프로젝트 연결'
+                    : linkingMode === 'component'
+                        ? '컴포넌트 프로젝트 연결'
+                        : '개인일정 프로젝트 연결';
+                const modalDesc = linkingMode === 'erd'
+                    ? '연결된 ERD를 관리하거나 추가하세요. (여러 개 연결 가능)'
+                    : linkingMode === 'component'
+                        ? '연동할 컴포넌트 프로젝트를 선택하세요.'
+                        : 'WBS 일정을 공유할 개인일정 프로젝트를 연결하세요.';
+
+                const applyPsLink = async (next: string[]) => {
+                    await updateProjectMetadata(linkingProjectId, { linkedPersonalScheduleProjectIds: next });
+                    await syncWbsToLinkedPersonalSchedules(linkingProjectId);
+                    void fetchProjects();
+                };
 
                 return (
                     <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                         <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden scale-in">
                             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
                                 <div>
-                                    <h3 className="text-xl font-black text-gray-900 mb-1">
-                                        {linkingMode === 'erd' ? 'ERD 프로젝트 연결' : '컴포넌트 프로젝트 연결'}
-                                    </h3>
-                                    <p className="text-gray-500 font-medium text-xs">
-                                        {linkingMode === 'erd' ? '연결된 ERD를 관리하거나 추가하세요. (여러 개 연결 가능)' : '연동할 컴포넌트 프로젝트를 선택하세요.'}
-                                    </p>
+                                    <h3 className="text-xl font-black text-gray-900 mb-1">{modalTitle}</h3>
+                                    <p className="text-gray-500 font-medium text-xs">{modalDesc}</p>
                                 </div>
                                 <button onClick={() => { setLinkingProjectId(null); setLinkingMode(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400">
                                     <X size={20} />
@@ -1531,6 +1643,84 @@ const ProjectListPage: React.FC = () => {
                                         <button
                                             onClick={async () => {
                                                 await updateProjectMetadata(linkingProjectId, { linkedErdProjectIds: [] });
+                                                setLinkingProjectId(null);
+                                                setLinkingMode(null);
+                                            }}
+                                            className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg"
+                                        >
+                                            전체 연결 해제
+                                        </button>
+                                        <button
+                                            onClick={() => { setLinkingProjectId(null); setLinkingMode(null); }}
+                                            className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-lg"
+                                        >
+                                            닫기
+                                        </button>
+                                    </div>
+                                </>
+                            ) : linkingMode === 'personal-schedule' ? (
+                                <>
+                                    <div className="p-4 border-b border-gray-100">
+                                        <p className="text-xs font-bold text-gray-500 mb-2">연결된 개인일정 프로젝트</p>
+                                        {linkedPsIds.length === 0 ? (
+                                            <p className="text-sm text-gray-400">연결된 개인일정이 없습니다.</p>
+                                        ) : (
+                                            <ul className="space-y-2 max-h-[180px] overflow-y-auto">
+                                                {linkedPsIds.map((psId) => {
+                                                    const proj = projects.find(p => p.id === psId);
+                                                    return (
+                                                        <li key={psId} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-rose-50 border border-rose-100">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0">
+                                                                    <CalendarDays size={16} />
+                                                                </div>
+                                                                <span className="font-bold text-gray-900 truncate">{proj?.name || psId}</span>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    const next = linkedPsIds.filter(id => id !== psId);
+                                                                    await applyPsLink(next);
+                                                                }}
+                                                                className="flex-shrink-0 px-2 py-1 text-xs font-bold text-red-500 hover:bg-red-100 rounded-lg"
+                                                            >
+                                                                제거
+                                                            </button>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        )}
+                                    </div>
+                                    <div className="p-4">
+                                        <p className="text-xs font-bold text-gray-500 mb-2">개인일정 프로젝트 추가</p>
+                                        {unlinkedPsProjects.length === 0 ? (
+                                            <p className="text-sm text-gray-400">추가할 수 있는 개인일정 프로젝트가 없습니다.</p>
+                                        ) : (
+                                            <ul className="space-y-1 max-h-[200px] overflow-y-auto">
+                                                {unlinkedPsProjects.map((proj) => (
+                                                    <button
+                                                        key={proj.id}
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            const next = [...linkedPsIds, proj.id];
+                                                            await applyPsLink(next);
+                                                        }}
+                                                        className="w-full p-3 rounded-xl flex items-center gap-3 text-left hover:bg-rose-50 border border-transparent hover:border-rose-100"
+                                                    >
+                                                        <div className="w-9 h-9 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">
+                                                            <CalendarDays size={16} />
+                                                        </div>
+                                                        <span className="font-bold text-gray-900 truncate">{proj.name}</span>
+                                                    </button>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+                                    <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+                                        <button
+                                            onClick={async () => {
+                                                await applyPsLink([]);
                                                 setLinkingProjectId(null);
                                                 setLinkingMode(null);
                                             }}

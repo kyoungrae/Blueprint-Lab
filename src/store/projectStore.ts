@@ -130,6 +130,26 @@ export const useProjectStore = create<ProjectStore>()(
                                 const { useWbsStore } = await import('./wbsStore');
                                 useWbsStore.getState().loadProject(id, (mapped.data ?? { menus: [], rows: [] }) as unknown as import('../types/wbs').WbsData);
                             }
+
+                            if (mapped.projectType === 'PERSONAL_SCHEDULE' && mapped.linkedWbsProjectId) {
+                                const wbsId = mapped.linkedWbsProjectId;
+                                const wbsExisting = get().projects.find((x) => x.id === wbsId);
+                                const wbsRes = await fetchWithAuth(`${API_URL}/${wbsId}?t=${Date.now()}`, {
+                                    headers: { 'Cache-Control': 'no-cache' },
+                                    cache: 'no-store',
+                                });
+                                if (wbsRes.ok) {
+                                    const wbsJson = await wbsRes.json();
+                                    const wbsMapped = mapServerProjectResponse(wbsJson, wbsExisting);
+                                    set((state) => ({
+                                        projects: state.projects.some((x) => x.id === wbsId)
+                                            ? state.projects.map((x) => (x.id === wbsId ? { ...x, ...wbsMapped } : x))
+                                            : [wbsMapped, ...state.projects],
+                                    }));
+                                }
+                                const { syncWbsToLinkedPersonalSchedules } = await import('../services/wbsPersonalScheduleSync');
+                                await syncWbsToLinkedPersonalSchedules(wbsId);
+                            }
                         }
                     }
 
@@ -447,6 +467,8 @@ export const useProjectStore = create<ProjectStore>()(
                             linkedErdProjectIds: p.linkedErdProjectIds,
                             linkedErdProjectId: p.linkedErdProjectId,
                             linkedComponentProjectId: p.linkedComponentProjectId,
+                            linkedPersonalScheduleProjectIds: p.linkedPersonalScheduleProjectIds,
+                            linkedWbsProjectId: p.linkedWbsProjectId,
                             members: p.members,
                             // 현재 프로젝트이거나 연결된 ERD 프로젝트면 데이터 유지, 아니면 비움
                             data:

@@ -116,6 +116,10 @@ export interface Project {
     /** 화면 설계 프로젝트에 연결된 ERD 프로젝트 ID 목록 (여러 개 연결 가능) */
     linkedErdProjectIds?: string[];
     linkedComponentProjectId?: string;
+    /** WBS → 연결된 개인일정 프로젝트 ID 목록 */
+    linkedPersonalScheduleProjectIds?: string[];
+    /** 개인일정 → 연결된 WBS 프로젝트 ID */
+    linkedWbsProjectId?: string;
     bugReports?: BugReport[];
     /** 그룹 표시 이름 (그룹 내 대표 프로젝트에 저장) */
     groupLabel?: string;

@@ -1,4 +1,17 @@
-/* Standard Project List Page Styles */
+.project-group-box {
+  overflow: visible;
+}
+
+.project-group-cards {
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-gutter: stable;
+}
+
+.project-card-badge-slot {
+  padding-top: 0.75rem;
+  padding-right: 0.75rem;
+}
 .scale-in {
   animation: scale-in 0.2s ease-out;
 }

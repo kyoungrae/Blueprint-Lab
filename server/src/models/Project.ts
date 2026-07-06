@@ -296,6 +296,10 @@ export interface IProject extends Document {
     /** 화면 설계에 연결된 ERD 프로젝트 ID 배열 (여러 개 연결 가능) */
     linkedErdProjectIds?: string[];
     linkedComponentProjectId?: string;
+    /** WBS → 연결된 개인일정 프로젝트 ID 목록 */
+    linkedPersonalScheduleProjectIds?: string[];
+    /** 개인일정 → 연결된 WBS 프로젝트 ID */
+    linkedWbsProjectId?: string;
     bugReports?: IBugReport[];
 }
 
@@ -579,6 +583,8 @@ const ProjectSchema = new Schema<IProject>({
     linkedErdProjectId: { type: String },
     linkedErdProjectIds: [{ type: String }],
     linkedComponentProjectId: { type: String },
+    linkedPersonalScheduleProjectIds: [{ type: String }],
+    linkedWbsProjectId: { type: String },
     bugReports: { type: [BugReportSchema], default: [] },
 }, {
     timestamps: true, // createdAt, updatedAt 자동 생성

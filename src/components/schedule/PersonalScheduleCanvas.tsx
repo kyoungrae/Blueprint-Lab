@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { schedulePersonalScheduleSave } from '../../store/personalScheduleStore';
+import { WBS_MIRROR_CATEGORY } from '../../services/wbsPersonalScheduleSync';
 import WheelDatePicker, { WheelTimePicker, WheelColorPicker, WheelProgressPicker } from '../wbs/WheelDatePicker';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
@@ -103,6 +104,7 @@ const DEFAULT_CATEGORIES: Record<string, CategoryDef> = {
     personal: { label: '개인 일정', color: '#10b981' },
     meeting:  { label: '회의',      color: '#8b5cf6' },
     deadline: { label: '마감일',    color: '#ef4444' },
+    [WBS_MIRROR_CATEGORY]: { label: 'WBS', color: '#10b981' },
 };
 
 const PRESET_COLORS = [
@@ -2842,16 +2844,18 @@ const PersonalScheduleCanvas: React.FC = () => {
 
     const skipSaveRef = useRef(true);
     const loadedProjectIdRef = useRef<string | null>(null);
+    const lastAppliedUpdatedAtRef = useRef<string | null>(null);
     /** fetchProjects로 서버 스냅샷을 한 번 반영했는지 (삭제 후 빈 목록을 서버 데이터로 되돌리지 않도록) */
     const initialFetchAppliedRef = useRef(false);
 
     const applyProjectData = useCallback((data: PersonalScheduleProjectData | undefined) => {
         const cats = data?.categories && Object.keys(data.categories).length > 0
-            ? data.categories
+            ? { ...DEFAULT_CATEGORIES, ...data.categories }
             : DEFAULT_CATEGORIES;
+        const defaultVis = Object.keys(cats);
         const vis = Array.isArray(data?.visibleCats) && data.visibleCats.length > 0
-            ? data.visibleCats
-            : Object.keys(cats);
+            ? [...new Set([...data.visibleCats, WBS_MIRROR_CATEGORY])]
+            : defaultVis;
         skipSaveRef.current = true;
         setEvents(Array.isArray(data?.events) ? data.events : []);
         setTodos(Array.isArray(data?.todos) ? data.todos : []);
@@ -2865,8 +2869,18 @@ const PersonalScheduleCanvas: React.FC = () => {
         if (!currentProjectId) return;
         loadedProjectIdRef.current = currentProjectId;
         initialFetchAppliedRef.current = false;
+        lastAppliedUpdatedAtRef.current = project?.updatedAt ?? null;
         applyProjectData(project?.data as PersonalScheduleProjectData | undefined);
     }, [currentProjectId, applyProjectData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // WBS 동기화 등 외부에서 projectStore가 갱신되면 캔버스에 반영
+    useEffect(() => {
+        if (!currentProjectId || loadedProjectIdRef.current !== currentProjectId) return;
+        const updatedAt = project?.updatedAt;
+        if (!updatedAt || lastAppliedUpdatedAtRef.current === updatedAt) return;
+        lastAppliedUpdatedAtRef.current = updatedAt;
+        applyProjectData(project?.data as PersonalScheduleProjectData | undefined);
+    }, [currentProjectId, project?.updatedAt, project?.data, applyProjectData]);
 
     // fetchProjects 후 서버 일정/할일이 도착했을 때 1회만 반영 (빈 로컬 캐시 → 서버 스냅샷)
     useEffect(() => {
