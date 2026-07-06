@@ -13,9 +13,12 @@ export type PersonalSchedulePersist = {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let pending: { projectId: string; data: PersonalSchedulePersist } | null = null;
+let lastScheduledKey: string | null = null;
 
 export function schedulePersonalScheduleSave(projectId: string, data: PersonalSchedulePersist) {
-    useProjectStore.getState().updateProjectData(projectId, data);
+    const key = `${projectId}:${JSON.stringify(data)}`;
+    if (key === lastScheduledKey) return;
+    lastScheduledKey = key;
     pending = { projectId, data };
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -35,6 +38,7 @@ export async function flushPersonalScheduleSave() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data }),
         });
+        useProjectStore.getState().updateProjectData(projectId, data);
     } catch {
         // 네트워크 오류는 조용히 무시(다음 변경 시 재시도). 로컬 캐시에는 이미 반영됨.
     }

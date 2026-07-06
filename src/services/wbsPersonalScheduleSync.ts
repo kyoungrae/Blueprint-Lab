@@ -1,7 +1,13 @@
 import type { Project } from '../types/erd';
 import type { WbsDevRow, WbsMenuNode } from '../types/wbs';
+import { isWbsDebugingCategoryRow } from '../types/wbs';
 import { normalizeYmd } from '../components/wbs/wbsDateUtils';
 import { getLinkedPersonalScheduleIds } from '../utils/linkedPersonalScheduleProjects';
+import {
+    enrichRowsWithAssigneeUserIds,
+    getRowAssigneeDisplayName,
+    rowMatchesPersonalScheduleOwner,
+} from '../utils/wbsAssigneeMatch';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from '../store/projectStore';
 
@@ -34,7 +40,24 @@ type PersonalScheduleData = {
     visibleCats?: string[];
 };
 
-let syncGuard = false;
+let wbsToPsSyncing = false;
+let psToWbsSyncing = false;
+let wbsSyncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+const lastWbsSyncAt = new Map<string, number>();
+const MIN_SYNC_INTERVAL_MS = 2000;
+
+function getProjectFromStore(projectId: string): Project | null {
+    return useProjectStore.getState().projects.find((p) => p.id === projectId) ?? null;
+}
+
+/** WBS 저장 등 빈번한 변경 — 디바운스 후 동기화 */
+export function scheduleSyncWbsToLinkedPersonalSchedules(wbsProjectId: string): void {
+    if (wbsSyncDebounceTimer) clearTimeout(wbsSyncDebounceTimer);
+    wbsSyncDebounceTimer = setTimeout(() => {
+        wbsSyncDebounceTimer = null;
+        void syncWbsToLinkedPersonalSchedules(wbsProjectId);
+    }, 1000);
+}
 
 export function getProjectCreatorName(project: Project): string {
     const owner = project.members?.find((m) => m.role === 'OWNER');
@@ -45,7 +68,7 @@ export function getProjectCreatorName(project: Project): string {
     return author || ownerName;
 }
 
-/** WBS 담당자 ↔ 개인일정 생성자(OWNER/author) 일치 여부 */
+/** @deprecated 이름 매칭만 사용 — rowMatchesPersonalScheduleOwner 사용 권장 */
 export function assigneeMatchesCreator(assignee: string, project: Project): boolean {
     const name = assignee.trim();
     if (!name) return false;
@@ -54,15 +77,16 @@ export function assigneeMatchesCreator(assignee: string, project: Project): bool
     return name === owner || (!!author && name === author);
 }
 
-export function shouldMirrorWbsRow(row: WbsDevRow, creatorName: string, psProject?: Project): boolean {
-    if (row.isDebugging) return false;
+export function shouldMirrorWbsRow(
+    row: WbsDevRow,
+    _creatorName: string,
+    psProject?: Project,
+    wbsMembers: import('../types/erd').ProjectMember[] = [],
+): boolean {
+    if (isWbsDebugingCategoryRow(row)) return false;
     if (!row.featureName?.trim()) return false;
-    const assignee = row.assignee?.trim() ?? '';
-    if (!assignee) return false;
-    const matches = psProject
-        ? assigneeMatchesCreator(assignee, psProject)
-        : assignee === creatorName;
-    if (!matches) return false;
+    if (!psProject) return false;
+    if (!rowMatchesPersonalScheduleOwner(row, psProject, wbsMembers)) return false;
     const start = normalizeYmd(row.startDate);
     const end = normalizeYmd(row.endDate);
     return !!(start && end);
@@ -73,10 +97,12 @@ function buildMirrorEvent(
     menu: WbsMenuNode | undefined,
     wbsProjectId: string,
     existingId?: string,
+    wbsMembers: import('../types/erd').ProjectMember[] = [],
 ): WbsMirrorScheduleEvent {
     const start = normalizeYmd(row.startDate);
     const end = normalizeYmd(row.endDate);
     const menuLabel = menu ? `${menu.name} (${menu.menuCode})` : '';
+    const assignee = getRowAssigneeDisplayName(row, wbsMembers);
     return {
         id: existingId || `wbs_mirror_${row.id}`,
         title: row.featureName.trim(),
@@ -84,7 +110,7 @@ function buildMirrorEvent(
         startDate: start,
         endDate: end,
         allDay: true,
-        assignee: row.assignee.trim(),
+        assignee,
         progress: row.progress ?? 0,
         description: menuLabel ? `WBS · ${menuLabel}` : 'WBS',
         wbsProjectId,
@@ -106,31 +132,47 @@ function detachMirrorMeta(event: WbsMirrorScheduleEvent): WbsMirrorScheduleEvent
     };
 }
 
-/** WBS 개발 상세 → 연결된 개인일정 달력 미러링 */
-export async function syncWbsToLinkedPersonalSchedules(wbsProjectId: string): Promise<void> {
-    if (syncGuard) return;
+/** WBS 개발 상세 → 연결된 개인일정 달력 미러링 (로컬 store 기준, 서버 GET 없음) */
+export async function syncWbsToLinkedPersonalSchedules(
+    wbsProjectId: string,
+    options?: { force?: boolean },
+): Promise<void> {
+    if (wbsToPsSyncing) return;
+
+    const now = Date.now();
+    const last = lastWbsSyncAt.get(wbsProjectId) ?? 0;
+    if (!options?.force && now - last < MIN_SYNC_INTERVAL_MS) return;
 
     const store = useProjectStore.getState();
-    const wbsProject = store.projects.find((p) => p.id === wbsProjectId);
+    const wbsProject = getProjectFromStore(wbsProjectId);
     if (!wbsProject || wbsProject.projectType !== 'WBS') return;
 
     const wbsData = wbsProject.data as { menus?: WbsMenuNode[]; rows?: WbsDevRow[] };
     const { useWbsStore } = await import('../store/wbsStore');
     const wbsState = useWbsStore.getState();
-    const menus = wbsState.currentProjectId === wbsProjectId
+    const localWbs = wbsProject;
+    const localWbsData = localWbs?.data as { menus?: WbsMenuNode[]; rows?: WbsDevRow[] } | undefined;
+
+    const menus = wbsState.currentProjectId === wbsProjectId && wbsState.menus.length > 0
         ? wbsState.menus
-        : (wbsData.menus ?? []);
-    const rows = wbsState.currentProjectId === wbsProjectId
+        : (wbsData.menus?.length ? wbsData.menus : (localWbsData?.menus ?? []));
+    const wbsMembers = wbsProject.members ?? localWbs?.members ?? [];
+
+    let rawRows = wbsState.currentProjectId === wbsProjectId && wbsState.rows.length > 0
         ? wbsState.rows
         : (wbsData.rows ?? []);
+    const localRows = localWbsData?.rows ?? [];
+    if (localRows.length > rawRows.length) rawRows = localRows;
+
+    const rows = enrichRowsWithAssigneeUserIds(rawRows, wbsMembers);
     const menuById = new Map(menus.map((m) => [m.id, m]));
-    const linkedIds = getLinkedPersonalScheduleIds(wbsProject);
+    const linkedIds = getLinkedPersonalScheduleIds(wbsProject, store.projects);
     if (linkedIds.length === 0) return;
 
-    syncGuard = true;
+    wbsToPsSyncing = true;
     try {
         for (const psId of linkedIds) {
-            const psProject = store.projects.find((p) => p.id === psId);
+            const psProject = getProjectFromStore(psId);
             if (!psProject || psProject.projectType !== 'PERSONAL_SCHEDULE') continue;
 
             const creatorName = getProjectCreatorName(psProject);
@@ -140,9 +182,10 @@ export async function syncWbsToLinkedPersonalSchedules(wbsProjectId: string): Pr
             categories[WBS_MIRROR_CATEGORY] = categories[WBS_MIRROR_CATEGORY] ?? { label: 'WBS', color: '#10b981' };
 
             const activeRowIds = new Set<string>();
+            const debuggingRowIds = new Set(rows.filter(isWbsDebugingCategoryRow).map((r) => r.id));
 
             for (const row of rows) {
-                if (!shouldMirrorWbsRow(row, creatorName, psProject)) continue;
+                if (!shouldMirrorWbsRow(row, creatorName, psProject, wbsMembers)) continue;
                 activeRowIds.add(row.id);
                 const idx = events.findIndex(
                     (e) => e.wbsProjectId === wbsProjectId && e.wbsRowId === row.id,
@@ -152,10 +195,13 @@ export async function syncWbsToLinkedPersonalSchedules(wbsProjectId: string): Pr
                     menuById.get(row.menuId),
                     wbsProjectId,
                     idx >= 0 ? events[idx].id : undefined,
+                    wbsMembers,
                 );
                 if (idx >= 0) events[idx] = mirror;
                 else events.push(mirror);
             }
+
+            events = events.filter((e) => !(e.wbsRowId && debuggingRowIds.has(e.wbsRowId)));
 
             events = events.map((e) => {
                 if (
@@ -181,15 +227,20 @@ export async function syncWbsToLinkedPersonalSchedules(wbsProjectId: string): Pr
 
             store.updateProjectData(psId, newData);
             if (!psId.startsWith('local_')) {
-                await fetchWithAuth(`${API_URL}/${psId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: newData }),
-                });
+                try {
+                    await fetchWithAuth(`${API_URL}/${psId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ data: newData }),
+                    });
+                } catch {
+                    // 로컬 store에는 반영됨 — 다음 동기화 시 재시도
+                }
             }
         }
+        lastWbsSyncAt.set(wbsProjectId, Date.now());
     } finally {
-        syncGuard = false;
+        wbsToPsSyncing = false;
     }
 }
 
@@ -198,13 +249,17 @@ export async function syncPersonalProgressToWbs(
     personalProjectId: string,
     events: WbsMirrorScheduleEvent[],
 ): Promise<void> {
-    if (syncGuard) return;
+    if (psToWbsSyncing) return;
 
     const store = useProjectStore.getState();
     const psProject = store.projects.find((p) => p.id === personalProjectId);
     if (!psProject || psProject.projectType !== 'PERSONAL_SCHEDULE') return;
 
-    const wbsProjectId = psProject.linkedWbsProjectId;
+    const wbsProjectId = psProject.linkedWbsProjectId
+        ?? store.projects.find(
+            (p) => p.projectType === 'WBS'
+                && (p.linkedPersonalScheduleProjectIds ?? []).includes(personalProjectId),
+        )?.id;
     if (!wbsProjectId) return;
 
     const wbsProject = store.projects.find((p) => p.id === wbsProjectId);
@@ -218,6 +273,7 @@ export async function syncPersonalProgressToWbs(
         if (!ev.isWbsMirror || !ev.wbsRowId || ev.wbsProjectId !== wbsProjectId) continue;
         const idx = rows.findIndex((r) => r.id === ev.wbsRowId);
         if (idx < 0) continue;
+        if (isWbsDebugingCategoryRow(rows[idx])) continue;
         const prog = Math.min(100, Math.max(0, ev.progress ?? 0));
         if (rows[idx].progress !== prog) {
             rows[idx] = { ...rows[idx], progress: prog };
@@ -227,10 +283,11 @@ export async function syncPersonalProgressToWbs(
 
     if (!changed) return;
 
-    syncGuard = true;
+    psToWbsSyncing = true;
     try {
         const newData = { ...wbsData, rows };
         store.updateProjectData(wbsProjectId, newData);
+        const { useWbsStore } = await import('../store/wbsStore');
         if (useWbsStore.getState().currentProjectId === wbsProjectId) {
             useWbsStore.getState().loadProject(wbsProjectId, newData);
         }
@@ -242,6 +299,6 @@ export async function syncPersonalProgressToWbs(
             });
         }
     } finally {
-        syncGuard = false;
+        psToWbsSyncing = false;
     }
 }

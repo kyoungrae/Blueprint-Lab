@@ -6,7 +6,11 @@ import {
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { schedulePersonalScheduleSave } from '../../store/personalScheduleStore';
-import { WBS_MIRROR_CATEGORY } from '../../services/wbsPersonalScheduleSync';
+import { syncWbsToLinkedPersonalSchedules, WBS_MIRROR_CATEGORY } from '../../services/wbsPersonalScheduleSync';
+import { resolveLinkedWbsProjectId } from '../../utils/linkedPersonalScheduleProjects';
+import { useWbsStore } from '../../store/wbsStore';
+import type { WbsDevRow } from '../../types/wbs';
+import { isWbsDebugingCategoryRow } from '../../types/wbs';
 import WheelDatePicker, { WheelTimePicker, WheelColorPicker, WheelProgressPicker } from '../wbs/WheelDatePicker';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
@@ -59,6 +63,10 @@ interface ScheduleEvent {
     occurrenceDates?: Record<string, { startDate: string; endDate: string }>;
     parentId?: string;
     ganttColor?: string;
+    /** WBS 미러 — 구분 Debuging 행은 캘린더에서 제외 */
+    isWbsMirror?: boolean;
+    wbsRowId?: string;
+    wbsProjectId?: string;
 }
 
 interface GanttTask {
@@ -387,6 +395,11 @@ function expandEventsForCalendar(events: ScheduleEvent[], visibleCats: Set<Categ
         });
     }
     return out;
+}
+
+/** WBS 구분(산출물) Debuging 행 — 캘린더(주/월/일) 표시 제외, 간트는 유지 */
+function isDebugingCategoryCalendarEvent(e: ScheduleEvent, debugingRowIds: Set<string>): boolean {
+    return !!(e.wbsRowId && debugingRowIds.has(e.wbsRowId));
 }
 
 function eventsToGanttTasks(events: ScheduleEvent[], categories: Record<string, CategoryDef>, refDate: Date): GanttTask[] {
@@ -862,7 +875,22 @@ function ganttPatchToEvent(patch: Partial<GanttTask>): Partial<ScheduleEvent> {
     return out;
 }
 
-function computeGanttChartRange(tasks: GanttTask[]) {
+function expandRangeWithAnchor(
+    start: Date,
+    end: Date,
+    anchorWeekStart?: Date,
+): { start: Date; end: Date } {
+    if (!anchorWeekStart) return { start, end };
+    const ws = startOfDay(anchorWeekStart);
+    const we = addDays(ws, 6);
+    let nextStart = start;
+    let nextEnd = end;
+    if (ws < nextStart) nextStart = ws;
+    if (we > nextEnd) nextEnd = we;
+    return { start: nextStart, end: nextEnd };
+}
+
+function computeGanttChartRange(tasks: GanttTask[], anchorWeekStart?: Date) {
     const now = startOfDay(new Date());
     let start = addDays(now, -GANTT_CHART_PAST_DAYS);
     let end = addDays(now, GANTT_CHART_FUTURE_DAYS);
@@ -877,13 +905,14 @@ function computeGanttChartRange(tasks: GanttTask[]) {
             if (ee > end) end = ee;
         }
     }
+    ({ start, end } = expandRangeWithAnchor(start, end, anchorWeekStart));
     return {
         chartStart: addDays(start, -GANTT_CHART_PADDING_DAYS),
         chartEnd: addDays(end, GANTT_CHART_PADDING_DAYS),
     };
 }
 
-function computeCalendarScrollRange(events: CalendarEvent[]) {
+function computeCalendarScrollRange(events: CalendarEvent[], anchorWeekStart?: Date) {
     const now = startOfDay(new Date());
     let start = addDays(now, -GANTT_CHART_PAST_DAYS);
     let end = addDays(now, GANTT_CHART_FUTURE_DAYS);
@@ -893,6 +922,7 @@ function computeCalendarScrollRange(events: CalendarEvent[]) {
         if (s < start) start = s;
         if (ed > end) end = ed;
     }
+    ({ start, end } = expandRangeWithAnchor(start, end, anchorWeekStart));
     return {
         rangeStart: addDays(start, -GANTT_CHART_PADDING_DAYS),
         rangeEnd: addDays(end, GANTT_CHART_PADDING_DAYS),
@@ -1449,11 +1479,17 @@ const WeekView: React.FC<{
     const containerRef = React.useRef<HTMLDivElement>(null);
     const calIsSource = React.useRef(false);
     const extSyncing = React.useRef(false);
+    const userCalScroll = React.useRef(false);
+    const weekStartFromScroll = React.useRef(false);
+    const blockScrollWeekSyncUntil = React.useRef(0);
     const snapTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const syncClearTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const [dayW, setDayW] = React.useState(100);
 
-    const { rangeStart, rangeEnd } = React.useMemo(() => computeCalendarScrollRange(events), [events]);
+    const { rangeStart, rangeEnd } = React.useMemo(
+        () => computeCalendarScrollRange(events, weekStart),
+        [events, weekStart],
+    );
     const totalDays = daysBetweenDates(rangeStart, rangeEnd) + 1;
     const allDays = React.useMemo(
         () => Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i)),
@@ -1620,21 +1656,48 @@ const WeekView: React.FC<{
         syncClearTimer.current = setTimeout(() => { extSyncing.current = false; }, 450);
     }, [rangeStart, dayW]);
 
-    React.useLayoutEffect(() => {
-        if (calIsSource.current) {
-            calIsSource.current = false;
+    const scrollToWeekRef = React.useRef(scrollToWeek);
+    scrollToWeekRef.current = scrollToWeek;
+    const weekStartYmd = toYMD(weekStart);
+    const rangeStartYmd = toYMD(rangeStart);
+    const prevScrollKey = React.useRef('');
+
+    React.useEffect(() => {
+        if (weekStartFromScroll.current) {
+            weekStartFromScroll.current = false;
             return;
         }
-        scrollToWeek(weekStart);
-    }, [weekStart, scrollToWeek]);
+        userCalScroll.current = false;
+        clearTimeout(snapTimer.current);
+        blockScrollWeekSyncUntil.current = Date.now() + 700;
+    }, [weekStartYmd]);
+
+    React.useEffect(() => {
+        blockScrollWeekSyncUntil.current = Date.now() + 700;
+    }, [rangeStartYmd]);
 
     React.useLayoutEffect(() => {
-        scrollToWeek(weekStart);
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        extSyncing.current = true;
+        const scrollKey = `${weekStartYmd}|${rangeStartYmd}|${dayW}`;
+        if (prevScrollKey.current === scrollKey) {
+            syncClearTimer.current = setTimeout(() => { extSyncing.current = false; }, 100);
+            return;
+        }
+        prevScrollKey.current = scrollKey;
+
+        if (calIsSource.current) {
+            calIsSource.current = false;
+            syncClearTimer.current = setTimeout(() => { extSyncing.current = false; }, 100);
+            return;
+        }
+        scrollToWeekRef.current(weekStart);
+        syncClearTimer.current = setTimeout(() => { extSyncing.current = false; }, 600);
+    }, [weekStartYmd, rangeStartYmd, weekStart, dayW]);
 
     const snap = React.useCallback(() => {
         const el = scrollRef.current;
-        if (!el || extSyncing.current) return;
+        if (!el || extSyncing.current || !userCalScroll.current) return;
+        if (Date.now() < blockScrollWeekSyncUntil.current) return;
         const viewWidth = el.clientWidth - CALENDAR_TIME_GUTTER;
         const S = el.scrollLeft;
         const rawN = (S + viewWidth / 2 - 3.5 * dayW) / dayW;
@@ -1648,31 +1711,43 @@ const WeekView: React.FC<{
         el.style.scrollBehavior = '';
 
         const newWeekStart = startOfDay(addDays(rangeStart, snapN));
+        if (toYMD(newWeekStart) === weekStartYmd) {
+            userCalScroll.current = false;
+            syncClearTimer.current = setTimeout(() => { extSyncing.current = false; }, 500);
+            return;
+        }
         calIsSource.current = true;
+        weekStartFromScroll.current = true;
         onWeekChange(newWeekStart);
+        userCalScroll.current = false;
         syncClearTimer.current = setTimeout(() => { extSyncing.current = false; }, 500);
-    }, [rangeStart, dayW, onWeekChange]);
+    }, [rangeStart, dayW, onWeekChange, weekStartYmd]);
 
     const handleScroll = React.useCallback(() => {
         const el = scrollRef.current;
-        if (!el || extSyncing.current) return;
+        if (!el || extSyncing.current || !userCalScroll.current) return;
+        if (Date.now() < blockScrollWeekSyncUntil.current) return;
 
         const viewWidth = el.clientWidth - CALENDAR_TIME_GUTTER;
         const S = el.scrollLeft;
         const rawN = (S + viewWidth / 2 - 3.5 * dayW) / dayW;
         const N = Math.round(rawN);
         const newWeekStart = startOfDay(addDays(rangeStart, N));
-        calIsSource.current = true;
-        onWeekChange(newWeekStart);
+        if (toYMD(newWeekStart) !== weekStartYmd) {
+            calIsSource.current = true;
+            weekStartFromScroll.current = true;
+            onWeekChange(newWeekStart);
+        }
 
         clearTimeout(snapTimer.current);
         snapTimer.current = setTimeout(snap, 300);
-    }, [rangeStart, dayW, onWeekChange, snap]);
+    }, [rangeStart, dayW, onWeekChange, snap, weekStartYmd]);
 
     React.useEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
         const onWheel = (e: WheelEvent) => {
+            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) userCalScroll.current = true;
             applyHorizontalWheelScroll(el, e);
         };
         el.addEventListener('wheel', onWheel, { passive: false });
@@ -2305,19 +2380,20 @@ const GanttView: React.FC<{
     onDeleteTask?: (id: string) => void;
     onTaskClick?: (taskId: string, occYmd?: string) => void;
     weekStart: Date;
-    onWeekChange: (d: Date) => void;
-}> = ({ tasks, onAddTask, onUpdateTask, onDeleteTask, onTaskClick, weekStart, onWeekChange }) => {
+}> = ({ tasks, onAddTask, onUpdateTask, onDeleteTask, onTaskClick, weekStart }) => {
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const [editCell, setEditCell] = useState<{ id: string; field: GanttEditField } | null>(null);
     const leftRef        = React.useRef<HTMLDivElement>(null);
     const rightRef       = React.useRef<HTMLDivElement>(null);
     const syncingV       = React.useRef(false);  // 세로 스크롤 루프 방지
-    const ganttIsSource  = React.useRef(false);  // 간트가 weekStart 변경 원인일 때 true
     const calSyncing     = React.useRef(false);  // 캘린더→간트 sync 중 스크롤 무시
     const syncClearTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     // 작업 범위 + 최소 표시 기간 (과거 180일 · 미래 365일, 여유 30일)
-    const { chartStart, chartEnd } = React.useMemo(() => computeGanttChartRange(tasks), [tasks]);
+    const { chartStart, chartEnd } = React.useMemo(
+        () => computeGanttChartRange(tasks, weekStart),
+        [tasks, weekStart],
+    );
     const totalDays  = daysBetweenDates(chartStart, chartEnd) + 1;
     const DAY_W = 36;
     const GANTT_ROW_H = 33;
@@ -2390,65 +2466,49 @@ const GanttView: React.FC<{
         syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 450);
     }, [chartStart]);
 
+    const scrollToWeekRef = React.useRef(scrollToWeek);
+    scrollToWeekRef.current = scrollToWeek;
+    const weekStartYmd = toYMD(weekStart);
+    const chartStartYmd = toYMD(chartStart);
+    const prevGanttScrollKey = React.useRef('');
+    const snapTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
     React.useLayoutEffect(() => {
-        if (ganttIsSource.current) {
-            ganttIsSource.current = false;
+        calSyncing.current = true;
+        clearTimeout(snapTimer.current);
+        const scrollKey = `${weekStartYmd}|${chartStartYmd}`;
+        if (prevGanttScrollKey.current === scrollKey) {
+            syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 100);
             return;
         }
-        scrollToWeek(weekStart);
-    }, [weekStart, scrollToWeek]);
+        prevGanttScrollKey.current = scrollKey;
+        scrollToWeekRef.current(weekStart);
+        syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 600);
+    }, [weekStartYmd, chartStartYmd, weekStart]);
 
-    React.useLayoutEffect(() => {
-        scrollToWeek(weekStart);
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // 현재 weekStart의 day index (chartStart 기준)
-    const weekStartIdx = React.useRef(daysBetween(chartStart, weekStart));
-    React.useEffect(() => {
-        weekStartIdx.current = daysBetween(chartStart, weekStart);
-    }, [weekStart, chartStart]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // ── 스크롤 멈춤 후 스냅 ──────────────────────────────────
-    const snapTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    // ── 스크롤 멈춤 후 스냅 (간트 뷰포트만, weekStart는 변경하지 않음) ──
     const snap = React.useCallback(() => {
         if (!rightRef.current || calSyncing.current) return;
         const viewWidth = rightRef.current.clientWidth;
         const S = rightRef.current.scrollLeft;
-        // 빨간 영역 왼쪽 경계가 위치한 day index
         const rawN = (S + viewWidth / 2 - 3.5 * DAY_W) / DAY_W;
         const snapN = Math.round(rawN);
-
         const target = Math.max(0, snapN * DAY_W + 3.5 * DAY_W - viewWidth / 2);
 
         calSyncing.current = true;
         clearTimeout(syncClearTimer.current);
-        // smooth scroll for snap feel
         rightRef.current.style.scrollBehavior = 'smooth';
         rightRef.current.scrollLeft = target;
         rightRef.current.style.scrollBehavior = '';
-
-        const newWeekStart = startOfDay(addDays(chartStart, snapN));
-        weekStartIdx.current = snapN;
-        ganttIsSource.current = true;
-        onWeekChange(newWeekStart);
         syncClearTimer.current = setTimeout(() => { calSyncing.current = false; }, 500);
-    }, [chartStart, onWeekChange]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []);
 
-    // ── 간트 가로 스크롤 → 캘린더 실시간 동기화 ─────────────
+    // ── 간트 가로 스크롤: weekStart 역동기화 없음 (DOM 리셋 시 5월로 튀는 버그 방지) ──
     const handleTimelineScroll = React.useCallback(() => {
         if (calSyncing.current) return;
-        // 실시간: 뷰포트 중앙 기준으로 weekStart 업데이트
-        const viewWidth = rightRef.current?.clientWidth ?? 0;
-        const S = rightRef.current?.scrollLeft ?? 0;
-        const rawN = (S + viewWidth / 2 - 3.5 * DAY_W) / DAY_W;
-        const N = Math.round(rawN);
-        const newWeekStart = startOfDay(addDays(chartStart, N));
-        ganttIsSource.current = true;
-        onWeekChange(newWeekStart);
-        // 스크롤 멈추면 스냅
         clearTimeout(snapTimer.current);
         snapTimer.current = setTimeout(snap, 300);
-    }, [chartStart, onWeekChange, snap]);
+    }, [snap]);
 
     // ── 세로 스크롤 동기화 ────────────────────────────────────
     const handleLeftScroll = React.useCallback(() => {
@@ -2830,6 +2890,8 @@ const PersonalScheduleCanvas: React.FC = () => {
     const projects = useProjectStore(s => s.projects);
     const setCurrentProject = useProjectStore(s => s.setCurrentProject);
     const project = projects.find(p => p.id === currentProjectId);
+    const wbsStoreProjectId = useWbsStore(s => s.currentProjectId);
+    const wbsStoreRows = useWbsStore(s => s.rows);
 
     const [viewMode, setViewMode] = useState<ViewMode>('week');
     const [tab, setTab] = useState<TabMode>('calendar');
@@ -2843,10 +2905,12 @@ const PersonalScheduleCanvas: React.FC = () => {
     const [visibleCats, setVisibleCats] = useState<Set<CategoryKey>>(new Set(Object.keys(DEFAULT_CATEGORIES)));
 
     const skipSaveRef = useRef(true);
+    const syncInProgressRef = useRef(false);
     const loadedProjectIdRef = useRef<string | null>(null);
     const lastAppliedUpdatedAtRef = useRef<string | null>(null);
     /** fetchProjects로 서버 스냅샷을 한 번 반영했는지 (삭제 후 빈 목록을 서버 데이터로 되돌리지 않도록) */
     const initialFetchAppliedRef = useRef(false);
+    const wbsSyncedKeyRef = useRef<string | null>(null);
 
     const applyProjectData = useCallback((data: PersonalScheduleProjectData | undefined) => {
         const cats = data?.categories && Object.keys(data.categories).length > 0
@@ -2869,6 +2933,7 @@ const PersonalScheduleCanvas: React.FC = () => {
         if (!currentProjectId) return;
         loadedProjectIdRef.current = currentProjectId;
         initialFetchAppliedRef.current = false;
+        wbsSyncedKeyRef.current = null;
         lastAppliedUpdatedAtRef.current = project?.updatedAt ?? null;
         applyProjectData(project?.data as PersonalScheduleProjectData | undefined);
     }, [currentProjectId, applyProjectData]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2876,11 +2941,40 @@ const PersonalScheduleCanvas: React.FC = () => {
     // WBS 동기화 등 외부에서 projectStore가 갱신되면 캔버스에 반영
     useEffect(() => {
         if (!currentProjectId || loadedProjectIdRef.current !== currentProjectId) return;
+        if (syncInProgressRef.current) return;
         const updatedAt = project?.updatedAt;
         if (!updatedAt || lastAppliedUpdatedAtRef.current === updatedAt) return;
         lastAppliedUpdatedAtRef.current = updatedAt;
         applyProjectData(project?.data as PersonalScheduleProjectData | undefined);
     }, [currentProjectId, project?.updatedAt, project?.data, applyProjectData]);
+
+    // 개인일정 진입 시 WBS 동기화 (프로젝트·연결당 1회, projects 변경으로 재실행되지 않음)
+    useEffect(() => {
+        if (!currentProjectId || !project) return;
+        const wbsId = resolveLinkedWbsProjectId(project, useProjectStore.getState().projects);
+        if (!wbsId) return;
+
+        const syncKey = `${currentProjectId}:${wbsId}`;
+        if (wbsSyncedKeyRef.current === syncKey) return;
+
+        let cancelled = false;
+        syncInProgressRef.current = true;
+        skipSaveRef.current = true;
+
+        void (async () => {
+            await syncWbsToLinkedPersonalSchedules(wbsId, { force: true });
+            if (cancelled) return;
+            wbsSyncedKeyRef.current = syncKey;
+            const refreshed = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
+            if (refreshed) {
+                lastAppliedUpdatedAtRef.current = refreshed.updatedAt;
+                applyProjectData(refreshed.data as PersonalScheduleProjectData | undefined);
+            }
+            syncInProgressRef.current = false;
+        })();
+
+        return () => { cancelled = true; };
+    }, [currentProjectId, project?.id, project?.linkedWbsProjectId, applyProjectData]);
 
     // fetchProjects 후 서버 일정/할일이 도착했을 때 1회만 반영 (빈 로컬 캐시 → 서버 스냅샷)
     useEffect(() => {
@@ -2901,9 +2995,9 @@ const PersonalScheduleCanvas: React.FC = () => {
         applyProjectData(data);
     }, [currentProjectId, project?.data, project?.updatedAt, events.length, todos.length, applyProjectData]);
 
-    // 변경 시 DB 저장 (디바운스)
+    // 변경 시 DB 저장 (디바운스) — WBS 동기화 중에는 저장하지 않음
     useEffect(() => {
-        if (!currentProjectId || skipSaveRef.current || loadedProjectIdRef.current !== currentProjectId) return;
+        if (!currentProjectId || skipSaveRef.current || syncInProgressRef.current || loadedProjectIdRef.current !== currentProjectId) return;
         schedulePersonalScheduleSave(currentProjectId, {
             events,
             todos,
@@ -2967,10 +3061,25 @@ const PersonalScheduleCanvas: React.FC = () => {
         events.filter(e => visibleCats.has(e.category)),
         [events, visibleCats]);
 
-    const calendarEvents = useMemo(
-        () => expandEventsForCalendar(events, visibleCats),
-        [events, visibleCats],
-    );
+    /** WBS 구분(산출물) Debuging 행 id — 캘린더 표시 필터용 */
+    const debugingCategoryRowIds = useMemo(() => {
+        if (!project) return new Set<string>();
+        const linkedWbsId = resolveLinkedWbsProjectId(project, projects);
+        if (!linkedWbsId) return new Set<string>();
+        let rows: WbsDevRow[] = [];
+        if (wbsStoreProjectId === linkedWbsId && wbsStoreRows.length > 0) {
+            rows = wbsStoreRows;
+        } else {
+            const wbsProject = projects.find(p => p.id === linkedWbsId);
+            rows = (wbsProject?.data as { rows?: WbsDevRow[] } | undefined)?.rows ?? [];
+        }
+        return new Set(rows.filter(isWbsDebugingCategoryRow).map(r => r.id));
+    }, [project, projects, wbsStoreProjectId, wbsStoreRows]);
+
+    const calendarEvents = useMemo(() => {
+        const expanded = expandEventsForCalendar(events, visibleCats);
+        return expanded.filter(e => !isDebugingCategoryCalendarEvent(e, debugingCategoryRowIds));
+    }, [events, visibleCats, debugingCategoryRowIds]);
 
     // 간트 작업영역에 표시할 기준일: 캘린더/차트에서 이동한 주(weekStart)
     // → 다른 주로 이동하면 그 주기의 회차 데이터·하이라이트가 보이도록 한다.
@@ -3285,8 +3394,7 @@ const PersonalScheduleCanvas: React.FC = () => {
                                             onUpdateTask={handleUpdateGanttTask}
                                             onDeleteTask={handleDeleteGanttTask}
                                             onTaskClick={handleGanttTaskClick}
-                                            weekStart={weekStart}
-                                            onWeekChange={ws => { const d = startOfDay(ws); setWeekStart(d); setSelectedDate(d); }} />
+                                            weekStart={weekStart} />
                                     </div>
                                 </div>
                             )}

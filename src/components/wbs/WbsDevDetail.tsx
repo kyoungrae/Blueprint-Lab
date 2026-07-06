@@ -219,9 +219,9 @@ const CategoryCell: React.FC<{ value: string; onChange: (v: string) => void; inp
  */
 const BulkAssigneeInput: React.FC<{
     value: string;
-    onChange: (v: string) => void;
+    onChange: (patch: { assignee: string; assigneeUserId?: string }) => void;
     onApply: () => void;
-    members: { name: string; colorIdx: number }[];
+    members: { id: string; name: string; colorIdx: number }[];
 }> = ({ value, onChange, onApply, members }) => {
     const [isCustom, setIsCustom] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -238,9 +238,9 @@ const BulkAssigneeInput: React.FC<{
                     const pal = ASSIGNEE_PALETTE[i % ASSIGNEE_PALETTE.length];
                     return (
                         <button
-                            key={m.name}
+                            key={m.id}
                             type="button"
-                            onClick={() => { onChange(m.name); setIsCustom(false); }}
+                            onClick={() => { onChange({ assignee: m.name, assigneeUserId: m.id }); setIsCustom(false); }}
                             className={`px-2.5 py-1 rounded-full border text-xs font-bold transition-colors hover:opacity-80 ${pal.badge} ${value === m.name ? 'ring-2 ring-offset-1 ring-current' : ''}`}
                         >
                             {m.name}
@@ -250,7 +250,7 @@ const BulkAssigneeInput: React.FC<{
                 {/* 직접입력 토글 버튼 */}
                 <button
                     type="button"
-                    onClick={() => { setIsCustom((v) => !v); if (!isCustom) onChange(''); }}
+                    onClick={() => { setIsCustom((v) => !v); if (!isCustom) onChange({ assignee: '', assigneeUserId: undefined }); }}
                     className={`px-2.5 py-1 rounded-full border text-xs font-bold transition-colors ${isCustom ? 'bg-emerald-50 text-emerald-600 border-emerald-300' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
                 >
                     <span className="flex items-center gap-1"><PenLine size={10} /> 직접입력</span>
@@ -262,10 +262,10 @@ const BulkAssigneeInput: React.FC<{
                     ref={inputRef}
                     type="text"
                     value={value}
-                    onChange={(e) => onChange(e.target.value)}
+                    onChange={(e) => onChange({ assignee: e.target.value, assigneeUserId: undefined })}
                     placeholder="담당자명 입력"
                     className="w-full px-2 py-1.5 text-sm border border-emerald-300 rounded-lg outline-none focus:border-emerald-400"
-                    onKeyDown={(e) => { if (e.key === 'Enter') onApply(); if (e.key === 'Escape') { setIsCustom(false); onChange(''); } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') onApply(); if (e.key === 'Escape') { setIsCustom(false); onChange({ assignee: '', assigneeUserId: undefined }); } }}
                 />
             )}
         </div>
@@ -277,16 +277,17 @@ const BulkAssigneeInput: React.FC<{
  */
 const AssigneeCell: React.FC<{
     value: string;
-    onChange: (v: string) => void;
-    members: { name: string; colorIdx: number }[];
+    assigneeUserId?: string;
+    onChange: (patch: { assignee: string; assigneeUserId?: string }) => void;
+    members: { id: string; name: string; colorIdx: number }[];
     inputClass: string;
-}> = ({ value, onChange, members }) => {
+}> = ({ value, assigneeUserId, onChange, members }) => {
     const [open, setOpen] = useState(false);
     const [isCustom, setIsCustom] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const colorIdx = members.findIndex((m) => m.name === value);
+    const colorIdx = members.findIndex((m) => (assigneeUserId && m.id === assigneeUserId) || m.name === value);
     const palette = ASSIGNEE_PALETTE[(colorIdx >= 0 ? colorIdx : 0) % ASSIGNEE_PALETTE.length];
 
     // 외부 클릭 시 닫기
@@ -307,8 +308,8 @@ const AssigneeCell: React.FC<{
         if (isCustom) inputRef.current?.focus();
     }, [isCustom]);
 
-    const select = (name: string) => {
-        onChange(name);
+    const select = (name: string, userId?: string) => {
+        onChange({ assignee: name, assigneeUserId: userId });
         setOpen(false);
         setIsCustom(false);
     };
@@ -334,10 +335,10 @@ const AssigneeCell: React.FC<{
                         const pal = ASSIGNEE_PALETTE[i % ASSIGNEE_PALETTE.length];
                         return (
                             <button
-                                key={m.name}
+                                key={m.id}
                                 type="button"
-                                onClick={() => select(m.name)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-colors hover:opacity-80 ${pal.badge} ${m.name === value ? 'ring-1 ring-offset-1 ring-current' : ''}`}
+                                onClick={() => select(m.name, m.id)}
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-colors hover:opacity-80 ${pal.badge} ${(assigneeUserId ? m.id === assigneeUserId : m.name === value) ? 'ring-1 ring-offset-1 ring-current' : ''}`}
                             >
                                 {m.name}
                             </button>
@@ -356,7 +357,7 @@ const AssigneeCell: React.FC<{
                             </button>
                             <button
                                 type="button"
-                                onClick={() => select('')}
+                                onClick={() => select('', undefined)}
                                 disabled={!value}
                                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold text-gray-500 border-gray-200 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-gray-50 disabled:cursor-not-allowed transition-colors"
                             >
@@ -368,12 +369,12 @@ const AssigneeCell: React.FC<{
                             <input
                                 ref={inputRef}
                                 value={value}
-                                onChange={(e) => onChange(e.target.value)}
+                                onChange={(e) => onChange({ assignee: e.target.value, assigneeUserId: undefined })}
                                 onKeyDown={(e) => { if (e.key === 'Enter' && value) { setOpen(false); setIsCustom(false); } if (e.key === 'Escape') { setIsCustom(false); } }}
                                 placeholder="이름 입력"
                                 className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-emerald-300 focus:border-emerald-300"
                             />
-                            <button type="button" title="목록으로" onClick={() => { setIsCustom(false); onChange(''); }}
+                            <button type="button" title="목록으로" onClick={() => { setIsCustom(false); onChange({ assignee: '', assigneeUserId: undefined }); }}
                                 className="shrink-0 p-1 text-gray-300 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
                                 <RotateCcw size={11} />
                             </button>
@@ -414,7 +415,7 @@ const WbsDevDetail: React.FC = () => {
     const projects = useProjectStore((s) => s.projects);
     const projectMembers = useMemo(() => {
         const project = projects.find((p) => p.id === currentProjectId);
-        return (project?.members ?? []).map((m, i) => ({ name: m.name, colorIdx: i }));
+        return (project?.members ?? []).map((m, i) => ({ id: m.id, name: m.name, colorIdx: i }));
     }, [projects, currentProjectId]);
 
     const [selectedMenuId, setSelectedMenuId] = useState<string | null>(null);
@@ -500,6 +501,7 @@ const WbsDevDetail: React.FC = () => {
     const [bulkPos, setBulkPos]               = useState({ top: 0, right: 0 });
     const [bulkField, setBulkField]           = useState<BulkField | null>(null);
     const [bulkValue, setBulkValue]           = useState('');
+    const [bulkAssigneeUserId, setBulkAssigneeUserId] = useState<string | undefined>(undefined);
     const bulkTriggerRef                       = useRef<HTMLButtonElement>(null);
     const bulkPanelRef                         = useRef<HTMLDivElement>(null);
 
@@ -510,6 +512,7 @@ const WbsDevDetail: React.FC = () => {
         }
         setBulkField(null);
         setBulkValue('');
+        setBulkAssigneeUserId(undefined);
         setShowBulk((v) => !v);
     };
 
@@ -539,6 +542,8 @@ const WbsDevDetail: React.FC = () => {
             } else if (bulkField === 'status') {
                 const status = bulkValue as typeof r.status;
                 updateRow(r.id, status === 'DONE' ? { status, progress: 100 } : { status });
+            } else if (bulkField === 'assignee') {
+                updateRow(r.id, { assignee: bulkValue, assigneeUserId: bulkAssigneeUserId });
             } else {
                 updateRow(r.id, { [bulkField]: bulkValue } as Parameters<typeof updateRow>[1]);
             }
@@ -546,6 +551,7 @@ const WbsDevDetail: React.FC = () => {
         setShowBulk(false);
         setBulkField(null);
         setBulkValue('');
+        setBulkAssigneeUserId(undefined);
     };
 
     /** 담당자별 메뉴 일정 (달력 표시용) */
@@ -609,7 +615,10 @@ const WbsDevDetail: React.FC = () => {
         return (
             <BulkAssigneeInput
                 value={bulkValue}
-                onChange={setBulkValue}
+                onChange={(patch) => {
+                    setBulkValue(patch.assignee);
+                    setBulkAssigneeUserId(patch.assigneeUserId);
+                }}
                 onApply={applyBulk}
                 members={projectMembers}
             />
@@ -806,7 +815,8 @@ const WbsDevDetail: React.FC = () => {
                                                 <td className="align-middle">
                                                     <AssigneeCell
                                                         value={r.assignee}
-                                                        onChange={(v) => updateRow(r.id, { assignee: v })}
+                                                        assigneeUserId={r.assigneeUserId}
+                                                        onChange={(patch) => updateRow(r.id, patch)}
                                                         members={projectMembers}
                                                         inputClass={cellInput}
                                                     />

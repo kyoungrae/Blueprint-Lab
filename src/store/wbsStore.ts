@@ -3,7 +3,8 @@ import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule, Wb
 import { SCHEDULE_SEED, deriveStatus } from '../data/scheduleSeedData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from './projectStore';
-import { syncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
+import { enrichRowsWithAssigneeUserIds } from '../utils/wbsAssigneeMatch';
+import { scheduleSyncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
@@ -65,10 +66,13 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     detailSchedules: [],
 
     loadProject: (projectId, data) => {
+        const rawRows = Array.isArray(data?.rows) ? (data!.rows as WbsDevRow[]) : [];
+        const wbsProject = useProjectStore.getState().projects.find((p) => p.id === projectId);
+        const rows = enrichRowsWithAssigneeUserIds(rawRows, wbsProject?.members ?? []);
         set({
             currentProjectId: projectId,
             menus: Array.isArray(data?.menus) ? (data!.menus as WbsMenuNode[]) : [],
-            rows: Array.isArray(data?.rows) ? (data!.rows as WbsDevRow[]) : [],
+            rows,
             projectSchedule: (data as WbsData)?.projectSchedule ?? null,
             detailSchedules: Array.isArray((data as WbsData)?.detailSchedules) ? ((data as WbsData).detailSchedules as WbsDetailSchedule[]) : [],
         });
@@ -361,11 +365,14 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     saveNow: async () => {
         const { currentProjectId, menus, rows, projectSchedule, detailSchedules } = get();
         if (!currentProjectId) return;
-        const data = { menus, rows, ...(projectSchedule ? { projectSchedule } : {}), detailSchedules };
+        const wbsProject = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
+        const enrichedRows = enrichRowsWithAssigneeUserIds(rows, wbsProject?.members ?? []);
+        if (enrichedRows !== rows) set({ rows: enrichedRows });
+        const data = { menus, rows: enrichedRows, ...(projectSchedule ? { projectSchedule } : {}), detailSchedules };
         // 전역 프로젝트 캐시 즉시 갱신(새로고침 전까지 데이터 유지)
         useProjectStore.getState().updateProjectData(currentProjectId, data);
-        // 연결된 개인일정 미러링 — 서버 저장 성공 여부와 무관하게 로컬 반영
-        await syncWbsToLinkedPersonalSchedules(currentProjectId);
+        // 연결된 개인일정 미러링 — 디바운스(과도한 API 호출 방지)
+        scheduleSyncWbsToLinkedPersonalSchedules(currentProjectId);
         if (currentProjectId.startsWith('local_')) return;
         try {
             await fetchWithAuth(`${API_URL}/${currentProjectId}`, {

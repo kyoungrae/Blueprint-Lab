@@ -54,6 +54,7 @@ function normalizeRow(r: any): WbsDevRow {
         category: String(r?.category ?? ''),
         featureName: String(r?.featureName ?? ''),
         assignee: String(r?.assignee ?? ''),
+        assigneeUserId: typeof r?.assigneeUserId === 'string' && r.assigneeUserId ? r.assigneeUserId : undefined,
         startDate: String(r?.startDate ?? ''),
         endDate: String(r?.endDate ?? ''),
         status,

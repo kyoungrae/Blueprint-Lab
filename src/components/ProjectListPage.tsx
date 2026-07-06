@@ -268,7 +268,7 @@ const ProjectListPage: React.FC = () => {
                 getLinkedErdIds(p).forEach((erdId) => connections.push({ fromId: p.id, toId: erdId }));
             }
             if (p.projectType === 'WBS') {
-                getLinkedPersonalScheduleIds(p).forEach((psId) => {
+                getLinkedPersonalScheduleIds(p, projects).forEach((psId) => {
                     connections.push({ fromId: p.id, toId: psId });
                 });
             }
@@ -593,7 +593,7 @@ const ProjectListPage: React.FC = () => {
                         const isOwner = isLocal || user?.id === projectOwner?.id;
                         const isLinkable = project.projectType === 'SCREEN_DESIGN' || project.projectType === 'PROCESS_FLOW';
                         const erdCount = getLinkedErdIds(project).length;
-                        const linkedPsIds = project.projectType === 'WBS' ? getLinkedPersonalScheduleIds(project) : [];
+                        const linkedPsIds = project.projectType === 'WBS' ? getLinkedPersonalScheduleIds(project, projects) : [];
                         const linkedPsNames = linkedPsIds.map((id) => projects.find((p) => p.id === id)?.name || '(삭제됨)');
                         const linkedWbsName = project.projectType === 'PERSONAL_SCHEDULE' && project.linkedWbsProjectId
                             ? (projects.find((p) => p.id === project.linkedWbsProjectId)?.name || '(삭제됨)')
@@ -1543,7 +1543,7 @@ const ProjectListPage: React.FC = () => {
             {linkingProjectId && linkingMode && (() => {
                 const linkingProject = projects.find(p => p.id === linkingProjectId);
                 const linkedErdIds = linkingProject ? getLinkedErdIds(linkingProject) : [];
-                const linkedPsIds = linkingProject ? getLinkedPersonalScheduleIds(linkingProject) : [];
+                const linkedPsIds = linkingProject ? getLinkedPersonalScheduleIds(linkingProject, projects) : [];
                 const erdProjects = projects.filter(p => p.projectType === 'ERD');
                 const unlinkedErdProjects = erdProjects.filter(p => !linkedErdIds.includes(p.id));
                 const psProjects = projects.filter(p => p.projectType === 'PERSONAL_SCHEDULE');
@@ -1564,7 +1564,7 @@ const ProjectListPage: React.FC = () => {
 
                 const applyPsLink = async (next: string[]) => {
                     await updateProjectMetadata(linkingProjectId, { linkedPersonalScheduleProjectIds: next });
-                    await syncWbsToLinkedPersonalSchedules(linkingProjectId);
+                    await syncWbsToLinkedPersonalSchedules(linkingProjectId, { force: true });
                     void fetchProjects();
                 };
 

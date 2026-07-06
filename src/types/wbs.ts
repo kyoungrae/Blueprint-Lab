@@ -36,6 +36,8 @@ export interface WbsDevRow {
     featureName: string;
     /** 담당자 */
     assignee: string;
+    /** 담당자 사용자 ID (WBS 프로젝트 members[].id, 개인일정 OWNER와 매칭) */
+    assigneeUserId?: string;
     /** 기간 시작 (YYYY-MM-DD) */
     startDate: string;
     /** 기간 종료 (YYYY-MM-DD) */
@@ -85,3 +87,11 @@ export interface WbsData {
 }
 
 export const WBS_DEFAULT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html','Debuging', '기능','직접입력'];
+
+/** 개발 상세 구분(산출물) — Debuging */
+export const WBS_DEBUGING_CATEGORY = 'Debuging';
+
+/** 구분(산출물)이 Debuging인 행 — 개인일정 캘린더 미러 제외 대상 */
+export function isWbsDebugingCategoryRow(row: Pick<WbsDevRow, 'category' | 'isDebugging'>): boolean {
+    return row.category === WBS_DEBUGING_CATEGORY || !!row.isDebugging;
+}

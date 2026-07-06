@@ -131,24 +131,27 @@ export const useProjectStore = create<ProjectStore>()(
                                 useWbsStore.getState().loadProject(id, (mapped.data ?? { menus: [], rows: [] }) as unknown as import('../types/wbs').WbsData);
                             }
 
-                            if (mapped.projectType === 'PERSONAL_SCHEDULE' && mapped.linkedWbsProjectId) {
-                                const wbsId = mapped.linkedWbsProjectId;
-                                const wbsExisting = get().projects.find((x) => x.id === wbsId);
-                                const wbsRes = await fetchWithAuth(`${API_URL}/${wbsId}?t=${Date.now()}`, {
-                                    headers: { 'Cache-Control': 'no-cache' },
-                                    cache: 'no-store',
-                                });
-                                if (wbsRes.ok) {
-                                    const wbsJson = await wbsRes.json();
-                                    const wbsMapped = mapServerProjectResponse(wbsJson, wbsExisting);
-                                    set((state) => ({
-                                        projects: state.projects.some((x) => x.id === wbsId)
-                                            ? state.projects.map((x) => (x.id === wbsId ? { ...x, ...wbsMapped } : x))
-                                            : [wbsMapped, ...state.projects],
-                                    }));
+                            if (mapped.projectType === 'PERSONAL_SCHEDULE') {
+                                const { resolveLinkedWbsProjectId } = await import('../utils/linkedPersonalScheduleProjects');
+                                const wbsId = resolveLinkedWbsProjectId(mapped, get().projects);
+                                if (wbsId) {
+                                    const wbsExisting = get().projects.find((x) => x.id === wbsId);
+                                    const wbsRes = await fetchWithAuth(`${API_URL}/${wbsId}?t=${Date.now()}`, {
+                                        headers: { 'Cache-Control': 'no-cache' },
+                                        cache: 'no-store',
+                                    });
+                                    if (wbsRes.ok) {
+                                        const wbsJson = await wbsRes.json();
+                                        const wbsMapped = mapServerProjectResponse(wbsJson, wbsExisting);
+                                        set((state) => ({
+                                            projects: state.projects.some((x) => x.id === wbsId)
+                                                ? state.projects.map((x) => (x.id === wbsId ? { ...x, ...wbsMapped } : x))
+                                                : [wbsMapped, ...state.projects],
+                                        }));
+                                    }
+                                    const { syncWbsToLinkedPersonalSchedules } = await import('../services/wbsPersonalScheduleSync');
+                                    await syncWbsToLinkedPersonalSchedules(wbsId, { force: true });
                                 }
-                                const { syncWbsToLinkedPersonalSchedules } = await import('../services/wbsPersonalScheduleSync');
-                                await syncWbsToLinkedPersonalSchedules(wbsId);
                             }
                         }
                     }
@@ -211,7 +214,7 @@ export const useProjectStore = create<ProjectStore>()(
                         id: p._id,
                         projectType: p.projectType || projectType,
                         members: p.members?.map((m: any) => ({
-                            id: m.userId?._id || m.userId,
+                            id: String(m.userId?._id ?? m.userId ?? ''),
                             name: m.userId?.name || 'Unknown',
                             email: m.userId?.email || '',
                             picture: m.userId?.picture,
@@ -279,7 +282,7 @@ export const useProjectStore = create<ProjectStore>()(
                             ...p,
                             id: p._id,
                             members: p.members?.map((m: any) => ({
-                                id: m.userId?._id || m.userId,
+                                id: String(m.userId?._id ?? m.userId ?? ''),
                                 name: m.userId?.name || 'Unknown',
                                 email: m.userId?.email || '',
                                 picture: m.userId?.picture,
@@ -444,17 +447,30 @@ export const useProjectStore = create<ProjectStore>()(
             // localStorage quota 초과 방지를 위해 ERD/SCREEN_DESIGN/COMPONENT의 큰 data를 저장하지 않는다.
             // 단, 다른 프로젝트에 연결된(linked) ERD 프로젝트는 데이터를 유지한다.
             partialize: (state) => {
-                // 현재 프로젝트와 모든 프로젝트의 linkedErdProjectIds 수집
                 const allLinkedErdIds = new Set<string>();
+                const keepDataIds = new Set<string>();
+                if (state.currentProjectId) keepDataIds.add(state.currentProjectId);
+
                 state.projects.forEach((p) => {
-                    const ids = p.linkedErdProjectIds || (p.linkedErdProjectId ? [p.linkedErdProjectId] : []);
-                    ids.forEach((id) => allLinkedErdIds.add(id));
+                    const erdIds = p.linkedErdProjectIds || (p.linkedErdProjectId ? [p.linkedErdProjectId] : []);
+                    erdIds.forEach((id) => allLinkedErdIds.add(id));
+
+                    const psIds = p.linkedPersonalScheduleProjectIds ?? [];
+                    if (p.projectType === 'WBS' && psIds.length > 0) {
+                        keepDataIds.add(p.id);
+                        psIds.forEach((id) => keepDataIds.add(id));
+                    }
+                    if (p.linkedWbsProjectId) {
+                        keepDataIds.add(p.id);
+                        keepDataIds.add(p.linkedWbsProjectId);
+                    }
                 });
-                
+
                 return {
                     currentProjectId: state.currentProjectId,
                     projects: state.projects.map((p) => {
                         const isLinkedErd = p.projectType === 'ERD' && allLinkedErdIds.has(p.id);
+                        const keepData = keepDataIds.has(p.id) || isLinkedErd;
                         const base = {
                             id: p.id,
                             name: p.name,
@@ -470,9 +486,9 @@ export const useProjectStore = create<ProjectStore>()(
                             linkedPersonalScheduleProjectIds: p.linkedPersonalScheduleProjectIds,
                             linkedWbsProjectId: p.linkedWbsProjectId,
                             members: p.members,
-                            // 현재 프로젝트이거나 연결된 ERD 프로젝트면 데이터 유지, 아니면 비움
+                            // 현재·연결된 ERD·연결된 WBS↔개인일정 프로젝트는 데이터 유지
                             data:
-                                p.id === state.currentProjectId || isLinkedErd
+                                keepData
                                     ? p.data
                                     : p.projectType === 'ERD'
                                         ? { entities: [], relationships: [], sections: [] }
