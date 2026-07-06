@@ -5,7 +5,7 @@ import XLSXStyle from 'xlsx-js-style';
 import * as XLSX from 'xlsx';   // 업로드 파싱은 기존 xlsx 유지
 
 import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus } from '../../types/wbs';
-import { WBS_STATUS_LABEL, WBS_STATUS_ORDER } from '../../types/wbs';
+import { WBS_STATUS_LABEL, WBS_STATUS_ORDER, isWbsDebugingCategoryRow, normalizeWbsDevRowDebugging, normalizeWbsDevRows } from '../../types/wbs';
 import { menuPathParts, menuDfsOrder, sortWbsDevRows, wbsPathDepth } from './wbsDevRowUtils';
 
 // ── xlsx-js-style 타입 헬퍼 ──────────────────────────
@@ -143,7 +143,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
     for (const r of sortedRows) {
         if (r.menuId !== lastMenuId) { groupColorIdx = (groupColorIdx + 1) % GROUP_PALETTES.length; lastMenuId = r.menuId; }
         const palette   = GROUP_PALETTES[groupColorIdx];
-        const bg        = r.isDebugging ? palette.debug : palette.base;
+        const bg        = isWbsDebugingCategoryRow(r) ? palette.debug : palette.base;
         const parts     = menuPathParts(menus, r.menuId);
         const statusLbl = WBS_STATUS_LABEL[r.status];
         const sfg       = statusFgColors[statusLbl] ?? '6B7280';
@@ -552,6 +552,7 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
                 if ((target.note ?? '') !== (next.note ?? '')) changes.push(`비고 ${q(target.note ?? '')} → ${q(next.note ?? '')}`);
 
                 Object.assign(target, next, { menuId: menu.id, category, featureName });
+                Object.assign(target, normalizeWbsDevRowDebugging(target));
                 seenRowIds.add(target.id);
                 if (changes.length > 0) {
                     summary.rowsUpdated++;
@@ -560,7 +561,7 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
             } else {
                 // 신규: 엑셀의 ID가 웹에 없으면 그 ID를 유지(재업로드 안정), 없으면 새로 발급
                 const newId = id && !rowById.has(id) ? id : uid('row');
-                const created: WbsDevRow = { id: newId, menuId: menu.id, category, featureName, ...next };
+                const created: WbsDevRow = normalizeWbsDevRowDebugging({ id: newId, menuId: menu.id, category, featureName, ...next });
                 rows.push(created);
                 rowById.set(newId, created);
                 rowByKey.set(rowKey(code, category, featureName), created);
@@ -584,5 +585,5 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
         : [];
     summary.menusOnlyOnWeb = onlyOnWebMenus.length;
 
-    return { data: { menus, rows }, summary, addedRows, updatedRows, updatedMenus, onlyOnWebRows, onlyOnWebMenus };
+    return { data: { menus, rows: normalizeWbsDevRows(rows) }, summary, addedRows, updatedRows, updatedMenus, onlyOnWebRows, onlyOnWebMenus };
 }

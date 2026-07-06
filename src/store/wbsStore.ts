@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule, WbsDetailSchedule } from '../types/wbs';
+import { normalizeWbsDevRows, isWbsDebugingCategoryRow, WBS_DEBUGING_CATEGORY } from '../types/wbs';
 import { SCHEDULE_SEED, deriveStatus } from '../data/scheduleSeedData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from './projectStore';
@@ -68,7 +69,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     loadProject: (projectId, data) => {
         const rawRows = Array.isArray(data?.rows) ? (data!.rows as WbsDevRow[]) : [];
         const wbsProject = useProjectStore.getState().projects.find((p) => p.id === projectId);
-        const rows = enrichRowsWithAssigneeUserIds(rawRows, wbsProject?.members ?? []);
+        const rows = normalizeWbsDevRows(enrichRowsWithAssigneeUserIds(rawRows, wbsProject?.members ?? []));
         set({
             currentProjectId: projectId,
             menus: Array.isArray(data?.menus) ? (data!.menus as WbsMenuNode[]) : [],
@@ -79,9 +80,10 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     importData: (data) => {
+        const rawRows = Array.isArray(data.rows) ? (data.rows as WbsDevRow[]) : get().rows;
         set({
             menus: Array.isArray(data.menus) ? (data.menus as WbsMenuNode[]) : get().menus,
-            rows: Array.isArray(data.rows) ? (data.rows as WbsDevRow[]) : get().rows,
+            rows: normalizeWbsDevRows(rawRows),
             projectSchedule: data.projectSchedule !== undefined ? (data.projectSchedule ?? null) : get().projectSchedule,
             detailSchedules: Array.isArray(data.detailSchedules) ? (data.detailSchedules as WbsDetailSchedule[]) : get().detailSchedules,
         });
@@ -297,11 +299,11 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         };
         // 이미 Debugging 행이 없는 경우에만 함께 추가
         const existing = get().rows;
-        const hasDebugging = existing.some((r) => r.menuId === menuId && r.isDebugging);
+        const hasDebugging = existing.some((r) => r.menuId === menuId && isWbsDebugingCategoryRow(r));
         const debugRow: WbsDevRow | null = hasDebugging ? null : {
             id: uid('row'),
             menuId,
-            category: 'Debuging',
+            category: WBS_DEBUGING_CATEGORY,
             featureName: '',
             assignee: '',
             startDate: '',
@@ -328,11 +330,11 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             status: 'TODO' as WbsStatus,
             progress: 0,
         }));
-        const hasDebugging = existing.some((r) => r.menuId === menuId && r.isDebugging);
+        const hasDebugging = existing.some((r) => r.menuId === menuId && isWbsDebugingCategoryRow(r));
         const debugRow: WbsDevRow | null = hasDebugging ? null : {
             id: uid('row'),
             menuId,
-            category: 'Debuging',
+            category: WBS_DEBUGING_CATEGORY,
             featureName: '',
             assignee: '',
             startDate: '',
@@ -346,7 +348,12 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     updateRow: (id, patch) => {
-        set({ rows: get().rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+        set({
+            rows: get().rows.map((r) => {
+                if (r.id !== id) return r;
+                return normalizeWbsDevRows([{ ...r, ...patch }])[0];
+            }),
+        });
         get().scheduleSave();
     },
 

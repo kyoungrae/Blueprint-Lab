@@ -95,3 +95,17 @@ export const WBS_DEBUGING_CATEGORY = 'Debuging';
 export function isWbsDebugingCategoryRow(row: Pick<WbsDevRow, 'category' | 'isDebugging'>): boolean {
     return row.category === WBS_DEBUGING_CATEGORY || !!row.isDebugging;
 }
+
+/** 엑셀·레거시 데이터 호환 — Debuging 행이면 isDebugging 플래그 동기화 */
+export function normalizeWbsDevRowDebugging(row: WbsDevRow): WbsDevRow {
+    if (isWbsDebugingCategoryRow(row)) {
+        return row.category === WBS_DEBUGING_CATEGORY && row.isDebugging
+            ? row
+            : { ...row, category: WBS_DEBUGING_CATEGORY, isDebugging: true };
+    }
+    return row.isDebugging ? { ...row, isDebugging: false } : row;
+}
+
+export function normalizeWbsDevRows(rows: WbsDevRow[]): WbsDevRow[] {
+    return rows.map(normalizeWbsDevRowDebugging);
+}

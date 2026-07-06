@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, ChevronRight, ChevronDown, Trash2, Plus, CheckCircle2 } from 'lucide-react';
 import { useWbsStore } from '../../store/wbsStore';
 import type { WbsMenuNode } from '../../types/wbs';
+import { isWbsDebugingCategoryRow } from '../../types/wbs';
 
 const ALL_ARTIFACT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html'];
 
@@ -106,7 +107,7 @@ const WbsAdminModal: React.FC<WbsAdminModalProps> = ({ open, onClose }) => {
         const isSelected  = selected.has(node.id);
         const isCollapsed = collapsed.has(node.id);
         const hasChildren = node.children.length > 0;
-        const rowCount    = rows.filter((r) => r.menuId === node.id && !r.isDebugging).length;
+        const rowCount    = rows.filter((r) => r.menuId === node.id && !isWbsDebugingCategoryRow(r)).length;
 
         return (
             <div key={node.id}>

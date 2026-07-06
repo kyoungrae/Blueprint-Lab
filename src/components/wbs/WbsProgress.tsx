@@ -3,7 +3,7 @@ import WheelDatePicker from './WheelDatePicker';
 import { createPortal } from 'react-dom';
 import { ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Lock, LockOpen, CalendarDays, AlertTriangle, X, Plus, Trash2 } from 'lucide-react';
 import { useWbsStore, calcMenuProgress, calcOverallProgress } from '../../store/wbsStore';
-import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, type WbsStatus, type WbsMenuNode } from '../../types/wbs';
+import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, type WbsStatus, type WbsMenuNode, isWbsDebugingCategoryRow } from '../../types/wbs';
 import { ASSIGNEE_PALETTE } from './WbsMenuTree';
 import { useAuthStore } from '../../store/authStore';
 
@@ -401,7 +401,7 @@ const WbsProgress: React.FC = () => {
                                     {(function renderNodes(nodes: TreeNode[]): React.ReactNode {
                                         return nodes.map((node) => {
                                             const progress = calcMenuProgress(visibleMenus, visibleRows, node.id);
-                                            const count = visibleRows.filter((r) => r.menuId === node.id && !r.isDebugging).length;
+                                            const count = visibleRows.filter((r) => r.menuId === node.id && !isWbsDebugingCategoryRow(r)).length;
                                             const hasChildren = node.children.length > 0;
                                             const isCollapsed = collapsed.has(node.id);
                                             const isLeaf = !hasChildren;

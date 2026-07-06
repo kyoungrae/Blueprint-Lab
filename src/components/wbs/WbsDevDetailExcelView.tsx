@@ -17,6 +17,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
+import { isWbsDebugingCategoryRow } from '../../types/wbs';
 
 const cellInput = 'w-full bg-transparent px-2 py-1.5 text-[11px] outline-none focus:bg-emerald-50/50 rounded';
 
@@ -76,7 +77,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
         const map = new Map<string, boolean>();
         for (const menu of menus) {
             const menuRows = rows.filter((r) => r.menuId === menu.id);
-            const normalRows = menuRows.filter((r) => !r.isDebugging);
+            const normalRows = menuRows.filter((r) => !isWbsDebugingCategoryRow(r));
             map.set(
                 menu.id,
                 normalRows.length > 0 && normalRows.every((r) => r.progress === 100 && r.status === 'DONE'),
@@ -153,8 +154,8 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-20">담당자</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800">시작일</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800">종료일</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[100px] w-[100px]">상태</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[72px] w-[72px] bg-emerald-800">진행율(%)</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-left text-[10px] font-black min-w-[100px] w-[100px]">상태</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-left text-[10px] font-black min-w-[88px] w-[88px] bg-emerald-800">진행율(%)</th>
                             <th className="border border-slate-600 w-8" />
                         </tr>
                         <tr className="bg-slate-100 border-b-2 border-slate-300">
@@ -162,7 +163,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                 전체 ({totals.done}/{totals.count} 완료)
                             </td>
                             <td colSpan={2} className="border border-slate-200" />
-                            <td className="border border-slate-200 px-2 py-1.5 text-center font-black text-[11px] text-emerald-700">
+                            <td className="border border-slate-200 px-2 py-1.5 text-left font-black text-[11px] text-emerald-700">
                                 {totals.avg}%
                             </td>
                             <td className="border border-slate-200" />
@@ -182,7 +183,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                     lastMenuId = r.menuId;
                                 }
                                 const palette = WBS_GROUP_ROW_BG[groupColorIdx];
-                                const isDbg = !!r.isDebugging;
+                                const isDbg = isWbsDebugingCategoryRow(r);
                                 const dbgLocked = isDbg && !debugUnlockedByMenu.get(r.menuId);
                                 const rowBg = isDbg ? palette.debug : palette.base;
                                 const parts = menuPathParts(menus, r.menuId);
@@ -255,16 +256,16 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                                 menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                             />
                                         </td>
-                                        <td className="border border-gray-100 px-2 py-1.5 align-middle min-w-[100px] w-[100px] whitespace-nowrap">
+                                        <td className="border border-gray-100 px-2 py-1.5 align-middle min-w-[100px] w-[100px] text-left">
                                             {dbgLocked ? (
-                                                <span className="inline-flex items-center gap-1 justify-center w-full">
+                                                <span className="inline-flex items-center gap-1 justify-start">
                                                     <span className="pointer-events-none select-none shrink-0">
                                                         <StatusCell value={r.status} onChange={() => {}} />
                                                     </span>
                                                     <LockTooltip />
                                                 </span>
                                             ) : (
-                                                <div className="flex justify-center">
+                                                <div className="flex justify-start">
                                                     <StatusCell
                                                         value={r.status}
                                                         onChange={(status) => updateRow(r.id, status === 'DONE' ? { status, progress: 100 } : { status })}
@@ -272,10 +273,11 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="border border-gray-100 px-1 py-1.5 align-middle bg-emerald-50/30 min-w-[72px] w-[72px] text-center">
+                                        <td className="border border-gray-100 px-2 py-1.5 align-middle bg-emerald-50/30 min-w-[88px] w-[88px] text-left">
                                             {dbgLocked ? (
-                                                <div className="flex items-center justify-center gap-1 text-gray-400 text-[11px]">
-                                                    <span className="tabular-nums">{r.progress}</span>%
+                                                <div className="flex items-center justify-start gap-1 text-gray-400 text-[11px] whitespace-nowrap">
+                                                    <span className="tabular-nums w-7 text-left">{r.progress}</span>
+                                                    <span>%</span>
                                                     <LockTooltip />
                                                 </div>
                                             ) : (
@@ -284,6 +286,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                                     onChange={(v) => updateRow(r.id, { progress: v })}
                                                     variant="ghost"
                                                     accentColor="#10b981"
+                                                    className="text-left"
                                                 />
                                             )}
                                         </td>

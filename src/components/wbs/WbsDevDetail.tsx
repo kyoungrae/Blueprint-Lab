@@ -8,7 +8,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
-import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, WBS_DEFAULT_CATEGORIES } from '../../types/wbs';
+import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, WBS_DEFAULT_CATEGORIES, isWbsDebugingCategoryRow } from '../../types/wbs';
 import type { WbsStatus } from '../../types/wbs';
 import WbsMenuTree, { ASSIGNEE_PALETTE } from './WbsMenuTree';
 import WbsDevDetailFilterBar from './WbsDevDetailFilterBar';
@@ -445,11 +445,11 @@ const WbsDevDetail: React.FC<{
     // Debugging 행은 항상 맨 아래
     const menuRows = rows
         .filter((r) => r.menuId === selectedMenuId)
-        .sort((a, b) => (a.isDebugging ? 1 : 0) - (b.isDebugging ? 1 : 0));
+        .sort((a, b) => (isWbsDebugingCategoryRow(a) ? 1 : 0) - (isWbsDebugingCategoryRow(b) ? 1 : 0));
 
     /** 일괄 적용 대상 — Debugging 행 제외 */
     const bulkTargetRows = useMemo(
-        () => menuRows.filter((r) => !r.isDebugging),
+        () => menuRows.filter((r) => !isWbsDebugingCategoryRow(r)),
         [menuRows],
     );
 
@@ -583,7 +583,7 @@ const WbsDevDetail: React.FC<{
     // Debugging 행의 상태/진행율 잠금 여부:
     // 일반 행(isDebugging 아닌) 모두 progress=100 && status=DONE 이면 해제
     const debugUnlocked = useMemo(() => {
-        const normalRows = menuRows.filter((r) => !r.isDebugging);
+        const normalRows = menuRows.filter((r) => !isWbsDebugingCategoryRow(r));
         return normalRows.length > 0 && normalRows.every((r) => r.progress === 100 && r.status === 'DONE');
     }, [menuRows]);
 
@@ -771,7 +771,7 @@ const WbsDevDetail: React.FC<{
                                         </tr>
                                     ) : (
                                         menuRows.map((r) => {
-                                            const isDbg = !!r.isDebugging;
+                                            const isDbg = isWbsDebugingCategoryRow(r);
                                             const dbgLocked = isDbg && !debugUnlocked;
                                             const rowEditEntry = editingMap.get(`row_${r.id}`);
                                             const isRowBeingEdited = !!rowEditEntry && rowEditEntry.userId !== currentUserId;
@@ -875,7 +875,7 @@ const WbsDevDetail: React.FC<{
                                                             {rowEditEntry!.userName} <span className="opacity-80">수정중</span>
                                                         </span>
                                                     ) : (
-                                                        (!isDbg || menuRows.filter((row) => !row.isDebugging).length === 0) && (
+                                                        (!isDbg || menuRows.filter((row) => !isWbsDebugingCategoryRow(row)).length === 0) && (
                                                             <button type="button" onClick={() => { if (confirmDeleteWbsRow(r)) deleteRow(r.id); }} className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded" title="행 삭제">
                                                                 <Trash2 size={14} />
                                                             </button>
