@@ -62,3 +62,11 @@ export const WBS_GROUP_ROW_BG = [
     { base: 'bg-blue-50/80', debug: 'bg-blue-100/70' },
     { base: 'bg-gray-50/80', debug: 'bg-gray-100/70' },
 ] as const;
+
+/** 개발 상세 행 삭제 전 확인 */
+export function confirmDeleteWbsRow(row: WbsDevRow): boolean {
+    const label = row.featureName?.trim()
+        ? `[${row.category}] ${row.featureName}`
+        : (row.category || '이');
+    return window.confirm(`"${label}" 행을 삭제하시겠습니까?`);
+}

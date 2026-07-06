@@ -7,6 +7,7 @@ import {
     sortWbsDevRows,
     wbsPathDepth,
     WBS_GROUP_ROW_BG,
+    confirmDeleteWbsRow,
 } from './wbsDevRowUtils';
 import { getAllAssignees, getFilteredMenuIds } from './wbsDevFilterUtils';
 import WbsDevDetailFilterBar from './WbsDevDetailFilterBar';
@@ -298,7 +299,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                                 !isDbg && (
                                                     <button
                                                         type="button"
-                                                        onClick={() => deleteRow(r.id)}
+                                                        onClick={() => { if (confirmDeleteWbsRow(r)) deleteRow(r.id); }}
                                                         className="p-1 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100"
                                                         title="행 삭제"
                                                     >
