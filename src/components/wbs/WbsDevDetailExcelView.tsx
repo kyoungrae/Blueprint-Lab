@@ -8,6 +8,8 @@ import {
     wbsPathDepth,
     WBS_GROUP_ROW_BG,
 } from './wbsDevRowUtils';
+import { getAllAssignees, getFilteredMenuIds } from './wbsDevFilterUtils';
+import WbsDevDetailFilterBar from './WbsDevDetailFilterBar';
 import { StatusCell, CategoryCell, AssigneeCell, LockTooltip } from './WbsDevDetail';
 import { useWbsStore } from '../../store/wbsStore';
 import { useProjectStore } from '../../store/projectStore';
@@ -17,7 +19,21 @@ import { useAuthStore } from '../../store/authStore';
 
 const cellInput = 'w-full bg-transparent px-2 py-1.5 text-[11px] outline-none focus:bg-emerald-50/50 rounded';
 
-const WbsDevDetailExcelView: React.FC = () => {
+interface WbsDevDetailExcelViewProps {
+    menuSearch: string;
+    onMenuSearchChange: (value: string) => void;
+    activeAssignees: Set<string>;
+    onToggleAssignee: (name: string) => void;
+    onClearAssignees: () => void;
+}
+
+const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
+    menuSearch,
+    onMenuSearchChange,
+    activeAssignees,
+    onToggleAssignee,
+    onClearAssignees,
+}) => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
     const updateRow = useWbsStore((s) => s.updateRow);
@@ -36,7 +52,23 @@ const WbsDevDetailExcelView: React.FC = () => {
     }, [projects, currentProjectId]);
 
     const menuCodeById = useMemo(() => new Map(menus.map((m) => [m.id, m.menuCode])), [menus]);
-    const sortedRows = useMemo(() => sortWbsDevRows(menus, rows), [menus, rows]);
+    const allAssignees = useMemo(() => getAllAssignees(rows), [rows]);
+    const assigneeColorIdx = useMemo(() => {
+        const map = new Map<string, number>();
+        allAssignees.forEach((a, i) => map.set(a, i));
+        return map;
+    }, [allAssignees]);
+
+    const filteredMenuIds = useMemo(
+        () => getFilteredMenuIds(menus, rows, menuSearch, activeAssignees),
+        [menus, rows, menuSearch, activeAssignees],
+    );
+
+    const sortedRows = useMemo(() => {
+        const base = sortWbsDevRows(menus, rows);
+        if (filteredMenuIds === null) return base;
+        return base.filter((r) => filteredMenuIds.has(r.menuId));
+    }, [menus, rows, filteredMenuIds]);
     const pathDepth = useMemo(() => wbsPathDepth(menus, rows), [menus, rows]);
 
     const debugUnlockedByMenu = useMemo(() => {
@@ -73,53 +105,72 @@ const WbsDevDetailExcelView: React.FC = () => {
         return { count: sortedRows.length, done, avg };
     }, [sortedRows]);
 
+    const hasActiveFilter = filteredMenuIds !== null;
+    const isEmptyFilter = hasActiveFilter && filteredMenuIds!.size === 0;
+
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-white shrink-0">
-                <div>
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-white shrink-0 gap-4">
+                <div className="shrink-0">
                     <h2 className="text-sm font-black text-gray-900">개발 상세 · 엑셀형태</h2>
                     <p className="text-[11px] text-gray-400">
                         엑셀 다운로드 개발상세 시트와 동일한 열 구조 · {totals.count}행
+                        {hasActiveFilter ? ' (필터 적용)' : ''}
                     </p>
+                </div>
+                <div className="flex-1 min-w-0 max-w-2xl">
+                    <WbsDevDetailFilterBar
+                        allAssignees={allAssignees}
+                        assigneeColorIdx={assigneeColorIdx}
+                        activeAssignees={activeAssignees}
+                        onToggleAssignee={onToggleAssignee}
+                        onClearAssignees={onClearAssignees}
+                        menuSearch={menuSearch}
+                        onMenuSearchChange={onMenuSearchChange}
+                        layout="inline"
+                    />
                 </div>
             </div>
 
             <div className="flex-1 overflow-auto">
-                <table className="w-full text-xs border-collapse" style={{ minWidth: 1200 + pathDepth * 120 }}>
+                {isEmptyFilter ? (
+                    <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                        검색 결과가 없습니다.
+                    </div>
+                ) : (
+                <table className="w-full text-xs border-collapse" style={{ minWidth: 1180 + pathDepth * 120 }}>
                     <thead className="sticky top-0 z-20">
                         <tr className="bg-slate-700 text-white">
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-28">ID(수정금지)</th>
                             {Array.from({ length: pathDepth }, (_, i) => (
-                                <th key={i} className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[100px]">
+                                <th key={i} className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[92px]">
                                     메뉴경로
                                 </th>
                             ))}
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-24">메뉴코드</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-28">구분(산출물)</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[160px]">기능명</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-24">담당자</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-24 bg-indigo-800">시작일</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-24 bg-indigo-800">종료일</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-20">상태</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-20 bg-emerald-800">진행율(%)</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[120px]">비고</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-20">메뉴코드</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-24">구분(산출물)</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[156px]">기능명</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-20">담당자</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800">시작일</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800">종료일</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[100px] w-[100px]">상태</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[72px] w-[72px] bg-emerald-800">진행율(%)</th>
                             <th className="border border-slate-600 w-8" />
                         </tr>
                         <tr className="bg-slate-100 border-b-2 border-slate-300">
-                            <td colSpan={pathDepth + 6} className="border border-slate-200 px-2 py-1.5 font-black text-slate-700 text-[11px]">
+                            <td colSpan={pathDepth + 5} className="border border-slate-200 px-2 py-1.5 font-black text-slate-700 text-[11px]">
                                 전체 ({totals.done}/{totals.count} 완료)
                             </td>
                             <td colSpan={2} className="border border-slate-200" />
                             <td className="border border-slate-200 px-2 py-1.5 text-center font-black text-[11px] text-emerald-700">
                                 {totals.avg}%
                             </td>
-                            <td colSpan={2} className="border border-slate-200" />
+                            <td className="border border-slate-200" />
                         </tr>
                     </thead>
                     <tbody>
                         {sortedRows.length === 0 ? (
                             <tr>
-                                <td colSpan={pathDepth + 11} className="text-center text-gray-400 py-16 text-sm">
+                                <td colSpan={pathDepth + 9} className="text-center text-gray-400 py-16 text-sm">
                                     개발 상세 데이터가 없습니다.
                                 </td>
                             </tr>
@@ -145,11 +196,6 @@ const WbsDevDetailExcelView: React.FC = () => {
                                         onFocus={() => { if (!isRowBeingEdited) emitFocus(`row_${r.id}`); }}
                                         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(`row_${r.id}`); }}
                                     >
-                                        <td className="border border-gray-100 px-2 py-1.5 align-middle">
-                                            <span className="text-[9px] font-mono text-slate-400 truncate block max-w-[100px]" title={r.id}>
-                                                {r.id}
-                                            </span>
-                                        </td>
                                         {Array.from({ length: pathDepth }, (_, i) => (
                                             <td key={i} className="border border-gray-100 px-2 py-1.5 align-middle text-[11px] text-gray-700">
                                                 {parts[i] ?? ''}
@@ -186,44 +232,46 @@ const WbsDevDetailExcelView: React.FC = () => {
                                                 inputClass={cellInput}
                                             />
                                         </td>
-                                        <td className="border border-gray-100 px-2 py-1.5 align-middle text-center bg-indigo-50/30">
+                                        <td className="border border-gray-100 px-1.5 py-1.5 align-middle text-center bg-indigo-50/30 min-w-[132px] whitespace-nowrap">
                                             <WheelDatePicker
                                                 value={r.startDate}
                                                 onChange={(v) => updateRow(r.id, { startDate: v })}
                                                 rangeStart={r.startDate}
                                                 rangeEnd={r.endDate}
                                                 onRangeChange={(start, end) => updateRow(r.id, { startDate: start, endDate: end })}
-                                                className="w-full"
+                                                className="w-full min-w-[118px]"
                                                 menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                             />
                                         </td>
-                                        <td className="border border-gray-100 px-2 py-1.5 align-middle text-center bg-indigo-50/30">
+                                        <td className="border border-gray-100 px-1.5 py-1.5 align-middle text-center bg-indigo-50/30 min-w-[132px] whitespace-nowrap">
                                             <WheelDatePicker
                                                 value={r.endDate}
                                                 onChange={(v) => updateRow(r.id, { endDate: v })}
                                                 rangeStart={r.startDate}
                                                 rangeEnd={r.endDate}
                                                 onRangeChange={(start, end) => updateRow(r.id, { startDate: start, endDate: end })}
-                                                className="w-full"
+                                                className="w-full min-w-[118px]"
                                                 menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                             />
                                         </td>
-                                        <td className="border border-gray-100 px-2 py-1.5 align-middle">
+                                        <td className="border border-gray-100 px-2 py-1.5 align-middle min-w-[100px] w-[100px] whitespace-nowrap">
                                             {dbgLocked ? (
-                                                <span className="flex items-center gap-1 justify-center">
-                                                    <span className="pointer-events-none select-none">
+                                                <span className="inline-flex items-center gap-1 justify-center w-full">
+                                                    <span className="pointer-events-none select-none shrink-0">
                                                         <StatusCell value={r.status} onChange={() => {}} />
                                                     </span>
                                                     <LockTooltip />
                                                 </span>
                                             ) : (
-                                                <StatusCell
-                                                    value={r.status}
-                                                    onChange={(status) => updateRow(r.id, status === 'DONE' ? { status, progress: 100 } : { status })}
-                                                />
+                                                <div className="flex justify-center">
+                                                    <StatusCell
+                                                        value={r.status}
+                                                        onChange={(status) => updateRow(r.id, status === 'DONE' ? { status, progress: 100 } : { status })}
+                                                    />
+                                                </div>
                                             )}
                                         </td>
-                                        <td className="border border-gray-100 px-2 py-1.5 align-middle bg-emerald-50/30">
+                                        <td className="border border-gray-100 px-1 py-1.5 align-middle bg-emerald-50/30 min-w-[72px] w-[72px] text-center">
                                             {dbgLocked ? (
                                                 <div className="flex items-center justify-center gap-1 text-gray-400 text-[11px]">
                                                     <span className="tabular-nums">{r.progress}</span>%
@@ -237,14 +285,6 @@ const WbsDevDetailExcelView: React.FC = () => {
                                                     accentColor="#10b981"
                                                 />
                                             )}
-                                        </td>
-                                        <td className="border border-gray-100 px-2 py-1.5 align-middle">
-                                            <input
-                                                value={r.note ?? ''}
-                                                onChange={(e) => updateRow(r.id, { note: e.target.value })}
-                                                placeholder="비고"
-                                                className={cellInput}
-                                            />
                                         </td>
                                         <td className="border border-gray-100 px-2 py-1.5 align-middle text-center">
                                             {isRowBeingEdited ? (
@@ -273,6 +313,7 @@ const WbsDevDetailExcelView: React.FC = () => {
                         )}
                     </tbody>
                 </table>
+                )}
             </div>
         </div>
     );

@@ -11,6 +11,8 @@ import { useAuthStore } from '../../store/authStore';
 import { WBS_STATUS_ORDER, WBS_STATUS_LABEL, WBS_DEFAULT_CATEGORIES } from '../../types/wbs';
 import type { WbsStatus } from '../../types/wbs';
 import WbsMenuTree, { ASSIGNEE_PALETTE } from './WbsMenuTree';
+import WbsDevDetailFilterBar from './WbsDevDetailFilterBar';
+import { getAllAssignees } from './wbsDevFilterUtils';
 
 /** '+ ALL' 클릭 시 자동 추가되는 산출물 구분 행 */
 const ALL_ARTIFACT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html'];
@@ -95,7 +97,7 @@ export const StatusCell: React.FC<{ value: WbsStatus; onChange: (v: WbsStatus) =
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs font-bold transition-all hover:opacity-80 ${style.badge}`}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs font-bold whitespace-nowrap transition-all hover:opacity-80 ${style.badge}`}
             >
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`} />
                 {WBS_STATUS_LABEL[value]}
@@ -396,7 +398,19 @@ const BULK_ACTIONS: { field: BulkField; label: string; icon: React.ReactNode }[]
     { field: 'progress',  label: '진행률 일괄', icon: <Percent size={13} /> },
 ];
 
-const WbsDevDetail: React.FC = () => {
+const WbsDevDetail: React.FC<{
+    menuSearch?: string;
+    onMenuSearchChange?: (value: string) => void;
+    activeAssignees?: Set<string>;
+    onToggleAssignee?: (name: string) => void;
+    onClearAssignees?: () => void;
+}> = ({
+    menuSearch: menuSearchProp,
+    onMenuSearchChange,
+    activeAssignees: activeAssigneesProp,
+    onToggleAssignee: onToggleAssigneeProp,
+    onClearAssignees: onClearAssigneesProp,
+}) => {
     const menus     = useWbsStore((s) => s.menus);
     const rows      = useWbsStore((s) => s.rows);
     const addRow    = useWbsStore((s) => s.addRow);
@@ -440,17 +454,7 @@ const WbsDevDetail: React.FC = () => {
 
     // ── 담당자 필터 ──
     /** 전체 고유 담당자 (등장 순) */
-    const allAssignees = useMemo(() => {
-        const seen = new Set<string>();
-        const result: string[] = [];
-        for (const r of rows) {
-            if (r.assignee && !seen.has(r.assignee)) {
-                seen.add(r.assignee);
-                result.push(r.assignee);
-            }
-        }
-        return result;
-    }, [rows]);
+    const allAssignees = useMemo(() => getAllAssignees(rows), [rows]);
 
     /** 담당자 → 팔레트 인덱스 */
     const assigneeColorIdx = useMemo(() => {
@@ -459,24 +463,32 @@ const WbsDevDetail: React.FC = () => {
         return map;
     }, [allAssignees]);
 
-    const [activeAssignees, setActiveAssignees] = useState<Set<string>>(new Set());
+    const [activeAssigneesLocal, setActiveAssigneesLocal] = useState<Set<string>>(new Set());
+    const activeAssignees = activeAssigneesProp ?? activeAssigneesLocal;
     useEffect(() => {
+        if (activeAssigneesProp) return;
         const validAssignees = new Set(allAssignees);
-        setActiveAssignees((prev) => {
+        setActiveAssigneesLocal((prev) => {
             if (prev.size === 0) return prev;
             const next = new Set(Array.from(prev).filter((name) => validAssignees.has(name)));
             return next.size === prev.size ? prev : next;
         });
-    }, [allAssignees]);
+    }, [allAssignees, activeAssigneesProp]);
 
-    const toggleAssignee = (name: string) => {
-        setActiveAssignees((prev) => {
+    const toggleAssignee = onToggleAssigneeProp ?? ((name: string) => {
+        setActiveAssigneesLocal((prev) => {
             const next = new Set(prev);
             if (next.has(name)) next.delete(name);
             else next.add(name);
             return next;
         });
-    };
+    });
+
+    const clearAssignees = onClearAssigneesProp ?? (() => setActiveAssigneesLocal(new Set()));
+
+    const [menuSearchLocal, setMenuSearchLocal] = useState('');
+    const menuSearch = menuSearchProp ?? menuSearchLocal;
+    const setMenuSearch = onMenuSearchChange ?? setMenuSearchLocal;
 
     // ── 좌/우 분할 리사이저 ──
     const [leftWidth, setLeftWidth]   = useState(300);
@@ -629,45 +641,16 @@ const WbsDevDetail: React.FC = () => {
         <div ref={containerRef} className="flex h-full min-h-0">
             {/* 좌: 메뉴 트리 + 담당자 필터 */}
             <div className="shrink-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden" style={{ width: leftWidth + 100 }}>
-                {/* 담당자 필터 토글 */}
-                {allAssignees.length > 0 && (
-                    <div className="px-3 pt-3 pb-2 border-b border-gray-100">
-                        <nav className="flex flex-wrap items-center gap-1 bg-gray-100 rounded-xl p-1">
-                            <button
-                                type="button"
-                                onClick={() => setActiveAssignees(new Set())}
-                                className={`flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                                    activeAssignees.size === 0
-                                        ? 'bg-white text-gray-800 shadow-sm'
-                                        : 'text-gray-500 hover:text-gray-800'
-                                }`}
-                            >
-                                ALL
-                            </button>
-                            {allAssignees.map((a) => {
-                                const idx = (assigneeColorIdx.get(a) ?? 0) % ASSIGNEE_PALETTE.length;
-                                const dotColor = ASSIGNEE_PALETTE[idx].active.split(' ')[0]; // bg-xxx-500
-                                const isActive = activeAssignees.has(a);
-                                return (
-                                    <button
-                                        key={a}
-                                        type="button"
-                                        onClick={() => toggleAssignee(a)}
-                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                                            isActive
-                                                ? 'bg-white text-gray-800 shadow-sm'
-                                                : 'text-gray-500 hover:text-gray-800'
-                                        }`}
-                                    >
-                                        <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-                                        {a}
-                                    </button>
-                                );
-                            })}
-                        </nav>
-                    </div>
-                )}
-                <div className="flex-1 min-h-0 p-3 overflow-hidden">
+                <WbsDevDetailFilterBar
+                    allAssignees={allAssignees}
+                    assigneeColorIdx={assigneeColorIdx}
+                    activeAssignees={activeAssignees}
+                    onToggleAssignee={toggleAssignee}
+                    onClearAssignees={clearAssignees}
+                    menuSearch={menuSearch}
+                    onMenuSearchChange={setMenuSearch}
+                />
+                <div className="flex-1 min-h-0 p-3 pt-0 overflow-hidden">
                     <WbsMenuTree
                         selectedId={selectedMenuId}
                         onSelect={setSelectedMenuId}
@@ -675,6 +658,9 @@ const WbsDevDetail: React.FC = () => {
                         showProgress
                         showAssignee
                         showCollapseButtons
+                        showSearch={false}
+                        menuSearch={menuSearch}
+                        onMenuSearchChange={setMenuSearch}
                         activeAssignees={activeAssignees}
                         assigneeColorIdx={assigneeColorIdx}
                     />

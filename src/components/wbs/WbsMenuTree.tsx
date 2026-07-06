@@ -5,6 +5,7 @@ import { useWbsEditingStore } from '../../store/wbsEditingStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
 import type { WbsMenuNode } from '../../types/wbs';
+import { buildSearchVisibleIds, buildRowsByMenu, normalizeSearch } from './wbsDevFilterUtils';
 
 interface TreeNode extends WbsMenuNode {
     children: TreeNode[];
@@ -29,56 +30,6 @@ function buildTree(menus: WbsMenuNode[]): TreeNode[] {
 
 function flattenTree(nodes: TreeNode[]): TreeNode[] {
     return nodes.flatMap((n) => [n, ...flattenTree(n.children)]);
-}
-
-function normalizeSearch(q: string) {
-    return q.trim().toLowerCase();
-}
-
-function menuMatchesSearch(m: WbsMenuNode, q: string): boolean {
-    if (!q) return true;
-    const needle = normalizeSearch(q);
-    return (
-        m.name.toLowerCase().includes(needle) ||
-        m.menuCode.toLowerCase().includes(needle) ||
-        (m.programId ?? '').toLowerCase().includes(needle)
-    );
-}
-
-/** 검색어가 있을 때 표시할 메뉴 ID 집합 (매칭 + 상위·하위 포함). null이면 전체 표시 */
-function buildSearchVisibleIds(menus: WbsMenuNode[], query: string): Set<string> | null {
-    const q = normalizeSearch(query);
-    if (!q) return null;
-
-    const matching = menus.filter((m) => menuMatchesSearch(m, q));
-    if (matching.length === 0) return new Set();
-
-    const byId = new Map(menus.map((m) => [m.id, m]));
-    const visible = new Set<string>();
-
-    const addAncestors = (id: string) => {
-        let cur = byId.get(id);
-        while (cur) {
-            visible.add(cur.id);
-            cur = cur.parentId ? byId.get(cur.parentId) : undefined;
-        }
-    };
-
-    const addDescendants = (parentId: string) => {
-        for (const m of menus) {
-            if (m.parentId === parentId) {
-                visible.add(m.id);
-                addDescendants(m.id);
-            }
-        }
-    };
-
-    for (const m of matching) {
-        addAncestors(m.id);
-        addDescendants(m.id);
-    }
-
-    return visible;
 }
 
 /** 담당자 색상 팔레트 */
@@ -125,12 +76,14 @@ interface WbsMenuTreeProps {
     showCollapseButtons?: boolean;
     /** 메뉴명·PID·메뉴코드 검색 */
     showSearch?: boolean;
+    menuSearch?: string;
+    onMenuSearchChange?: (value: string) => void;
 }
 
 const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
     selectedId, onSelect, editable = true, showProgress = false,
     showAssignee = false, activeAssignees, assigneeColorIdx, showCollapseButtons = false,
-    showSearch = true,
+    showSearch = true, menuSearch: menuSearchProp, onMenuSearchChange,
 }) => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
@@ -140,16 +93,7 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
     const currentUserId = useAuthStore((s) => s.user?.id);
 
     /** menuId → 담당자[] (중복 제거) */
-    const rowsByMenu = useMemo(() => {
-        const map = new Map<string, string[]>();
-        for (const r of rows) {
-            if (!r.assignee) continue;
-            if (!map.has(r.menuId)) map.set(r.menuId, []);
-            const arr = map.get(r.menuId)!;
-            if (!arr.includes(r.assignee)) arr.push(r.assignee);
-        }
-        return map;
-    }, [rows]);
+    const rowsByMenu = useMemo(() => buildRowsByMenu(rows), [rows]);
     const addMenu = useWbsStore((s) => s.addMenu);
     const updateMenu = useWbsStore((s) => s.updateMenu);
     const deleteMenu = useWbsStore((s) => s.deleteMenu);
@@ -167,7 +111,9 @@ const WbsMenuTree: React.FC<WbsMenuTreeProps> = ({
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
     // 드롭 위치: 대상 위(형제 앞) / 가운데(하위로) / 아래(형제 뒤)
     const [dropPos, setDropPos] = useState<'before' | 'inside' | 'after' | null>(null);
-    const [menuSearch, setMenuSearch] = useState('');
+    const [menuSearchLocal, setMenuSearchLocal] = useState('');
+    const menuSearch = menuSearchProp ?? menuSearchLocal;
+    const setMenuSearch = onMenuSearchChange ?? setMenuSearchLocal;
     const editContainerRef = useRef<HTMLDivElement>(null);
 
     const searchVisibleIds = useMemo(

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties, Hash, Copy, Check, CalendarDays } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
@@ -16,6 +16,7 @@ import WbsAdminModal from './WbsAdminModal';
 import WbsScheduleImportModal from './WbsScheduleImportModal';
 import WbsScheduleTable from './WbsScheduleTable';
 import { downloadWbsExcel } from './wbsExcel';
+import { getAllAssignees } from './wbsDevFilterUtils';
 import { downloadWbsJson, parseWbsJson } from './wbsIO';
 import { downloadScheduleExcel, downloadScheduleJson } from './wbsScheduleIO';
 import { copyToClipboard } from '../../utils/clipboard';
@@ -56,6 +57,30 @@ const WbsCanvas: React.FC = () => {
     const [detailPickerPos, setDetailPickerPos] = useState({ top: 0, left: 0 });
     const detailTabRef = useRef<HTMLButtonElement>(null);
     const detailPickerRef = useRef<HTMLDivElement>(null);
+
+    const allAssignees = useMemo(() => getAllAssignees(rows), [rows]);
+    const [menuSearch, setMenuSearch] = useState('');
+    const [activeAssignees, setActiveAssignees] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        const validAssignees = new Set(allAssignees);
+        setActiveAssignees((prev) => {
+            if (prev.size === 0) return prev;
+            const next = new Set(Array.from(prev).filter((name) => validAssignees.has(name)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [allAssignees]);
+
+    const toggleAssignee = useCallback((name: string) => {
+        setActiveAssignees((prev) => {
+            const next = new Set(prev);
+            if (next.has(name)) next.delete(name);
+            else next.add(name);
+            return next;
+        });
+    }, []);
+
+    const clearAssignees = useCallback(() => setActiveAssignees(new Set()), []);
     const [uploadKind, setUploadKind] = useState<'json' | 'excel' | null>(null);
     // 일정 탭 전용 업로드 모달
     const [scheduleUploadKind, setScheduleUploadKind] = useState<'excel' | 'json' | null>(null);
@@ -353,8 +378,24 @@ const WbsCanvas: React.FC = () => {
                         </div>
                     </div>
                 )}
-                {tab === 'detail' && detailViewMode === 'hierarchy' && <WbsDevDetail />}
-                {tab === 'detail' && detailViewMode === 'excel' && <WbsDevDetailExcelView />}
+                {tab === 'detail' && detailViewMode === 'hierarchy' && (
+                    <WbsDevDetail
+                        menuSearch={menuSearch}
+                        onMenuSearchChange={setMenuSearch}
+                        activeAssignees={activeAssignees}
+                        onToggleAssignee={toggleAssignee}
+                        onClearAssignees={clearAssignees}
+                    />
+                )}
+                {tab === 'detail' && detailViewMode === 'excel' && (
+                    <WbsDevDetailExcelView
+                        menuSearch={menuSearch}
+                        onMenuSearchChange={setMenuSearch}
+                        activeAssignees={activeAssignees}
+                        onToggleAssignee={toggleAssignee}
+                        onClearAssignees={clearAssignees}
+                    />
+                )}
                 {tab === 'progress' && <WbsProgress />}
                 {tab === 'schedule' && isMaster && <WbsSchedule />}
                 {tab === 'schedule-table' && isMaster && <WbsScheduleTable />}
