@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';   // 업로드 파싱은 기존 xlsx 유지
 
 import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus } from '../../types/wbs';
 import { WBS_STATUS_LABEL, WBS_STATUS_ORDER } from '../../types/wbs';
+import { menuPathParts, menuDfsOrder, sortWbsDevRows, wbsPathDepth } from './wbsDevRowUtils';
 
 // ── xlsx-js-style 타입 헬퍼 ──────────────────────────
 type XStyle = {
@@ -31,19 +32,6 @@ function menuPath(menus: WbsMenuNode[], id: string): string {
         cur = cur.parentId ? byId.get(cur.parentId) : undefined;
     }
     return parts.join(' > ');
-}
-
-/** 메뉴의 상위→현재 이름 배열 (["MVIMS","등록","전자업무","신규등록 신청 내역"]) */
-function menuPathParts(menus: WbsMenuNode[], id: string): string[] {
-    const byId = new Map(menus.map((m) => [m.id, m]));
-    const parts: string[] = [];
-    let cur = byId.get(id);
-    let guard = 0;
-    while (cur && guard++ < 100) {
-        parts.unshift(cur.name);
-        cur = cur.parentId ? byId.get(cur.parentId) : undefined;
-    }
-    return parts;
 }
 
 /**
@@ -96,48 +84,13 @@ function buildMenuTreeSheet(menus: WbsMenuNode[]): { aoa: string[][]; merges: XL
     return { aoa, merges, maxDepth };
 }
 
-/** 산출물 구분 정렬 순서 */
-const CATEGORY_ORDER = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html', 'Debuging', '기능'];
-
-/** 메뉴 트리 전위 순서 id 배열 (DFS) — 메뉴별 행 정렬 기준 */
-function menuDfsOrder(menus: WbsMenuNode[]): Map<string, number> {
-    const byParent = new Map<string | null, WbsMenuNode[]>();
-    for (const m of menus) {
-        const key = m.parentId ?? null;
-        if (!byParent.has(key)) byParent.set(key, []);
-        byParent.get(key)!.push(m);
-    }
-    for (const list of byParent.values()) list.sort((a, b) => a.order - b.order);
-    const order = new Map<string, number>();
-    let idx = 0;
-    const dfs = (parentId: string | null) => {
-        for (const m of byParent.get(parentId) ?? []) {
-            order.set(m.id, idx++);
-            dfs(m.id);
-        }
-    };
-    dfs(null);
-    return order;
-}
-
 /** 현재 WBS 상태를 엑셀(.xlsx)로 다운로드 */
 export function downloadWbsExcel(data: WbsData, projectName: string): void {
     const { menus, rows } = data;
     const menuCodeById = new Map(menus.map((m) => [m.id, m.menuCode]));
     const menuOrder = menuDfsOrder(menus);
-
-    // ── 행 정렬: 메뉴 트리 순 → 산출물 구분 순 → 기능명 순 ──
-    const sortedRows = [...rows].sort((a, b) => {
-        const ma = menuOrder.get(a.menuId) ?? 999999;
-        const mb = menuOrder.get(b.menuId) ?? 999999;
-        if (ma !== mb) return ma - mb;
-        const ca = CATEGORY_ORDER.indexOf(a.category);
-        const cb = CATEGORY_ORDER.indexOf(b.category);
-        if (ca !== cb) return (ca < 0 ? 999 : ca) - (cb < 0 ? 999 : cb);
-        return a.featureName.localeCompare(b.featureName, 'ko');
-    });
-
-    const pathDepth = Math.max(1, ...sortedRows.map((r) => menuPathParts(menus, r.menuId).length));
+    const sortedRows = sortWbsDevRows(menus, rows);
+    const pathDepth = wbsPathDepth(menus, sortedRows);
 
     // ── 팔레트 (메뉴 그룹 색 — 2색 교대) ──
     const GROUP_PALETTES = [

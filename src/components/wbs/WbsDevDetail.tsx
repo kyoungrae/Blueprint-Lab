@@ -16,7 +16,7 @@ import WbsMenuTree, { ASSIGNEE_PALETTE } from './WbsMenuTree';
 const ALL_ARTIFACT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html'];
 
 /** 자물쇠 스마트 툴팁 */
-const LockTooltip: React.FC = () => {
+export const LockTooltip: React.FC = () => {
     const [visible, setVisible] = useState(false);
     const ref = useRef<HTMLSpanElement>(null);
     const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -75,7 +75,7 @@ const STATUS_STYLE: Record<WbsStatus, { badge: string; dot: string }> = {
 };
 
 /** 상태 뱃지 셀 — 클릭하면 드롭다운으로 변경 */
-const StatusCell: React.FC<{ value: WbsStatus; onChange: (v: WbsStatus) => void }> = ({ value, onChange }) => {
+export const StatusCell: React.FC<{ value: WbsStatus; onChange: (v: WbsStatus) => void }> = ({ value, onChange }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const style = STATUS_STYLE[value];
@@ -144,7 +144,7 @@ const PRESET_CATEGORIES = WBS_DEFAULT_CATEGORIES.filter((c) => c !== '직접입�
  * - 값이 있으면 컬러 뱃지로 표시, 클릭하면 편집 모드
  * - 편집 모드: 셀렉트 or 직접입력 텍스트
  */
-const CategoryCell: React.FC<{ value: string; onChange: (v: string) => void; inputClass: string }> = ({ value, onChange }) => {
+export const CategoryCell: React.FC<{ value: string; onChange: (v: string) => void; inputClass: string }> = ({ value, onChange }) => {
     const [editing, setEditing] = useState(!value);
     const [isCustom, setIsCustom] = useState(!PRESET_CATEGORIES.includes(value) && value !== '');
 
@@ -275,7 +275,7 @@ const BulkAssigneeInput: React.FC<{
 /**
  * 담당자 셀 — StatusCell과 동일한 절대 위치 드롭다운 패턴
  */
-const AssigneeCell: React.FC<{
+export const AssigneeCell: React.FC<{
     value: string;
     assigneeUserId?: string;
     onChange: (patch: { assignee: string; assigneeUserId?: string }) => void;

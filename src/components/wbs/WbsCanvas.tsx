@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/authStore';
 import type { WbsData, WbsDetailSchedule } from '../../types/wbs';
 import WbsMenuTree from './WbsMenuTree';
 import WbsDevDetail from './WbsDevDetail';
+import WbsDevDetailExcelView from './WbsDevDetailExcelView';
 import WbsProgress from './WbsProgress';
 import WbsSchedule from './WbsSchedule';
 import WbsUploadModal from './WbsUploadModal';
@@ -20,6 +21,7 @@ import { downloadScheduleExcel, downloadScheduleJson } from './wbsScheduleIO';
 import { copyToClipboard } from '../../utils/clipboard';
 
 type WbsTab = 'hierarchy' | 'detail' | 'progress' | 'schedule' | 'schedule-table';
+type DetailViewMode = 'hierarchy' | 'excel';
 
 const DEV_TABS: { key: WbsTab; label: string; icon: React.ReactNode }[] = [
     { key: 'hierarchy', label: '메뉴 구조도', icon: <Network size={15} /> },
@@ -49,6 +51,11 @@ const WbsCanvas: React.FC = () => {
 
     const project = projects.find((p) => p.id === currentProjectId);
     const [tab, setTab] = useState<WbsTab>('hierarchy');
+    const [detailViewMode, setDetailViewMode] = useState<DetailViewMode>('hierarchy');
+    const [showDetailPicker, setShowDetailPicker] = useState(false);
+    const [detailPickerPos, setDetailPickerPos] = useState({ top: 0, left: 0 });
+    const detailTabRef = useRef<HTMLButtonElement>(null);
+    const detailPickerRef = useRef<HTMLDivElement>(null);
     const [uploadKind, setUploadKind] = useState<'json' | 'excel' | null>(null);
     // 일정 탭 전용 업로드 모달
     const [scheduleUploadKind, setScheduleUploadKind] = useState<'excel' | 'json' | null>(null);
@@ -128,6 +135,33 @@ const WbsCanvas: React.FC = () => {
         setShowActions((v) => !v);
     };
 
+    const openDetailPicker = () => {
+        if (detailTabRef.current) {
+            const rect = detailTabRef.current.getBoundingClientRect();
+            setDetailPickerPos({ top: rect.bottom + 8, left: rect.left });
+        }
+        setTab('detail');
+        setShowDetailPicker((v) => !v);
+    };
+
+    const selectDetailView = (mode: DetailViewMode) => {
+        setDetailViewMode(mode);
+        setTab('detail');
+        setShowDetailPicker(false);
+    };
+
+    useEffect(() => {
+        if (!showDetailPicker) return;
+        const handler = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (detailPickerRef.current?.contains(t)) return;
+            if (detailTabRef.current?.contains(t)) return;
+            setShowDetailPicker(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showDetailPicker]);
+
     useEffect(() => {
         if (!showActions) return;
         const handler = (e: MouseEvent) => {
@@ -187,18 +221,42 @@ const WbsCanvas: React.FC = () => {
                     <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
                         <span className="text-[10px] font-bold text-gray-400 px-2 select-none">개발</span>
                         <div className="w-px h-4 bg-gray-300 mx-0.5" />
-                        {DEV_TABS.map((t) => (
-                            <button
-                                key={t.key}
-                                onClick={() => setTab(t.key)}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${
-                                    tab === t.key ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
-                                }`}
-                            >
-                                {t.icon}
-                                <span className="hidden sm:inline">{t.label}</span>
-                            </button>
-                        ))}
+                        {DEV_TABS.map((t) => {
+                            if (t.key === 'detail') {
+                                const isActive = tab === 'detail';
+                                return (
+                                    <button
+                                        key={t.key}
+                                        ref={detailTabRef}
+                                        onClick={openDetailPicker}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${
+                                            isActive ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                                        }`}
+                                        title={detailViewMode === 'excel' ? '엑셀형태 보기 중' : '하이라키 보기 중'}
+                                    >
+                                        {detailViewMode === 'excel' ? <TableProperties size={15} /> : t.icon}
+                                        <span className="hidden sm:inline">{t.label}</span>
+                                        {isActive && (
+                                            <span className="hidden md:inline text-[9px] font-bold text-emerald-500/80 ml-0.5">
+                                                {detailViewMode === 'excel' ? '엑셀' : '트리'}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            }
+                            return (
+                                <button
+                                    key={t.key}
+                                    onClick={() => { setTab(t.key); setShowDetailPicker(false); }}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${
+                                        tab === t.key ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                                    }`}
+                                >
+                                    {t.icon}
+                                    <span className="hidden sm:inline">{t.label}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                     {/* 일정 그룹 — MASTER 이상만 표시 */}
                     {isMaster && <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
@@ -295,11 +353,67 @@ const WbsCanvas: React.FC = () => {
                         </div>
                     </div>
                 )}
-                {tab === 'detail' && <WbsDevDetail />}
+                {tab === 'detail' && detailViewMode === 'hierarchy' && <WbsDevDetail />}
+                {tab === 'detail' && detailViewMode === 'excel' && <WbsDevDetailExcelView />}
                 {tab === 'progress' && <WbsProgress />}
                 {tab === 'schedule' && isMaster && <WbsSchedule />}
                 {tab === 'schedule-table' && isMaster && <WbsScheduleTable />}
             </main>
+
+            {/* 개발 상세 보기 방식 선택 — Portal */}
+            {showDetailPicker && createPortal(
+                <div
+                    ref={detailPickerRef}
+                    style={{ position: 'fixed', top: detailPickerPos.top, left: detailPickerPos.left, zIndex: 9999 }}
+                >
+                    <div className="bg-white/90 backdrop-blur-md border border-gray-100 rounded-2xl shadow-2xl p-2 flex flex-col gap-1 min-w-[200px]">
+                        <div className="flex items-center gap-1.5 px-2 pb-1.5 pt-0.5">
+                            <ListTree size={11} className="text-emerald-500" />
+                            <span className="text-[10px] font-black text-emerald-600 tracking-wide">개발 상세 보기</span>
+                        </div>
+                        <div className="h-px bg-gray-100 mx-1 mb-1" />
+                        {[
+                            {
+                                delay: '0ms',
+                                icon: <ListTree size={14} />,
+                                label: '하이라키',
+                                desc: '메뉴 트리 + 그리드',
+                                className: detailViewMode === 'hierarchy'
+                                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
+                                    : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50',
+                                onClick: () => selectDetailView('hierarchy'),
+                            },
+                            {
+                                delay: '55ms',
+                                icon: <TableProperties size={14} />,
+                                label: '엑셀형태',
+                                desc: '개발상세 시트 구조',
+                                className: detailViewMode === 'excel'
+                                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
+                                    : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50',
+                                onClick: () => selectDetailView('excel'),
+                            },
+                        ].map((item) => (
+                            <button
+                                key={item.label}
+                                type="button"
+                                onClick={item.onClick}
+                                style={{ animationDelay: item.delay }}
+                                className={`genie-item flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${item.className}`}
+                            >
+                                {item.icon}
+                                <span className="flex flex-col items-start leading-tight">
+                                    <span>{item.label}</span>
+                                    <span className={`text-[9px] font-medium ${detailViewMode === (item.label === '하이라키' ? 'hierarchy' : 'excel') && tab === 'detail' ? 'text-emerald-100' : 'text-gray-400'}`}>
+                                        {item.desc}
+                                    </span>
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {/* 프로젝트 ID 패널 — Portal */}
             {showIdPanel && createPortal(
