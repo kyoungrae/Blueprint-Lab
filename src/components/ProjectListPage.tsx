@@ -10,7 +10,7 @@ import { fetchWithAuth } from '../utils/fetchWithAuth';
 import type { Project, DBType, ProjectType, ProjectMember } from '../types/erd';
 import AdminPage from './AdminPage';
 import PremiumTooltip from './screenNode/PremiumTooltip';
-import { getLinkedPersonalScheduleIds } from '../utils/linkedPersonalScheduleProjects';
+import { getLinkedPersonalScheduleIds, getWbsLinkedPsTooltipLines, getVisibleWbsPersonalScheduleLinks, resolveLinkedWbsProjectId, canOpenWbsPersonalScheduleLink, isPersonalScheduleOwnedByUser, getPersonalScheduleProjectsOwnedByUser, getPersonalScheduleOwnerLabel } from '../utils/linkedPersonalScheduleProjects';
 import { syncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
 
 const PROJECT_TYPE_ORDER: Record<ProjectType, number> = { ERD: 0, SCREEN_DESIGN: 1, COMPONENT: 2, PROCESS_FLOW: 3, WBS: 4, PERSONAL_SCHEDULE: 5 };
@@ -58,7 +58,8 @@ const LinkedCountBadge: React.FC<{
     heading: string;
     names: string[];
     colorClass?: string;
-}> = ({ count, heading, names, colorClass = 'bg-blue-500' }) => {
+    readOnly?: boolean;
+}> = ({ count, heading, names, colorClass = 'bg-blue-500', readOnly = false }) => {
     const [visible, setVisible] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -102,6 +103,9 @@ const LinkedCountBadge: React.FC<{
                                 <li key={`${name}-${i}`}>· {name}</li>
                             ))}
                         </ul>
+                        {readOnly && (
+                            <p className="mt-1.5 pt-1 border-t border-gray-700 text-[10px] text-gray-400">연결 정보 (편집 불가)</p>
+                        )}
                     </div>
                 </div>,
                 document.body,
@@ -260,19 +264,15 @@ const ProjectListPage: React.FC = () => {
         return links;
     }, [projects]);
 
-    // 그룹핑에 사용할 연결 (COMPONENT 연결 제외)
+    // 그룹핑에 사용할 연결 (COMPONENT 제외, WBS↔개인일정은 양쪽 카드가 모두 보일 때만)
     const groupingConnections = useMemo(() => {
         const connections: { fromId: string; toId: string }[] = [];
         projects.forEach((p) => {
             if (p.projectType === 'SCREEN_DESIGN' || p.projectType === 'PROCESS_FLOW') {
                 getLinkedErdIds(p).forEach((erdId) => connections.push({ fromId: p.id, toId: erdId }));
             }
-            if (p.projectType === 'WBS') {
-                getLinkedPersonalScheduleIds(p, projects).forEach((psId) => {
-                    connections.push({ fromId: p.id, toId: psId });
-                });
-            }
         });
+        connections.push(...getVisibleWbsPersonalScheduleLinks(projects));
         return connections;
     }, [projects]);
 
@@ -594,10 +594,15 @@ const ProjectListPage: React.FC = () => {
                         const isLinkable = project.projectType === 'SCREEN_DESIGN' || project.projectType === 'PROCESS_FLOW';
                         const erdCount = getLinkedErdIds(project).length;
                         const linkedPsIds = project.projectType === 'WBS' ? getLinkedPersonalScheduleIds(project, projects) : [];
-                        const linkedPsNames = linkedPsIds.map((id) => projects.find((p) => p.id === id)?.name || '(삭제됨)');
-                        const linkedWbsName = project.projectType === 'PERSONAL_SCHEDULE' && project.linkedWbsProjectId
-                            ? (projects.find((p) => p.id === project.linkedWbsProjectId)?.name || '(삭제됨)')
+                        const linkedPsTooltipLines = project.projectType === 'WBS'
+                            ? getWbsLinkedPsTooltipLines(project, projects)
+                            : [];
+                        const linkedWbsProject = project.projectType === 'PERSONAL_SCHEDULE'
+                            ? projects.find((p) => p.id === resolveLinkedWbsProjectId(project, projects))
                             : null;
+                        const canOpenPsLink = project.projectType === 'WBS'
+                            && canOpenWbsPersonalScheduleLink(project, projects, user?.id);
+                        const canManageAllPsLinks = isOwner;
                         return (
                             <React.Fragment key={project.id}>
                                 {cardIdx > 0 && <div className="w-10 shrink-0 self-center" />}
@@ -606,16 +611,18 @@ const ProjectListPage: React.FC = () => {
                                         <LinkedCountBadge
                                             count={linkedPsIds.length}
                                             heading="연결된 개인일정"
-                                            names={linkedPsNames}
+                                            names={linkedPsTooltipLines}
                                             colorClass="bg-rose-500"
+                                            readOnly={!canManageAllPsLinks}
                                         />
                                     )}
-                                    {linkedWbsName && (
+                                    {linkedWbsProject && (
                                         <LinkedCountBadge
                                             count={1}
                                             heading="연결된 WBS"
-                                            names={[linkedWbsName]}
+                                            names={[linkedWbsProject.name]}
                                             colorClass="bg-emerald-500"
+                                            readOnly={!isOwner}
                                         />
                                     )}
                                     <div
@@ -628,7 +635,7 @@ const ProjectListPage: React.FC = () => {
                                     <div className="absolute top-1.5 right-1.5 hidden group-hover:flex gap-0.5 z-20">
                                         {isLinkable && <button onClick={(e) => { e.stopPropagation(); setLinkingProjectId(project.id); setLinkingMode('erd'); }} className={`p-1 rounded-lg hover:bg-blue-50 ${erdCount > 0 ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`} title={erdCount > 0 ? `ERD 연결 (${erdCount})` : 'ERD 연결'}><Database size={11} /></button>}
                                         {project.projectType === 'SCREEN_DESIGN' && <button onClick={(e) => { e.stopPropagation(); setLinkingProjectId(project.id); setLinkingMode('component'); }} className={`p-1 rounded-lg hover:bg-teal-50 ${project.linkedComponentProjectId ? 'text-teal-500' : 'text-gray-300 hover:text-teal-500'}`} title="컴포넌트 연결"><Box size={11} /></button>}
-                                        {project.projectType === 'WBS' && <button onClick={(e) => { e.stopPropagation(); setLinkingProjectId(project.id); setLinkingMode('personal-schedule'); }} className={`p-1 rounded-lg hover:bg-rose-50 ${linkedPsIds.length > 0 ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`} title={linkedPsIds.length > 0 ? `개인일정 연결 (${linkedPsIds.length})` : '개인일정 연결'}><CalendarDays size={11} /></button>}
+                                        {canOpenPsLink && <button onClick={(e) => { e.stopPropagation(); setLinkingProjectId(project.id); setLinkingMode('personal-schedule'); }} className={`p-1 rounded-lg hover:bg-rose-50 ${linkedPsIds.length > 0 ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`} title={linkedPsIds.length > 0 ? `개인일정 연결 (${linkedPsIds.length})` : '개인일정 연결'}><CalendarDays size={11} /></button>}
                                         {isOwner && <button onClick={(e) => { e.stopPropagation(); setEditingProjectInfo({ project, name: project.name, description: project.description ?? '' }); }} className="p-1 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg" title="수정"><Pencil size={11} /></button>}
                                         {!isLocal && <button onClick={(e) => { e.stopPropagation(); setEditingMembersProject(project.id); setTempMembers(project.members || []); setMemberInput(''); }} className="p-1 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg" title="팀원"><Users size={11} /></button>}
                                         {isOwner && <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmProject(project); setDeletePassword(''); setDeleteError(null); }} className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg" title="삭제"><Trash2 size={11} /></button>}
@@ -788,8 +795,10 @@ const ProjectListPage: React.FC = () => {
 
                                 // ── 모든 연결을 하나의 목록으로 통합 ──
                                 type EdgeEntry = { fromId: string; toId: string; kind: 'erd' | 'comp' };
+                                const projectIdSet = new Set(projects.map((p) => p.id));
                                 const validGC = groupingConnections.filter(
-                                    (l) => cardPositions[l.fromId] && cardPositions[l.toId]
+                                    (l) => projectIdSet.has(l.fromId) && projectIdSet.has(l.toId)
+                                        && cardPositions[l.fromId] && cardPositions[l.toId],
                                 );
                                 // ERD 연결: 스팬 오름차순
                                 const gcSorted = [...validGC].sort((a, b) => {
@@ -1542,14 +1551,31 @@ const ProjectListPage: React.FC = () => {
 
             {linkingProjectId && linkingMode && (() => {
                 const linkingProject = projects.find(p => p.id === linkingProjectId);
+                const linkingOwner = linkingProject?.members?.find(m => m.role === 'OWNER');
+                const linkingIsOwner = !!linkingProject?.id.startsWith('local_') || user?.id === linkingOwner?.id;
                 const linkedErdIds = linkingProject ? getLinkedErdIds(linkingProject) : [];
                 const linkedPsIds = linkingProject ? getLinkedPersonalScheduleIds(linkingProject, projects) : [];
+                const linkedPsTooltipLines = linkingProject
+                    ? getWbsLinkedPsTooltipLines(linkingProject, projects)
+                    : [];
                 const erdProjects = projects.filter(p => p.projectType === 'ERD');
                 const unlinkedErdProjects = erdProjects.filter(p => !linkedErdIds.includes(p.id));
                 const psProjects = projects.filter(p => p.projectType === 'PERSONAL_SCHEDULE');
+                const myOwnedPsProjects = getPersonalScheduleProjectsOwnedByUser(psProjects, user?.id);
                 const unlinkedPsProjects = psProjects.filter(
                     (p) => !linkedPsIds.includes(p.id) && (!p.linkedWbsProjectId || p.linkedWbsProjectId === linkingProjectId),
                 );
+                const addablePsProjects = linkingIsOwner
+                    ? unlinkedPsProjects
+                    : myOwnedPsProjects.filter(
+                        (p) => !linkedPsIds.includes(p.id) && (!p.linkedWbsProjectId || p.linkedWbsProjectId === linkingProjectId),
+                    );
+                const linkedPsEntries = linkedPsIds.map((psId, i) => {
+                    const proj = projects.find((p) => p.id === psId);
+                    const label = linkedPsTooltipLines[i] ?? proj?.name ?? '다른 멤버 개인일정';
+                    const canRemove = linkingIsOwner || (proj ? isPersonalScheduleOwnedByUser(proj, user?.id) : false);
+                    return { psId, label, canRemove };
+                });
 
                 const modalTitle = linkingMode === 'erd'
                     ? 'ERD 프로젝트 연결'
@@ -1560,7 +1586,9 @@ const ProjectListPage: React.FC = () => {
                     ? '연결된 ERD를 관리하거나 추가하세요. (여러 개 연결 가능)'
                     : linkingMode === 'component'
                         ? '연동할 컴포넌트 프로젝트를 선택하세요.'
-                        : 'WBS 일정을 공유할 개인일정 프로젝트를 연결하세요.';
+                        : linkingMode === 'personal-schedule' && !linkingIsOwner
+                            ? '내 개인일정 프로젝트를 이 WBS에 연결하거나, 내 연결만 해제할 수 있습니다.'
+                            : 'WBS 일정을 공유할 개인일정 프로젝트를 연결하세요.';
 
                 const applyPsLink = async (next: string[]) => {
                     await updateProjectMetadata(linkingProjectId, { linkedPersonalScheduleProjectIds: next });
@@ -1661,44 +1689,51 @@ const ProjectListPage: React.FC = () => {
                             ) : linkingMode === 'personal-schedule' ? (
                                 <>
                                     <div className="p-4 border-b border-gray-100">
-                                        <p className="text-xs font-bold text-gray-500 mb-2">연결된 개인일정 프로젝트</p>
-                                        {linkedPsIds.length === 0 ? (
+                                        <p className="text-xs font-bold text-gray-500 mb-2">연결된 개인일정</p>
+                                        {linkedPsEntries.length === 0 ? (
                                             <p className="text-sm text-gray-400">연결된 개인일정이 없습니다.</p>
                                         ) : (
                                             <ul className="space-y-2 max-h-[180px] overflow-y-auto">
-                                                {linkedPsIds.map((psId) => {
-                                                    const proj = projects.find(p => p.id === psId);
-                                                    return (
-                                                        <li key={psId} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-rose-50 border border-rose-100">
-                                                            <div className="flex items-center gap-3 min-w-0">
-                                                                <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0">
-                                                                    <CalendarDays size={16} />
-                                                                </div>
-                                                                <span className="font-bold text-gray-900 truncate">{proj?.name || psId}</span>
+                                                {linkedPsEntries.map(({ psId, label, canRemove }) => (
+                                                    <li key={psId} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-rose-50 border border-rose-100">
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0">
+                                                                <CalendarDays size={16} />
                                                             </div>
+                                                            <span className="font-bold text-gray-900 truncate">{label}</span>
+                                                        </div>
+                                                        {canRemove && (
                                                             <button
                                                                 type="button"
                                                                 onClick={async () => {
-                                                                    const next = linkedPsIds.filter(id => id !== psId);
+                                                                    const next = linkedPsIds.filter((id) => id !== psId);
                                                                     await applyPsLink(next);
                                                                 }}
                                                                 className="flex-shrink-0 px-2 py-1 text-xs font-bold text-red-500 hover:bg-red-100 rounded-lg"
                                                             >
                                                                 제거
                                                             </button>
-                                                        </li>
-                                                    );
-                                                })}
+                                                        )}
+                                                    </li>
+                                                ))}
                                             </ul>
                                         )}
                                     </div>
                                     <div className="p-4">
-                                        <p className="text-xs font-bold text-gray-500 mb-2">개인일정 프로젝트 추가</p>
-                                        {unlinkedPsProjects.length === 0 ? (
-                                            <p className="text-sm text-gray-400">추가할 수 있는 개인일정 프로젝트가 없습니다.</p>
+                                        <p className="text-xs font-bold text-gray-500 mb-2">
+                                            {linkingIsOwner ? '개인일정 프로젝트 추가' : '내 개인일정 연결'}
+                                        </p>
+                                        {addablePsProjects.length === 0 ? (
+                                            <p className="text-sm text-gray-400">
+                                                {linkingIsOwner
+                                                    ? '추가할 수 있는 개인일정 프로젝트가 없습니다.'
+                                                    : myOwnedPsProjects.length === 0
+                                                        ? '먼저 개인일정 프로젝트를 만든 뒤 연결할 수 있습니다.'
+                                                        : '연결할 수 있는 내 개인일정이 없습니다.'}
+                                            </p>
                                         ) : (
                                             <ul className="space-y-1 max-h-[200px] overflow-y-auto">
-                                                {unlinkedPsProjects.map((proj) => (
+                                                {addablePsProjects.map((proj) => (
                                                     <button
                                                         key={proj.id}
                                                         type="button"
@@ -1711,23 +1746,31 @@ const ProjectListPage: React.FC = () => {
                                                         <div className="w-9 h-9 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">
                                                             <CalendarDays size={16} />
                                                         </div>
-                                                        <span className="font-bold text-gray-900 truncate">{proj.name}</span>
+                                                        <span className="font-bold text-gray-900 truncate">
+                                                            {linkingIsOwner
+                                                                ? `${getPersonalScheduleOwnerLabel(proj)} · ${proj.name}`
+                                                                : proj.name}
+                                                        </span>
                                                     </button>
                                                 ))}
                                             </ul>
                                         )}
                                     </div>
                                     <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
-                                        <button
-                                            onClick={async () => {
-                                                await applyPsLink([]);
-                                                setLinkingProjectId(null);
-                                                setLinkingMode(null);
-                                            }}
-                                            className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg"
-                                        >
-                                            전체 연결 해제
-                                        </button>
+                                        {linkingIsOwner ? (
+                                            <button
+                                                onClick={async () => {
+                                                    await applyPsLink([]);
+                                                    setLinkingProjectId(null);
+                                                    setLinkingMode(null);
+                                                }}
+                                                className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg"
+                                            >
+                                                전체 연결 해제
+                                            </button>
+                                        ) : (
+                                            <span className="text-[10px] text-gray-400">다른 멤버 연결은 변경할 수 없습니다</span>
+                                        )}
                                         <button
                                             onClick={() => { setLinkingProjectId(null); setLinkingMode(null); }}
                                             className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-lg"

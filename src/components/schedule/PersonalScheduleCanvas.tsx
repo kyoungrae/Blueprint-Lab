@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import {
     ChevronLeft, ChevronRight, Plus, X, Check, Trash2,
     Pencil,
-    ChevronDown, ChevronUp, ArrowLeft,
+    ChevronDown, ChevronUp, ArrowLeft, Sun,
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { schedulePersonalScheduleSave } from '../../store/personalScheduleStore';
@@ -625,17 +625,64 @@ const CALENDAR_PRIME_HOUR = 9;
 const CALENDAR_HOUR_END = 23;
 const getCalendarHours = () =>
     Array.from({ length: CALENDAR_HOUR_END - CALENDAR_PRIME_HOUR + 1 }, (_, i) => CALENDAR_PRIME_HOUR + i);
-const ALLDAY_BAR_MIN_H = 24;
-const ALLDAY_BAR_GAP = 3;
+const ALLDAY_BAR_MIN_H = 20;
+const ALLDAY_BAR_GAP = 2;
 const ALLDAY_SUB_INDENT = 10;
 /** 접힌 상태에서 보여줄 최대 종일 row 수 (이보다 많으면 더보기) */
-const ALLDAY_COLLAPSED_MAX_LANES = 2;
-const ALLDAY_DAY_COLLAPSED_COUNT = 2;
+const ALLDAY_COLLAPSED_MAX_LANES = 1;
+const ALLDAY_DAY_COLLAPSED_COUNT = 1;
+/** 접힌 상태 gutter(아이콘·더보기)가 들어갈 최소 높이 */
+const ALLDAY_GUTTER_MIN_H = 44;
 
 function allDaySectionHeightForLanes(laneCount: number): number {
     const lanes = Math.max(1, laneCount);
-    return lanes * (ALLDAY_BAR_MIN_H + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP * 2;
+    return lanes * (ALLDAY_BAR_MIN_H + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP;
 }
+
+function collapsedAllDayDisplayHeight(collapsible: boolean): number {
+    const laneH = allDaySectionHeightForLanes(ALLDAY_COLLAPSED_MAX_LANES);
+    return collapsible ? Math.max(laneH, ALLDAY_GUTTER_MIN_H) : laneH;
+}
+
+/** 종일 영역 좌측 라벨 + 접기/펼치기 */
+const AllDayGutter: React.FC<{
+    expanded: boolean;
+    hiddenCount: number;
+    collapsible: boolean;
+    onToggle: () => void;
+    className?: string;
+}> = ({ expanded, hiddenCount, collapsible, onToggle, className = '' }) => (
+    <div
+        className={`sticky left-0 z-40 shrink-0 bg-white flex flex-col items-center border-r border-gray-100 ${
+            expanded && collapsible ? 'justify-between py-1' : 'justify-center gap-1'
+        } ${className}`}
+        style={{ width: CALENDAR_TIME_GUTTER }}
+    >
+        <div className="flex items-center gap-0.5 shrink-0 leading-none pointer-events-none" title="종일 일정">
+            <Sun size={12} className="text-amber-500 shrink-0" strokeWidth={2.2} />
+            <span className="text-[8px] font-bold text-gray-400">종일</span>
+        </div>
+        {collapsible ? (
+            <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onToggle(); }}
+                title={expanded ? '종일 일정 접기' : `종일 일정 ${hiddenCount}개 더 보기`}
+                className="relative z-50 shrink-0 flex items-center gap-0.5 rounded-full pl-0.5 pr-1.5 py-0.5 bg-white border border-gray-200 shadow-sm text-gray-600 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 transition-colors cursor-pointer"
+            >
+                {!expanded && (
+                    <span className="flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-rose-100 text-rose-600 text-[8px] font-black leading-none px-0.5">
+                        +{hiddenCount}
+                    </span>
+                )}
+                {expanded ? (
+                    <ChevronUp size={13} strokeWidth={2.5} />
+                ) : (
+                    <ChevronDown size={12} strokeWidth={2.5} />
+                )}
+            </button>
+        ) : null}
+    </div>
+);
 
 /** Ctrl+휠 → 가로 스크롤, 트랙패드 가로 스와이프도 지원 */
 function applyHorizontalWheelScroll(el: HTMLElement, e: WheelEvent): void {
@@ -1496,9 +1543,6 @@ const WeekView: React.FC<{
     const [allDayExpanded, setAllDayExpanded] = React.useState(false);
 
     const weekStartYmd = toYMD(weekStart);
-    React.useEffect(() => {
-        setAllDayExpanded(false);
-    }, [weekStartYmd]);
 
     const { rangeStart, rangeEnd } = React.useMemo(
         () => computeCalendarScrollRange(events, weekStart),
@@ -1531,7 +1575,7 @@ const WeekView: React.FC<{
     const needsAllDayCollapse = allDayLayout.maxLane > ALLDAY_COLLAPSED_MAX_LANES;
     const allDayDisplayHeight = !needsAllDayCollapse || allDayExpanded
         ? allDayLayout.rowHeight
-        : allDaySectionHeightForLanes(ALLDAY_COLLAPSED_MAX_LANES);
+        : collapsedAllDayDisplayHeight(needsAllDayCollapse);
     const hiddenAllDayCount = needsAllDayCollapse && !allDayExpanded
         ? new Set(
             allDayLayout.bars
@@ -1822,12 +1866,15 @@ const WeekView: React.FC<{
                     </div>
 
                     {/* 종일·기간 이벤트 */}
-                    <div className="sticky top-[40px] z-30 flex flex-col bg-white border-b border-gray-100 shadow-[0_1px_0_0_rgba(229,231,235,1)]">
-                        <div className="flex" style={{ height: allDayDisplayHeight, overflow: 'hidden' }}>
-                            <div className="sticky left-0 z-30 shrink-0 bg-white text-[10px] text-gray-400 px-1 pt-1 text-right" style={{ width: CALENDAR_TIME_GUTTER }}>
-                                종일
-                            </div>
-                            <div className="relative shrink-0 border-l border-gray-100 overflow-hidden" style={{ width: timelineWidth, height: allDayDisplayHeight }}>
+                    <div className="sticky top-[40px] z-30 flex bg-white border-b border-gray-100 shadow-[0_1px_0_0_rgba(229,231,235,1)]" style={{ height: allDayDisplayHeight }}>
+                        <AllDayGutter
+                            expanded={allDayExpanded}
+                            hiddenCount={hiddenAllDayCount}
+                            collapsible={needsAllDayCollapse}
+                            onToggle={() => setAllDayExpanded(v => !v)}
+                            className="h-full"
+                        />
+                        <div className="relative shrink-0 overflow-hidden" style={{ width: timelineWidth, height: allDayDisplayHeight }}>
                                 {/* 요일 구분선 — 바 아래 */}
                                 <div className="absolute inset-0 z-0 pointer-events-none flex">
                                     {allDays.map((d, i) => (
@@ -1856,7 +1903,7 @@ const WeekView: React.FC<{
                                         <div
                                             key={e.id}
                                             onClick={() => onSelectEvent(e)}
-                                            className={`absolute overflow-hidden text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer z-10 leading-snug ${isSub ? '' : 'shadow-sm'}`}
+                                            className={`absolute overflow-hidden text-[9px] font-bold px-1.5 py-0.5 rounded cursor-pointer z-10 leading-tight ${isSub ? '' : 'shadow-sm'}`}
                                             style={{
                                                 left: startCol * dayW + inset,
                                                 width: span * dayW - inset * 2,
@@ -1874,21 +1921,7 @@ const WeekView: React.FC<{
                                         </div>
                                     );
                                 })}
-                            </div>
                         </div>
-                        {needsAllDayCollapse && (
-                            <button
-                                type="button"
-                                onClick={() => setAllDayExpanded(v => !v)}
-                                className="flex items-center justify-center gap-1 w-full py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50/60 border-t border-gray-100 bg-white transition-colors shrink-0"
-                            >
-                                {allDayExpanded ? (
-                                    <>접기 <ChevronUp size={12} /></>
-                                ) : (
-                                    <>{hiddenAllDayCount}개 더보기 <ChevronDown size={12} /></>
-                                )}
-                            </button>
-                        )}
                     </div>
 
                     {/* 시간 그리드 */}
@@ -2112,7 +2145,6 @@ const DayView: React.FC<{
     const ymd = toYMD(date);
     const isToday = ymd === toYMD(now);
     const [allDayExpanded, setAllDayExpanded] = React.useState(false);
-    React.useEffect(() => { setAllDayExpanded(false); }, [ymd]);
     const timedEvents = events.filter(e => e.startDate === ymd && !isSpanningEvent(e));
     const allDayEvents = events
         .filter(e => isSpanningEvent(e) && eventActiveOnYmd(e, ymd))
@@ -2176,39 +2208,32 @@ const DayView: React.FC<{
     return (
         <div ref={containerRef} className="h-full min-h-0 overflow-y-auto">
             {allDayEvents.length > 0 && (
-                <div className="border-b border-gray-100 px-2 py-1.5 shrink-0">
-                    <div className="text-[10px] font-bold text-gray-400 px-1 mb-1">종일</div>
-                    <div className="space-y-1">
+                <div className="border-b border-gray-100 shrink-0 flex">
+                    <AllDayGutter
+                        expanded={allDayExpanded}
+                        hiddenCount={hiddenAllDayCount}
+                        collapsible={needsAllDayCollapse}
+                        onToggle={() => setAllDayExpanded(v => !v)}
+                        className="py-1"
+                    />
+                    <div className="flex-1 min-w-0 px-2 py-1 space-y-0.5">
                         {visibleAllDayEvents.map(e => {
                             const isSub = isCalendarSubEvent(e);
                             const color = eventBarColor(e, categories);
                             return (
                                 <div key={`${e.id}-${ymd}`} onClick={() => onSelectEvent(e)}
-                                    className={`relative overflow-hidden text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer leading-snug
+                                    className={`relative overflow-hidden text-[9px] font-bold px-1.5 py-0.5 rounded cursor-pointer leading-tight
                                         ${isSub ? 'ml-2' : 'shadow-sm'}`}
                                     style={calendarBarStyle(isSub, color, e.progress ?? 0)}>
                                     <CalendarChipFill color={color} isSub={isSub} progress={e.progress ?? 0} />
                                     <span className="relative z-[1] flex items-center gap-0.5 min-w-0">
-                                        {isSub && <span className="shrink-0 text-[11px] opacity-45">↳</span>}
+                                        {isSub && <span className="shrink-0 text-[10px] opacity-45">↳</span>}
                                         <span className="truncate">{e.title}</span>
                                     </span>
                                 </div>
                             );
                         })}
                     </div>
-                    {needsAllDayCollapse && (
-                        <button
-                            type="button"
-                            onClick={() => setAllDayExpanded(v => !v)}
-                            className="flex items-center justify-center gap-1 w-full mt-1 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50/60 rounded-lg transition-colors"
-                        >
-                            {allDayExpanded ? (
-                                <>접기 <ChevronUp size={12} /></>
-                            ) : (
-                                <>{hiddenAllDayCount}개 더보기 <ChevronDown size={12} /></>
-                            )}
-                        </button>
-                    )}
                 </div>
             )}
             <div className="flex overflow-visible" style={{ height: timedLayout.totalH, minHeight: '100%' }}>

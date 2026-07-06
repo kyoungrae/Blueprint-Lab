@@ -211,9 +211,6 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         if (linkedComponentProjectId !== undefined) project.linkedComponentProjectId = linkedComponentProjectId;
 
         if (linkedPersonalScheduleProjectIds !== undefined) {
-            if (member?.role !== 'OWNER') {
-                return res.status(403).json({ message: '개인일정 연결 설정은 프로젝트 소유자만 가능합니다.' });
-            }
             if (project.projectType !== 'WBS') {
                 return res.status(400).json({ message: 'WBS 프로젝트만 개인일정을 연결할 수 있습니다.' });
             }
@@ -222,6 +219,27 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                 : [];
             const wbsId = project._id.toString();
             const prevIds: string[] = project.linkedPersonalScheduleProjectIds ?? [];
+
+            const psOwnerById = async (psId: string): Promise<string | null> => {
+                if (!Types.ObjectId.isValid(psId)) return null;
+                const psProject = await Project.findById(psId).select('members projectType').lean();
+                if (!psProject || psProject.projectType !== 'PERSONAL_SCHEDULE') return null;
+                const owner = psProject.members?.find((m) => m.role === 'OWNER');
+                return owner?.userId?.toString() ?? null;
+            };
+
+            if (member?.role !== 'OWNER') {
+                const changed = [
+                    ...prevIds.filter((id) => !nextIds.includes(id)),
+                    ...nextIds.filter((id) => !prevIds.includes(id)),
+                ];
+                for (const psId of changed) {
+                    const ownerId = await psOwnerById(psId);
+                    if (ownerId !== userId) {
+                        return res.status(403).json({ message: '본인 소유 개인일정만 연결·해제할 수 있습니다.' });
+                    }
+                }
+            }
 
             for (const psId of nextIds) {
                 if (!Types.ObjectId.isValid(psId)) {
