@@ -1,13 +1,14 @@
 import React, { useRef, useState } from 'react';
 import { X, UploadCloud, Loader2, AlertCircle, FileSpreadsheet, Plus, RefreshCw, EyeOff, ShieldCheck } from 'lucide-react';
 import type { WbsData } from '../../types/wbs';
-import { analyzeWbsExcelMerge, downloadWbsExcel, type WbsMergeAnalysis, type WbsDiffItem } from './wbsExcel';
+import { analyzeWbsExcelMerge, downloadWbsExcel, type WbsMergeAnalysis, type WbsDiffItem, type WbsExcelMergeScope } from './wbsExcel';
 import { downloadWbsJson } from './wbsIO';
 
 interface WbsExcelSyncModalProps {
     open: boolean;
     current: WbsData;
     projectName: string;
+    mergeScope: WbsExcelMergeScope;
     onApply: (data: WbsData) => void;
     onClose: () => void;
 }
@@ -41,7 +42,7 @@ const DiffSection: React.FC<{ icon: React.ReactNode; title: string; tone: string
     );
 };
 
-const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, projectName, onApply, onClose }) => {
+const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, projectName, mergeScope, onApply, onClose }) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const [dragOver, setDragOver] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -77,7 +78,7 @@ const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, pr
         }
         setBusy(true);
         try {
-            const result = await analyzeWbsExcelMerge(current, file);
+            const result = await analyzeWbsExcelMerge(current, file, mergeScope);
             setAnalysis(result);
         } catch (e) {
             setError(e instanceof Error ? e.message : '엑셀 분석 중 오류가 발생했습니다.');
@@ -97,7 +98,12 @@ const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, pr
     };
 
     const s = analysis?.summary;
-    const noChange = s && s.rowsAdded === 0 && s.rowsUpdated === 0 && s.menusAdded === 0 && s.menusUpdated === 0;
+    const noChange = s && (
+        mergeScope === 'menus'
+            ? s.menusAdded === 0 && s.menusUpdated === 0
+            : s.rowsAdded === 0 && s.rowsUpdated === 0
+    );
+    const scopeLabel = mergeScope === 'menus' ? '메뉴 구조' : '개발 상세';
 
     return (
         <div className="fixed inset-0 z-[10050] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={close}>
@@ -117,7 +123,11 @@ const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, pr
                     ) : !analysis ? (
                         <>
                             <p className="text-xs text-gray-500 mb-3 leading-relaxed">
-                                ‘엑셀 다운로드’로 받은 파일을 수정한 뒤 올리면, <b>ID(수정금지)</b>로 메뉴·개발상세 행을 매칭해 변경분을 반영합니다. 메뉴코드·프로그램ID(PID)·메뉴명도 함께 갱신됩니다.
+                                {mergeScope === 'menus' ? (
+                                    <>현재 <b>메뉴 구조도</b> 탭에서 업로드합니다. <b>메뉴데이터</b> 시트만 병합하며, 개발 상세 행은 변경하지 않습니다. 엑셀에 없는 메뉴는 <b>삭제하지 않고 유지</b>합니다.</>
+                                ) : (
+                                    <>현재 <b>개발 상세</b> 탭에서 업로드합니다. <b>개발상세</b> 시트만 병합하며, 메뉴 구조는 변경하지 않습니다. 엑셀에 없는 행은 <b>삭제하지 않고 유지</b>합니다.</>
+                                )}
                             </p>
                             <div
                                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -136,39 +146,76 @@ const WbsExcelSyncModal: React.FC<WbsExcelSyncModalProps> = ({ open, current, pr
                     ) : (
                         <>
                             <div className="grid grid-cols-3 gap-2 mb-3">
-                                <div className="rounded-lg bg-emerald-50 p-2.5 text-center">
-                                    <div className="text-lg font-black text-emerald-700 tabular-nums">{s!.rowsAdded}</div>
-                                    <div className="text-[10px] font-bold text-emerald-600">행 추가</div>
-                                </div>
-                                <div className="rounded-lg bg-blue-50 p-2.5 text-center">
-                                    <div className="text-lg font-black text-blue-700 tabular-nums">{s!.rowsUpdated}</div>
-                                    <div className="text-[10px] font-bold text-blue-600">행 수정</div>
-                                </div>
-                                <div className="rounded-lg bg-gray-100 p-2.5 text-center">
-                                    <div className="text-lg font-black text-gray-700 tabular-nums">{s!.rowsOnlyOnWeb}</div>
-                                    <div className="text-[10px] font-bold text-gray-500">웹에만 있음</div>
-                                </div>
+                                {mergeScope === 'menus' ? (
+                                    <>
+                                        <div className="rounded-lg bg-violet-50 p-2.5 text-center">
+                                            <div className="text-lg font-black text-violet-700 tabular-nums">{s!.menusAdded}</div>
+                                            <div className="text-[10px] font-bold text-violet-600">메뉴 추가</div>
+                                        </div>
+                                        <div className="rounded-lg bg-blue-50 p-2.5 text-center">
+                                            <div className="text-lg font-black text-blue-700 tabular-nums">{s!.menusUpdated}</div>
+                                            <div className="text-[10px] font-bold text-blue-600">메뉴 수정</div>
+                                        </div>
+                                        <div className="rounded-lg bg-gray-100 p-2.5 text-center">
+                                            <div className="text-lg font-black text-gray-700 tabular-nums">{s!.menusOnlyOnWeb}</div>
+                                            <div className="text-[10px] font-bold text-gray-500">웹에만 있음</div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="rounded-lg bg-emerald-50 p-2.5 text-center">
+                                            <div className="text-lg font-black text-emerald-700 tabular-nums">{s!.rowsAdded}</div>
+                                            <div className="text-[10px] font-bold text-emerald-600">행 추가</div>
+                                        </div>
+                                        <div className="rounded-lg bg-blue-50 p-2.5 text-center">
+                                            <div className="text-lg font-black text-blue-700 tabular-nums">{s!.rowsUpdated}</div>
+                                            <div className="text-[10px] font-bold text-blue-600">행 수정</div>
+                                        </div>
+                                        <div className="rounded-lg bg-gray-100 p-2.5 text-center">
+                                            <div className="text-lg font-black text-gray-700 tabular-nums">{s!.rowsOnlyOnWeb}</div>
+                                            <div className="text-[10px] font-bold text-gray-500">웹에만 있음</div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
-                            <p className="text-[11px] text-gray-500 mb-3">
-                                메뉴: 추가 {s!.menusAdded} · 수정 {s!.menusUpdated}
-                                {s!.skipped > 0 && <span className="text-amber-600"> · 메뉴 못 찾아 건너뜀 {s!.skipped}</span>}
-                                {fileName && <span className="text-gray-400"> · {fileName}</span>}
-                            </p>
+                            {mergeScope === 'menus' && s!.skipped > 0 && (
+                                <p className="text-[11px] text-amber-600 mb-3">· 메뉴 못 찾아 건너뜀 {s!.skipped}{fileName && <span className="text-gray-400"> · {fileName}</span>}</p>
+                            )}
+                            {mergeScope === 'rows' && (
+                                <p className="text-[11px] text-gray-500 mb-3">
+                                    {s!.skipped > 0 && <span className="text-amber-600">메뉴 못 찾아 건너뜀 {s!.skipped} · </span>}
+                                    {fileName && <span className="text-gray-400">{fileName}</span>}
+                                </p>
+                            )}
 
                             <div className="space-y-2">
-                                <DiffSection icon={<RefreshCw size={13} />} title="수정될 메뉴" tone="text-violet-700 bg-violet-50/60" items={analysis.updatedMenus} />
-                                <DiffSection icon={<Plus size={13} />} title="추가될 행" tone="text-emerald-700 bg-emerald-50/60" items={analysis.addedRows} />
-                                <DiffSection icon={<RefreshCw size={13} />} title="수정될 행" tone="text-blue-700 bg-blue-50/60" items={analysis.updatedRows} />
-                                <DiffSection icon={<EyeOff size={13} />} title="엑셀에 없어 유지되는 행" tone="text-gray-600 bg-gray-50" items={analysis.onlyOnWebRows} />
+                                {mergeScope === 'menus' ? (
+                                    <>
+                                        <DiffSection icon={<RefreshCw size={13} />} title="수정될 메뉴" tone="text-violet-700 bg-violet-50/60" items={analysis.updatedMenus} />
+                                        <DiffSection icon={<EyeOff size={13} />} title="엑셀에 없어 유지되는 메뉴" tone="text-gray-600 bg-gray-50" items={analysis.onlyOnWebMenus} />
+                                    </>
+                                ) : (
+                                    <>
+                                        <DiffSection icon={<Plus size={13} />} title="추가될 행" tone="text-emerald-700 bg-emerald-50/60" items={analysis.addedRows} />
+                                        <DiffSection icon={<RefreshCw size={13} />} title="수정될 행" tone="text-blue-700 bg-blue-50/60" items={analysis.updatedRows} />
+                                        <DiffSection icon={<EyeOff size={13} />} title="엑셀에 없어 유지되는 행" tone="text-gray-600 bg-gray-50" items={analysis.onlyOnWebRows} />
+                                    </>
+                                )}
                             </div>
 
-                            {s!.rowsOnlyOnWeb > 0 && (
+                            {mergeScope === 'menus' && s!.menusOnlyOnWeb > 0 && (
                                 <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-[11px] text-amber-700">
                                     <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                                    <span>엑셀에 없는 {s!.rowsOnlyOnWeb}개 행은 <b>삭제하지 않고 그대로 유지</b>합니다. (데이터 누락 방지)</span>
+                                    <span>엑셀에 없는 {s!.menusOnlyOnWeb}개 메뉴는 <b>삭제하지 않고 그대로 유지</b>합니다.</span>
                                 </div>
                             )}
-                            {noChange && <p className="mt-3 text-xs text-gray-500 text-center">변경된 내용이 없습니다.</p>}
+                            {mergeScope === 'rows' && s!.rowsOnlyOnWeb > 0 && (
+                                <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-[11px] text-amber-700">
+                                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                                    <span>엑셀에 없는 {s!.rowsOnlyOnWeb}개 행은 <b>삭제하지 않고 그대로 유지</b>합니다.</span>
+                                </div>
+                            )}
+                            {noChange && <p className="mt-3 text-xs text-gray-500 text-center">{scopeLabel} 변경 내용이 없습니다.</p>}
                         </>
                     )}
 

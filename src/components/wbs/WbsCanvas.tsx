@@ -15,7 +15,7 @@ import WbsExcelSyncModal from './WbsExcelSyncModal';
 import WbsAdminModal from './WbsAdminModal';
 import WbsScheduleImportModal from './WbsScheduleImportModal';
 import WbsScheduleTable from './WbsScheduleTable';
-import { downloadWbsExcel } from './wbsExcel';
+import { downloadWbsExcel, type WbsExcelMergeScope } from './wbsExcel';
 import { getAllAssignees } from './wbsDevFilterUtils';
 import { downloadWbsJson, parseWbsJson } from './wbsIO';
 import { downloadScheduleExcel, downloadScheduleJson } from './wbsScheduleIO';
@@ -82,6 +82,7 @@ const WbsCanvas: React.FC = () => {
 
     const clearAssignees = useCallback(() => setActiveAssignees(new Set()), []);
     const [uploadKind, setUploadKind] = useState<'json' | 'excel' | null>(null);
+    const [excelMergeScope, setExcelMergeScope] = useState<WbsExcelMergeScope>('menus');
     // 일정 탭 전용 업로드 모달
     const [scheduleUploadKind, setScheduleUploadKind] = useState<'excel' | 'json' | null>(null);
     const [showActions, setShowActions] = useState(false);
@@ -576,13 +577,19 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadWbsExcel({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '현재 WBS를 엑셀로 다운로드',
                                     },
-                                    ...(canUpload ? [{
+                                    ...(canUpload && (tab === 'hierarchy' || tab === 'detail') ? [{
                                         delay: '55ms',
                                         icon: <FileUp size={14} />,
                                         label: '엑셀 업로드',
                                         className: 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50',
-                                        onClick: () => { setUploadKind('excel'); setShowActions(false); },
-                                        title: '엑셀 파일을 업로드하여 현재 데이터에 반영',
+                                        onClick: () => {
+                                            setExcelMergeScope(tab === 'hierarchy' ? 'menus' : 'rows');
+                                            setUploadKind('excel');
+                                            setShowActions(false);
+                                        },
+                                        title: tab === 'hierarchy'
+                                            ? '메뉴 구조(메뉴데이터 시트)만 병합'
+                                            : '개발 상세(개발상세 시트)만 병합',
                                     }] : []),
                                     {
                                         delay: '110ms',
@@ -661,6 +668,7 @@ const WbsCanvas: React.FC = () => {
                 open={uploadKind === 'excel'}
                 current={{ menus, rows }}
                 projectName={project?.name ?? 'WBS'}
+                mergeScope={excelMergeScope}
                 onApply={(data) => importData(data)}
                 onClose={() => setUploadKind(null)}
             />

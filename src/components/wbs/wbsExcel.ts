@@ -267,6 +267,9 @@ export interface WbsMergeAnalysis {
     onlyOnWebMenus: WbsDiffItem[];
 }
 
+/** 엑셀 업로드 병합 범위 — 활성 탭에 따라 메뉴 또는 개발상세만 반영 */
+export type WbsExcelMergeScope = 'menus' | 'rows';
+
 const labelToStatus: Record<string, WbsStatus> = (() => {
     const m: Record<string, WbsStatus> = {};
     (Object.keys(WBS_STATUS_LABEL) as WbsStatus[]).forEach((k) => { m[WBS_STATUS_LABEL[k]] = k; });
@@ -282,6 +285,55 @@ function toStatus(v: unknown): WbsStatus {
 
 const rowKey = (menuCode: string, category: string, featureName: string) =>
     `${menuCode}||${category}||${featureName}`;
+
+/** 엑셀 행 → 기존 웹 행 매칭 (ID 우선, 키·메뉴+구분 보조 — 빈 기능명/담당자도 수정 가능, 중복 방지) */
+function findMergeTarget(
+    rows: WbsDevRow[],
+    rowById: Map<string, WbsDevRow>,
+    rowByKey: Map<string, WbsDevRow>,
+    menuId: string,
+    menuCode: string,
+    category: string,
+    featureName: string,
+    excelId: string,
+    seenRowIds: Set<string>,
+): WbsDevRow | undefined {
+    const available = (r?: WbsDevRow) => (r && !seenRowIds.has(r.id) ? r : undefined);
+
+    if (excelId) {
+        const byId = rowById.get(excelId);
+        if (byId) return available(byId);
+    }
+
+    const byKey = rowByKey.get(rowKey(menuCode, category, featureName));
+    if (byKey) return available(byKey);
+
+    if (isWbsDebugingCategoryRow({ category })) {
+        const dbg = rows.find((r) => r.menuId === menuId && isWbsDebugingCategoryRow(r));
+        if (dbg) return available(dbg);
+    }
+
+    const sameCategory = rows.filter(
+        (r) => r.menuId === menuId && r.category === category && !seenRowIds.has(r.id) && !isWbsDebugingCategoryRow(r),
+    );
+    if (sameCategory.length === 0) return undefined;
+
+    const exactFn = sameCategory.find((r) => r.featureName === featureName);
+    if (exactFn) return exactFn;
+
+    const trimmedFn = featureName.trim();
+    if (trimmedFn) {
+        const emptyWeb = sameCategory.filter((r) => !r.featureName.trim());
+        if (emptyWeb.length === 1) return emptyWeb[0];
+    } else {
+        const filledWeb = sameCategory.filter((r) => r.featureName.trim());
+        if (filledWeb.length === 1) return filledWeb[0];
+    }
+
+    if (sameCategory.length === 1) return sameCategory[0];
+
+    return undefined;
+}
 
 const cell = (dr: Record<string, unknown>, ...keys: string[]): string => {
     for (const k of keys) {
@@ -340,6 +392,15 @@ function normalizeDate(v: string): string {
     return s;
 }
 
+/** 시작일·종료일 엑셀 병합: 빈→insert, 값→update, 웹에 값 있는데 엑셀 빈값→삭제 불가(기존 유지) */
+function mergeDateFromExcel(existing: string, fromExcel: string): string {
+    const excel = fromExcel.trim();
+    if (excel) return excel;
+    const current = existing.trim();
+    if (current) return existing;
+    return '';
+}
+
 /** 저장 형식(YYYY-MM-DD)을 엑셀 표기용 YYYY.MM.DD로 변환. 형식이 다르면 원본 유지 */
 function toDotDate(v: string): string {
     const s = String(v ?? '').trim();
@@ -352,12 +413,11 @@ const quote = (v: string) => (v && v.length ? `'${v}'` : '(빈값)');
 
 /**
  * 다운로드한 형식의 엑셀(.xlsx)을 읽어 현재 WBS 데이터와 비교 분석한다.
- * - 행(개발상세)은 'ID(수정금지)'로 매칭하므로 기능명·구분을 바꿔도 정확히 갱신(누락·중복 방지).
- *   ID가 비었으면 (메뉴코드+구분+기능명) 키로 보조 매칭, 그래도 없으면 신규 추가.
- * - 메뉴는 'ID(수정금지)' 우선 매칭 후 메뉴코드·프로그램ID·메뉴명·상위를 갱신한다.
- * - 엑셀에 없는 항목은 삭제하지 않고 유지하되, onlyOnWeb 목록으로 표시한다.
+ * - scope 'menus': 메뉴 구조도 탭 — 메뉴데이터 시트만 병합, 개발상세(rows)는 변경하지 않음
+ * - scope 'rows': 개발 상세 탭 — 개발상세 시트만 병합, 메뉴(menus)는 변경하지 않음
+ * - 엑셀에 없는 항목은 삭제하지 않고 유지 (추가·수정만)
  */
-export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promise<WbsMergeAnalysis> {
+export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: WbsExcelMergeScope): Promise<WbsMergeAnalysis> {
     const buf = await file.arrayBuffer();
     let wb: XLSX.WorkBook;
     try {
@@ -368,8 +428,11 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
     // 재업로드용 코드 데이터는 '메뉴데이터' 시트에서 읽는다(구버전 호환: 평면 '메뉴구조' 시트도 허용).
     const menuWs = wb.Sheets['메뉴데이터'] || wb.Sheets['메뉴구조'];
     const detailWs = wb.Sheets['개발상세'];
-    if (!menuWs && !detailWs) {
-        throw new Error('‘메뉴데이터’ 또는 ‘개발상세’ 시트를 찾을 수 없습니다. 다운로드한 엑셀과 동일한 형식이어야 합니다.');
+    if (scope === 'menus' && !menuWs) {
+        throw new Error('‘메뉴데이터’ 또는 ‘메뉴구조’ 시트를 찾을 수 없습니다. 메뉴 구조도 탭에서 업로드할 때는 메뉴 시트가 포함된 엑셀이어야 합니다.');
+    }
+    if (scope === 'rows' && !detailWs) {
+        throw new Error('‘개발상세’ 시트를 찾을 수 없습니다. 개발 상세 탭에서 업로드할 때는 개발상세 시트가 포함된 엑셀이어야 합니다.');
     }
 
     const menus: WbsMenuNode[] = current.menus.map((m) => ({ ...m }));
@@ -421,8 +484,8 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
         }
     };
 
-    // ── 1) 메뉴 upsert (ID 우선, 메뉴코드 보조) ──
-    if (menuWs) {
+    // ── 1) 메뉴 upsert — 메뉴 구조도 탭에서만 ──
+    if (scope === 'menus' && menuWs) {
         const menuRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(menuWs, { raw: false, defval: '' });
         for (const mr of menuRows) {
             const id = cell(mr, 'ID(수정금지)', 'ID');
@@ -504,10 +567,10 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
     const labelFor = (menuCode: string, category: string, featureName: string) =>
         `${menuCode || '?'} · ${featureName || category || menuByCode.get(menuCode)?.name || '(미입력)'}`;
 
-    // ── 2) 개발상세 upsert (ID 우선, 키 보조) ──
+    // ── 2) 개발상세 upsert — 개발 상세 탭에서만 ──
     const originalRowIds = new Set<string>(current.rows.map((r) => r.id));
     const seenRowIds = new Set<string>();
-    if (detailWs) {
+    if (scope === 'rows' && detailWs) {
         const rowById = new Map<string, WbsDevRow>(rows.map((r) => [r.id, r]));
         const rowByKey = new Map<string, WbsDevRow>();
         for (const r of rows) rowByKey.set(rowKey(menuCodeById.get(r.menuId) ?? '', r.category, r.featureName), r);
@@ -520,20 +583,24 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
             const id = cell(dr, 'ID(수정금지)', 'ID');
             const category = cell(dr, '구분(산출물)', '구분');
             const featureName = cell(dr, '기능명');
+            const excelStart = normalizeDate(cell(dr, '시작일'));
+            const excelEnd = normalizeDate(cell(dr, '종료일'));
             const next = {
                 assignee: cell(dr, '담당자'),
-                startDate: normalizeDate(cell(dr, '시작일')),
-                endDate: normalizeDate(cell(dr, '종료일')),
+                startDate: excelStart,
+                endDate: excelEnd,
                 status: toStatus(dr['상태']),
                 progress: Math.min(100, Math.max(0, Number(dr['진행율(%)'] ?? dr['진행율']) || 0)),
                 note: cell(dr, '비고'),
             };
 
-            let target: WbsDevRow | undefined;
-            if (id && rowById.has(id)) target = rowById.get(id);
-            else if (!id) target = rowByKey.get(rowKey(code, category, featureName)); // 보조 매칭
+            let target: WbsDevRow | undefined = findMergeTarget(
+                rows, rowById, rowByKey, menu.id, code, category, featureName, id, seenRowIds,
+            );
 
-            if (target && !seenRowIds.has(target.id)) {
+            if (target) {
+                next.startDate = mergeDateFromExcel(target.startDate, excelStart);
+                next.endDate = mergeDateFromExcel(target.endDate, excelEnd);
                 // 실제 값이 바뀐 필드만 수집 (동일 파일 재업로드 시 오탐 방지 + 변경 내역 표시)
                 const q = (v: string) => (v && v.length ? `'${v}'` : '(빈값)');
                 const changes: string[] = [];
@@ -553,6 +620,7 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
 
                 Object.assign(target, next, { menuId: menu.id, category, featureName });
                 Object.assign(target, normalizeWbsDevRowDebugging(target));
+                rowByKey.set(rowKey(code, category, featureName), target);
                 seenRowIds.add(target.id);
                 if (changes.length > 0) {
                     summary.rowsUpdated++;
@@ -572,13 +640,15 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File): Promis
         }
     }
 
-    // ── 3) 엑셀에 없는(웹에만 있는) 항목 표시 (유지) ──
-    const onlyOnWebRows: WbsDiffItem[] = rows
-        .filter((r) => originalRowIds.has(r.id) && !seenRowIds.has(r.id))
-        .map((r) => ({ label: labelFor(menuCodeById.get(r.menuId) ?? '', r.category, r.featureName) }));
+    // ── 3) 엑셀에 없는(웹에만 있는) 항목 표시 (유지, 삭제 없음) ──
+    const onlyOnWebRows: WbsDiffItem[] = scope === 'rows'
+        ? rows
+              .filter((r) => originalRowIds.has(r.id) && !seenRowIds.has(r.id))
+              .map((r) => ({ label: labelFor(menuCodeById.get(r.menuId) ?? '', r.category, r.featureName) }))
+        : [];
     summary.rowsOnlyOnWeb = onlyOnWebRows.length;
 
-    const onlyOnWebMenus: WbsDiffItem[] = menuWs
+    const onlyOnWebMenus: WbsDiffItem[] = scope === 'menus'
         ? menus
               .filter((m) => originalMenuIds.has(m.id) && !seenMenuIds.has(m.id))
               .map((m) => ({ label: `${m.menuCode} · ${m.name}` }))

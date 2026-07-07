@@ -299,16 +299,14 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                                     {rowEditEntry!.userName}
                                                 </span>
                                             ) : (
-                                                !isDbg && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => { if (confirmDeleteWbsRow(r)) deleteRow(r.id); }}
-                                                        className="p-1 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100"
-                                                        title="행 삭제"
-                                                    >
-                                                        <Trash2 size={13} />
-                                                    </button>
-                                                )
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { if (confirmDeleteWbsRow(r)) deleteRow(r.id); }}
+                                                    className="p-1 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100"
+                                                    title="행 삭제"
+                                                >
+                                                    <Trash2 size={13} />
+                                                </button>
                                             )}
                                         </td>
                                     </tr>

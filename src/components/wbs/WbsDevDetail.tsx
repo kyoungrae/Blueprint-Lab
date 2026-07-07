@@ -875,11 +875,9 @@ const WbsDevDetail: React.FC<{
                                                             {rowEditEntry!.userName} <span className="opacity-80">수정중</span>
                                                         </span>
                                                     ) : (
-                                                        (!isDbg || menuRows.filter((row) => !isWbsDebugingCategoryRow(row)).length === 0) && (
-                                                            <button type="button" onClick={() => { if (confirmDeleteWbsRow(r)) deleteRow(r.id); }} className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded" title="행 삭제">
-                                                                <Trash2 size={14} />
-                                                            </button>
-                                                        )
+                                                        <button type="button" onClick={() => { if (confirmDeleteWbsRow(r)) deleteRow(r.id); }} className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded" title="행 삭제">
+                                                            <Trash2 size={14} />
+                                                        </button>
                                                     )}
                                                 </td>
                                             </tr>
