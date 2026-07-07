@@ -392,10 +392,10 @@ function normalizeDate(v: string): string {
     return s;
 }
 
-/** 시작일·종료일 엑셀 병합: 빈→insert, 값→update, 웹에 값 있는데 엑셀 빈값→삭제 불가(기존 유지) */
-function mergeDateFromExcel(existing: string, fromExcel: string): string {
+/** 필드 엑셀 병합: 빈→insert, 값→update, 웹에 값 있는데 엑셀 빈값→삭제 불가(기존 유지) */
+function mergeFieldFromExcel(existing: string, fromExcel: string): string {
     const excel = fromExcel.trim();
-    if (excel) return excel;
+    if (excel) return fromExcel;
     const current = existing.trim();
     if (current) return existing;
     return '';
@@ -599,16 +599,18 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: 
             );
 
             if (target) {
-                next.startDate = mergeDateFromExcel(target.startDate, excelStart);
-                next.endDate = mergeDateFromExcel(target.endDate, excelEnd);
+                const mergedCategory = mergeFieldFromExcel(target.category, category);
+                const mergedFeatureName = mergeFieldFromExcel(target.featureName, featureName);
+                next.startDate = mergeFieldFromExcel(target.startDate, excelStart);
+                next.endDate = mergeFieldFromExcel(target.endDate, excelEnd);
                 // 실제 값이 바뀐 필드만 수집 (동일 파일 재업로드 시 오탐 방지 + 변경 내역 표시)
                 const q = (v: string) => (v && v.length ? `'${v}'` : '(빈값)');
                 const changes: string[] = [];
                 if (target.menuId !== menu.id) {
                     changes.push(`메뉴 ${q(menuCodeById.get(target.menuId) ?? '')} → ${q(code)}`);
                 }
-                if (target.category !== category) changes.push(`구분 ${q(target.category)} → ${q(category)}`);
-                if (target.featureName !== featureName) changes.push(`기능명 ${q(target.featureName)} → ${q(featureName)}`);
+                if (target.category !== mergedCategory) changes.push(`구분 ${q(target.category)} → ${q(mergedCategory)}`);
+                if (target.featureName !== mergedFeatureName) changes.push(`기능명 ${q(target.featureName)} → ${q(mergedFeatureName)}`);
                 if (target.assignee !== next.assignee) changes.push(`담당자 ${q(target.assignee)} → ${q(next.assignee)}`);
                 if (target.startDate !== next.startDate) changes.push(`시작일 ${q(target.startDate)} → ${q(next.startDate)}`);
                 if (target.endDate !== next.endDate) changes.push(`종료일 ${q(target.endDate)} → ${q(next.endDate)}`);
@@ -618,9 +620,9 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: 
                 if (target.progress !== next.progress) changes.push(`진행율 ${target.progress}% → ${next.progress}%`);
                 if ((target.note ?? '') !== (next.note ?? '')) changes.push(`비고 ${q(target.note ?? '')} → ${q(next.note ?? '')}`);
 
-                Object.assign(target, next, { menuId: menu.id, category, featureName });
+                Object.assign(target, next, { menuId: menu.id, category: mergedCategory, featureName: mergedFeatureName });
                 Object.assign(target, normalizeWbsDevRowDebugging(target));
-                rowByKey.set(rowKey(code, category, featureName), target);
+                rowByKey.set(rowKey(code, mergedCategory, mergedFeatureName), target);
                 seenRowIds.add(target.id);
                 if (changes.length > 0) {
                     summary.rowsUpdated++;
