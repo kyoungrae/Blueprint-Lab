@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Trash2 } from 'lucide-react';
 import WheelDatePicker, { WheelProgressPicker } from './WheelDatePicker';
-import { buildAssigneeMenuDateRanges } from './wbsDateUtils';
+import { buildAssigneeMenuDateRanges, formatWbsDuration } from './wbsDateUtils';
 import {
     menuPathParts,
     sortWbsDevRows,
@@ -140,7 +140,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                         검색 결과가 없습니다.
                     </div>
                 ) : (
-                <table className="w-full text-xs border-collapse" style={{ minWidth: 1180 + pathDepth * 120 }}>
+                <table className="w-full text-xs border-collapse" style={{ minWidth: 1260 + pathDepth * 120 }}>
                     <thead className="sticky top-0 z-20">
                         <tr className="bg-slate-700 text-white">
                             {Array.from({ length: pathDepth }, (_, i) => (
@@ -154,6 +154,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-20">담당자</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800">시작일</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800">종료일</th>
+                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[72px] w-[72px] bg-indigo-800">수행일</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-left text-[10px] font-black min-w-[100px] w-[100px]">상태</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-left text-[10px] font-black min-w-[88px] w-[88px] bg-emerald-800">진행율(%)</th>
                             <th className="border border-slate-600 w-8" />
@@ -162,7 +163,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                             <td colSpan={pathDepth + 5} className="border border-slate-200 px-2 py-1.5 font-black text-slate-700 text-[11px]">
                                 전체 ({totals.done}/{totals.count} 완료)
                             </td>
-                            <td colSpan={2} className="border border-slate-200" />
+                            <td colSpan={3} className="border border-slate-200" />
                             <td className="border border-slate-200 px-2 py-1.5 text-left font-black text-[11px] text-emerald-700">
                                 {totals.avg}%
                             </td>
@@ -172,7 +173,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                     <tbody>
                         {sortedRows.length === 0 ? (
                             <tr>
-                                <td colSpan={pathDepth + 9} className="text-center text-gray-400 py-16 text-sm">
+                                <td colSpan={pathDepth + 10} className="text-center text-gray-400 py-16 text-sm">
                                     개발 상세 데이터가 없습니다.
                                 </td>
                             </tr>
@@ -255,6 +256,9 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                                 className="w-full min-w-[118px]"
                                                 menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                             />
+                                        </td>
+                                        <td className="border border-gray-100 px-2 py-1.5 align-middle text-center bg-indigo-50/30 min-w-[72px] w-[72px] text-[11px] font-bold tabular-nums text-gray-700 whitespace-nowrap">
+                                            {formatWbsDuration(r.startDate, r.endDate) || '-'}
                                         </td>
                                         <td className="border border-gray-100 px-2 py-1.5 align-middle min-w-[100px] w-[100px] text-left">
                                             {dbgLocked ? (

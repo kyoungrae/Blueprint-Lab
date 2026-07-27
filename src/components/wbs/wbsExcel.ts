@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';   // 업로드 파싱은 기존 xlsx 유지
 import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus } from '../../types/wbs';
 import { WBS_STATUS_LABEL, WBS_STATUS_ORDER, isWbsDebugingCategoryRow, normalizeWbsDevRowDebugging, normalizeWbsDevRows } from '../../types/wbs';
 import { menuPathParts, menuDfsOrder, sortWbsDevRows, wbsPathDepth } from './wbsDevRowUtils';
+import { formatWbsDuration } from './wbsDateUtils';
 
 // ── xlsx-js-style 타입 헬퍼 ──────────────────────────
 type XStyle = {
@@ -89,7 +90,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
     const { menus, rows } = data;
     const menuCodeById = new Map(menus.map((m) => [m.id, m.menuCode]));
     const menuOrder = menuDfsOrder(menus);
-    const sortedRows = sortWbsDevRows(menus, rows);
+    const sortedRows = sortWbsDevRows(menus, rows.filter((row) => !isWbsDebugingCategoryRow(row)));
     const pathDepth = wbsPathDepth(menus, sortedRows);
 
     // ── 팔레트 (메뉴 그룹 색 — 2색 교대) ──
@@ -132,7 +133,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
     const hdrLabels = [
         'ID(수정금지)',
         ...Array.from({ length: pathDepth }, () => '메뉴경로'),
-        '메뉴코드', '구분(산출물)', '기능명', '담당자', '시작일', '종료일', '상태', '진행율(%)', '비고',
+        '메뉴코드', '구분(산출물)', '기능명', '담당자', '시작일', '종료일', '수행일', '상태', '진행율(%)', '비고',
     ];
     detailAoa.push(hdrLabels.map((v) => sc(v, hdrStyle())));
 
@@ -165,6 +166,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
             // 시작일·종료일 (YYYY-MM-DD → YYYY.MM.DD 표기)
             sc(toDotDate(r.startDate), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
             sc(toDotDate(r.endDate),   cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(formatWbsDuration(r.startDate, r.endDate), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
             // 상태
             sc(statusLbl, cellStyle(bg, { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: sfg } }, alignment: { horizontal: 'center', vertical: 'center' } })),
             // 진행율
@@ -180,7 +182,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
         { wch: 22 },
         ...Array.from({ length: pathDepth }, () => ({ wch: 18 })),
         { wch: 13 }, { wch: 13 }, { wch: 26 }, { wch: 10 },
-        { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 22 },
+        { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 22 },
     ];
     ws1['!rows'] = [{ hpt: 22 }];
     ws1['!freeze'] = { xSplit: 0, ySplit: 1 };

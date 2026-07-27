@@ -39,6 +39,37 @@ export function normalizeYmd(value: string): string {
     return '';
 }
 
+/** 시작일과 종료일을 포함해 계산한다. 같은 날짜는 1일이다. */
+export function calculateWbsDurationDays(startDate: string, endDate: string): number | null {
+    const normalizedStart = normalizeYmd(startDate);
+    const normalizedEnd = normalizeYmd(endDate);
+    if (!normalizedStart || !normalizedEnd) return null;
+
+    const toUtcDay = (ymd: string): number | null => {
+        const [year, month, day] = ymd.split('-').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        if (
+            date.getUTCFullYear() !== year
+            || date.getUTCMonth() !== month - 1
+            || date.getUTCDate() !== day
+        ) {
+            return null;
+        }
+        return date.getTime();
+    };
+
+    const start = toUtcDay(normalizedStart);
+    const end = toUtcDay(normalizedEnd);
+    if (start === null || end === null || end < start) return null;
+
+    return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
+}
+
+export function formatWbsDuration(startDate: string, endDate: string): string {
+    const days = calculateWbsDurationDays(startDate, endDate);
+    return days === null ? '' : `${days}일`;
+}
+
 /** 담당자가 배정된 메뉴별 시작·종료일(행 집계) */
 export function buildAssigneeMenuDateRanges(
     assignee: string,

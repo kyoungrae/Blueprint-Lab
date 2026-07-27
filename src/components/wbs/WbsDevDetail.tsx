@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, Layers, User, CalendarDays, CalendarCheck, Activity, Percent, ChevronLeft, RotateCcw, Lock, PenLine } from 'lucide-react';
 import WheelDatePicker, { WheelProgressPicker } from './WheelDatePicker';
-import { buildAssigneeMenuDateRanges } from './wbsDateUtils';
+import { buildAssigneeMenuDateRanges, formatWbsDuration } from './wbsDateUtils';
 import { useWbsStore } from '../../store/wbsStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
@@ -756,6 +756,7 @@ const WbsDevDetail: React.FC<{
                                         <th className="text-left px-2 py-2 w-28 border-b border-gray-200">담당자</th>
                                         <th className="text-left px-2 py-2 w-36 border-b border-gray-200">시작일</th>
                                         <th className="text-left px-2 py-2 w-36 border-b border-gray-200">종료일</th>
+                                        <th className="text-center px-2 py-2 w-20 border-b border-gray-200">수행일</th>
                                         <th className="text-left px-2 py-2 w-28 border-b border-gray-200">상태</th>
                                         <th className="text-left px-2 py-2 w-28 border-b border-gray-200">진행율</th>
                                         <th className="text-left px-2 py-2 border-b border-gray-200">비고</th>
@@ -765,7 +766,7 @@ const WbsDevDetail: React.FC<{
                                 <tbody>
                                     {menuRows.length === 0 ? (
                                         <tr>
-                                            <td colSpan={9} className="text-center text-gray-400 py-10 text-sm">
+                                            <td colSpan={10} className="text-center text-gray-400 py-10 text-sm">
                                                 아직 입력된 산출물이 없습니다. '행 추가'로 시작하세요.
                                             </td>
                                         </tr>
@@ -829,6 +830,9 @@ const WbsDevDetail: React.FC<{
                                                         className="w-full"
                                                         menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                                     />
+                                                </td>
+                                                <td className="align-middle text-center text-sm font-semibold tabular-nums text-gray-700">
+                                                    {formatWbsDuration(r.startDate, r.endDate) || '-'}
                                                 </td>
                                                 <td className="align-middle">
                                                     {dbgLocked ? (
