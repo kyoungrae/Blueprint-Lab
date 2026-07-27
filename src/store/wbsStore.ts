@@ -2,12 +2,10 @@ import { create } from 'zustand';
 import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule, WbsDetailSchedule } from '../types/wbs';
 import { normalizeWbsDevRows, isWbsDebugingCategoryRow, WBS_DEBUGING_CATEGORY } from '../types/wbs';
 import { SCHEDULE_SEED, deriveStatus } from '../data/scheduleSeedData';
-import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useProjectStore } from './projectStore';
 import { enrichRowsWithAssigneeUserIds } from '../utils/wbsAssigneeMatch';
 import { scheduleSyncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
+import { useWbsYjsStore } from './wbsYjsStore';
 
 const uid = (prefix: string) =>
     `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -59,6 +57,20 @@ interface WbsState {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
+function activeWbsYjs(projectId: string | null) {
+    const state = useWbsYjsStore.getState();
+    return projectId
+        && !projectId.startsWith('local_')
+        && state.currentProjectId === projectId
+        && state.isReady
+        ? state
+        : null;
+}
+
+function syncLinkedPersonalSchedulesAfterYjsChange(projectId: string | null, changed: boolean): void {
+    if (changed && projectId) scheduleSyncWbsToLinkedPersonalSchedules(projectId);
+}
+
 export const useWbsStore = create<WbsState>((set, get) => ({
     menus: [],
     rows: [],
@@ -80,6 +92,15 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     importData: (data) => {
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.replaceData(data);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        // 서버 WBS는 Yjs 초기화 완료 전에는 쓰기를 허용하지 않는다.
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         const rawRows = Array.isArray(data.rows) ? (data.rows as WbsDevRow[]) : get().rows;
         set({
             menus: Array.isArray(data.menus) ? (data.menus as WbsMenuNode[]) : get().menus,
@@ -98,6 +119,14 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     }),
 
     setProjectSchedule: (schedule) => {
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.setProjectSchedule(schedule);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({ projectSchedule: schedule });
         get().scheduleSave();
     },
@@ -113,6 +142,14 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             progress: 0,
             ...schedule,
         };
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.addDetailSchedule(newItem);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({ detailSchedules: [...existing, newItem] });
         get().scheduleSave();
     },
@@ -138,6 +175,22 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             };
             updated = recalcParent(updated, id);
         }
+
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            let changed = false;
+            const beforeById = new Map(get().detailSchedules.map((schedule) => [schedule.id, schedule]));
+            updated.forEach((schedule) => {
+                const before = beforeById.get(schedule.id);
+                if (JSON.stringify(before) === JSON.stringify(schedule)) return;
+                const { id: scheduleId, ...nextPatch } = schedule;
+                changed = yjs.updateDetailSchedule(scheduleId, nextPatch) || changed;
+            });
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
 
         set({ detailSchedules: updated });
         get().scheduleSave();
@@ -181,6 +234,22 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         };
         recalcAll();
 
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            let changed = false;
+            const beforeById = new Map(items.map((schedule) => [schedule.id, schedule]));
+            result.forEach((schedule) => {
+                const before = beforeById.get(schedule.id);
+                if (JSON.stringify(before) === JSON.stringify(schedule)) return;
+                const { id, ...nextPatch } = schedule;
+                changed = yjs.updateDetailSchedule(id, nextPatch) || changed;
+            });
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
+
         set({ detailSchedules: result });
         get().scheduleSave();
     },
@@ -198,6 +267,15 @@ export const useWbsStore = create<WbsState>((set, get) => ({
                 }
             }
         }
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            let didChange = false;
+            toDelete.forEach((scheduleId) => { didChange = yjs.deleteDetailSchedule(scheduleId) || didChange; });
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, didChange);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({ detailSchedules: get().detailSchedules.filter((s) => !toDelete.has(s.id)) });
         get().scheduleSave();
     },
@@ -214,12 +292,28 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             menuCode: nextMenuCode(menus),
             order,
         };
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.addMenus([node]);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return id;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return id;
         set({ menus: [...menus, node] });
         get().scheduleSave();
         return id;
     },
 
     updateMenu: (id, patch) => {
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.updateMenus([{ id, patch }]);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({ menus: get().menus.map((m) => (m.id === id ? { ...m, ...patch } : m)) });
         get().scheduleSave();
     },
@@ -238,6 +332,15 @@ export const useWbsStore = create<WbsState>((set, get) => ({
                 }
             }
         }
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const rowIds = rows.filter((row) => toDelete.has(row.menuId)).map((row) => row.id);
+            const didChange = yjs.deleteMenusAndRows(Array.from(toDelete), rowIds);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, didChange);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({
             menus: menus.filter((m) => !toDelete.has(m.id)),
             rows: rows.filter((r) => !toDelete.has(r.menuId)),
@@ -273,6 +376,23 @@ export const useWbsStore = create<WbsState>((set, get) => ({
 
         const reordered = new Map<string, number>();
         siblings.forEach((s, i) => reordered.set(s.id, i));
+
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const patches: Array<{ id: string; patch: Partial<Omit<WbsMenuNode, 'id'>> }> = [];
+            menus.forEach((menu) => {
+                if (menu.id === id) {
+                    patches.push({ id: menu.id, patch: { parentId: newParentId, order: reordered.get(id) ?? 0 } });
+                } else if (reordered.has(menu.id)) {
+                    patches.push({ id: menu.id, patch: { order: reordered.get(menu.id)! } });
+                }
+            });
+            const changed = yjs.updateMenus(patches);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
 
         set({
             menus: menus.map((m) => {
@@ -312,6 +432,14 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             progress: 0,
             isDebugging: true,
         };
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.addRows([row, ...(debugRow ? [debugRow] : [])]);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return id;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return id;
         set({ rows: [...existing, row, ...(debugRow ? [debugRow] : [])] });
         get().scheduleSave();
         return id;
@@ -343,11 +471,27 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             progress: 0,
             isDebugging: true,
         };
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.addRows([...newRows, ...(debugRow ? [debugRow] : [])]);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({ rows: [...existing, ...newRows, ...(debugRow ? [debugRow] : [])] });
         get().scheduleSave();
     },
 
     updateRow: (id, patch) => {
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.updateRow(id, patch);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({
             rows: get().rows.map((r) => {
                 if (r.id !== id) return r;
@@ -358,11 +502,21 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     deleteRow: (id) => {
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            const changed = yjs.deleteRow(id);
+            syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({ rows: get().rows.filter((r) => r.id !== id) });
         get().scheduleSave();
     },
 
     scheduleSave: () => {
+        const currentProjectId = get().currentProjectId;
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
             void get().saveNow();
@@ -372,6 +526,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     saveNow: async () => {
         const { currentProjectId, menus, rows, projectSchedule, detailSchedules } = get();
         if (!currentProjectId) return;
+        if (!currentProjectId.startsWith('local_')) return;
         const wbsProject = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
         const enrichedRows = enrichRowsWithAssigneeUserIds(rows, wbsProject?.members ?? []);
         if (enrichedRows !== rows) set({ rows: enrichedRows });
@@ -380,16 +535,6 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         useProjectStore.getState().updateProjectData(currentProjectId, data);
         // 연결된 개인일정 미러링 — 디바운스(과도한 API 호출 방지)
         scheduleSyncWbsToLinkedPersonalSchedules(currentProjectId);
-        if (currentProjectId.startsWith('local_')) return;
-        try {
-            await fetchWithAuth(`${API_URL}/${currentProjectId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data }),
-            });
-        } catch {
-            // 네트워크 오류는 조용히 무시(다음 변경 시 재시도). 로컬 캐시에는 이미 반영됨.
-        }
     },
 }));
 

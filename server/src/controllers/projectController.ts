@@ -7,6 +7,8 @@ import { presenceManager, projectStateManager } from '../services/PresenceManage
 import { touchProjectMemberLastEditedAt } from '../services/projectMemberActivity';
 import { recordProjectAccessLog } from '../services/recordProjectAccessLog';
 import { lockManager } from '../services/LockManager';
+import { patchWbsRowInYjs } from '../websocket/YjsServer';
+import logger from '../utils/logger';
 import crypto from 'crypto';
 
 export const createProject = async (req: AuthRequest, res: Response) => {
@@ -177,6 +179,15 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
         const member = project.members.find(m => m.userId.toString() === userId);
         if (member?.role === 'VIEWER') {
             return res.status(403).json({ message: '수정 권한이 없습니다.' });
+        }
+
+        // WBS는 Yjs 문서가 단일 원본이다. 구버전 클라이언트의 전체 스냅샷 PATCH가
+        // 현재 협업 데이터를 덮어쓰지 못하도록 명시적으로 차단한다.
+        if (project.projectType === 'WBS' && data) {
+            return res.status(409).json({
+                code: 'WBS_YJS_REQUIRED',
+                message: 'WBS는 실시간 동기화 방식으로 저장됩니다. 최신 화면에서 다시 시도해 주세요.',
+            });
         }
 
         // Pro tier required for adding components in screen design (fromComponentId)
@@ -413,6 +424,41 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
             message: '프로젝트 수정 중 오류가 발생했습니다.',
             ...(process.env.NODE_ENV !== 'production' ? { detail: msg || (error?.stack ?? 'Unknown error') } : {}),
         });
+    }
+};
+
+/** 개인일정 진행율처럼 WBS 화면이 열려 있지 않은 경로에서도 단일 행만 Yjs에 반영한다. */
+export const patchWbsRow = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id, rowId } = req.params;
+        const userId = req.user?.id;
+        if (!userId) return res.status(401).json({ message: '사용자 인증이 필요합니다.' });
+        if (!Types.ObjectId.isValid(id)) return res.status(400).json({ message: '잘못된 프로젝트 ID입니다.' });
+
+        const project = await Project.findOne({
+            _id: id,
+            projectType: 'WBS',
+            'members.userId': new Types.ObjectId(userId),
+        }).select('members').lean();
+        if (!project) return res.status(404).json({ message: 'WBS 프로젝트를 찾을 수 없거나 수정 권한이 없습니다.' });
+
+        const member = (project as any).members?.find((m: any) => String(m.userId) === userId);
+        if (member?.role === 'VIEWER') return res.status(403).json({ message: '수정 권한이 없습니다.' });
+
+        const rawProgress = req.body?.progress;
+        if (typeof rawProgress !== 'number' || !Number.isFinite(rawProgress)) {
+            return res.status(400).json({ message: '진행율(progress) 숫자가 필요합니다.' });
+        }
+
+        const progress = Math.min(100, Math.max(0, rawProgress));
+        const applied = await patchWbsRowInYjs(id, rowId, { progress });
+        if (!applied) return res.status(404).json({ message: '수정할 WBS 행을 찾을 수 없습니다.' });
+
+        await touchProjectMemberLastEditedAt(id, userId);
+        return res.json({ projectId: id, rowId, progress });
+    } catch (error) {
+        logger.error('patchWbsRow error: %o', error);
+        return res.status(500).json({ message: 'WBS 행 수정 중 오류가 발생했습니다.' });
     }
 };
 

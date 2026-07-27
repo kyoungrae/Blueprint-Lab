@@ -46,6 +46,8 @@ interface DocInfo {
     editorsSinceLastSave: Set<string>;
     /** 즉시 저장용 디바운스 타이머 */
     immediateSaveTimer: NodeJS.Timeout | null;
+    /** MongoDB 스냅샷을 Y.Doc으로 이관하는 단일 초기화 작업 */
+    seedPromise: Promise<void> | null;
 }
 
 /** projectId → DocInfo */
@@ -58,7 +60,15 @@ function getOrCreateDoc(projectId: string): DocInfo {
         const doc = new Y.Doc({ gc: true });
         const awareness = new awarenessProtocol.Awareness(doc);
 
-        const info: DocInfo = { doc, awareness, conns: new Map(), snapshotTimer: null, editorsSinceLastSave: new Set(), immediateSaveTimer: null };
+        const info: DocInfo = {
+            doc,
+            awareness,
+            conns: new Map(),
+            snapshotTimer: null,
+            editorsSinceLastSave: new Set(),
+            immediateSaveTimer: null,
+            seedPromise: null,
+        };
 
         doc.on('update', (_update: Uint8Array, origin: unknown) => {
             // 편집자 추적: WebSocket origin일 때만 (로컬 transact/시드는 origin 없을 수 있음)
@@ -165,12 +175,51 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
 
     try {
         const project = await Project.findById(projectId)
-            .select('projectType screenSnapshot componentSnapshot processFlowSnapshot')
+            .select('projectType screenSnapshot componentSnapshot processFlowSnapshot wbsSnapshot')
             .lean();
         if (!project) return;
 
         const p = project as any;
         const projectType: string = p.projectType || 'ERD';
+
+        // WBS는 행·필드 단위 Y.Map으로 관리한다. initialized 플래그는 빈 WBS도
+        // "MongoDB 시드 완료" 상태임을 클라이언트에 명확히 알린다.
+        if (projectType === 'WBS') {
+            doc.transact(() => {
+                const meta = doc.getMap<any>('wbs_meta');
+                if (meta.get('initialized') === true) return;
+
+                const menusMap = doc.getMap<any>('wbs_menus');
+                const rowsMap = doc.getMap<any>('wbs_rows');
+                const detailSchedulesMap = doc.getMap<any>('wbs_detail_schedules');
+                const projectScheduleMap = doc.getMap<any>('wbs_project_schedule');
+                const snapshot = p.wbsSnapshot || {};
+
+                const addRecords = (target: Y.Map<any>, records: any[]) => {
+                    records.forEach((record: any) => {
+                        if (!record?.id || target.has(record.id)) return;
+                        const yMap = new Y.Map<any>();
+                        Object.entries(record).forEach(([key, value]) => yMap.set(key, value));
+                        target.set(record.id, yMap);
+                    });
+                };
+
+                addRecords(menusMap, Array.isArray(snapshot.menus) ? snapshot.menus : []);
+                addRecords(rowsMap, Array.isArray(snapshot.rows) ? snapshot.rows : []);
+                addRecords(detailSchedulesMap, Array.isArray(snapshot.detailSchedules) ? snapshot.detailSchedules : []);
+
+                const projectSchedule = snapshot.projectSchedule;
+                if (projectSchedule && typeof projectSchedule === 'object') {
+                    Object.entries(projectSchedule).forEach(([key, value]) => projectScheduleMap.set(key, value));
+                    meta.set('hasProjectSchedule', true);
+                } else {
+                    meta.set('hasProjectSchedule', false);
+                }
+                meta.set('initialized', true);
+            });
+            logger.info(`✅ Yjs WBS doc seeded from MongoDB: project ${projectId}`);
+            return;
+        }
 
         doc.transact(() => {
             const screensMap = doc.getMap<any>('screens');
@@ -264,6 +313,19 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
     }
 }
 
+/** 같은 프로젝트의 동시 연결·REST 변경에서도 MongoDB 시드는 한 번만 실행한다. */
+async function ensureDocSeeded(projectId: string): Promise<DocInfo> {
+    const info = getOrCreateDoc(projectId);
+    if (!info.seedPromise) {
+        info.seedPromise = seedDocFromMongo(projectId, info.doc).catch((error) => {
+            info.seedPromise = null;
+            throw error;
+        });
+    }
+    await info.seedPromise;
+    return info;
+}
+
 /**
  * Y.Doc 현재 상태 → MongoDB screenSnapshot 저장
  */
@@ -274,7 +336,7 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
     const editors = info ? Array.from(info.editorsSinceLastSave) : [];
 
     try {
-        const project = await Project.findById(projectId).select('projectType').lean();
+        const project = await Project.findById(projectId).select('projectType wbsSnapshot.version').lean();
         if (!project) return;
 
         const projectType: string = (project as any).projectType || 'ERD';
@@ -327,6 +389,30 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
             });
             didPersist = true;
             // logger.info(`[DEBUG] ProcessFlow data saved successfully for project ${projectId}`);
+        } else if (projectType === 'WBS') {
+            const wbsMeta = doc.getMap<any>('wbs_meta');
+            // 서버 시드가 아직 끝나지 않은 빈 문서를 저장해 기존 WBS를 지우지 않도록 보호한다.
+            if (wbsMeta.get('initialized') !== true) return;
+
+            const menusArr = extractJson(doc.getMap<any>('wbs_menus').values());
+            const rowsArr = extractJson(doc.getMap<any>('wbs_rows').values());
+            const detailSchedulesArr = extractJson(doc.getMap<any>('wbs_detail_schedules').values());
+            const scheduleMap = doc.getMap<any>('wbs_project_schedule');
+            const projectSchedule = wbsMeta.get('hasProjectSchedule') === true ? scheduleMap.toJSON() : null;
+            const previousVersion = Number((project as any).wbsSnapshot?.version || 0);
+
+            await Project.findByIdAndUpdate(projectId, {
+                wbsSnapshot: {
+                    version: previousVersion + 1,
+                    menus: menusArr,
+                    rows: rowsArr,
+                    projectSchedule,
+                    detailSchedules: detailSchedulesArr,
+                    savedAt: new Date(),
+                },
+                updatedAt: new Date(),
+            });
+            didPersist = true;
         }
 
         if (didPersist) {
@@ -338,6 +424,45 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
     } catch (err) {
         logger.error('Yjs saveDocToMongo failed: %o', err);
     }
+}
+
+/**
+ * 개인일정의 WBS 진행율 역동기화처럼 브라우저에 WBS 문서가 열려 있지 않은 경우에도
+ * 단일 행 필드만 안전하게 Yjs 문서에 반영한다.
+ */
+export async function patchWbsRowInYjs(
+    projectId: string,
+    rowId: string,
+    patch: Record<string, unknown>,
+): Promise<boolean> {
+    const info = await ensureDocSeeded(projectId);
+    const meta = info.doc.getMap<any>('wbs_meta');
+    if (meta.get('initialized') !== true) return false;
+
+    const row = info.doc.getMap<Y.Map<any>>('wbs_rows').get(rowId);
+    if (!row) return false;
+
+    info.doc.transact(() => {
+        Object.entries(patch).forEach(([key, value]) => {
+            if (value === undefined) row.delete(key);
+            else row.set(key, value);
+        });
+    });
+
+    // REST 역동기화만으로 임시 생성된 문서는 즉시 저장·정리한다.
+    if (info.conns.size === 0) {
+        if (info.immediateSaveTimer) {
+            clearTimeout(info.immediateSaveTimer);
+            info.immediateSaveTimer = null;
+        }
+        await saveDocToMongo(projectId, info.doc);
+        const latest = docs.get(projectId);
+        if (latest === info && latest.conns.size === 0) {
+            if (latest.snapshotTimer) clearInterval(latest.snapshotTimer);
+            docs.delete(projectId);
+        }
+    }
+    return true;
 }
 
 // ─── WebSocket 연결 처리 ─────────────────────────────────────────────────────
@@ -357,7 +482,7 @@ async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: st
         // 🚀 중요: 초기 sync를 DB I/O로 막지 않도록 비동기로 시드 처리
         // DB가 느리거나 멈춘 경우에도 클라이언트는 빈 doc으로 우선 sync 완료 후
         // 시드가 완료되면 update broadcast를 통해 데이터를 받게 됩니다.
-        seedDocFromMongo(projectId, info.doc).catch(() => {});
+        ensureDocSeeded(projectId).catch(() => {});
     }
 
     ws.on('message', (rawData: Buffer) => {

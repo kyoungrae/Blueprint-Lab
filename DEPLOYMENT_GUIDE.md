@@ -169,6 +169,17 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header Authorization $http_authorization;  # JWT 토큰 전달 (초대 등 API 인증용)
     }
+
+    # 3. Yjs 실시간 협업 (/yjs/)
+    location /yjs/ {
+        proxy_pass http://host.containers.internal:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;
+    }
 }
 ```
 

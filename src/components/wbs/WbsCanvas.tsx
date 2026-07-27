@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties, Hash, Copy, Check, CalendarDays } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsStore } from '../../store/wbsStore';
+import { useYjsStore } from '../../store/yjsStore';
+import { useWbsYjsStore } from '../../store/wbsYjsStore';
 import { useAuthStore } from '../../store/authStore';
 import type { WbsData, WbsDetailSchedule } from '../../types/wbs';
 import WbsMenuTree from './WbsMenuTree';
@@ -45,12 +47,29 @@ const WbsCanvas: React.FC = () => {
     const rows = useWbsStore((s) => s.rows);
     const detailSchedules = useWbsStore((s) => s.detailSchedules);
 
+    const yjsDoc = useYjsStore((s) => s.ydoc);
+    const yjsProjectId = useYjsStore((s) => s.currentProjectId);
+    const yjsIsSynced = useYjsStore((s) => s.isSynced);
+    const yjsLastError = useYjsStore((s) => s.lastError);
+    const yjsJoin = useYjsStore((s) => s.joinProject);
+    const yjsLeave = useYjsStore((s) => s.leaveProject);
+    const bindWbsYjs = useWbsYjsStore((s) => s.bind);
+    const unbindWbsYjs = useWbsYjsStore((s) => s.unbind);
+    const wbsYjsProjectId = useWbsYjsStore((s) => s.currentProjectId);
+    const wbsYjsReady = useWbsYjsStore((s) => s.isReady);
+    const wbsYjsRevision = useWbsYjsStore((s) => s.revision);
+    const yjsMenus = useWbsYjsStore((s) => s.menus);
+    const yjsRows = useWbsYjsStore((s) => s.rows);
+    const yjsProjectSchedule = useWbsYjsStore((s) => s.projectSchedule);
+    const yjsDetailSchedules = useWbsYjsStore((s) => s.detailSchedules);
+
     const { user } = useAuthStore();
     const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
     // 엑셀/JSON 업로드 권한: PRO tier 이상 (PRO / MASTER / ADMIN)
     const canUpload = user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN';
 
     const project = projects.find((p) => p.id === currentProjectId);
+    const isRemoteWbs = Boolean(currentProjectId && !currentProjectId.startsWith('local_'));
     const [tab, setTab] = useState<WbsTab>('hierarchy');
     const [detailViewMode, setDetailViewMode] = useState<DetailViewMode>('hierarchy');
     const [showDetailPicker, setShowDetailPicker] = useState(false);
@@ -219,6 +238,45 @@ const WbsCanvas: React.FC = () => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentProjectId, project?.id]);
+
+    // WBS는 화면 설계와 같은 Yjs 문서를 사용하되, menus/rows/schedules를 각각 ID 기반 Y.Map으로 관리한다.
+    useEffect(() => {
+        if (!currentProjectId || currentProjectId.startsWith('local_')) return;
+        yjsJoin(currentProjectId);
+        return () => {
+            unbindWbsYjs();
+            yjsLeave();
+        };
+    }, [currentProjectId, yjsJoin, yjsLeave, unbindWbsYjs]);
+
+    useEffect(() => {
+        if (!currentProjectId || currentProjectId.startsWith('local_') || !yjsDoc || yjsProjectId !== currentProjectId) return;
+        bindWbsYjs(currentProjectId, yjsDoc);
+        return () => unbindWbsYjs();
+    }, [bindWbsYjs, currentProjectId, unbindWbsYjs, yjsDoc, yjsProjectId]);
+
+    // Yjs 변경을 기존 WBS 화면 스토어에 투영한다. 이 경로는 전체 REST 스냅샷 저장을 수행하지 않는다.
+    useLayoutEffect(() => {
+        if (!currentProjectId || currentProjectId.startsWith('local_') || !wbsYjsReady || wbsYjsProjectId !== currentProjectId) return;
+        loadProject(currentProjectId, {
+            menus: yjsMenus,
+            rows: yjsRows,
+            projectSchedule: yjsProjectSchedule ?? undefined,
+            detailSchedules: yjsDetailSchedules,
+        });
+    }, [currentProjectId, loadProject, wbsYjsProjectId, wbsYjsReady, wbsYjsRevision, yjsDetailSchedules, yjsMenus, yjsProjectSchedule, yjsRows]);
+
+    if (isRemoteWbs && (!yjsIsSynced || !wbsYjsReady)) {
+        return (
+            <div className="flex h-screen items-center justify-center bg-gray-50 p-6">
+                <div className="max-w-md rounded-2xl border border-emerald-100 bg-white px-6 py-5 text-center shadow-sm">
+                    <p className="text-sm font-black text-gray-800">WBS 동기화 중…</p>
+                    <p className="mt-1 text-xs leading-relaxed text-gray-500">동시 편집 데이터 보호를 위해 최신 WBS 문서를 받은 뒤 편집할 수 있습니다.</p>
+                    {yjsLastError && <p className="mt-3 text-xs font-semibold text-rose-600">연결 오류: {yjsLastError}</p>}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col w-full h-screen bg-gray-50">

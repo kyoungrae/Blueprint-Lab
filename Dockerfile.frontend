@@ -28,6 +28,15 @@ RUN echo "server { \
     proxy_set_header X-Real-IP \$remote_addr; \
     proxy_cache_bypass \$http_upgrade; \
     } \
+    location /yjs/ { \
+    proxy_pass http://blueprint-backend:4000; \
+    proxy_http_version 1.1; \
+    proxy_set_header Upgrade \$http_upgrade; \
+    proxy_set_header Connection 'upgrade'; \
+    proxy_set_header Host \$host; \
+    proxy_set_header X-Real-IP \$remote_addr; \
+    proxy_read_timeout 86400; \
+    } \
     location /erd/ { \
     alias /usr/share/nginx/html/; \
     try_files \$uri \$uri/ /erd/index.html; \

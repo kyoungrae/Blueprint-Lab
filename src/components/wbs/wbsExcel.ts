@@ -310,11 +310,6 @@ function findMergeTarget(
     const byKey = rowByKey.get(rowKey(menuCode, category, featureName));
     if (byKey) return available(byKey);
 
-    if (isWbsDebugingCategoryRow({ category })) {
-        const dbg = rows.find((r) => r.menuId === menuId && isWbsDebugingCategoryRow(r));
-        if (dbg) return available(dbg);
-    }
-
     const sameCategory = rows.filter(
         (r) => r.menuId === menuId && r.category === category && !seenRowIds.has(r.id) && !isWbsDebugingCategoryRow(r),
     );
@@ -579,11 +574,15 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: 
 
         const detailRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(detailWs, { raw: false, defval: '' });
         for (const dr of detailRows) {
+            const id = cell(dr, 'ID(수정금지)', 'ID');
+            const category = cell(dr, '구분(산출물)', '구분');
+            // Debuging 행은 웹에서만 관리한다. 엑셀에 포함되어 있어도 추가·수정·미리보기 대상에서 제외한다.
+            const existingById = id ? rowById.get(id) : undefined;
+            if (isWbsDebugingCategoryRow({ category }) || (existingById && isWbsDebugingCategoryRow(existingById))) continue;
+
             const code = cell(dr, '메뉴코드');
             const menu = code ? menuByCode.get(code) : undefined;
             if (!menu) { summary.skipped++; continue; }
-            const id = cell(dr, 'ID(수정금지)', 'ID');
-            const category = cell(dr, '구분(산출물)', '구분');
             const featureName = cell(dr, '기능명');
             const excelStart = normalizeDate(cell(dr, '시작일'));
             const excelEnd = normalizeDate(cell(dr, '종료일'));
@@ -647,7 +646,7 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: 
     // ── 3) 엑셀에 없는(웹에만 있는) 항목 표시 (유지, 삭제 없음) ──
     const onlyOnWebRows: WbsDiffItem[] = scope === 'rows'
         ? rows
-              .filter((r) => originalRowIds.has(r.id) && !seenRowIds.has(r.id))
+              .filter((r) => originalRowIds.has(r.id) && !seenRowIds.has(r.id) && !isWbsDebugingCategoryRow(r))
               .map((r) => ({ label: labelFor(menuCodeById.get(r.menuId) ?? '', r.category, r.featureName) }))
         : [];
     summary.rowsOnlyOnWeb = onlyOnWebRows.length;

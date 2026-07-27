@@ -268,6 +268,7 @@ export async function syncPersonalProgressToWbs(
     const wbsData = wbsProject.data as { menus?: WbsMenuNode[]; rows?: WbsDevRow[] };
     const rows = [...(wbsData.rows ?? [])];
     let changed = false;
+    const progressPatches: Array<{ rowId: string; progress: number }> = [];
 
     for (const ev of events) {
         if (!ev.isWbsMirror || !ev.wbsRowId || ev.wbsProjectId !== wbsProjectId) continue;
@@ -277,6 +278,7 @@ export async function syncPersonalProgressToWbs(
         const prog = Math.min(100, Math.max(0, ev.progress ?? 0));
         if (rows[idx].progress !== prog) {
             rows[idx] = { ...rows[idx], progress: prog };
+            progressPatches.push({ rowId: rows[idx].id, progress: prog });
             changed = true;
         }
     }
@@ -286,18 +288,22 @@ export async function syncPersonalProgressToWbs(
     psToWbsSyncing = true;
     try {
         const newData = { ...wbsData, rows };
-        store.updateProjectData(wbsProjectId, newData);
-        const { useWbsStore } = await import('../store/wbsStore');
-        if (useWbsStore.getState().currentProjectId === wbsProjectId) {
-            useWbsStore.getState().loadProject(wbsProjectId, newData);
-        }
         if (!wbsProjectId.startsWith('local_')) {
-            await fetchWithAuth(`${API_URL}/${wbsProjectId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: newData }),
-            });
+            // WBS 전체 스냅샷을 PATCH하면 다른 사용자의 행을 덮어쓸 수 있다.
+            // 개인일정에서 바뀐 진행율 행만 Yjs 서버에 반영한다.
+            await Promise.all(progressPatches.map(async ({ rowId, progress }) => {
+                const response = await fetchWithAuth(`${API_URL}/${wbsProjectId}/wbs/rows/${encodeURIComponent(rowId)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ progress }),
+                });
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.message || 'WBS 진행율 동기화에 실패했습니다.');
+                }
+            }));
         }
+        store.updateProjectData(wbsProjectId, newData);
     } finally {
         psToWbsSyncing = false;
     }

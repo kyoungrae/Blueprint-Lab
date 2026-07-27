@@ -298,20 +298,27 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             updatedBy: string;
             wbsSnapshot: { menus: any[]; rows: any[]; projectSchedule: any; detailSchedules: any[] };
         }) => {
-            // 내가 저장한 것은 이미 로컬에 반영됨 → 무시해서 편집 중 데이터 덮어씌워지는 것 방지
-            import('./authStore').then(({ useAuthStore }) => {
-                const myUserId = useAuthStore.getState().user?.id;
-                if (myUserId && data.updatedBy === myUserId) return;
+            // 최신 WBS는 Yjs가 단일 원본이다. 레거시 전체 스냅샷 이벤트로
+            // Yjs에서 병합된 로컬 상태를 다시 교체하지 않는다.
+            import('./wbsYjsStore').then(({ useWbsYjsStore }) => {
+                const yjsWbs = useWbsYjsStore.getState();
+                if (yjsWbs.currentProjectId === data.projectId && yjsWbs.isReady) return;
 
-                import('./wbsStore').then(({ useWbsStore }) => {
-                    const wbs = useWbsStore.getState();
-                    if (wbs.currentProjectId !== data.projectId) return;
-                    const snap = data.wbsSnapshot;
-                    wbs.loadProject(data.projectId, {
-                        menus: snap.menus,
-                        rows: snap.rows,
-                        projectSchedule: snap.projectSchedule ?? undefined,
-                        detailSchedules: snap.detailSchedules,
+                // Yjs 전환 중인 구버전 클라이언트 호환 경로
+                import('./authStore').then(({ useAuthStore }) => {
+                    const myUserId = useAuthStore.getState().user?.id;
+                    if (myUserId && data.updatedBy === myUserId) return;
+
+                    import('./wbsStore').then(({ useWbsStore }) => {
+                        const wbs = useWbsStore.getState();
+                        if (wbs.currentProjectId !== data.projectId) return;
+                        const snap = data.wbsSnapshot;
+                        wbs.loadProject(data.projectId, {
+                            menus: snap.menus,
+                            rows: snap.rows,
+                            projectSchedule: snap.projectSchedule ?? undefined,
+                            detailSchedules: snap.detailSchedules,
+                        });
                     });
                 });
             });
