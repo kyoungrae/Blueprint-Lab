@@ -816,6 +816,7 @@ const WbsDevDetail: React.FC<{
                                                         rangeStart={r.startDate}
                                                         rangeEnd={r.endDate}
                                                         onRangeChange={(start, end) => updateRow(r.id, { startDate: start, endDate: end })}
+                                                        rangeField="start"
                                                         className="w-full"
                                                         menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                                     />
@@ -827,6 +828,7 @@ const WbsDevDetail: React.FC<{
                                                         rangeStart={r.startDate}
                                                         rangeEnd={r.endDate}
                                                         onRangeChange={(start, end) => updateRow(r.id, { startDate: start, endDate: end })}
+                                                        rangeField="end"
                                                         className="w-full"
                                                         menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                                     />

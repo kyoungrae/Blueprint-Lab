@@ -493,6 +493,8 @@ interface WheelDatePickerProps {
     rangeStart?: string;
     rangeEnd?: string;
     onRangeChange?: (start: string, end: string) => void;
+    /** 범위 선택 UI에서 이 피커가 담당하는 날짜 열 */
+    rangeField?: 'start' | 'end';
 }
 
 const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
@@ -505,6 +507,7 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     rangeStart = '',
     rangeEnd = '',
     onRangeChange,
+    rangeField,
 }) => {
     const calendarRangeMode = !!onRangeChange;
     const today = new Date();
@@ -662,11 +665,17 @@ const WheelDatePicker: React.FC<WheelDatePickerProps> = ({
     };
 
     const clear = () => {
-        if (pickerMode === 'calendar' && calendarRangeMode) {
+        if (pickerMode === 'calendar' && calendarRangeMode && rangeField === 'start') {
             setDraftRange({ start: '', end: '' });
-            onRangeChange!('', '');
+            // 시작일 열의 초기화는 종료일을 보존한다.
+            onRangeChange!('', normalizeYmd(rangeEnd));
+        } else if (pickerMode === 'calendar' && calendarRangeMode && rangeField === 'end') {
+            setDraftRange({ start: '', end: '' });
+            // 종료일 열의 초기화는 시작일을 보존한다.
+            onRangeChange!(normalizeYmd(rangeStart), '');
+        } else {
+            onChange('');
         }
-        onChange('');
         setEditing(false);
         setOpen(false);
     };

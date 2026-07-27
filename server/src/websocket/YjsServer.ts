@@ -48,6 +48,11 @@ interface DocInfo {
     immediateSaveTimer: NodeJS.Timeout | null;
     /** MongoDB 스냅샷을 Y.Doc으로 이관하는 단일 초기화 작업 */
     seedPromise: Promise<void> | null;
+    /**
+     * 같은 문서의 MongoDB 저장을 순서대로 처리한다.
+     * 네트워크 지연으로 이전 스냅샷 저장이 나중에 끝나 최신 변경을 되돌리는 것을 막는다.
+     */
+    saveQueue: Promise<void>;
 }
 
 /** projectId → DocInfo */
@@ -68,6 +73,7 @@ function getOrCreateDoc(projectId: string): DocInfo {
             editorsSinceLastSave: new Set(),
             immediateSaveTimer: null,
             seedPromise: null,
+            saveQueue: Promise.resolve(),
         };
 
         doc.on('update', (_update: Uint8Array, origin: unknown) => {
@@ -329,7 +335,7 @@ async function ensureDocSeeded(projectId: string): Promise<DocInfo> {
 /**
  * Y.Doc 현재 상태 → MongoDB screenSnapshot 저장
  */
-export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<void> {
+async function persistDocToMongo(projectId: string, doc: Y.Doc): Promise<void> {
     if (!Types.ObjectId.isValid(projectId)) return;
 
     const info = docs.get(projectId);
@@ -424,6 +430,27 @@ export async function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<voi
     } catch (err) {
         logger.error('Yjs saveDocToMongo failed: %o', err);
     }
+}
+
+/**
+ * 문서별 MongoDB 저장 직렬화 진입점.
+ *
+ * `doc`은 큐가 실행되는 시점에 읽으므로, 짧은 시간에 여러 변경이 들어오면
+ * 마지막 저장도 항상 가장 최신 Yjs 상태를 기록한다.
+ */
+export function saveDocToMongo(projectId: string, doc: Y.Doc): Promise<void> {
+    const info = docs.get(projectId);
+    if (!info || info.doc !== doc) {
+        return persistDocToMongo(projectId, doc);
+    }
+
+    const queuedSave = info.saveQueue
+        .catch(() => {})
+        .then(() => persistDocToMongo(projectId, doc));
+
+    // 이후 저장은 실패한 이전 저장에도 계속 진행되어야 한다.
+    info.saveQueue = queuedSave.catch(() => {});
+    return queuedSave;
 }
 
 /**

@@ -242,6 +242,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                                 rangeStart={r.startDate}
                                                 rangeEnd={r.endDate}
                                                 onRangeChange={(start, end) => updateRow(r.id, { startDate: start, endDate: end })}
+                                                rangeField="start"
                                                 className="w-full min-w-[118px]"
                                                 menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                             />
@@ -253,6 +254,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                                 rangeStart={r.startDate}
                                                 rangeEnd={r.endDate}
                                                 onRangeChange={(start, end) => updateRow(r.id, { startDate: start, endDate: end })}
+                                                rangeField="end"
                                                 className="w-full min-w-[118px]"
                                                 menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
                                             />
