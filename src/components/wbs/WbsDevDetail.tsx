@@ -77,6 +77,67 @@ const STATUS_STYLE: Record<WbsStatus, { badge: string; dot: string }> = {
     HOLD:        { badge: 'bg-amber-50 text-amber-700 border-amber-200',     dot: 'bg-amber-400' },
 };
 
+/**
+ * Yjs 갱신 중 한글 IME 조합이 끊기지 않도록 하는 텍스트 입력 셀.
+ * 조합 중에는 화면에만 값을 유지하고, 조합 완료 시점에 한 번만 CRDT에 반영한다.
+ */
+export const ImeSafeTextInput: React.FC<{
+    value: string;
+    onChange: (value: string) => void;
+    placeholder?: string;
+    className?: string;
+}> = ({ value, onChange, placeholder, className }) => {
+    const [composingValue, setComposingValue] = useState<string | null>(null);
+    const isComposingRef = useRef(false);
+    const lastCommittedRef = useRef(value);
+
+    const commit = useCallback((nextValue: string) => {
+        if (lastCommittedRef.current === nextValue) return;
+        lastCommittedRef.current = nextValue;
+        onChange(nextValue);
+    }, [onChange]);
+
+    // 원격 변경값은 조합 중이 아닐 때만 마지막 저장값으로 삼는다.
+    useEffect(() => {
+        if (!isComposingRef.current) lastCommittedRef.current = value;
+    }, [value]);
+
+    return (
+        <input
+            type="text"
+            value={composingValue ?? value}
+            placeholder={placeholder}
+            className={className}
+            onCompositionStart={() => {
+                isComposingRef.current = true;
+            }}
+            onChange={(e) => {
+                const nextValue = e.target.value;
+                if (isComposingRef.current || (e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                    setComposingValue(nextValue);
+                    return;
+                }
+                setComposingValue(null);
+                commit(nextValue);
+            }}
+            onCompositionEnd={(e) => {
+                isComposingRef.current = false;
+                const nextValue = e.currentTarget.value;
+                setComposingValue(null);
+                commit(nextValue);
+            }}
+            onBlur={(e) => {
+                // 조합 중 포커스가 이동해 compositionend가 생략되는 브라우저도 처리한다.
+                if (!isComposingRef.current) return;
+                isComposingRef.current = false;
+                const nextValue = e.currentTarget.value;
+                setComposingValue(null);
+                commit(nextValue);
+            }}
+        />
+    );
+};
+
 /** 상태 뱃지 셀 — 클릭하면 드롭다운으로 변경 */
 export const StatusCell: React.FC<{ value: WbsStatus; onChange: (v: WbsStatus) => void }> = ({ value, onChange }) => {
     const [open, setOpen] = useState(false);
@@ -798,7 +859,12 @@ const WbsDevDetail: React.FC<{
                                                     )}
                                                 </td>
                                                 <td className="align-middle">
-                                                    <input value={r.featureName} onChange={(e) => updateRow(r.id, { featureName: e.target.value })} placeholder="기능명" className={cellInput} />
+                                                    <ImeSafeTextInput
+                                                        value={r.featureName}
+                                                        onChange={(featureName) => updateRow(r.id, { featureName })}
+                                                        placeholder="기능명"
+                                                        className={cellInput}
+                                                    />
                                                 </td>
                                                 <td className="align-middle">
                                                     <AssigneeCell

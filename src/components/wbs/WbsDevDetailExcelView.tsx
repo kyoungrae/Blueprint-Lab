@@ -11,7 +11,7 @@ import {
 } from './wbsDevRowUtils';
 import { getAllAssignees, getFilteredMenuIds } from './wbsDevFilterUtils';
 import WbsDevDetailFilterBar from './WbsDevDetailFilterBar';
-import { StatusCell, CategoryCell, AssigneeCell, LockTooltip } from './WbsDevDetail';
+import { StatusCell, CategoryCell, AssigneeCell, ImeSafeTextInput, LockTooltip } from './WbsDevDetail';
 import { useWbsStore } from '../../store/wbsStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
@@ -219,9 +219,9 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                             )}
                                         </td>
                                         <td className="border border-gray-100 px-2 py-1.5 align-middle">
-                                            <input
+                                            <ImeSafeTextInput
                                                 value={r.featureName}
-                                                onChange={(e) => updateRow(r.id, { featureName: e.target.value })}
+                                                onChange={(featureName) => updateRow(r.id, { featureName })}
                                                 placeholder="기능명"
                                                 className={cellInput}
                                             />
