@@ -601,14 +601,14 @@ function mergeProcessFlowImport(
         existingSectionIds.add(newId);
     }
 
-    const mergedSections: ProcessFlowSection[] = [...existing.pfSections];
+    const addedSections: ProcessFlowSection[] = [];
     for (const sec of incomingSections) {
         const newId = sectionIdMap.get(sec.id)!;
         let parentId = sec.parentId;
         if (parentId != null && sectionIdMap.has(parentId)) {
             parentId = sectionIdMap.get(parentId)!;
         }
-        mergedSections.push({ ...sec, id: newId, parentId: parentId ?? null });
+        addedSections.push({ ...sec, id: newId, parentId: parentId ?? null });
     }
 
     const existingNodeIds = new Set(existing.pfNodes.map((n) => n.id));
@@ -620,18 +620,18 @@ function mergeProcessFlowImport(
         existingNodeIds.add(newId);
     }
 
-    const mergedNodes: ProcessFlowNode[] = [...existing.pfNodes];
+    const addedNodes: ProcessFlowNode[] = [];
     for (const node of incomingNodes) {
         const newId = nodeIdMap.get(node.id) ?? node.id;
         let sectionId = node.sectionId;
         if (sectionId != null && sectionIdMap.has(sectionId)) {
             sectionId = sectionIdMap.get(sectionId)!;
         }
-        mergedNodes.push({ ...node, id: newId, sectionId: sectionId ?? undefined });
+        addedNodes.push({ ...node, id: newId, sectionId: sectionId ?? undefined });
     }
 
     const incomingMappedNodeIds = new Set(incomingNodes.map((node) => nodeIdMap.get(node.id) ?? node.id));
-    const mergedEdges: ProcessFlowEdge[] = [...existing.pfEdges];
+    const addedEdges: ProcessFlowEdge[] = [];
     const existingEdgeIds = new Set(existing.pfEdges.map((e) => e.id));
     for (const edge of incoming.edges ?? []) {
         const src = nodeIdMap.get(edge.source) ?? edge.source;
@@ -640,14 +640,15 @@ function mergeProcessFlowImport(
         // (기존 캔버스에 우연히 같은 ID가 있을 때 잘못 붙는 현상 방지)
         if (!incomingMappedNodeIds.has(src) || !incomingMappedNodeIds.has(tgt)) continue;
         const newEdgeId =
-            existingEdgeIds.has(edge.id) || mergedEdges.some((e) => e.id === edge.id)
+            existingEdgeIds.has(edge.id) || addedEdges.some((e) => e.id === edge.id)
                 ? `pf_edge_${ts()}`
                 : edge.id;
         existingEdgeIds.add(newEdgeId);
-        mergedEdges.push({ ...edge, id: newEdgeId, source: src, target: tgt });
+        addedEdges.push({ ...edge, id: newEdgeId, source: src, target: tgt });
     }
 
-    return { pfNodes: mergedNodes, pfEdges: mergedEdges, pfSections: mergedSections };
+    // 기존 Yjs 레코드는 다시 전송하지 않는다. 동시 편집자가 수정한 필드를 오래된 UI 값으로 덮지 않기 위함이다.
+    return { pfNodes: addedNodes, pfEdges: addedEdges, pfSections: addedSections };
 }
 
 const ProcessFlowCanvasInner: React.FC = () => {
@@ -1749,33 +1750,8 @@ const ProcessFlowCanvasInner: React.FC = () => {
         setDidFit(true);
     }, [didFit, fitView, pfNodes]);
 
-    // 진입 시 REST로 받은 processFlowSnapshot을 Y.Doc에 한 번 반영 (Yjs sync 완료 후에만 동작)
-    useEffect(() => {
-        if (!currentProjectId || !currentProject || !yjsIsSynced) return;
-
-        const hasBeenImported = (currentProject as any).__pfDataImported;
-        if (hasBeenImported) return;
-
-        const data = (currentProject as any).processFlowSnapshot || currentProject.data as any;
-
-        const hasData = data && (
-            (data.nodes && data.nodes.length > 0) ||
-            (data.edges && data.edges.length > 0) ||
-            (data.sections && data.sections.length > 0)
-        );
-
-        if (hasData) {
-            const ok = useYjsStore.getState().importData({
-                pfNodes: data.nodes || [],
-                pfEdges: data.edges || [],
-                pfSections: Array.isArray(data.sections) ? data.sections : [],
-            });
-            if (ok) {
-                setSidebarListKey((prev) => prev + 1);
-                (currentProject as any).__pfDataImported = true;
-            }
-        }
-    }, [currentProjectId, currentProject?.id, yjsIsSynced]);
+    // 원격 프로젝트의 초기 데이터는 서버가 MongoDB → Yjs 시드를 완료한 뒤 전달한다.
+    // REST 캐시를 다시 Y.Doc에 넣으면 오래된 스냅샷이 최신 협업 문서를 덮어쓸 수 있으므로 금지한다.
 
     const handleDeleteSelectedNodes = useCallback(() => {
         nodesRef.current.filter((n) => n.selected).forEach((n) => pfDeleteNode(n.id));
@@ -2740,7 +2716,7 @@ const ProcessFlowCanvasInner: React.FC = () => {
                                                     { pfNodes, pfEdges, pfSections },
                                                     { nodes, edges, sections }
                                                 );
-                                                const ok = useYjsStore.getState().importData(merged);
+                                                const ok = useYjsStore.getState().mergeData(merged);
                                                 if (!ok) {
                                                     setImportError('동기화 연결 후 다시 시도해주세요.');
                                                     return;

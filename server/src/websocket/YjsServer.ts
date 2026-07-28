@@ -41,6 +41,8 @@ interface DocInfo {
     doc: Y.Doc;
     awareness: awarenessProtocol.Awareness;
     conns: Map<WebSocket, Set<number>>;       // ws → subscribedTopics
+    /** MongoDB 시드 대기 중인 WebSocket 연결 수 (시드 실패/취소 정리 경쟁 방지) */
+    pendingConnections: number;
     snapshotTimer: NodeJS.Timeout | null;
     /** 이 저장 주기 동안 문서를 수정한 멤버 userId (WebSocket에 yjsUserId 부착) */
     editorsSinceLastSave: Set<string>;
@@ -69,6 +71,7 @@ function getOrCreateDoc(projectId: string): DocInfo {
             doc,
             awareness,
             conns: new Map(),
+            pendingConnections: 0,
             snapshotTimer: null,
             editorsSinceLastSave: new Set(),
             immediateSaveTimer: null,
@@ -138,15 +141,23 @@ async function closeConnAndPersist(projectId: string, ws: WebSocket): Promise<vo
     const info = docs.get(projectId);
     if (!info) return;
 
+    const subscribedTopics = Array.from(info.conns.get(ws) || []);
     info.conns.delete(ws);
 
-    if (info.conns.size !== 0) return;
+    awarenessProtocol.removeAwarenessStates(info.awareness, subscribedTopics, null);
 
-    awarenessProtocol.removeAwarenessStates(
-        info.awareness,
-        Array.from(info.awareness.getStates().keys()),
-        null
-    );
+    // 새 연결이 시드 완료를 기다리는 동안 마지막 기존 연결이 끊겨도
+    // 문서를 먼저 제거하면 새 연결이 빈/파기된 문서를 받게 된다.
+    if (info.conns.size !== 0 || info.pendingConnections !== 0) return;
+
+    await persistAndUnloadIdleDoc(projectId, info);
+}
+
+/** 연결·시드 대기가 모두 끝난 문서는 최신 상태를 저장한 뒤에만 메모리에서 제거한다. */
+async function persistAndUnloadIdleDoc(projectId: string, info: DocInfo): Promise<void> {
+    if (docs.get(projectId) !== info || info.conns.size !== 0 || info.pendingConnections !== 0) return;
+
+    awarenessProtocol.removeAwarenessStates(info.awareness, Array.from(info.awareness.getStates().keys()), null);
 
     if (info.immediateSaveTimer) {
         clearTimeout(info.immediateSaveTimer);
@@ -160,11 +171,13 @@ async function closeConnAndPersist(projectId: string, ws: WebSocket): Promise<vo
     }
 
     const latest = docs.get(projectId);
-    if (latest && latest.conns.size === 0) {
+    if (latest === info && latest.conns.size === 0 && latest.pendingConnections === 0) {
         if (latest.snapshotTimer) {
             clearInterval(latest.snapshotTimer);
             latest.snapshotTimer = null;
         }
+        latest.awareness.destroy();
+        latest.doc.destroy();
         docs.delete(projectId);
         logger.info(`🗑️  Yjs doc unloaded: project ${projectId}`);
     }
@@ -177,13 +190,17 @@ async function closeConnAndPersist(projectId: string, ws: WebSocket): Promise<vo
  * (room에 첫 번째 클라이언트가 접속했을 때 한 번만 호출)
  */
 async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
-    if (!Types.ObjectId.isValid(projectId)) return;
+    if (!Types.ObjectId.isValid(projectId)) {
+        throw new Error(`Invalid Yjs project id: ${projectId}`);
+    }
 
     try {
         const project = await Project.findById(projectId)
             .select('projectType screenSnapshot componentSnapshot processFlowSnapshot wbsSnapshot')
             .lean();
-        if (!project) return;
+        if (!project) {
+            throw new Error(`Yjs project not found: ${projectId}`);
+        }
 
         const p = project as any;
         const projectType: string = p.projectType || 'ERD';
@@ -316,6 +333,7 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
         logger.info(`✅ Yjs doc seeded from MongoDB: project ${projectId}`);
     } catch (err) {
         logger.error('Yjs seed from MongoDB failed: %o', err);
+        throw err;
     }
 }
 
@@ -330,6 +348,20 @@ async function ensureDocSeeded(projectId: string): Promise<DocInfo> {
     }
     await info.seedPromise;
     return info;
+}
+
+/**
+ * 시드 실패 후 비어 있는 문서가 이후 접속에서 원본처럼 사용되지 않도록 즉시 폐기한다.
+ * 연결된 클라이언트가 있는 문서는 여기서 제거하지 않는다.
+ */
+function discardUnseededDoc(projectId: string): void {
+    const info = docs.get(projectId);
+    if (!info || info.conns.size > 0 || info.pendingConnections > 0) return;
+    if (info.snapshotTimer) clearInterval(info.snapshotTimer);
+    if (info.immediateSaveTimer) clearTimeout(info.immediateSaveTimer);
+    info.awareness.destroy();
+    info.doc.destroy();
+    docs.delete(projectId);
 }
 
 /**
@@ -495,21 +527,36 @@ export async function patchWbsRowInYjs(
 // ─── WebSocket 연결 처리 ─────────────────────────────────────────────────────
 
 async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: string): Promise<void> {
-    const info = getOrCreateDoc(projectId);
+    const pendingInfo = getOrCreateDoc(projectId);
+    pendingInfo.pendingConnections += 1;
+    let info: DocInfo;
+    try {
+        /**
+         * 빈 Y.Doc을 먼저 sync하면 클라이언트가 이를 "준비 완료"로 오인해
+         * 오래된 REST 캐시나 신규 편집으로 MongoDB 원본을 덮어쓸 수 있다.
+         * 따라서 MongoDB 시드 완료 전에는 연결을 문서에 참여시키거나 sync를 시작하지 않는다.
+         */
+        info = await ensureDocSeeded(projectId);
+    } catch (error) {
+        pendingInfo.pendingConnections = Math.max(0, pendingInfo.pendingConnections - 1);
+        discardUnseededDoc(projectId);
+        throw error;
+    }
+
+    // 시드 대기 중 브라우저가 떠난 경우 빈/미사용 문서를 연결하지 않는다.
+    if (ws.readyState !== WebSocket.OPEN) {
+        info.pendingConnections = Math.max(0, info.pendingConnections - 1);
+        if (info.conns.size === 0) await persistAndUnloadIdleDoc(projectId, info);
+        return;
+    }
+
+    info.pendingConnections = Math.max(0, info.pendingConnections - 1);
     (ws as WebSocket & { yjsUserId?: string }).yjsUserId =
         yjsUserId && Types.ObjectId.isValid(yjsUserId) ? yjsUserId : undefined;
     info.conns.set(ws, new Set());
 
     if (yjsUserId && Types.ObjectId.isValid(projectId)) {
         void recordProjectAccessLog(yjsUserId, projectId, 'YJS_CONNECT');
-    }
-
-    // MongoDB에서 초기 데이터 로드 (첫 연결 시)
-    if (info.conns.size === 1) {
-        // 🚀 중요: 초기 sync를 DB I/O로 막지 않도록 비동기로 시드 처리
-        // DB가 느리거나 멈춘 경우에도 클라이언트는 빈 doc으로 우선 sync 완료 후
-        // 시드가 완료되면 update broadcast를 통해 데이터를 받게 됩니다.
-        ensureDocSeeded(projectId).catch(() => {});
     }
 
     ws.on('message', (rawData: Buffer) => {
@@ -617,7 +664,8 @@ export function startYjsServer(): void {
 
         handleConnection(ws, projectId, yjsUserId).catch((err) => {
             logger.error('Yjs handleConnection error: %o', err);
-            ws.close();
+            // 시드 실패를 정상 빈 문서처럼 보이지 않게 하여 클라이언트 편집을 차단한다.
+            ws.close(1011, 'Yjs source snapshot unavailable');
         });
     });
 

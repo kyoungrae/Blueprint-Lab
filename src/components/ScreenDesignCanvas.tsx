@@ -2603,20 +2603,44 @@ const ScreenDesignCanvasContent: React.FC = () => {
                                                             setImportError(null);
                                                             try {
                                                                 const parsed = JSON.parse(importJsonText.trim());
-                                                                const screens = Array.isArray(parsed?.screens) ? parsed.screens : [];
-                                                                const flows = Array.isArray(parsed?.flows) ? parsed.flows : [];
-                                                                const sections = Array.isArray(parsed?.sections) ? parsed.sections : [];
-                                                                if (!screens.length && !flows.length && !sections.length) {
+                                                                const importedScreens: Screen[] = Array.isArray(parsed?.screens) ? parsed.screens : [];
+                                                                const importedFlows: ScreenFlow[] = Array.isArray(parsed?.flows) ? parsed.flows : [];
+                                                                const importedSections: ScreenSection[] = Array.isArray(parsed?.sections) ? parsed.sections : [];
+                                                                if (!importedScreens.length && !importedFlows.length && !importedSections.length) {
                                                                     setImportError('화면, 연결, 섹션 데이터가 없습니다.');
                                                                     return;
                                                                 }
-                                                                const merged = mergeImportData({ screens, flows, sections });
-                                                                // Yjs importData를 통해 Y.Doc에 반영 (WebSocket으로 모든 피어에 자동 전파)
-                                                                useYjsStore.getState().importData({ screens: merged.screens, flows: merged.flows, sections: merged.sections ?? [] });
+                                                                const isLocalProject = Boolean(currentProjectId?.startsWith('local_'));
+                                                                const yjs = useYjsStore.getState();
+                                                                if (!isLocalProject && (!yjs.ydoc || !yjs.isSynced)) {
+                                                                    setImportError('동기화 연결 후 다시 시도해주세요.');
+                                                                    return;
+                                                                }
+                                                                const existingScreenIds = new Set(screens.map((screen) => screen.id));
+                                                                const existingFlowIds = new Set(flows.map((flow) => flow.id));
+                                                                const existingSectionIds = new Set(sections.map((section) => section.id));
+                                                                const merged = mergeImportData({
+                                                                    screens: importedScreens,
+                                                                    flows: importedFlows,
+                                                                    sections: importedSections,
+                                                                });
+                                                                // 기존 레코드를 다시 쓰지 않고, ID 충돌을 해소한 새 레코드만 Y.Doc에 추가한다.
+                                                                // 따라서 가져오기 중 다른 탭의 최신 필드가 오래된 UI 스냅샷으로 되돌아가지 않는다.
+                                                                if (!isLocalProject) {
+                                                                    const ok = yjs.mergeData({
+                                                                        screens: merged.screens.filter((screen) => !existingScreenIds.has(screen.id)),
+                                                                        flows: merged.flows.filter((flow) => !existingFlowIds.has(flow.id)),
+                                                                        sections: (merged.sections ?? []).filter((section) => !existingSectionIds.has(section.id)),
+                                                                    });
+                                                                    if (!ok) {
+                                                                        setImportError('동기화 연결 후 다시 시도해주세요.');
+                                                                        return;
+                                                                    }
+                                                                }
                                                                 setSidebarListKey((k) => k + 1);
                                                                 setIsImportModalOpen(false);
                                                                 setImportJsonText('');
-                                                                alert(`가져오기 완료. 화면 ${screens.length}개, 연결 ${flows.length}개, 섹션 ${sections.length}개가 추가되었습니다.`);
+                                                                alert(`가져오기 완료. 화면 ${importedScreens.length}개, 연결 ${importedFlows.length}개, 섹션 ${importedSections.length}개가 추가되었습니다.`);
                                                             } catch (err: any) {
                                                                 setImportError(err?.message || 'JSON 형식이 올바르지 않습니다.');
                                                             }

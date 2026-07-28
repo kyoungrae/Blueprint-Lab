@@ -70,6 +70,18 @@ function countOccurrences(value: unknown, find: string, key?: string): number {
     return 0;
 }
 
+/** 변경된 최상위 필드만 Y.Map에 기록해 동시 편집자의 무관한 필드를 보존한다. */
+function changedTopLevelFields<T extends { id: string }>(before: T, after: T): Partial<T> {
+    const patch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(after)) {
+        if (key === 'id') continue;
+        if (JSON.stringify((before as Record<string, unknown>)[key]) !== JSON.stringify(value)) {
+            patch[key] = value;
+        }
+    }
+    return patch as Partial<T>;
+}
+
 /** 캔버스로 스크롤할 검색 일치 항목 (화면 노드 / 연결 / 섹션 영역) */
 export type ProjectSearchNavigateHit =
     | { kind: 'screen'; id: string }
@@ -223,14 +235,23 @@ const ScreenProjectSearchReplacePanel: React.FC<ScreenProjectSearchReplacePanelP
             );
 
             if (yjsIsSynced) {
-                const ok = useYjsStore.getState().importData({
-                    screens: nextScreens,
-                    flows: nextFlows,
-                    sections: nextSections,
-                });
-                if (!ok) {
+                // 검색·치환은 변경된 필드만 기록한다. 전체 Y.Map 삭제나 전체 스냅샷 재기록은 금지한다.
+                const yjs = useYjsStore.getState();
+                if (!yjs.ydoc || !yjs.isSynced) {
                     throw new Error('동기화(Yjs)가 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.');
                 }
+                nextScreens.forEach((screen, index) => {
+                    const patch = changedTopLevelFields(baseScreens[index], screen);
+                    if (Object.keys(patch).length > 0) yjs.updateScreen(screen.id, patch);
+                });
+                nextFlows.forEach((flow, index) => {
+                    const patch = changedTopLevelFields(baseFlows[index], flow);
+                    if (Object.keys(patch).length > 0) yjs.updateFlow(flow.id, patch);
+                });
+                nextSections.forEach((section, index) => {
+                    const patch = changedTopLevelFields(baseSections[index], section);
+                    if (Object.keys(patch).length > 0) yjs.updateSection(section.id, patch);
+                });
             } else {
                 useScreenDesignStore.getState().importData({
                     screens: nextScreens,

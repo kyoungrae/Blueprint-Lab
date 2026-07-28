@@ -36,6 +36,50 @@ if (host === 'localhost' || host === '127.0.0.1') {
 
 // console.log("� Current Yjs URL:", YJS_WS_URL);
 
+/** Y.Map에 객체/배열을 저장할 때 브라우저 객체 참조를 남기지 않는 JSON 경계. */
+const cloneForYjs = <T,>(value: T): T => {
+    if (value == null || typeof value !== 'object') return value;
+    return JSON.parse(JSON.stringify(value)) as T;
+};
+
+const setYMapField = (yMap: Y.Map<any>, key: string, value: unknown) => {
+    if (value === undefined) yMap.delete(key);
+    else yMap.set(key, cloneForYjs(value));
+};
+
+const createYRecord = (record: object): Y.Map<any> => {
+    const yMap = new Y.Map<any>();
+    Object.entries(record).forEach(([key, value]) => setYMapField(yMap, key, value));
+    return yMap;
+};
+
+/**
+ * 일반 병합은 ID가 없는 기존 레코드를 삭제하지 않는다.
+ * 다른 탭이 방금 추가한 데이터가 오래된 배열 스냅샷 때문에 지워지는 것을 막는다.
+ */
+const upsertYRecord = (root: Y.Map<Y.Map<any>>, record: object) => {
+    const id = typeof (record as { id?: unknown }).id === 'string'
+        ? (record as { id: string }).id
+        : '';
+    if (!id) return;
+    const existing = root.get(id);
+    if (!existing) {
+        root.set(id, createYRecord(record));
+        return;
+    }
+    Object.entries(record).forEach(([key, value]) => setYMapField(existing, key, value));
+};
+
+const replaceYRecords = (root: Y.Map<Y.Map<any>>, records: object[]) => {
+    root.clear();
+    records.forEach((record) => {
+        const id = typeof (record as { id?: unknown }).id === 'string'
+            ? (record as { id: string }).id
+            : '';
+        if (id) root.set(id, createYRecord(record));
+    });
+};
+
 interface YjsStore {
     ydoc: Y.Doc | null;
     provider: WebsocketProvider | null;
@@ -84,6 +128,25 @@ interface YjsStore {
         pfEdges: ProcessFlowEdge[];
         pfSections: ProcessFlowSection[];
     };
+    /** 기존 데이터는 보존하는 ID/필드 단위 병합. 일반 import·검색치환에서 사용한다. */
+    mergeData: (data: {
+        screens?: Screen[];
+        flows?: ScreenFlow[];
+        sections?: ScreenSection[];
+        pfNodes?: ProcessFlowNode[];
+        pfEdges?: ProcessFlowEdge[];
+        pfSections?: ProcessFlowSection[];
+    }) => boolean;
+    /** 사용자가 명시적으로 전체 교체를 승인한 경우에만 사용한다. */
+    replaceData: (data: {
+        screens?: Screen[];
+        flows?: ScreenFlow[];
+        sections?: ScreenSection[];
+        pfNodes?: ProcessFlowNode[];
+        pfEdges?: ProcessFlowEdge[];
+        pfSections?: ProcessFlowSection[];
+    }) => boolean;
+    /** @deprecated `mergeData` 사용. 하위 호환을 위한 비파괴 별칭이다. */
     importData: (data: {
         screens?: Screen[];
         flows?: ScreenFlow[];
@@ -149,7 +212,13 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         }, syncTimeoutMs);
 
         provider.on('status', ({ status }: { status: string }) => {
-            set({ isConnected: status === 'connected', lastStatus: status });
+            set({
+                isConnected: status === 'connected',
+                // 연결이 끊긴 동안에는 오래된 로컬 Y.Doc에 쓰지 않도록 편집을 잠근다.
+                // 재연결 후 서버가 시드된 문서를 sync했을 때만 다시 true가 된다.
+                ...(status === 'connected' ? {} : { isSynced: false }),
+                lastStatus: status,
+            });
             if (status !== 'connected') {
                 clearTimeout(syncTimeout);
             }
@@ -158,6 +227,8 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
             if (synced) {
                 clearTimeout(syncTimeout);
                 set({ isSynced: true, lastSyncAt: Date.now(), lastError: null });
+            } else {
+                set({ isSynced: false });
             }
         });
 
@@ -166,12 +237,12 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         provider.on('connection-error', (err: any) => {
             const msg = (err && (err.message || String(err))) || 'connection-error';
             clearTimeout(syncTimeout);
-            set({ lastError: msg, isConnected: false });
+            set({ lastError: msg, isConnected: false, isSynced: false });
         });
         provider.on('connection-close', (evt: any) => {
             const msg = (evt && (evt.reason || evt.code || String(evt))) || 'connection-close';
             clearTimeout(syncTimeout);
-            set({ lastError: String(msg), isConnected: false });
+            set({ lastError: String(msg), isConnected: false, isSynced: false });
         });
 
         set({
@@ -526,15 +597,8 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('screens').get(id);
         if (yMap) {
-            // memos 등 중첩 배열은 순수 JSON으로 넣어야 toJSON()/Mongo 저장 시 안정적으로 복원됨
-            const entries = Object.entries(patch).map(([k, v]) => {
-                if (k === 'memos' && v != null) {
-                    return [k, JSON.parse(JSON.stringify(v))] as const;
-                }
-                return [k, v] as const;
-            });
             ydoc.transact(() => {
-                entries.forEach(([k, v]) => yMap.set(k, v));
+                Object.entries(patch).forEach(([key, value]) => setYMapField(yMap, key, value));
             });
         }
     },
@@ -546,9 +610,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
     addScreen: (screen) => {
         const { ydoc, isSynced } = get();
         if (!ydoc || !isSynced) return;
-        const yMap = new Y.Map();
-        Object.entries(screen).forEach(([k, v]) => yMap.set(k, v));
-        ydoc.getMap<Y.Map<any>>('screens').set(screen.id, yMap);
+        ydoc.getMap<Y.Map<any>>('screens').set(screen.id, createYRecord(screen));
     },
 
     deleteScreen: (id) => {
@@ -568,16 +630,14 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('flows').get(id);
         if (yMap) {
-            ydoc.transact(() => Object.entries(patch).forEach(([k, v]) => yMap.set(k, v)));
+            ydoc.transact(() => Object.entries(patch).forEach(([key, value]) => setYMapField(yMap, key, value)));
         }
     },
 
     addFlow: (flow) => {
         const { ydoc, isSynced } = get();
         if (!ydoc || !isSynced) return;
-        const yMap = new Y.Map();
-        Object.entries(flow).forEach(([k, v]) => yMap.set(k, v));
-        ydoc.getMap<Y.Map<any>>('flows').set(flow.id, yMap);
+        ydoc.getMap<Y.Map<any>>('flows').set(flow.id, createYRecord(flow));
     },
 
     deleteFlow: (id) => {
@@ -591,16 +651,14 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('sections').get(id);
         if (yMap) {
-            ydoc.transact(() => Object.entries(patch).forEach(([k, v]) => yMap.set(k, v)));
+            ydoc.transact(() => Object.entries(patch).forEach(([key, value]) => setYMapField(yMap, key, value)));
         }
     },
 
     addSection: (section) => {
         const { ydoc, isSynced } = get();
         if (!ydoc || !isSynced) return;
-        const yMap = new Y.Map();
-        Object.entries(section).forEach(([k, v]) => yMap.set(k, v));
-        ydoc.getMap<Y.Map<any>>('sections').set(section.id, yMap);
+        ydoc.getMap<Y.Map<any>>('sections').set(section.id, createYRecord(section));
     },
 
     deleteSection: (id) => {
@@ -615,7 +673,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const yMap = ydoc.getMap<Y.Map<any>>('pf_nodes').get(id);
         if (yMap) {
             ydoc.transact(() => {
-                Object.entries(patch).forEach(([k, v]) => yMap.set(k, v));
+                Object.entries(patch).forEach(([key, value]) => setYMapField(yMap, key, value));
             });
         }
     },
@@ -626,9 +684,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const root = ydoc.getMap<Y.Map<any>>('pf_nodes');
         if (root.get(node.id)) return;
         ydoc.transact(() => {
-            const yMap = new Y.Map<any>();
-            Object.entries(node).forEach(([k, v]) => yMap.set(k, v));
-            root.set(node.id, yMap);
+            root.set(node.id, createYRecord(node));
         });
     },
 
@@ -643,18 +699,10 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         if (!ydoc || !isSynced) return;
         const yMap = ydoc.getMap<Y.Map<any>>('pf_edges').get(id);
         if (yMap) {
-            const entries = Object.entries(patch).map(([k, v]) => {
-                if (k === 'kindText') return [k, v == null || v === '' ? '' : String(v)] as const;
-                if (k === 'style' && v != null && typeof v === 'object') {
-                    return [k, JSON.parse(JSON.stringify(v))] as const;
-                }
-                if (k === 'arrow' && v != null && typeof v === 'object') {
-                    return [k, JSON.parse(JSON.stringify(v))] as const;
-                }
-                return [k, v] as const;
-            });
             ydoc.transact(() => {
-                entries.forEach(([k, v]) => yMap.set(k, v));
+                Object.entries(patch).forEach(([key, value]) => {
+                    setYMapField(yMap, key, key === 'kindText' && value != null ? String(value) : value);
+                });
             });
         }
     },
@@ -693,9 +741,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
             }
 
             if (root.get(edge.id)) return;
-            const yMap = new Y.Map<any>();
-            Object.entries(edge).forEach(([k, v]) => yMap.set(k, v));
-            root.set(edge.id, yMap);
+            root.set(edge.id, createYRecord(normalizeProcessFlowEdge(edge)));
         });
     },
 
@@ -711,7 +757,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const yMap = ydoc.getMap<Y.Map<any>>('pf_sections').get(id);
         if (yMap) {
             ydoc.transact(() => {
-                Object.entries(patch).forEach(([k, v]) => yMap.set(k, v));
+                Object.entries(patch).forEach(([key, value]) => setYMapField(yMap, key, value));
             });
         }
     },
@@ -722,9 +768,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         const root = ydoc.getMap<Y.Map<any>>('pf_sections');
         if (root.get(section.id)) return;
         ydoc.transact(() => {
-            const yMap = new Y.Map<any>();
-            Object.entries(section).forEach(([k, v]) => yMap.set(k, v));
-            root.set(section.id, yMap);
+            root.set(section.id, createYRecord(section));
         });
     },
 
@@ -739,7 +783,7 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         return { screens, flows, sections, pfNodes, pfEdges, pfSections };
     },
 
-    importData: (data) => {
+    mergeData: (data) => {
         const { ydoc, isSynced } = get();
         if (!ydoc || !isSynced) return false;
         ydoc.transact(() => {
@@ -750,61 +794,41 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
             const yPfEdges = ydoc.getMap<Y.Map<any>>('pf_edges');
             const yPfSections = ydoc.getMap<Y.Map<any>>('pf_sections');
 
-            if (data.screens) {
-                yScreens.clear();
-                data.screens.forEach((screen) => {
-                    const yMap = new Y.Map();
-                    Object.entries(screen).forEach(([k, v]) => yMap.set(k, v));
-                    yScreens.set(screen.id, yMap);
-                });
+            if (Array.isArray(data.screens)) data.screens.forEach((screen) => upsertYRecord(yScreens, screen));
+            if (Array.isArray(data.flows)) data.flows.forEach((flow) => upsertYRecord(yFlows, flow));
+            if (Array.isArray(data.sections)) data.sections.forEach((section) => upsertYRecord(ySections, section));
+            if (Array.isArray(data.pfNodes)) data.pfNodes.forEach((node) => upsertYRecord(yPfNodes, node));
+            if (Array.isArray(data.pfEdges)) {
+                data.pfEdges.forEach((edge) => upsertYRecord(yPfEdges, normalizeProcessFlowEdge(edge)));
             }
-
-            if (data.flows) {
-                yFlows.clear();
-                data.flows.forEach((flow) => {
-                    const yMap = new Y.Map();
-                    Object.entries(flow).forEach(([k, v]) => yMap.set(k, v));
-                    yFlows.set(flow.id, yMap);
-                });
-            }
-
-            if (data.sections) {
-                ySections.clear();
-                data.sections.forEach((section) => {
-                    const yMap = new Y.Map();
-                    Object.entries(section).forEach(([k, v]) => yMap.set(k, v));
-                    ySections.set(section.id, yMap);
-                });
-            }
-
-            if (data.pfNodes) {
-                yPfNodes.clear();
-                data.pfNodes.forEach((node) => {
-                    const yMap = new Y.Map();
-                    Object.entries(node).forEach(([k, v]) => yMap.set(k, v));
-                    yPfNodes.set(node.id, yMap);
-                });
-            }
-
-            if (data.pfEdges) {
-                yPfEdges.clear();
-                data.pfEdges.forEach((edge) => {
-                    const normalized = normalizeProcessFlowEdge(edge);
-                    const yMap = new Y.Map();
-                    Object.entries(normalized).forEach(([k, v]) => yMap.set(k, v));
-                    yPfEdges.set(edge.id, yMap);
-                });
-            }
-
-            if (data.pfSections) {
-                yPfSections.clear();
-                data.pfSections.forEach((section) => {
-                    const yMap = new Y.Map();
-                    Object.entries(section).forEach(([k, v]) => yMap.set(k, v));
-                    yPfSections.set(section.id, yMap);
-                });
-            }
+            if (Array.isArray(data.pfSections)) data.pfSections.forEach((section) => upsertYRecord(yPfSections, section));
         });
         return true;
     },
+
+    replaceData: (data) => {
+        const { ydoc, isSynced } = get();
+        if (!ydoc || !isSynced) return false;
+        ydoc.transact(() => {
+            const yScreens = ydoc.getMap<Y.Map<any>>('screens');
+            const yFlows = ydoc.getMap<Y.Map<any>>('flows');
+            const ySections = ydoc.getMap<Y.Map<any>>('sections');
+            const yPfNodes = ydoc.getMap<Y.Map<any>>('pf_nodes');
+            const yPfEdges = ydoc.getMap<Y.Map<any>>('pf_edges');
+            const yPfSections = ydoc.getMap<Y.Map<any>>('pf_sections');
+
+            if (Array.isArray(data.screens)) replaceYRecords(yScreens, data.screens);
+            if (Array.isArray(data.flows)) replaceYRecords(yFlows, data.flows);
+            if (Array.isArray(data.sections)) replaceYRecords(ySections, data.sections);
+            if (Array.isArray(data.pfNodes)) replaceYRecords(yPfNodes, data.pfNodes);
+            if (Array.isArray(data.pfEdges)) {
+                replaceYRecords(yPfEdges, data.pfEdges.map((edge) => normalizeProcessFlowEdge(edge)));
+            }
+            if (Array.isArray(data.pfSections)) replaceYRecords(yPfSections, data.pfSections);
+        });
+        return true;
+    },
+
+    // 기존 호출부가 있어도 전체 삭제가 일어나지 않도록 비파괴 병합으로 유지한다.
+    importData: (data) => get().mergeData(data),
 }));

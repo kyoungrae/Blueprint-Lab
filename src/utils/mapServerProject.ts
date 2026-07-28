@@ -20,44 +20,36 @@ export function mapServerProjectResponse(p: any, localProject?: Project | null):
     let projData: any;
 
     if (pt === 'COMPONENT') {
-        if (localProject?.data && (localProject.data as any).components) {
-            projData = localProject.data;
-        } else if (p.data && (p.data as any).components) {
+        // 원격 프로젝트의 원본은 MongoDB/Yjs다. localStorage 캐시는 절대 서버 스냅샷보다 우선하지 않는다.
+        if (p.data && (p.data as any).components) {
             projData = p.data;
         } else if (p.componentSnapshot) {
             projData = {
                 components: p.componentSnapshot.components || [],
                 flows: p.componentSnapshot.flows || [],
             };
+        } else if (localProject?.data && (localProject.data as any).components) {
+            // 서버 응답에 해당 스냅샷 필드가 전혀 없는 예전 API 응답만 제한적으로 보완한다.
+            projData = localProject.data;
         } else {
             projData = { components: [], flows: [] };
         }
     } else if (pt === 'SCREEN_DESIGN') {
-        const serverTs = new Date(p.updatedAt || 0).getTime();
-        const localTs = new Date(localProject?.updatedAt || 0).getTime();
         const serverScreens = (p.data as any)?.screens ?? (p.screenSnapshot as any)?.screens ?? [];
         const serverFlows = (p.data as any)?.flows ?? (p.screenSnapshot as any)?.flows ?? [];
         const serverSections = (p.screenSnapshot as any)?.sections ?? (p.data as any)?.sections ?? [];
-        const localScreens = (localProject?.data as any)?.screens;
-        const localHasScreens = Array.isArray(localScreens) && localScreens.length > 0;
-        const serverHasScreens = Array.isArray(serverScreens) && serverScreens.length > 0;
 
-        if (localProject?.data && localHasScreens && !serverHasScreens) {
-            projData = {
-                screens: (localProject.data as any).screens ?? [],
-                flows: (localProject.data as any).flows ?? [],
-                sections: Array.isArray(serverSections) && serverSections.length > 0 ? serverSections : ((localProject.data as any).sections ?? []),
-            };
-        } else if (localProject?.data && (localProject.data as any).screens && localTs > serverTs) {
-            projData = localProject.data;
-        } else if (p.data && (p.data as any).screens) {
+        if (p.data && (p.data as any).screens) {
             projData = p.data;
-        } else if (p.screenSnapshot || serverScreens.length || serverFlows.length || (Array.isArray(serverSections) && serverSections.length)) {
+        } else if (p.screenSnapshot) {
             projData = {
                 screens: serverScreens || [],
                 flows: serverFlows || [],
                 sections: Array.isArray(serverSections) ? serverSections : [],
             };
+        } else if (localProject?.data && (localProject.data as any).screens) {
+            // 서버 응답에 스냅샷 자체가 없는 경우에만 캐시를 표시한다. Yjs에는 다시 쓰지 않는다.
+            projData = localProject.data;
         } else {
             projData = { screens: [], flows: [], sections: [] };
         }
