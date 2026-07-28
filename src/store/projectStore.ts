@@ -7,6 +7,29 @@ import { mapServerProjectResponse } from '../utils/mapServerProject';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/projects';
 
 /**
+ * 프로젝트 목록은 캔버스 진입의 원본이 아니라 목록 UI용 메타데이터다.
+ * 같은 화면에서 effect/focus 이벤트가 겹쳐도 목록 요청을 하나로 합치고, 짧은 시간에는
+ * 이미 받은 메타데이터를 재사용한다. 상세 스냅샷은 fetchProjectDetail()만 요청한다.
+ */
+const PROJECT_LIST_STALE_MS = 15_000;
+let projectListRequest: Promise<void> | null = null;
+let projectListRequestToken: symbol | null = null;
+let projectListAbortController: AbortController | null = null;
+let projectListFetchedAt = 0;
+let projectListAuthToken: string | null = null;
+const projectDetailRequests = new Map<string, Promise<Project | null>>();
+
+interface FetchProjectsOptions {
+    /** 생성·초대·멤버 변경 직후처럼 목록을 즉시 다시 읽어야 할 때만 사용한다. */
+    force?: boolean;
+}
+
+interface FetchProjectDetailOptions {
+    /** 폴링처럼 캐시를 건너뛰어 최신 상세 스냅샷을 확인할 때 사용한다. */
+    force?: boolean;
+}
+
+/**
  * createJSONStorage가 사용할 "원본" storage 래퍼.
  * localStorage quota 초과 시에도 앱이 죽지 않도록 안전하게 저장한다.
  * (quota 초과 상황에서 setItem이 DOMException을 던지며, uncaught로 앱 렌더가 깨질 수 있음)
@@ -50,7 +73,9 @@ interface ProjectStore {
     currentProjectId: string | null;
     isOpeningProject: boolean;
     openingProjectName: string | null;
-    fetchProjects: () => Promise<void>;
+    fetchProjects: (options?: FetchProjectsOptions) => Promise<void>;
+    /** 원격 프로젝트를 실제로 열거나 연결 프로젝트를 참조할 때만 큰 스냅샷을 가져온다. */
+    fetchProjectDetail: (id: string, options?: FetchProjectDetailOptions) => Promise<Project | null>;
     openProject: (id: string) => Promise<void>;
     addProject: (name: string, dbType: DBType, members: ProjectMember[], description?: string, projectType?: ProjectType) => Promise<Project>;
     addRemoteProject: (id: string) => Promise<void>;
@@ -71,26 +96,113 @@ export const useProjectStore = create<ProjectStore>()(
             isOpeningProject: false,
             openingProjectName: null,
 
-            fetchProjects: async () => {
+            fetchProjects: (options = {}) => {
                 const token = localStorage.getItem('auth-token');
-                if (!token) return;
+                if (!token) return Promise.resolve();
 
-                try {
-                    const response = await fetchWithAuth(`${API_URL}?t=${Date.now()}`, {
-                        headers: { 'Cache-Control': 'no-cache' },
-                        cache: 'no-store'
-                    });
-                    if (response.ok) {
+                // 로그인 사용자가 바뀌면 이전 사용자 목록의 stale-time/in-flight 결과를 재사용하지 않는다.
+                if (projectListAuthToken !== token) {
+                    projectListAbortController?.abort();
+                    projectListRequest = null;
+                    projectListRequestToken = null;
+                    projectListAbortController = null;
+                    projectListFetchedAt = 0;
+                    projectListAuthToken = token;
+                }
+
+                // React effect·focus·목록 갱신이 동시에 실행되어도 하나의 요청만 유지한다.
+                if (!options.force && projectListRequest) return projectListRequest;
+                if (!options.force && Date.now() - projectListFetchedAt < PROJECT_LIST_STALE_MS) {
+                    return Promise.resolve();
+                }
+
+                // 명시적 새로고침은 오래 기다리던 목록 요청만 취소한다. 프로젝트 상세/Yjs에는 영향이 없다.
+                if (options.force && projectListAbortController) {
+                    projectListAbortController.abort();
+                }
+
+                const controller = new AbortController();
+                const requestToken = Symbol('project-list-request');
+                projectListAbortController = controller;
+                const request = (async () => {
+                    try {
+                        const response = await fetchWithAuth(`${API_URL}?t=${Date.now()}`, {
+                            headers: { 'Cache-Control': 'no-cache' },
+                            cache: 'no-store',
+                            signal: controller.signal,
+                        });
+                        if (!response.ok) return;
+
                         const data = await response.json();
+                        if (!Array.isArray(data)) return;
+                        // 요청 중 로그아웃/계정 전환이 발생한 경우 이전 사용자 데이터를 상태에 적용하지 않는다.
+                        if (projectListAuthToken !== token) return;
+
                         const currentProjects = get().projects;
-                        const projects = data.map((p: any) =>
+                        const remoteProjects = data.map((p: any) =>
                             mapServerProjectResponse(p, currentProjects.find((lp) => lp.id === p._id)),
                         );
-                        set({ projects });
+                        // 로그인 상태에서도 local_* 프로젝트는 서버 목록에 없으므로 절대 제거하지 않는다.
+                        const localProjects = currentProjects.filter((p) => p.id.startsWith('local_'));
+                        set({ projects: [...remoteProjects, ...localProjects] });
+                        projectListFetchedAt = Date.now();
+                    } catch (error) {
+                        // Abort 및 일시 네트워크 오류에서는 기존 목록을 그대로 유지한다.
+                        if ((error as DOMException)?.name !== 'AbortError') {
+                            // 목록 갱신 실패가 기존 상태나 Yjs 문서를 비우면 안 된다.
+                        }
+                    } finally {
+                        if (projectListRequestToken === requestToken) {
+                            projectListRequest = null;
+                            projectListRequestToken = null;
+                        }
+                        if (projectListAbortController === controller) {
+                            projectListAbortController = null;
+                        }
                     }
-                } catch {
-                    // ignore
-                }
+                })();
+                projectListRequest = request;
+                projectListRequestToken = requestToken;
+                return request;
+            },
+
+            fetchProjectDetail: (id) => {
+                if (!id) return Promise.resolve(null);
+                const existing = get().projects.find((p) => p.id === id);
+                if (id.startsWith('local_')) return Promise.resolve(existing ?? null);
+
+                // 같은 프로젝트를 캔버스 진입·연결 프로젝트 effect·폴링이 동시에 요청하면 합친다.
+                const inFlight = projectDetailRequests.get(id);
+                if (inFlight) return inFlight;
+
+                const request = (async (): Promise<Project | null> => {
+                    const requestAuthToken = localStorage.getItem('auth-token');
+                    try {
+                        const response = await fetchWithAuth(`${API_URL}/${id}?t=${Date.now()}`, {
+                            headers: { 'Cache-Control': 'no-cache' },
+                            cache: 'no-store',
+                        });
+                        if (!response.ok) return null;
+
+                        const serverProject = await response.json();
+                        if (requestAuthToken !== localStorage.getItem('auth-token')) return null;
+                        const current = get().projects.find((p) => p.id === id) ?? existing;
+                        const mapped = mapServerProjectResponse(serverProject, current);
+                        set((state) => ({
+                            projects: state.projects.some((project) => project.id === id)
+                                ? state.projects.map((project) => project.id === id ? { ...project, ...mapped } : project)
+                                : [mapped, ...state.projects],
+                        }));
+                        return mapped;
+                    } catch {
+                        // 상세 요청 실패 시 빈 기본값을 만들거나 기존 상세 데이터를 덮어쓰지 않는다.
+                        return null;
+                    } finally {
+                        projectDetailRequests.delete(id);
+                    }
+                })();
+                projectDetailRequests.set(id, request);
+                return request;
             },
 
             openProject: async (id) => {
@@ -111,48 +223,21 @@ export const useProjectStore = create<ProjectStore>()(
                         return;
                     }
 
-                    const token = localStorage.getItem('auth-token');
-                    if (token) {
-                        const response = await fetchWithAuth(`${API_URL}/${id}?t=${Date.now()}`, {
-                            headers: { 'Cache-Control': 'no-cache' },
-                            cache: 'no-store',
-                        });
-                        if (response.ok) {
-                            const p = await response.json();
-                            const mapped = mapServerProjectResponse(p, existing);
-                            set((state) => ({
-                                projects: state.projects.some((x) => x.id === id)
-                                    ? state.projects.map((x) => (x.id === id ? { ...x, ...mapped } : x))
-                                    : [mapped, ...state.projects],
-                            }));
+                    const mapped = await get().fetchProjectDetail(id);
+                    if (!mapped) throw new Error('프로젝트 상세 데이터를 불러오지 못했습니다.');
 
-                            if (mapped.projectType === 'WBS') {
-                                const { useWbsStore } = await import('./wbsStore');
-                                useWbsStore.getState().loadProject(id, (mapped.data ?? { menus: [], rows: [] }) as unknown as import('../types/wbs').WbsData);
-                            }
+                    if (mapped.projectType === 'WBS') {
+                        const { useWbsStore } = await import('./wbsStore');
+                        useWbsStore.getState().loadProject(id, (mapped.data ?? { menus: [], rows: [] }) as unknown as import('../types/wbs').WbsData);
+                    }
 
-                            if (mapped.projectType === 'PERSONAL_SCHEDULE') {
-                                const { resolveLinkedWbsProjectId } = await import('../utils/linkedPersonalScheduleProjects');
-                                const wbsId = resolveLinkedWbsProjectId(mapped, get().projects);
-                                if (wbsId) {
-                                    const wbsExisting = get().projects.find((x) => x.id === wbsId);
-                                    const wbsRes = await fetchWithAuth(`${API_URL}/${wbsId}?t=${Date.now()}`, {
-                                        headers: { 'Cache-Control': 'no-cache' },
-                                        cache: 'no-store',
-                                    });
-                                    if (wbsRes.ok) {
-                                        const wbsJson = await wbsRes.json();
-                                        const wbsMapped = mapServerProjectResponse(wbsJson, wbsExisting);
-                                        set((state) => ({
-                                            projects: state.projects.some((x) => x.id === wbsId)
-                                                ? state.projects.map((x) => (x.id === wbsId ? { ...x, ...wbsMapped } : x))
-                                                : [wbsMapped, ...state.projects],
-                                        }));
-                                    }
-                                    const { syncWbsToLinkedPersonalSchedules } = await import('../services/wbsPersonalScheduleSync');
-                                    await syncWbsToLinkedPersonalSchedules(wbsId, { force: true });
-                                }
-                            }
+                    if (mapped.projectType === 'PERSONAL_SCHEDULE') {
+                        const { resolveLinkedWbsProjectId } = await import('../utils/linkedPersonalScheduleProjects');
+                        const wbsId = resolveLinkedWbsProjectId(mapped, get().projects);
+                        if (wbsId) {
+                            await get().fetchProjectDetail(wbsId);
+                            const { syncWbsToLinkedPersonalSchedules } = await import('../services/wbsPersonalScheduleSync');
+                            await syncWbsToLinkedPersonalSchedules(wbsId, { force: true });
                         }
                     }
 
@@ -248,9 +333,9 @@ export const useProjectStore = create<ProjectStore>()(
                 const token = localStorage.getItem('auth-token');
 
                 // Check if already in list
-                const { projects, fetchProjects } = useProjectStore.getState();
+                const { projects } = useProjectStore.getState();
                 if (projects.find((p) => p.id === id)) {
-                    set({ currentProjectId: id });
+                    await get().openProject(id);
                     return;
                 }
 
@@ -269,9 +354,8 @@ export const useProjectStore = create<ProjectStore>()(
                             throw new Error(errorData.message || 'Failed to join project');
                         }
 
-                        // After joining, refresh the full projects list
-                        await fetchProjects();
-                        set({ currentProjectId: id });
+                        // 참여 직후에는 목록 전체가 아니라 해당 프로젝트의 상세만 가져와 연다.
+                        await get().openProject(id);
                     } else {
                         // Guest mode: just fetch and add to local list
                         const response = await fetchWithAuth(`${API_URL}/${id}`, { headers });

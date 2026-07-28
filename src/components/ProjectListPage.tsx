@@ -373,7 +373,7 @@ const ProjectListPage: React.FC = () => {
                 alert('초대 메일이 발송되었습니다.');
                 setMemberInput('');
                 // Refresh members list
-                await fetchProjects();
+                await fetchProjects({ force: true });
                 const updatedProject = useProjectStore.getState().projects.find(p => p.id === editingMembersProject);
                 if (updatedProject) setTempMembers(updatedProject.members || []);
             } catch (err: any) {
@@ -438,7 +438,7 @@ const ProjectListPage: React.FC = () => {
                 setEditingMembersProject(null);
                 setMemberInput('');
                 alert('팀원 구성이 저장되었습니다.');
-                await fetchProjects();
+                await fetchProjects({ force: true });
             } catch (err: any) {
                 alert(err.message || '저장에 실패했습니다.');
             } finally {
@@ -457,7 +457,7 @@ const ProjectListPage: React.FC = () => {
                 // Invitation code
                 await joinWithCode(trimmed);
                 alert('프로젝트에 참여되었습니다.');
-                await fetchProjects();
+                await fetchProjects({ force: true });
             } else {
                 // Project ID
                 await addRemoteProject(trimmed);
@@ -1530,7 +1530,7 @@ const ProjectListPage: React.FC = () => {
                                                                     role: data.member.role,
                                                                 }]);
                                                             }
-                                                            fetchProjects().catch(() => {});
+                                                            fetchProjects({ force: true }).catch(() => {});
                                                         }}
                                                         className="p-1.5 text-gray-400 hover:text-emerald-500 transition-colors"
                                                         title="프로젝트에 추가"
@@ -1593,7 +1593,7 @@ const ProjectListPage: React.FC = () => {
                 const applyPsLink = async (next: string[]) => {
                     await updateProjectMetadata(linkingProjectId, { linkedPersonalScheduleProjectIds: next });
                     await syncWbsToLinkedPersonalSchedules(linkingProjectId, { force: true });
-                    void fetchProjects();
+                    void fetchProjects({ force: true });
                 };
 
                 return (

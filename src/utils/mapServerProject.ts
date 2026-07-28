@@ -1,6 +1,9 @@
 import type { Project } from '../types/erd';
 
-function mergeBugReports(server: any[], local: any[]) {
+function mergeBugReports(server: any[] | undefined, local: any[]) {
+    // 목록 API는 bugReports를 의도적으로 생략한다. 생략된 필드를 빈 배열로 해석해
+    // 이미 상세 조회한 데이터를 지우지 않도록 한다.
+    if (!Array.isArray(server)) return local || [];
     const localById = new Map((local || []).map((b: any) => [b.id, b]));
     return (server || []).map((b: any) => {
         const lb = localById.get(b.id);
@@ -61,6 +64,9 @@ export function mapServerProjectResponse(p: any, localProject?: Project | null):
                 projectSchedule: (p.wbsSnapshot as any).projectSchedule ?? undefined,
                 detailSchedules: (p.wbsSnapshot as any).detailSchedules || [],
             };
+        } else if (localProject?.data && Array.isArray((localProject.data as any).menus)) {
+            // 목록 응답은 wbsSnapshot을 생략한다. 이미 상세 조회한 상태를 빈 값으로 바꾸지 않는다.
+            projData = localProject.data;
         } else {
             projData = { menus: [], rows: [] };
         }
@@ -72,6 +78,8 @@ export function mapServerProjectResponse(p: any, localProject?: Project | null):
                 categories: p.personalScheduleSnapshot.categories || {},
                 visibleCats: p.personalScheduleSnapshot.visibleCats || [],
             };
+        } else if (localProject?.data && Array.isArray((localProject.data as any).events)) {
+            projData = localProject.data;
         } else {
             projData = { events: [], todos: [], categories: {}, visibleCats: [] };
         }
@@ -83,6 +91,8 @@ export function mapServerProjectResponse(p: any, localProject?: Project | null):
                 edges: snap.edges || [],
                 sections: snap.sections || [],
             }
+            : localProject?.data && Array.isArray((localProject.data as any).nodes)
+                ? localProject.data
             : { nodes: [], edges: [], sections: [] };
     } else {
         const snap = p.currentSnapshot;
@@ -92,6 +102,8 @@ export function mapServerProjectResponse(p: any, localProject?: Project | null):
                 relationships: snap.relationships || [],
                 sections: snap.sections || [],
             }
+            : localProject?.data && Array.isArray((localProject.data as any).entities)
+                ? localProject.data
             : { entities: [], relationships: [], sections: [] };
     }
 
@@ -113,6 +125,6 @@ export function mapServerProjectResponse(p: any, localProject?: Project | null):
             role: m.role || 'MEMBER',
         })),
         data: projData,
-        bugReports: mergeBugReports(p.bugReports || [], localProject?.bugReports || []),
+        bugReports: mergeBugReports(p.bugReports, localProject?.bugReports || []),
     } as Project;
 }

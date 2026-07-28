@@ -139,8 +139,20 @@ const ComponentCanvasContent: React.FC = () => {
         if (!editingFlowId) setFlowLabelComposing(null);
     }, [editingFlowId]);
 
-    const { projects, currentProjectId, setCurrentProject } = useProjectStore();
+    const { projects, currentProjectId, setCurrentProject, fetchProjectDetail } = useProjectStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
+    const linkedErdIdsKey = (currentProject?.linkedErdProjectIds?.length
+        ? currentProject.linkedErdProjectIds
+        : currentProject?.linkedErdProjectId ? [currentProject.linkedErdProjectId] : [])
+        .join('|');
+
+    // 컴포넌트 명세에서 참조하는 ERD만 상세 조회한다. 목록 API는 메타데이터 전용이다.
+    useEffect(() => {
+        if (!linkedErdIdsKey) return;
+        linkedErdIdsKey.split('|').filter(Boolean).forEach((id) => {
+            void fetchProjectDetail(id);
+        });
+    }, [linkedErdIdsKey, fetchProjectDetail]);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isAddScreenModalOpen, setIsAddScreenModalOpen] = useState(false);
     const flowWrapper = useRef<HTMLDivElement>(null);

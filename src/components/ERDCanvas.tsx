@@ -381,7 +381,7 @@ const ERDCanvasContent: React.FC = () => {
     const relationships = React.useMemo(() => Object.values(relationshipsById), [relationshipsById]);
 
     const { user, logout } = useAuthStore();
-    const { projects, currentProjectId, setCurrentProject, updateProjectData, fetchProjects } = useProjectStore();
+    const { projects, currentProjectId, setCurrentProject, updateProjectData } = useProjectStore();
 
     const currentProject = projects.find(p => p.id === currentProjectId);
 
@@ -839,14 +839,7 @@ const ERDCanvasContent: React.FC = () => {
     }, [importData]);
 
 
-    // For remote projects: fetch latest from server on mount so we get sections (rehydrated state may be stale)
-    useEffect(() => {
-        if (currentProjectId && !currentProjectId.startsWith('local_') && typeof fetchProjects === 'function') {
-            fetchProjects();
-        }
-    }, [currentProjectId, fetchProjects]);
-
-    // Initial load: restore ERD state from project data (local from persist, remote from fetchProjects)
+    // Initial load: restore ERD state from project data (local from persist, remote from openProject/Yjs).
     // Only re-run when switching project (currentProjectId/currentProject.id) or when projects list is first populated.
     // Do NOT depend on currentProject.updatedAt or currentProject.data — that would re-run after our own auto-save and cause an infinite loop with mergeData/importData.
     useEffect(() => {

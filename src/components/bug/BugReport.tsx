@@ -436,7 +436,7 @@ export const BugReportButton: React.FC<{ project: Project }> = ({ project }) => 
     const unresolvedCount = (project.bugReports || []).filter(b => !b.isResolved).length;
 
     // ── ✨ NEW: 필요한 스토어 훅 추가 ──
-    const { fetchProjects } = useProjectStore();
+    const { fetchProjectDetail } = useProjectStore();
     const { user } = useAuthStore();
 
     // ── ✨ 2. 서버 조회(fetch) 대신 로컬 즉시 덮어쓰기로 변경 ──
@@ -457,7 +457,8 @@ export const BugReportButton: React.FC<{ project: Project }> = ({ project }) => 
                             )
                         }));
                     } else {
-                        fetchProjects(); // 혹시 데이터가 누락됐다면 기존 방식(fetch)으로 안전장치 가동
+                        // 목록 전체가 아니라 해당 프로젝트만 다시 읽는다.
+                        void fetchProjectDetail(project.id, { force: true });
                     }
                 }
             }
@@ -465,7 +466,7 @@ export const BugReportButton: React.FC<{ project: Project }> = ({ project }) => 
 
         window.addEventListener('erd:remote_operation', handleRemoteBugUpdate);
         return () => window.removeEventListener('erd:remote_operation', handleRemoteBugUpdate);
-    }, [project.id, user?.id, fetchProjects]);
+    }, [project.id, user?.id, fetchProjectDetail]);
 
     return (
         <>

@@ -415,7 +415,7 @@ const ScreenDesignCanvasContent: React.FC = () => {
         if (!editingFlowId) setFlowLabelComposing(null);
     }, [editingFlowId]);
 
-    const { projects, currentProjectId, setCurrentProject, fetchProjects } = useProjectStore();
+    const { projects, currentProjectId, setCurrentProject, fetchProjectDetail } = useProjectStore();
     const { 
         addScreen, updateScreen, deleteScreen,
         addFlow, updateFlow, deleteFlow,
@@ -1026,22 +1026,30 @@ const ScreenDesignCanvasContent: React.FC = () => {
         // }
     }, [isConnectedOnSocket, currentProjectId, currentProject?.data, importData]);
 
-    // 원격 프로젝트: 진입 시 서버에서 최신 데이터 fetch (새로고침 후 복원 시 currentProject.data 보강)
-    useEffect(() => {
-        if (currentProjectId && !currentProjectId.startsWith('local_') && typeof fetchProjects === 'function') {
-            fetchProjects();
-        }
-    }, [currentProjectId, fetchProjects]);
+    // 현재 프로젝트 상세는 openProject()에서 1회 가져오고, 새로고침은 Yjs가 최신 원본을 보낸다.
+    // 여기서 목록 전체를 다시 요청하면 모든 화면설계 스냅샷을 반복 내려받게 되므로 요청하지 않는다.
 
     // 연결된 컴포넌트 프로젝트 최신 데이터 확보 (스타일 동기화용)
     useEffect(() => {
         const linkedId = currentProject?.linkedComponentProjectId;
         if (!linkedId) return;
-        fetchProjects();
-        const onFocus = () => fetchProjects();
+        void fetchProjectDetail(linkedId);
+        const onFocus = () => void fetchProjectDetail(linkedId, { force: true });
         window.addEventListener('focus', onFocus);
         return () => window.removeEventListener('focus', onFocus);
-    }, [currentProject?.linkedComponentProjectId, fetchProjects]);
+    }, [currentProject?.linkedComponentProjectId, fetchProjectDetail]);
+
+    // 명세서의 관련 테이블을 펼칠 때만 필요한 연결 ERD의 상세를 미리 확보한다.
+    const linkedErdIdsKey = (currentProject?.linkedErdProjectIds?.length
+        ? currentProject.linkedErdProjectIds
+        : currentProject?.linkedErdProjectId ? [currentProject.linkedErdProjectId] : [])
+        .join('|');
+    useEffect(() => {
+        if (!linkedErdIdsKey) return;
+        linkedErdIdsKey.split('|').filter(Boolean).forEach((id) => {
+            void fetchProjectDetail(id);
+        });
+    }, [linkedErdIdsKey, fetchProjectDetail]);
 
     // 컴포넌트 스타일 동기화: 연결된 컴포넌트 프로젝트의 스타일 변경을 화면 설계에 반영
     const linkedComponentProjectId = currentProject?.linkedComponentProjectId;

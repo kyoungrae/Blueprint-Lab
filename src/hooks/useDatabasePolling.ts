@@ -12,7 +12,7 @@ interface PollingOptions {
  * 다른 사용자의 변경사항을 감지하여 UI 업데이트
  */
 export function useDatabasePolling({ interval = 5000, projectId, enabled = true }: PollingOptions) {
-    const { fetchProjects } = useProjectStore();
+    const { fetchProjectDetail } = useProjectStore();
     const lastUpdateRef = useRef<number>(Date.now());
     const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -22,8 +22,8 @@ export function useDatabasePolling({ interval = 5000, projectId, enabled = true 
         const startPolling = () => {
             pollingIntervalRef.current = setInterval(async () => {
                 try {
-                    // 프로젝트 데이터 다시 가져오기
-                    await fetchProjects();
+                    // 전체 프로젝트 목록이 아니라 현재 프로젝트 상세만 다시 가져온다.
+                    await fetchProjectDetail(projectId, { force: true });
                     lastUpdateRef.current = Date.now();
                 } catch (error) {
                     // console.warn('Database polling error:', error);
@@ -32,7 +32,7 @@ export function useDatabasePolling({ interval = 5000, projectId, enabled = true 
         };
 
         // 즉시 한번 실행 후 폴링 시작
-        fetchProjects().then(() => {
+        fetchProjectDetail(projectId, { force: true }).then(() => {
             lastUpdateRef.current = Date.now();
             startPolling();
         }).catch(() => {
@@ -45,13 +45,13 @@ export function useDatabasePolling({ interval = 5000, projectId, enabled = true 
                 pollingIntervalRef.current = null;
             }
         };
-    }, [projectId, interval, enabled, fetchProjects]);
+    }, [projectId, interval, enabled, fetchProjectDetail]);
 
     // 수동으로 새로고침하는 함수
     const refresh = async () => {
         if (projectId) {
             try {
-                await fetchProjects();
+                await fetchProjectDetail(projectId, { force: true });
                 lastUpdateRef.current = Date.now();
             } catch (error) {
                 // console.error('Manual refresh error:', error);

@@ -112,13 +112,35 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
             return res.status(401).json({ message: '사용자 인증이 필요합니다.' });
         }
 
-        const projects = await Project.find({
-            'members.userId': new Types.ObjectId(userId)
-        })
+        // 목록 화면에는 캔버스 스냅샷(drawElements·이미지·WBS 행 등)이 필요 없다.
+        // 수백 개 프로젝트의 모든 스냅샷을 반환하면 응답이 수십 MB까지 커지므로,
+        // 실제 캔버스 데이터는 GET /projects/:id 상세 요청에서만 내려준다.
+        const projects = await Project.find(
+            { 'members.userId': new Types.ObjectId(userId) },
+            {
+                _id: 1,
+                name: 1,
+                projectType: 1,
+                dbType: 1,
+                description: 1,
+                author: 1,
+                groupLabel: 1,
+                members: 1,
+                linkedErdProjectId: 1,
+                linkedErdProjectIds: 1,
+                linkedComponentProjectId: 1,
+                linkedPersonalScheduleProjectIds: 1,
+                linkedWbsProjectId: 1,
+                createdAt: 1,
+                updatedAt: 1,
+            }
+        )
             .populate('members.userId', 'name email picture')
-            .sort({ updatedAt: -1 });
+            .sort({ updatedAt: -1 })
+            .lean();
 
         res.set('Cache-Control', 'no-store');
+        res.set('X-Project-List-Mode', 'metadata');
         res.json(projects);
     } catch (error) {
         // console.error('Get projects error:', error);
