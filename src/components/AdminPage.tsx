@@ -466,7 +466,11 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                 throw new Error(data.message || '동기화에 실패했습니다.');
             }
             const data = await res.json();
-            alert(`동기화 완료! ${typeof data.newWordsCount === 'number' ? data.newWordsCount : 0}개의 새 단어가 추가되었습니다.`);
+            const newWordsCount = typeof data.newWordsCount === 'number' ? data.newWordsCount : 0;
+            const archivedWordsCount = typeof data.archivedWordsCount === 'number' ? data.archivedWordsCount : 0;
+            alert(
+                `동기화 완료! 새 단어 ${newWordsCount}개를 추가하고, 더 이상 화면에 없는 단어 ${archivedWordsCount}개를 보관했습니다.\n\n보관된 단어와 번역문은 삭제되지 않으며 PPT 사전과 기본 목록에서만 제외됩니다.`
+            );
             await fetchTranslations();
         } catch {
             alert('동기화 실패');

@@ -8,6 +8,7 @@ export const getTranslationDictionary = async (_req: AuthRequest, res: Response)
         const list = await Translation.find({
             translatedText: { $ne: '' },
             status: { $ne: 'IGNORED' },
+            isArchived: { $ne: true },
         })
             .select('originalText translatedText')
             .lean();

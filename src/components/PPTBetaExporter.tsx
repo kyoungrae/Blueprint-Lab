@@ -20,48 +20,67 @@ function pptSafeFuncNoLabel(text: string): string {
     return String(text ?? '').replace(/[\u002D\u2010]/g, '\u2011');
 }
 
-function buildNormalizedDictionary(dict: Record<string, string>): Record<string, string> {
-    const normalized: Record<string, string> = {};
+/**
+ * 공백 제거 키는 "안녕"과 "안 녕"처럼 서로 다른 원문을 같은 값으로 만들 수 있다.
+ * 충돌한 축약 키는 null로 표시해 임의의 번역을 선택하지 않는다.
+ */
+type TranslationDictionaryIndex = {
+    raw: Record<string, string | null>;
+    spaced: Record<string, string | null>;
+    compact: Record<string, string | null>;
+};
+
+function addIndexedTranslation(
+    bucket: Record<string, string | null>,
+    key: string,
+    value: string
+) {
+    if (!key) return;
+    if (!Object.prototype.hasOwnProperty.call(bucket, key)) {
+        bucket[key] = value;
+    } else if (bucket[key] !== value) {
+        bucket[key] = null;
+    }
+}
+
+function buildNormalizedDictionary(dict: Record<string, string>): TranslationDictionaryIndex {
+    const normalized: TranslationDictionaryIndex = { raw: {}, spaced: {}, compact: {} };
     for (const [key, value] of Object.entries(dict)) {
         if (!value) continue;
-        const candidates = new Set<string>();
         const spaced = translationLookupKeySpaced(key);
         const compact = translationLookupKeyCompact(key);
         const raw = plainForTranslationLookup(key).trim();
-        if (spaced) candidates.add(spaced);
-        if (compact) candidates.add(compact);
-        if (raw) candidates.add(raw);
-        for (const nk of candidates) {
-            if (!nk || normalized[nk]) continue;
-            normalized[nk] = value;
-        }
+        addIndexedTranslation(normalized.raw, raw, value);
+        addIndexedTranslation(normalized.spaced, spaced, value);
+        addIndexedTranslation(normalized.compact, compact, value);
     }
     return normalized;
 }
 
+function getExactTranslation(index: TranslationDictionaryIndex, raw: string, spaced: string): string | undefined {
+    return index.raw[raw] ?? index.spaced[spaced] ?? undefined;
+}
+
 function lookupTranslation(
     plain: string,
-    dynamicNormalized: Record<string, string>,
-    dynamicRaw: Record<string, string>,
-    staticNormalized: Record<string, string>
+    dynamicDictionary: TranslationDictionaryIndex,
+    staticDictionary: TranslationDictionaryIndex
 ): string {
     const spaced = translationLookupKeySpaced(plain);
     const compact = translationLookupKeyCompact(plain);
     const raw = plainForTranslationLookup(plain).trim();
 
-    const keys = [compact, spaced, raw].filter((k): k is string => Boolean(k));
-    for (const k of keys) {
-        const hit = dynamicNormalized[k] ?? staticNormalized[k];
-        if (hit) return hit;
-    }
-    for (const [origKey, translated] of Object.entries(dynamicRaw)) {
-        if (!translated) continue;
-        if (translationLookupKeyCompact(origKey) === compact && compact) return translated;
-        if (translationLookupKeySpaced(origKey) === spaced && spaced) return translated;
-    }
-    if (spaced && dynamicRaw[spaced]) return dynamicRaw[spaced];
-    if (raw && dynamicRaw[raw]) return dynamicRaw[raw];
-    if (compact && dynamicRaw[compact]) return dynamicRaw[compact];
+    // 수동 DB 사전을 정적 사전보다 우선하되, 원문 공백까지 일치하는 키를 먼저 사용한다.
+    const dynamicExact = getExactTranslation(dynamicDictionary, raw, spaced);
+    if (dynamicExact) return dynamicExact;
+    const staticExact = getExactTranslation(staticDictionary, raw, spaced);
+    if (staticExact) return staticExact;
+
+    // 축약 키는 유일한 경우에만 보조적으로 쓴다. 충돌 시 null이므로 원문을 보존한다.
+    const dynamicCompact = compact ? dynamicDictionary.compact[compact] : undefined;
+    if (dynamicCompact) return dynamicCompact;
+    const staticCompact = compact ? staticDictionary.compact[compact] : undefined;
+    if (staticCompact) return staticCompact;
     return plain;
 }
 
@@ -288,7 +307,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
 
         const staticNormalizedDictEarly = buildNormalizedDictionary(staticMnDict as Record<string, string>);
         const lookupMn = (plain: string) =>
-            lookupTranslation(plain, {}, {}, staticNormalizedDictEarly);
+            lookupTranslation(plain, { raw: {}, spaced: {}, compact: {} }, staticNormalizedDictEarly);
         let tr = (text: string, isMn: boolean): string => {
             if (!isMn || !text) return text;
             return translateTextPreservingIndent(text, lookupMn);
@@ -1565,7 +1584,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                 );
 
                 let dynamicDict: Record<string, string> = {};
-                let dynamicNormalizedDict: Record<string, string> = {};
+                let dynamicNormalizedDict: TranslationDictionaryIndex = { raw: {}, spaced: {}, compact: {} };
                 if (translateToMN) {
                     try {
                         const dictRes = await fetchWithAuth(`${API_ROOT}/translations/dictionary`);
@@ -1578,7 +1597,7 @@ const PPTBetaExporter: React.FC<PPTBetaExporterProps> = ({
                     }
                 }
                 const lookupMnWithDict = (plain: string) =>
-                    lookupTranslation(plain, dynamicNormalizedDict, dynamicDict, staticNormalizedDict);
+                    lookupTranslation(plain, dynamicNormalizedDict, staticNormalizedDict);
                 tr = (text: string, isMn: boolean): string => {
                     if (!isMn || !text) return text;
                     return translateTextPreservingIndent(text, lookupMnWithDict);

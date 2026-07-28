@@ -5,18 +5,19 @@ import { Project } from '../models/Project';
 import { Translation } from '../models/Translation';
 import { extractKoreanWords, normalizeTranslationWhitespace } from '../utils/translationExtractor';
 
-/** 화면 설계 프로젝트 data에서 한글 문자열을 스캔해 Translation 컬렉션에 upsert */
+/**
+ * 화면 설계 스냅샷에서 한글 문자열을 수집한다.
+ *
+ * 더 이상 사용되지 않는 단어는 삭제하지 않고 보관 처리한다. 그래야 치환 전 원문과
+ * 기존 번역문을 복구할 수 있으면서, 기본 목록·PPT 사전에는 남지 않는다.
+ */
 export const syncTranslations = async (req: AuthRequest, res: Response) => {
     try {
         const projects = await Project.find({ projectType: 'SCREEN_DESIGN' }).select('screenSnapshot').lean();
         const allKoreanWords = extractKoreanWords(projects.map((p) => p.screenSnapshot ?? {}));
         const uniqueWords = [...new Set(allKoreanWords)];
-
-        if (uniqueWords.length === 0) {
-            return res.json({ success: true, newWordsCount: 0 });
-        }
-
         const now = new Date();
+        const scanId = new mongoose.Types.ObjectId().toString();
         const bulkOps = uniqueWords.map((word) => ({
             updateOne: {
                 filter: { originalText: word },
@@ -25,28 +26,57 @@ export const syncTranslations = async (req: AuthRequest, res: Response) => {
                         originalText: word,
                         translatedText: '',
                         status: 'PENDING' as const,
+                        source: 'SCREEN_SYNC' as const,
                     },
-                    $set: { lastExtractedAt: now },
+                    $set: {
+                        lastExtractedAt: now,
+                        lastSeenSyncId: scanId,
+                        isArchived: false,
+                        archivedAt: null,
+                    },
                 },
                 upsert: true,
             },
         }));
 
-        const result = await Translation.bulkWrite(bulkOps, { ordered: false });
-        const newWordsCount =
-            (typeof result.upsertedCount === 'number' ? result.upsertedCount : 0) +
-            (typeof result.insertedCount === 'number' ? result.insertedCount : 0);
+        const result = bulkOps.length > 0
+            ? await Translation.bulkWrite(bulkOps, { ordered: false })
+            : null;
 
-        return res.json({ success: true, newWordsCount });
+        // 빈 스냅샷/일시적 저장 지연이 모든 메모리를 한꺼번에 숨기지 않도록,
+        // 현재 한글 단어가 하나 이상 관찰된 정상 전체 스캔에서만 미사용 항목을 보관한다.
+        let archivedWordsCount = 0;
+        if (uniqueWords.length > 0) {
+            const archiveResult = await Translation.updateMany(
+                {
+                    isArchived: { $ne: true },
+                    lastSeenSyncId: { $ne: scanId },
+                    // source 없는 기존 데이터는 과거 화면 동기화 데이터로 호환 처리한다.
+                    $or: [{ source: 'SCREEN_SYNC' }, { source: { $exists: false } }],
+                },
+                {
+                    $set: { isArchived: true, archivedAt: now },
+                }
+            );
+            archivedWordsCount = typeof archiveResult.modifiedCount === 'number' ? archiveResult.modifiedCount : 0;
+        }
+
+        const newWordsCount =
+            (typeof result?.upsertedCount === 'number' ? result.upsertedCount : 0) +
+            (typeof result?.insertedCount === 'number' ? result.insertedCount : 0);
+
+        return res.json({ success: true, newWordsCount, archivedWordsCount });
     } catch (error) {
         console.error('syncTranslations', error);
         return res.status(500).json({ message: '동기화 중 오류가 발생했습니다.' });
     }
 };
 
-export const listTranslations = async (_req: AuthRequest, res: Response) => {
+export const listTranslations = async (req: AuthRequest, res: Response) => {
     try {
-        const list = await Translation.find().sort({ status: -1, originalText: 1 }).lean();
+        const includeArchived = String(req.query.includeArchived || '').toLowerCase() === 'true';
+        const filter = includeArchived ? {} : { isArchived: { $ne: true } };
+        const list = await Translation.find(filter).sort({ status: -1, originalText: 1 }).lean();
         return res.json(list);
     } catch (error) {
         console.error('listTranslations', error);
@@ -93,9 +123,12 @@ export const importTranslations = async (req: AuthRequest, res: Response) => {
                             translatedText: translated,
                             status,
                             lastExtractedAt: now,
+                            isArchived: false,
+                            archivedAt: null,
                         },
                         $setOnInsert: {
                             originalText: orig,
+                            source: 'MANUAL' as const,
                         },
                     },
                     upsert: true,
@@ -132,7 +165,12 @@ export const patchTranslation = async (req: AuthRequest, res: Response) => {
         const { translatedText } = req.body as { translatedText?: string };
         const text = normalizeTranslationWhitespace(translatedText ?? '');
         const status = text ? ('COMPLETED' as const) : ('PENDING' as const);
-        await Translation.findByIdAndUpdate(id, { translatedText: text, status });
+        await Translation.findByIdAndUpdate(id, {
+            translatedText: text,
+            status,
+            isArchived: false,
+            archivedAt: null,
+        });
         return res.json({ success: true });
     } catch (error) {
         console.error('patchTranslation', error);
