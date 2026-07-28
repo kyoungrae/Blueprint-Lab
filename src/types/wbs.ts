@@ -42,6 +42,12 @@ export interface WbsDevRow {
     startDate: string;
     /** 기간 종료 (YYYY-MM-DD) */
     endDate: string;
+    /** 실적 시작일 (YYYY-MM-DD). 계획 시작일과 완전히 별도로 관리한다. */
+    actualStartDate?: string;
+    /** 실적 종료일 (YYYY-MM-DD). 계획 종료일과 완전히 별도로 관리한다. */
+    actualEndDate?: string;
+    /** 실적 수행일. actualStartDate~actualEndDate로 계산해 저장하는 표시용 값이다. */
+    actualWorkDate?: string;
     status: WbsStatus;
     /** 진행율 0~100 */
     progress: number;

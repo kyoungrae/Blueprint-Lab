@@ -25,6 +25,9 @@ interface WbsDevRow {
     assignee: string;
     startDate: string;
     endDate: string;
+    actualStartDate?: string;
+    actualEndDate?: string;
+    actualWorkDate?: string;
     status: WbsStatus;
     progress: number;
     note?: string;
@@ -146,6 +149,24 @@ function toDotDate(v: string): string {
     return m ? `${m[1]}.${m[2]}.${m[3]}` : s;
 }
 
+/** 브라우저 개발 상세의 수행일 계산과 동일하게 시작·종료일을 포함해 계산한다. */
+function formatWbsDuration(startDate: string, endDate: string): string {
+    const toUtcDay = (value: string): number | null => {
+        const match = String(value ?? '').trim().match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
+        if (!match) return null;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+        return date.getTime();
+    };
+    const start = toUtcDay(startDate);
+    const end = toUtcDay(endDate);
+    if (start === null || end === null || end < start) return '';
+    return `${Math.floor((end - start) / 86_400_000) + 1}일`;
+}
+
 export function buildWbsExcelBuffer(data: WbsDetailPayload, projectName: string): Buffer {
     const { menus, rows } = data;
     const menuCodeById = new Map(menus.map((m) => [m.id, m.menuCode]));
@@ -197,7 +218,7 @@ export function buildWbsExcelBuffer(data: WbsDetailPayload, projectName: string)
     const hdrLabels = [
         'ID(수정금지)',
         ...Array.from({ length: pathDepth }, () => '메뉴경로'),
-        '메뉴코드', '구분(산출물)', '기능명', '담당자', '시작일', '종료일', '상태', '진행율(%)', '비고',
+        '메뉴코드', '구분(산출물)', '기능명', '담당자', '시작일', '종료일', '수행일', '실적 시작일', '실적 종료일', '실적 수행일', '상태', '진행율(%)', '비고',
     ];
     detailAoa.push(hdrLabels.map((v) => sc(v, hdrStyle())));
 
@@ -221,6 +242,10 @@ export function buildWbsExcelBuffer(data: WbsDetailPayload, projectName: string)
             sc(r.assignee, cellStyle(bg)),
             sc(toDotDate(r.startDate), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
             sc(toDotDate(r.endDate), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(formatWbsDuration(r.startDate, r.endDate), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(toDotDate(r.actualStartDate ?? ''), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(toDotDate(r.actualEndDate ?? ''), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(r.actualWorkDate || formatWbsDuration(r.actualStartDate ?? '', r.actualEndDate ?? ''), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
             sc(statusLbl, cellStyle(bg, { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: sfg } }, alignment: { horizontal: 'center', vertical: 'center' } })),
             sc(r.progress, cellStyle(bg, { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: r.progress === 100 ? '059669' : '374151' } }, alignment: { horizontal: 'center', vertical: 'center' } })),
             sc(r.note ?? '', cellStyle(bg)),
@@ -232,7 +257,7 @@ export function buildWbsExcelBuffer(data: WbsDetailPayload, projectName: string)
         { wch: 22 },
         ...Array.from({ length: pathDepth }, () => ({ wch: 18 })),
         { wch: 13 }, { wch: 13 }, { wch: 26 }, { wch: 10 },
-        { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 22 },
+        { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 22 },
     ];
     ws1['!rows'] = [{ hpt: 22 }];
     ws1['!freeze'] = { xSplit: 0, ySplit: 1 };

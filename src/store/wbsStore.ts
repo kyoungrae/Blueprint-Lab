@@ -6,6 +6,7 @@ import { useProjectStore } from './projectStore';
 import { enrichRowsWithAssigneeUserIds } from '../utils/wbsAssigneeMatch';
 import { scheduleSyncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
 import { useWbsYjsStore } from './wbsYjsStore';
+import { formatWbsDuration } from '../components/wbs/wbsDateUtils';
 
 const uid = (prefix: string) =>
     `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -71,6 +72,21 @@ function syncLinkedPersonalSchedulesAfterYjsChange(projectId: string | null, cha
     if (changed && projectId) scheduleSyncWbsToLinkedPersonalSchedules(projectId);
 }
 
+/**
+ * 개발 상세의 실적 수행일은 계획 수행일과 마찬가지로 실적 시작/종료일에서 계산한다.
+ * 새 필드가 없는 기존 행도 빈 문자열로 자연스럽게 호환된다.
+ */
+function withActualWorkDate(row: WbsDevRow): WbsDevRow {
+    const actualStartDate = String(row.actualStartDate ?? '');
+    const actualEndDate = String(row.actualEndDate ?? '');
+    return {
+        ...row,
+        actualStartDate,
+        actualEndDate,
+        actualWorkDate: formatWbsDuration(actualStartDate, actualEndDate),
+    };
+}
+
 export const useWbsStore = create<WbsState>((set, get) => ({
     menus: [],
     rows: [],
@@ -81,7 +97,8 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     loadProject: (projectId, data) => {
         const rawRows = Array.isArray(data?.rows) ? (data!.rows as WbsDevRow[]) : [];
         const wbsProject = useProjectStore.getState().projects.find((p) => p.id === projectId);
-        const rows = normalizeWbsDevRows(enrichRowsWithAssigneeUserIds(rawRows, wbsProject?.members ?? []));
+        const rows = normalizeWbsDevRows(enrichRowsWithAssigneeUserIds(rawRows, wbsProject?.members ?? []))
+            .map(withActualWorkDate);
         set({
             currentProjectId: projectId,
             menus: Array.isArray(data?.menus) ? (data!.menus as WbsMenuNode[]) : [],
@@ -93,18 +110,21 @@ export const useWbsStore = create<WbsState>((set, get) => ({
 
     importData: (data) => {
         const currentProjectId = get().currentProjectId;
+        const rawRows = Array.isArray(data.rows) ? (data.rows as WbsDevRow[]) : get().rows;
+        // 사용자 승인 import에서도 실적 수행일은 임의 입력값이 아니라 실적 날짜로 재계산한다.
+        const normalizedRows = normalizeWbsDevRows(rawRows).map(withActualWorkDate);
+        const normalizedData = Array.isArray(data.rows) ? { ...data, rows: normalizedRows } : data;
         const yjs = activeWbsYjs(currentProjectId);
         if (yjs) {
-            const changed = yjs.replaceData(data);
+            const changed = yjs.replaceData(normalizedData);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
             return;
         }
         // 서버 WBS는 Yjs 초기화 완료 전에는 쓰기를 허용하지 않는다.
         if (currentProjectId && !currentProjectId.startsWith('local_')) return;
-        const rawRows = Array.isArray(data.rows) ? (data.rows as WbsDevRow[]) : get().rows;
         set({
             menus: Array.isArray(data.menus) ? (data.menus as WbsMenuNode[]) : get().menus,
-            rows: normalizeWbsDevRows(rawRows),
+            rows: normalizedRows,
             projectSchedule: data.projectSchedule !== undefined ? (data.projectSchedule ?? null) : get().projectSchedule,
             detailSchedules: Array.isArray(data.detailSchedules) ? (data.detailSchedules as WbsDetailSchedule[]) : get().detailSchedules,
         });
@@ -414,6 +434,9 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             assignee: '',
             startDate: '',
             endDate: '',
+            actualStartDate: '',
+            actualEndDate: '',
+            actualWorkDate: '',
             status: 'TODO' as WbsStatus,
             progress: 0,
         };
@@ -428,6 +451,9 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             assignee: '',
             startDate: '',
             endDate: '',
+            actualStartDate: '',
+            actualEndDate: '',
+            actualWorkDate: '',
             status: 'TODO' as WbsStatus,
             progress: 0,
             isDebugging: true,
@@ -455,6 +481,9 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             assignee: '',
             startDate: '',
             endDate: '',
+            actualStartDate: '',
+            actualEndDate: '',
+            actualWorkDate: '',
             status: 'TODO' as WbsStatus,
             progress: 0,
         }));
@@ -467,6 +496,9 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             assignee: '',
             startDate: '',
             endDate: '',
+            actualStartDate: '',
+            actualEndDate: '',
+            actualWorkDate: '',
             status: 'TODO' as WbsStatus,
             progress: 0,
             isDebugging: true,
@@ -484,10 +516,21 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     updateRow: (id, patch) => {
+        const currentRow = get().rows.find((row) => row.id === id);
+        // 실적 날짜를 바꿀 때만 실적 수행일을 함께 갱신한다. 계획 날짜는 절대 참조·수정하지 않는다.
+        const patchWithActualWorkDate = ('actualStartDate' in patch || 'actualEndDate' in patch)
+            ? {
+                ...patch,
+                actualWorkDate: formatWbsDuration(
+                    String(patch.actualStartDate ?? currentRow?.actualStartDate ?? ''),
+                    String(patch.actualEndDate ?? currentRow?.actualEndDate ?? ''),
+                ),
+            }
+            : patch;
         const currentProjectId = get().currentProjectId;
         const yjs = activeWbsYjs(currentProjectId);
         if (yjs) {
-            const changed = yjs.updateRow(id, patch);
+            const changed = yjs.updateRow(id, patchWithActualWorkDate);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
             return;
         }
@@ -495,7 +538,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         set({
             rows: get().rows.map((r) => {
                 if (r.id !== id) return r;
-                return normalizeWbsDevRows([{ ...r, ...patch }])[0];
+                return withActualWorkDate(normalizeWbsDevRows([{ ...r, ...patchWithActualWorkDate }])[0]);
             }),
         });
         get().scheduleSave();

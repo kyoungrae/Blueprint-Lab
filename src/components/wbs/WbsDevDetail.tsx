@@ -450,12 +450,14 @@ export const AssigneeCell: React.FC<{
     );
 };
 
-type BulkField = 'assignee' | 'startDate' | 'endDate' | 'status' | 'progress';
+type BulkField = 'assignee' | 'startDate' | 'endDate' | 'actualStartDate' | 'actualEndDate' | 'status' | 'progress';
 
 const BULK_ACTIONS: { field: BulkField; label: string; icon: React.ReactNode }[] = [
     { field: 'assignee',  label: '담당자 일괄', icon: <User size={13} /> },
     { field: 'startDate', label: '시작일 일괄', icon: <CalendarDays size={13} /> },
     { field: 'endDate',   label: '종료일 일괄', icon: <CalendarCheck size={13} /> },
+    { field: 'actualStartDate', label: '실적 시작일 일괄', icon: <CalendarDays size={13} /> },
+    { field: 'actualEndDate',   label: '실적 종료일 일괄', icon: <CalendarCheck size={13} /> },
     { field: 'status',    label: '상태 일괄',   icon: <Activity size={13} /> },
     { field: 'progress',  label: '진행률 일괄', icon: <Percent size={13} /> },
 ];
@@ -665,7 +667,7 @@ const WbsDevDetail: React.FC<{
                 </select>
             );
         }
-        if (bulkField === 'startDate' || bulkField === 'endDate') {
+        if (bulkField === 'startDate' || bulkField === 'endDate' || bulkField === 'actualStartDate' || bulkField === 'actualEndDate') {
             return (
                 <WheelDatePicker
                     value={bulkValue}
@@ -818,6 +820,9 @@ const WbsDevDetail: React.FC<{
                                         <th className="text-left px-2 py-2 w-36 border-b border-gray-200">시작일</th>
                                         <th className="text-left px-2 py-2 w-36 border-b border-gray-200">종료일</th>
                                         <th className="text-center px-2 py-2 w-20 border-b border-gray-200">수행일</th>
+                                        <th className="text-left px-2 py-2 w-36 border-b border-gray-200 bg-emerald-50">실적 시작일</th>
+                                        <th className="text-left px-2 py-2 w-36 border-b border-gray-200 bg-emerald-50">실적 종료일</th>
+                                        <th className="text-center px-2 py-2 w-20 border-b border-gray-200 bg-emerald-50">실적 수행일</th>
                                         <th className="text-left px-2 py-2 w-28 border-b border-gray-200">상태</th>
                                         <th className="text-left px-2 py-2 w-28 border-b border-gray-200">진행율</th>
                                         <th className="text-left px-2 py-2 border-b border-gray-200">비고</th>
@@ -827,7 +832,7 @@ const WbsDevDetail: React.FC<{
                                 <tbody>
                                     {menuRows.length === 0 ? (
                                         <tr>
-                                            <td colSpan={10} className="text-center text-gray-400 py-10 text-sm">
+                                            <td colSpan={13} className="text-center text-gray-400 py-10 text-sm">
                                                 아직 입력된 산출물이 없습니다. '행 추가'로 시작하세요.
                                             </td>
                                         </tr>
@@ -901,6 +906,33 @@ const WbsDevDetail: React.FC<{
                                                 </td>
                                                 <td className="align-middle text-center text-sm font-semibold tabular-nums text-gray-700">
                                                     {formatWbsDuration(r.startDate, r.endDate) || '-'}
+                                                </td>
+                                                <td className="align-middle bg-emerald-50/40">
+                                                    <WheelDatePicker
+                                                        value={r.actualStartDate ?? ''}
+                                                        onChange={(v) => updateRow(r.id, { actualStartDate: v })}
+                                                        rangeStart={r.actualStartDate ?? ''}
+                                                        rangeEnd={r.actualEndDate ?? ''}
+                                                        onRangeChange={(start, end) => updateRow(r.id, { actualStartDate: start, actualEndDate: end })}
+                                                        rangeField="start"
+                                                        className="w-full"
+                                                        menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
+                                                    />
+                                                </td>
+                                                <td className="align-middle bg-emerald-50/40">
+                                                    <WheelDatePicker
+                                                        value={r.actualEndDate ?? ''}
+                                                        onChange={(v) => updateRow(r.id, { actualEndDate: v })}
+                                                        rangeStart={r.actualStartDate ?? ''}
+                                                        rangeEnd={r.actualEndDate ?? ''}
+                                                        onRangeChange={(start, end) => updateRow(r.id, { actualStartDate: start, actualEndDate: end })}
+                                                        rangeField="end"
+                                                        className="w-full"
+                                                        menuDateRanges={assigneeMenuRangesMap.get(r.assignee.trim()) ?? []}
+                                                    />
+                                                </td>
+                                                <td className="align-middle text-center text-sm font-semibold tabular-nums text-emerald-700 bg-emerald-50/40">
+                                                    {r.actualWorkDate || formatWbsDuration(r.actualStartDate ?? '', r.actualEndDate ?? '') || '-'}
                                                 </td>
                                                 <td className="align-middle">
                                                     {dbgLocked ? (

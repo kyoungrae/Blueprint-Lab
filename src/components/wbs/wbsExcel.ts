@@ -133,7 +133,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
     const hdrLabels = [
         'ID(수정금지)',
         ...Array.from({ length: pathDepth }, () => '메뉴경로'),
-        '메뉴코드', '구분(산출물)', '기능명', '담당자', '시작일', '종료일', '수행일', '상태', '진행율(%)', '비고',
+        '메뉴코드', '구분(산출물)', '기능명', '담당자', '시작일', '종료일', '수행일', '실적 시작일', '실적 종료일', '실적 수행일', '상태', '진행율(%)', '비고',
     ];
     detailAoa.push(hdrLabels.map((v) => sc(v, hdrStyle())));
 
@@ -167,6 +167,10 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
             sc(toDotDate(r.startDate), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
             sc(toDotDate(r.endDate),   cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
             sc(formatWbsDuration(r.startDate, r.endDate), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            // 실적 시작일·종료일·수행일 — 계획 일정과 별도 필드, 수행일은 기간으로 계산
+            sc(toDotDate(r.actualStartDate ?? ''), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(toDotDate(r.actualEndDate ?? ''), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
+            sc(r.actualWorkDate || formatWbsDuration(r.actualStartDate ?? '', r.actualEndDate ?? ''), cellStyle(bg, { alignment: { horizontal: 'center', vertical: 'center' } })),
             // 상태
             sc(statusLbl, cellStyle(bg, { font: { name: '맑은 고딕', sz: 9, bold: true, color: { rgb: sfg } }, alignment: { horizontal: 'center', vertical: 'center' } })),
             // 진행율
@@ -182,7 +186,7 @@ export function downloadWbsExcel(data: WbsData, projectName: string): void {
         { wch: 22 },
         ...Array.from({ length: pathDepth }, () => ({ wch: 18 })),
         { wch: 13 }, { wch: 13 }, { wch: 26 }, { wch: 10 },
-        { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 22 },
+        { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 22 },
     ];
     ws1['!rows'] = [{ hpt: 22 }];
     ws1['!freeze'] = { xSplit: 0, ySplit: 1 };
@@ -586,7 +590,22 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: 
             const featureName = cell(dr, '기능명');
             const excelStart = normalizeDate(cell(dr, '시작일'));
             const excelEnd = normalizeDate(cell(dr, '종료일'));
-            const next = {
+            // 구버전 엑셀에는 실적 열이 없다. 그 경우 기존 실적 값을 빈 값으로 덮어쓰지 않는다.
+            const hasActualDateColumns = ['실적 시작일', '실적시작일', '실적 종료일', '실적종료일']
+                .some((header) => Object.prototype.hasOwnProperty.call(dr, header));
+            const excelActualStart = normalizeDate(cell(dr, '실적 시작일', '실적시작일'));
+            const excelActualEnd = normalizeDate(cell(dr, '실적 종료일', '실적종료일'));
+            const next: {
+                assignee: string;
+                startDate: string;
+                endDate: string;
+                actualStartDate?: string;
+                actualEndDate?: string;
+                actualWorkDate?: string;
+                status: WbsStatus;
+                progress: number;
+                note: string;
+            } = {
                 assignee: cell(dr, '담당자'),
                 startDate: excelStart,
                 endDate: excelEnd,
@@ -594,6 +613,11 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: 
                 progress: Math.min(100, Math.max(0, Number(dr['진행율(%)'] ?? dr['진행율']) || 0)),
                 note: cell(dr, '비고'),
             };
+            if (hasActualDateColumns) {
+                next.actualStartDate = excelActualStart;
+                next.actualEndDate = excelActualEnd;
+                next.actualWorkDate = formatWbsDuration(excelActualStart, excelActualEnd);
+            }
 
             let target: WbsDevRow | undefined = findMergeTarget(
                 rows, rowById, rowByKey, menu.id, code, category, featureName, id, seenRowIds,
@@ -604,6 +628,11 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: 
                 const mergedFeatureName = mergeFieldFromExcel(target.featureName, featureName);
                 next.startDate = mergeFieldFromExcel(target.startDate, excelStart);
                 next.endDate = mergeFieldFromExcel(target.endDate, excelEnd);
+                if (hasActualDateColumns) {
+                    next.actualStartDate = mergeFieldFromExcel(target.actualStartDate ?? '', excelActualStart);
+                    next.actualEndDate = mergeFieldFromExcel(target.actualEndDate ?? '', excelActualEnd);
+                    next.actualWorkDate = formatWbsDuration(next.actualStartDate, next.actualEndDate);
+                }
                 // 실제 값이 바뀐 필드만 수집 (동일 파일 재업로드 시 오탐 방지 + 변경 내역 표시)
                 const q = (v: string) => (v && v.length ? `'${v}'` : '(빈값)');
                 const changes: string[] = [];
@@ -615,6 +644,11 @@ export async function analyzeWbsExcelMerge(current: WbsData, file: File, scope: 
                 if (target.assignee !== next.assignee) changes.push(`담당자 ${q(target.assignee)} → ${q(next.assignee)}`);
                 if (target.startDate !== next.startDate) changes.push(`시작일 ${q(target.startDate)} → ${q(next.startDate)}`);
                 if (target.endDate !== next.endDate) changes.push(`종료일 ${q(target.endDate)} → ${q(next.endDate)}`);
+                if (hasActualDateColumns) {
+                    if ((target.actualStartDate ?? '') !== next.actualStartDate) changes.push(`실적 시작일 ${q(target.actualStartDate ?? '')} → ${q(next.actualStartDate ?? '')}`);
+                    if ((target.actualEndDate ?? '') !== next.actualEndDate) changes.push(`실적 종료일 ${q(target.actualEndDate ?? '')} → ${q(next.actualEndDate ?? '')}`);
+                    if ((target.actualWorkDate ?? '') !== next.actualWorkDate) changes.push(`실적 수행일 ${q(target.actualWorkDate ?? '')} → ${q(next.actualWorkDate ?? '')}`);
+                }
                 if (target.status !== next.status) {
                     changes.push(`상태 '${WBS_STATUS_LABEL[target.status]}' → '${WBS_STATUS_LABEL[next.status]}'`);
                 }
