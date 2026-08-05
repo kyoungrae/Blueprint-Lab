@@ -528,12 +528,13 @@ export const useProjectStore = create<ProjectStore>()(
             name: 'project-storage',
             version: 3, // 버전 업: 연결된 ERD 프로젝트 데이터 유지
             storage: createJSONStorage(() => safeStateStorage),
-            // localStorage quota 초과 방지를 위해 ERD/SCREEN_DESIGN/COMPONENT의 큰 data를 저장하지 않는다.
-            // 단, 다른 프로젝트에 연결된(linked) ERD 프로젝트는 데이터를 유지한다.
+            // 원격 캔버스의 원본은 MongoDB/Yjs다. localStorage에는 목록 메타데이터만 남긴다.
+            // 특히 현재 열려 있다는 이유로 SCREEN_DESIGN/COMPONENT/PROCESS_FLOW 전체를
+            // project-storage에 다시 쓰면 drawElements 등의 대형 데이터로 quota를 초과한다.
+            // local_* 프로젝트는 서버 원본이 없으므로 기존처럼 전체 데이터를 보존한다.
             partialize: (state) => {
                 const allLinkedErdIds = new Set<string>();
                 const keepDataIds = new Set<string>();
-                if (state.currentProjectId) keepDataIds.add(state.currentProjectId);
 
                 state.projects.forEach((p) => {
                     const erdIds = p.linkedErdProjectIds || (p.linkedErdProjectId ? [p.linkedErdProjectId] : []);
@@ -554,7 +555,15 @@ export const useProjectStore = create<ProjectStore>()(
                     currentProjectId: state.currentProjectId,
                     projects: state.projects.map((p) => {
                         const isLinkedErd = p.projectType === 'ERD' && allLinkedErdIds.has(p.id);
-                        const keepData = keepDataIds.has(p.id) || isLinkedErd;
+                        const isRemoteCanvasProject = !p.id.startsWith('local_') && (
+                            p.projectType === 'SCREEN_DESIGN' ||
+                            p.projectType === 'COMPONENT' ||
+                            p.projectType === 'PROCESS_FLOW'
+                        );
+                        // 원격 화면설계·컴포넌트·프로세스 플로우는 열린 상태/연결 관계와 무관하게
+                        // 스냅샷을 cache에 저장하지 않는다. 재진입 시 Yjs/Mongo 상세 원본으로 채운다.
+                        const keepData = p.id.startsWith('local_') ||
+                            (!isRemoteCanvasProject && (keepDataIds.has(p.id) || isLinkedErd));
                         const base = {
                             id: p.id,
                             name: p.name,
@@ -570,7 +579,7 @@ export const useProjectStore = create<ProjectStore>()(
                             linkedPersonalScheduleProjectIds: p.linkedPersonalScheduleProjectIds,
                             linkedWbsProjectId: p.linkedWbsProjectId,
                             members: p.members,
-                            // 현재·연결된 ERD·연결된 WBS↔개인일정 프로젝트는 데이터 유지
+                            // local_* 및 연결된 ERD·WBS↔개인일정 프로젝트만 데이터 유지
                             data:
                                 keepData
                                     ? p.data

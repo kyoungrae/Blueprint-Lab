@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
-import { Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { RotateCcw, Trash2 } from 'lucide-react';
 import WheelDatePicker, { WheelProgressPicker } from './WheelDatePicker';
-import { buildAssigneeMenuDateRanges, formatWbsDuration } from './wbsDateUtils';
+import { buildAssigneeMenuDateRanges, formatWbsDuration, normalizeYmd } from './wbsDateUtils';
 import {
     menuPathParts,
     sortWbsDevRows,
@@ -18,6 +18,7 @@ import { useWbsEditingStore } from '../../store/wbsEditingStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
 import { isWbsDebugingCategoryRow } from '../../types/wbs';
+import type { WbsDevRow } from '../../types/wbs';
 
 const cellInput = 'w-full bg-transparent px-2 py-1.5 text-[11px] outline-none focus:bg-emerald-50/50 rounded';
 
@@ -27,6 +28,56 @@ interface WbsDevDetailExcelViewProps {
     activeAssignees: Set<string>;
     onToggleAssignee: (name: string) => void;
     onClearAssignees: () => void;
+}
+
+type ExcelDateFilterField =
+    | 'planStart'
+    | 'planEnd'
+    | 'planPeriod'
+    | 'actualStart'
+    | 'actualEnd'
+    | 'actualPeriod';
+
+const EXCEL_DATE_FILTER_OPTIONS: { value: ExcelDateFilterField; label: string }[] = [
+    { value: 'planStart', label: '계획 시작일' },
+    { value: 'planEnd', label: '계획 종료일' },
+    { value: 'planPeriod', label: '계획 수행 기간' },
+    { value: 'actualStart', label: '실적 시작일' },
+    { value: 'actualEnd', label: '실적 종료일' },
+    { value: 'actualPeriod', label: '실적 수행 기간' },
+];
+
+function isDateInRange(value: string, from: string, to: string): boolean {
+    const date = normalizeYmd(value);
+    if (!date) return false;
+    return (!from || date >= from) && (!to || date <= to);
+}
+
+/** 기간 열은 From~To와 하루라도 겹치면 표시한다. 수행일은 기간 일수 표시값이므로 날짜로 비교하지 않는다. */
+function isPeriodOverlappingRange(startValue: string, endValue: string, from: string, to: string): boolean {
+    const start = normalizeYmd(startValue);
+    const end = normalizeYmd(endValue);
+    if (!start && !end) return false;
+
+    const periodStart = start || end;
+    const periodEnd = end || start;
+    return (!from || periodEnd >= from) && (!to || periodStart <= to);
+}
+
+function matchesDateFilter(
+    row: WbsDevRow,
+    field: ExcelDateFilterField,
+    from: string,
+    to: string,
+): boolean {
+    switch (field) {
+        case 'planStart': return isDateInRange(row.startDate, from, to);
+        case 'planEnd': return isDateInRange(row.endDate, from, to);
+        case 'planPeriod': return isPeriodOverlappingRange(row.startDate, row.endDate, from, to);
+        case 'actualStart': return isDateInRange(row.actualStartDate ?? '', from, to);
+        case 'actualEnd': return isDateInRange(row.actualEndDate ?? '', from, to);
+        case 'actualPeriod': return isPeriodOverlappingRange(row.actualStartDate ?? '', row.actualEndDate ?? '', from, to);
+    }
 }
 
 const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
@@ -40,6 +91,9 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
     const rows = useWbsStore((s) => s.rows);
     const updateRow = useWbsStore((s) => s.updateRow);
     const deleteRow = useWbsStore((s) => s.deleteRow);
+    const [dateFilterField, setDateFilterField] = useState<ExcelDateFilterField>('planPeriod');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
 
     const editingMap = useWbsEditingStore((s) => s.editing);
     const emitFocus = useSyncStore((s) => s.emitWbsFieldFocus);
@@ -72,6 +126,19 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
         return base.filter((r) => filteredMenuIds.has(r.menuId));
     }, [menus, rows, filteredMenuIds]);
     const pathDepth = useMemo(() => wbsPathDepth(menus, rows), [menus, rows]);
+    const normalizedDateFrom = normalizeYmd(dateFrom);
+    const normalizedDateTo = normalizeYmd(dateTo);
+    const hasDateFilter = Boolean(normalizedDateFrom || normalizedDateTo);
+    const hasInvalidDateRange = Boolean(
+        normalizedDateFrom && normalizedDateTo && normalizedDateFrom > normalizedDateTo,
+    );
+    const displayedRows = useMemo(() => {
+        if (!hasDateFilter) return sortedRows;
+        if (hasInvalidDateRange) return [];
+        return sortedRows.filter((row) => (
+            matchesDateFilter(row, dateFilterField, normalizedDateFrom, normalizedDateTo)
+        ));
+    }, [dateFilterField, hasDateFilter, hasInvalidDateRange, normalizedDateFrom, normalizedDateTo, sortedRows]);
 
     const debugUnlockedByMenu = useMemo(() => {
         const map = new Map<string, boolean>();
@@ -100,15 +167,20 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
     let lastMenuId = '';
 
     const totals = useMemo(() => {
-        const done = sortedRows.filter((r) => r.status === 'DONE').length;
-        const avg = sortedRows.length
-            ? Math.round(sortedRows.reduce((sum, r) => sum + (r.progress ?? 0), 0) / sortedRows.length)
+        const done = displayedRows.filter((r) => r.status === 'DONE').length;
+        const avg = displayedRows.length
+            ? Math.round(displayedRows.reduce((sum, r) => sum + (r.progress ?? 0), 0) / displayedRows.length)
             : 0;
-        return { count: sortedRows.length, done, avg };
-    }, [sortedRows]);
+        return { count: displayedRows.length, done, avg };
+    }, [displayedRows]);
 
-    const hasActiveFilter = filteredMenuIds !== null;
-    const isEmptyFilter = hasActiveFilter && filteredMenuIds!.size === 0;
+    const hasActiveFilter = filteredMenuIds !== null || hasDateFilter;
+    const isEmptyFilter = hasActiveFilter && displayedRows.length === 0;
+    const clearAllFilters = () => {
+        onMenuSearchChange('');
+        setDateFrom('');
+        setDateTo('');
+    };
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
@@ -120,7 +192,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                         {hasActiveFilter ? ' (필터 적용)' : ''}
                     </p>
                 </div>
-                <div className="flex-1 min-w-0 max-w-2xl">
+                <div className="flex-1 min-w-0 max-w-3xl">
                     <WbsDevDetailFilterBar
                         allAssignees={allAssignees}
                         assigneeColorIdx={assigneeColorIdx}
@@ -131,6 +203,50 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                         onMenuSearchChange={onMenuSearchChange}
                         layout="inline"
                     />
+                    <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
+                        <span className="text-[11px] font-bold text-gray-500 mr-0.5">날짜 필터</span>
+                        <select
+                            value={dateFilterField}
+                            onChange={(event) => setDateFilterField(event.target.value as ExcelDateFilterField)}
+                            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                            aria-label="날짜 기준"
+                        >
+                            {EXCEL_DATE_FILTER_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                        </select>
+                        <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={(event) => setDateFrom(event.target.value)}
+                            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-700 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                            aria-label="시작 날짜"
+                        />
+                        <span className="text-xs font-bold text-gray-400">~</span>
+                        <input
+                            type="date"
+                            value={dateTo}
+                            onChange={(event) => setDateTo(event.target.value)}
+                            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-700 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                            aria-label="종료 날짜"
+                        />
+                        {(menuSearch || hasDateFilter) && (
+                            <button
+                                type="button"
+                                onClick={clearAllFilters}
+                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-xs font-bold text-gray-500 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                                title="검색어와 날짜 필터 초기화"
+                            >
+                                <RotateCcw size={12} />
+                                초기화
+                            </button>
+                        )}
+                    </div>
+                    {hasInvalidDateRange && (
+                        <p className="mt-1 text-right text-[11px] font-medium text-rose-600">
+                            시작일은 종료일보다 늦을 수 없습니다.
+                        </p>
+                    )}
                 </div>
             </div>
 
@@ -174,14 +290,14 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                         </tr>
                     </thead>
                     <tbody>
-                        {sortedRows.length === 0 ? (
+                        {displayedRows.length === 0 ? (
                             <tr>
                                 <td colSpan={pathDepth + 13} className="text-center text-gray-400 py-16 text-sm">
                                     개발 상세 데이터가 없습니다.
                                 </td>
                             </tr>
                         ) : (
-                            sortedRows.map((r) => {
+                            displayedRows.map((r) => {
                                 if (r.menuId !== lastMenuId) {
                                     groupColorIdx = (groupColorIdx + 1) % WBS_GROUP_ROW_BG.length;
                                     lastMenuId = r.menuId;
