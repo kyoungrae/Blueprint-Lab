@@ -315,7 +315,6 @@ import { useScreenDesignStore } from '../store/screenDesignStore';
 import { renderTextWithSearchHighlight } from '../utils/projectSearchHighlight';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
-import { useDatabasePolling } from '../hooks/useDatabasePolling';
 import type { Screen, ScreenFlow, ScreenSection, PageSizeOption, PageOrientation } from '../types/screenDesign';
 import PremiumTooltip from './screenNode/PremiumTooltip';
 import { getCanvasDimensions } from '../types/screenDesign';
@@ -432,12 +431,9 @@ const ScreenDesignCanvasContent: React.FC = () => {
     } = useYjsStore();
     const currentProject = projects.find(p => p.id === currentProjectId);
 
-    // Yjs가 정상 동기화 중일 때는 폴링을 꺼서 불필요한 대형 상태 갱신을 줄인다.
-    useDatabasePolling({
-        projectId: currentProjectId || '',
-        interval: 5000,
-        enabled: Boolean(currentProjectId && !currentProjectId.startsWith('local_') && !yjsIsSynced),
-    });
+    // 화면설계의 원본은 Yjs/Mongo다. Yjs 연결 실패를 5초 전체 REST 폴링으로 대신하면
+    // 대형 drawElements 스냅샷을 반복 수신해 화면이 멈춘다. provider 자체 재연결을 사용하고,
+    // 동기화 전에는 기존처럼 읽기 전용/재연결 UI만 노출한다.
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [sidebarWidth, setSidebarWidth] = useState(SCREEN_DESIGN_SIDEBAR_DEFAULT_WIDTH);
     const sidebarResizingRef = useRef(false);

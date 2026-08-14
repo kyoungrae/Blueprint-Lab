@@ -128,28 +128,37 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
             if (!state) {
                 // Check if projectId is a valid MongoDB ObjectId
                 if (Types.ObjectId.isValid(projectId)) {
-                    const project = await Project.findById(projectId).lean();
+                    // 화면설계 캔버스의 원본은 Yjs다. Socket.IO 초기 상태에
+                    // screenSnapshot 전체(drawElements)를 읽어 들이지 않는다.
+                    const project = await Project.findById(projectId)
+                        .select('projectType currentSnapshot.entities currentSnapshot.relationships currentSnapshot.sections componentSnapshot.components componentSnapshot.flows componentSnapshot.version')
+                        .lean();
                     if (project) {
                         const snap = project as any;
                         const projectType = snap.projectType || 'ERD';
                         const isComponent = projectType === 'COMPONENT';
+                        const isScreenDesign = projectType === 'SCREEN_DESIGN';
                         state = {
                             entities: snap.currentSnapshot?.entities || [],
                             relationships: snap.currentSnapshot?.relationships || [],
-                            sections: isComponent ? [] : (projectType === 'SCREEN_DESIGN' ? (Array.isArray((snap.screenSnapshot as any)?.sections) ? (snap.screenSnapshot as any).sections : []) : ((snap.currentSnapshot as any)?.sections || [])),
-                            screens: isComponent ? (snap.componentSnapshot?.components || []) : (snap.screenSnapshot?.screens || []),
-                            flows: isComponent ? (snap.componentSnapshot?.flows || []) : (snap.screenSnapshot?.flows || []),
-                            version: isComponent ? (snap.componentSnapshot?.version || 0) : ((snap.screenSnapshot?.version ?? snap.currentSnapshot?.version) || 0),
+                            sections: isComponent || isScreenDesign ? [] : (snap.currentSnapshot?.sections || []),
+                            screens: isComponent ? (snap.componentSnapshot?.components || []) : [],
+                            flows: isComponent ? (snap.componentSnapshot?.flows || []) : [],
+                            version: isComponent ? (snap.componentSnapshot?.version || 0) : (snap.currentSnapshot?.version || 0),
                         };
-                        await projectStateManager.initializeFromDB(
-                            projectId,
-                            state.entities,
-                            state.relationships,
-                            state.version,
-                            state.screens,
-                            state.flows,
-                            state.sections || []
-                        );
+                        // 화면설계는 이 레거시 Socket.IO 상태를 소비하지 않는다. 빈 상태를
+                        // Redis에 초기화해 기존/최신 Yjs 데이터를 덮어쓰지 않도록 한다.
+                        if (!isScreenDesign) {
+                            await projectStateManager.initializeFromDB(
+                                projectId,
+                                state.entities,
+                                state.relationships,
+                                state.version,
+                                state.screens,
+                                state.flows,
+                                state.sections || []
+                            );
+                        }
                     } else {
                         // Project not found in DB
                         state = { entities: [], relationships: [], sections: [], screens: [], flows: [], version: 0 };
@@ -176,13 +185,19 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     .limit(100);
                 // Overlay latest snapshot from MongoDB so state_sync sends consistent data
                 // (Redis may be stale when user only PATCHes e.g. after section/ScreenDesign changes without sending operations)
-                const project = await Project.findById(projectId).select('projectType currentSnapshot.entities currentSnapshot.relationships currentSnapshot.sections screenSnapshot.screens screenSnapshot.flows screenSnapshot.sections').lean();
+                const project = await Project.findById(projectId).select('projectType currentSnapshot.entities currentSnapshot.relationships currentSnapshot.sections').lean();
                 const projAny = project as any;
                 const projectType = projAny?.projectType || 'ERD';
 
+                // 화면설계의 대형 screens/flows/drawElements는 Yjs만 전송한다.
+                // Socket.IO state_sync는 온라인 사용자·잠금·히스토리 전달에만 사용한다.
+                if (projectType === 'SCREEN_DESIGN') {
+                    state = { entities: [], relationships: [], sections: [], screens: [], flows: [], version: 0 };
+                }
+
                 // ERD: entities/relationships/sections from currentSnapshot
                 const erdSnap = projAny?.currentSnapshot;
-                if (erdSnap && Array.isArray(erdSnap.entities)) {
+                if (projectType !== 'SCREEN_DESIGN' && erdSnap && Array.isArray(erdSnap.entities)) {
                     state = {
                         ...state,
                         entities: erdSnap.entities || state.entities,
@@ -192,18 +207,6 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
                     };
                 }
 
-                // SCREEN_DESIGN: screens/flows/sections는 screenSnapshot 기준으로 덮어씀
-                if (projectType === 'SCREEN_DESIGN') {
-                    const screenSnap = projAny?.screenSnapshot;
-                    if (screenSnap) {
-                        state = {
-                            ...state,
-                            screens: Array.isArray(screenSnap.screens) ? screenSnap.screens : (state.screens || []),
-                            flows: Array.isArray(screenSnap.flows) ? screenSnap.flows : (state.flows || []),
-                            sections: Array.isArray(screenSnap.sections) ? screenSnap.sections : (state.sections || []),
-                        };
-                    }
-                }
             }
 
             // Send current state to joining user

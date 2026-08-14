@@ -18,7 +18,7 @@ import { useAuthStore } from './authStore';
 
 // ✅ 수정: 현재 브라우저 주소창에 찍힌 정보를 그대로 따라가도록 변경
 const host = window.location.hostname; // 'localhost', '192.168...', '210.92...' 자동 감지
-const port = window.location.port;     // '5173', '8080', '2000' 자동 감지
+const hostWithPort = window.location.host; // 포트가 있으면 포함, 기본 포트면 host만 사용
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
 let YJS_WS_URL = "";
@@ -30,8 +30,9 @@ if (host === 'localhost' || host === '127.0.0.1') {
 } else {
     // 2. 🌐 배포/서버 환경 (210.92... 또는 192.168...)
     // 이전에 에러가 났던 경로인 '/yjs' 프록시 경로를 사용합니다.
-    // 포트는 현재 접속한 포트(2000 또는 8080)를 그대로 따라갑니다.
-    YJS_WS_URL = `${protocol}//${host}:${port}/yjs`;
+    // window.location.host를 사용하면 2000/8080 같은 포트는 유지하면서,
+    // 기본 포트 배포에서 `host:/yjs`라는 잘못된 URL이 만들어지는 일을 막는다.
+    YJS_WS_URL = `${protocol}//${hostWithPort}/yjs`;
 }
 
 // console.log("� Current Yjs URL:", YJS_WS_URL);
