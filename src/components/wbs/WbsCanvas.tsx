@@ -738,6 +738,7 @@ const WbsCanvas: React.FC = () => {
                     kind={scheduleUploadKind}
                     current={detailSchedules}
                     projectName={project?.name ?? 'WBS'}
+                    projectId={currentProjectId}
                     onApply={(next: WbsDetailSchedule[]) => importData({ detailSchedules: next })}
                     onClose={() => setScheduleUploadKind(null)}
                 />

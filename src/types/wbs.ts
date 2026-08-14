@@ -69,6 +69,8 @@ export interface WbsDetailSchedule {
     parentId?: string | null;
     /** 형제 간 정렬 순서 */
     order?: number;
+    /** 엑셀 WBS 작업번호(B열). 원본에 없는 번호는 임의로 계산하지 않는다. */
+    scheduleCode?: string;
     title: string;
     /** 계획 시작일 (YYYY.MM.DD) — 간트차트 기준 */
     startDate: string;

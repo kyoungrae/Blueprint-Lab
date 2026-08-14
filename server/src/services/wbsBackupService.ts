@@ -5,7 +5,7 @@ import { config } from '../config';
 import { Project } from '../models/Project';
 import logger from '../utils/logger';
 
-export type WbsBackupKind = 'wbs-detail' | 'wbs-schedule';
+export type WbsBackupKind = 'wbs-detail' | 'wbs-schedule' | 'wbs-schedule-import';
 
 export interface WbsBackupManifest {
     projects: Record<string, Partial<Record<WbsBackupKind, string>>>;
@@ -20,6 +20,16 @@ export interface WbsBackupFileMeta {
     backedUpAt: string;
     wbsVersion?: number;
     sizeBytes: number;
+    sourceFileName?: string;
+    uploadedByName?: string;
+    importSummary?: {
+        added: number;
+        updated: number;
+        unchanged: number;
+        conflicts: number;
+        excluded: number;
+    };
+    auditStatus?: 'COMPLETED' | 'FAILED' | 'BACKUP_CREATED';
 }
 
 const MANIFEST_NAME = 'manifest.json';
@@ -27,6 +37,7 @@ const MANIFEST_NAME = 'manifest.json';
 const BACKUP_KIND_LABEL: Record<WbsBackupKind, string> = {
     'wbs-detail': '메뉴·개발상세',
     'wbs-schedule': '간트·일정',
+    'wbs-schedule-import': '일정 Import 직전',
 };
 
 function backupDir(): string {
@@ -75,6 +86,23 @@ function buildFilename(projectId: string, projectName: string, kind: WbsBackupKi
     return `${projectId}__${safeSegment(projectName)}__${kind}__${isoFileTimestamp(at)}.json`;
 }
 
+function writeJsonAtomically(filename: string, value: unknown): void {
+    ensureBackupDir();
+    const target = path.join(backupDir(), filename);
+    const temporary = path.join(backupDir(), `.${filename}.${crypto.randomUUID()}.tmp`);
+    try {
+        fs.writeFileSync(temporary, JSON.stringify(value, null, 2), 'utf8');
+        fs.renameSync(temporary, target);
+    } catch (error) {
+        try {
+            if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+        } catch {
+            // 원래 write error를 유지한다.
+        }
+        throw error;
+    }
+}
+
 export function ensureBackupDir(): void {
     fs.mkdirSync(backupDir(), { recursive: true });
 }
@@ -98,10 +126,10 @@ function parseBackupFilename(filename: string): {
     backupKind: WbsBackupKind;
     backedUpAt: string;
 } | null {
-    const m = filename.match(/^(.+?)__(.+?)__(wbs-detail|wbs-schedule)__(.+)\.json$/);
+    const m = filename.match(/^(.+?)__(.+?)__(wbs-schedule-import|wbs-detail|wbs-schedule)__(.+)\.json$/);
     if (!m) return null;
     const [, projectId, projectName, kind, tsPart] = m;
-    if (kind !== 'wbs-detail' && kind !== 'wbs-schedule') return null;
+    if (kind !== 'wbs-detail' && kind !== 'wbs-schedule' && kind !== 'wbs-schedule-import') return null;
     const backedUpAt = tsPart.replace(/-/g, (ch, i) => {
         if (i === 4 || i === 7) return '-';
         if (i === 13 || i === 16) return ':';
@@ -170,12 +198,13 @@ export function listBackupFiles(): WbsBackupFileMeta[] {
         let backupKind: WbsBackupKind = parsed?.backupKind ?? 'wbs-detail';
         let backedUpAt = parsed?.backedUpAt ?? stat.mtime.toISOString();
         let wbsVersion: number | undefined;
+        let doc: any = null;
 
         try {
-            const doc = JSON.parse(fs.readFileSync(full, 'utf8'));
+            doc = JSON.parse(fs.readFileSync(full, 'utf8'));
             if (doc.projectName) projectName = doc.projectName;
             if (doc.projectId) projectId = doc.projectId;
-            if (doc.backupKind === 'wbs-detail' || doc.backupKind === 'wbs-schedule') backupKind = doc.backupKind;
+            if (doc.backupKind === 'wbs-detail' || doc.backupKind === 'wbs-schedule' || doc.backupKind === 'wbs-schedule-import') backupKind = doc.backupKind;
             if (doc.backedUpAt) backedUpAt = doc.backedUpAt;
             if (typeof doc.wbsVersion === 'number') wbsVersion = doc.wbsVersion;
         } catch {
@@ -191,6 +220,18 @@ export function listBackupFiles(): WbsBackupFileMeta[] {
             backedUpAt,
             wbsVersion,
             sizeBytes: stat.size,
+            ...(typeof doc?.sourceFileName === 'string' ? { sourceFileName: doc.sourceFileName } : {}),
+            ...(typeof doc?.uploadedBy?.name === 'string' ? { uploadedByName: doc.uploadedBy.name } : {}),
+            ...(doc?.importPreview?.summary && typeof doc.importPreview.summary === 'object' ? {
+                importSummary: {
+                    added: Number(doc.importPreview.summary.added ?? 0),
+                    updated: Number(doc.importPreview.summary.updated ?? 0),
+                    unchanged: Number(doc.importPreview.summary.unchanged ?? 0),
+                    conflicts: Number(doc.importPreview.summary.conflicts ?? 0),
+                    excluded: Number(doc.importPreview.summary.excluded ?? 0),
+                },
+            } : {}),
+            ...(typeof doc?.audit?.status === 'string' ? { auditStatus: doc.audit.status } : {}),
         });
     }
 
@@ -229,13 +270,89 @@ async function backupProjectKind(
         payload,
     };
 
-    fs.writeFileSync(path.join(backupDir(), filename), JSON.stringify(doc, null, 2), 'utf8');
+    writeJsonAtomically(filename, doc);
 
     if (!manifest.projects[projectId]) manifest.projects[projectId] = {};
     manifest.projects[projectId][kind] = hash;
 
     logger.info(`WBS backup saved: ${filename}`);
     return true;
+}
+
+export interface ScheduleImportBackupInput {
+    projectId: string;
+    projectName: string;
+    wbsVersion?: number;
+    sourceFileName: string;
+    uploadedBy: { id: string; name: string };
+    detailSchedules: unknown[];
+    affectedScheduleIds: string[];
+    importPreview: {
+        sourceRowCount: number;
+        summary: {
+            added: number;
+            updated: number;
+            unchanged: number;
+            conflicts: number;
+            excluded: number;
+        };
+    };
+}
+
+/**
+ * 일정 import 직전에 만드는 불변 백업. 파일을 완전히 쓴 뒤 rename하므로
+ * 백업 생성이 성공으로 반환된 경우에만 이후 병합을 진행할 수 있다.
+ */
+export function createScheduleImportBackup(input: ScheduleImportBackupInput): { filename: string; backupId: string; backedUpAt: string } {
+    const at = new Date();
+    const backupId = crypto.randomUUID();
+    const filename = buildFilename(input.projectId, input.projectName, 'wbs-schedule-import', at);
+    const doc = {
+        type: 'WBS_SCHEDULE_IMPORT_BACKUP',
+        backupKind: 'wbs-schedule-import' as const,
+        backupId,
+        projectId: input.projectId,
+        projectName: input.projectName,
+        projectType: 'WBS',
+        wbsVersion: input.wbsVersion ?? 0,
+        backedUpAt: at.toISOString(),
+        sourceFileName: input.sourceFileName,
+        uploadedBy: input.uploadedBy,
+        payload: { detailSchedules: input.detailSchedules },
+        affectedScheduleIds: input.affectedScheduleIds,
+        importPreview: input.importPreview,
+        audit: {
+            status: 'BACKUP_CREATED' as const,
+            importStartedAt: at.toISOString(),
+            sourceFileName: input.sourceFileName,
+            uploadedBy: input.uploadedBy,
+        },
+    };
+    writeJsonAtomically(filename, doc);
+    logger.info(`WBS schedule import backup saved: ${filename}`);
+    return { filename, backupId, backedUpAt: at.toISOString() };
+}
+
+export function finalizeScheduleImportAudit(
+    filename: string,
+    result: {
+        status: 'COMPLETED' | 'FAILED';
+        actualChangedScheduleIds?: string[];
+        failureReason?: string;
+    },
+): void {
+    const filePath = resolveBackupFilePath(filename);
+    if (!filePath) throw new Error('일정 import 백업 파일을 찾을 수 없습니다.');
+    const doc = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (doc.backupKind !== 'wbs-schedule-import') throw new Error('일정 import 백업 파일 형식이 아닙니다.');
+    doc.audit = {
+        ...(doc.audit ?? {}),
+        status: result.status,
+        completedAt: new Date().toISOString(),
+        ...(result.actualChangedScheduleIds ? { actualChangedScheduleIds: result.actualChangedScheduleIds } : {}),
+        ...(result.failureReason ? { failureReason: result.failureReason } : {}),
+    };
+    writeJsonAtomically(filename, doc);
 }
 
 export async function runWbsBackups(): Promise<{ saved: number; skipped: number }> {

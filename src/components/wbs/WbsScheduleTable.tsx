@@ -51,6 +51,11 @@ interface FlatNode extends WbsDetailSchedule {
     themeIndex: number;
 }
 
+function normalizeScheduleCode(value?: string): string | undefined {
+    const code = value?.trim();
+    return code || undefined;
+}
+
 function buildFlatTree(
     items: WbsDetailSchedule[],
     collapsed: Set<string>,
@@ -68,7 +73,8 @@ function buildFlatTree(
     let rootIdx = 0;
 
     function dfs(parentId: string | null, depth: number) {
-        for (const item of byParent.get(parentId) ?? []) {
+        const siblings = byParent.get(parentId) ?? [];
+        for (const item of siblings) {
             const themeIndex = depth === 0
                 ? (themeMap.has(item.id) ? themeMap.get(item.id)! : rootIdx++)
                 : (themeMap.get(item.parentId ?? '') ?? 0);
@@ -187,7 +193,6 @@ const WbsScheduleTable: React.FC = () => {
     const updateDetailSchedule = useWbsStore((s) => s.updateDetailSchedule);
     const addDetailSchedule = useWbsStore((s) => s.addDetailSchedule);
     const deleteDetailSchedule = useWbsStore((s) => s.deleteDetailSchedule);
-    const applySeedData = useWbsStore((s) => s.applySeedData);
 
     // 수정중 인디케이터
     const editingMap    = useWbsEditingStore((s) => s.editing);
@@ -195,13 +200,8 @@ const WbsScheduleTable: React.FC = () => {
     const emitBlur      = useSyncStore((s) => s.emitWbsFieldBlur);
     const currentUserId = useAuthStore((s) => s.user?.id);
 
-    // 최초 마운트 시 seed 데이터 적용 (작업자·산출물·실적일·진척도 일괄 반영)
-    const seedApplied = useRef(false);
-    useEffect(() => {
-        if (seedApplied.current) return;
-        seedApplied.current = true;
-        applySeedData();
-    }, [applySeedData]);
+    // 일정 탭은 기존 일정 데이터를 표시·사용자 수정만 한다.
+    // 화면 진입 시 시드/자동 보정으로 저장된 일정 값을 바꾸지 않는다.
 
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const [sortState, setSortState] = useState<{ key: SortKey; dir: SortDir } | null>(null);
@@ -266,7 +266,17 @@ const WbsScheduleTable: React.FC = () => {
         const planDays = leaves.reduce((sum, s) => sum + diffDays(s.startDate, s.endDate), 0);
         const actualDays = leaves.reduce((sum, s) => sum + diffDays(s.actualStartDate ?? '', s.actualEndDate ?? ''), 0);
         const avgProgress = leaves.length ? Math.round(leaves.reduce((sum, s) => sum + (s.progress ?? 0), 0) / leaves.length) : 0;
-        return { planDays, actualDays, avgProgress };
+        const minDate = (values: string[]) => values.filter(Boolean).sort()[0] ?? '';
+        const maxDate = (values: string[]) => values.filter(Boolean).sort().at(-1) ?? '';
+        return {
+            planDays,
+            actualDays,
+            avgProgress,
+            planStartDate: minDate(leaves.map((s) => s.startDate)),
+            planEndDate: maxDate(leaves.map((s) => s.endDate)),
+            actualStartDate: minDate(leaves.map((s) => s.actualStartDate ?? '')),
+            actualEndDate: maxDate(leaves.map((s) => s.actualEndDate ?? '')),
+        };
     }, [detailSchedules]);
 
     return (
@@ -287,22 +297,23 @@ const WbsScheduleTable: React.FC = () => {
 
             {/* 테이블 */}
             <div className="flex-1 overflow-auto">
-                <table className="w-full text-xs border-collapse" style={{ minWidth: 1400 }}>
+                <table className="w-full text-xs border-collapse" style={{ minWidth: 1500 }}>
                     <thead className="sticky top-0 z-20">
                         {/* 1행: 그룹 헤더 */}
                         <tr className="bg-slate-700 text-white">
-                            <th colSpan={2} className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black">구분</th>
+                            <th colSpan={3} className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black">구분</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black">작업자</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black">산출물명</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black">완료기준</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black">상태</th>
-                            <th colSpan={4} className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black bg-indigo-800">계획</th>
+                            <th colSpan={5} className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black bg-indigo-800">계획</th>
                             <th colSpan={4} className="border border-slate-600 px-2 py-1.5 text-center text-[11px] font-black bg-emerald-800">실적</th>
                             <th className="border border-slate-600 w-8" />
                         </tr>
                         {/* 2행: 세부 헤더 */}
                         <tr className="bg-slate-600 text-white">
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24">대분류</th>
+                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16">번호</th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-48">세부항목</th>
                             <th onClick={() => toggleSort('worker')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-28 cursor-pointer select-none hover:bg-slate-500 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">작업자<SortIcon sk="worker" /></span></th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-32">산출물명</th>
@@ -311,7 +322,8 @@ const WbsScheduleTable: React.FC = () => {
                             <th onClick={() => toggleSort('startDate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-indigo-700/60 cursor-pointer select-none hover:bg-indigo-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">시작일<SortIcon sk="startDate" /></span></th>
                             <th onClick={() => toggleSort('endDate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-indigo-700/60 cursor-pointer select-none hover:bg-indigo-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">종료일<SortIcon sk="endDate" /></span></th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-indigo-700/60">계획일</th>
-                            <th onClick={() => toggleSort('planRate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-indigo-700/60 cursor-pointer select-none hover:bg-indigo-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">계획율<SortIcon sk="planRate" /></span></th>
+                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-indigo-700/60">진척도</th>
+                            <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-indigo-700/60">계획율</th>
                             <th onClick={() => toggleSort('actualStartDate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-emerald-700/60 cursor-pointer select-none hover:bg-emerald-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">시작일<SortIcon sk="actualStartDate" /></span></th>
                             <th onClick={() => toggleSort('actualEndDate')} className="border border-slate-500 px-2 py-1 text-center text-[10px] w-24 bg-emerald-700/60 cursor-pointer select-none hover:bg-emerald-600/60 transition-colors"><span className="inline-flex items-center justify-center gap-0.5">종료일<SortIcon sk="actualEndDate" /></span></th>
                             <th className="border border-slate-500 px-2 py-1 text-center text-[10px] w-16 bg-emerald-700/60">투입일</th>
@@ -320,15 +332,16 @@ const WbsScheduleTable: React.FC = () => {
                         </tr>
                         {/* 전체 합계 행 */}
                         <tr className="bg-slate-100 border-b-2 border-slate-300">
-                            <td colSpan={2} className="border border-slate-200 px-2 py-1.5 font-black text-slate-700 text-[11px]">전체(진행율)</td>
+                            <td colSpan={3} className="border border-slate-200 px-2 py-1.5 font-black text-slate-700 text-[11px]">전체(진행율)</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-slate-500">-</td>
                             <td colSpan={3} className="border border-slate-200" />
-                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{detailSchedules[0]?.startDate || '-'}</td>
-                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{detailSchedules[0] ? detailSchedules.reduce((latest, s) => s.endDate > latest ? s.endDate : latest, '') : '-'}</td>
+                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{totals.planStartDate || '—'}</td>
+                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{totals.planEndDate || '—'}</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{totals.planDays}일</td>
-                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">-</td>
-                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-emerald-700">-</td>
-                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-emerald-700">-</td>
+                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">—</td>
+                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">—</td>
+                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-emerald-700">{totals.actualStartDate || '—'}</td>
+                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-emerald-700">{totals.actualEndDate || '—'}</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-emerald-700">{totals.actualDays}일</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center font-black text-[11px] text-emerald-700">{totals.avgProgress}%</td>
                             <td className="border border-slate-200" />
@@ -378,6 +391,11 @@ const WbsScheduleTable: React.FC = () => {
                                                 />
                                             </div>
                                         )}
+                                    </td>
+
+                                    {/* 엑셀 B열 WBS 번호만 표시한다. 원본에 없는 번호는 임의 계산하지 않는다. */}
+                                    <td className="border border-gray-100 px-2 py-1.5 text-center align-top text-[11px] font-medium text-slate-600 tabular-nums">
+                                        {!isCategory && (normalizeScheduleCode(node.scheduleCode) ?? '—')}
                                     </td>
 
                                     {/* 세부항목 */}
@@ -457,13 +475,14 @@ const WbsScheduleTable: React.FC = () => {
                                         {planDays > 0 ? `${planDays}일` : '-'}
                                     </td>
 
-                                    {/* 계획율 */}
+                                    {/* 엑셀의 계획 진척도/계획율은 현재 일정 데이터 모델에 저장 필드가 없다.
+                                        기존 실적 진척도를 재사용하지 않고, 값이 없음을 명시한다. */}
                                     <td className="border border-gray-100 px-2 py-1.5 text-center text-[11px] bg-indigo-50/30 align-top">
-                                        {isParent ? (
-                                            <span className="text-indigo-600">-</span>
-                                        ) : (
-                                            <span className="text-indigo-700 font-bold">{node.progress ?? 0}%</span>
-                                        )}
+                                        <span className="text-indigo-600">—</span>
+                                    </td>
+
+                                    <td className="border border-gray-100 px-2 py-1.5 text-center text-[11px] bg-indigo-50/30 align-top">
+                                        <span className="text-indigo-600">—</span>
                                     </td>
 
                                     {/* 실적 시작일 */}
@@ -551,7 +570,7 @@ const WbsScheduleTable: React.FC = () => {
                         {/* 빈 상태 */}
                         {sortedRows.length === 0 && (
                             <tr>
-                                <td colSpan={15} className="text-center py-16 text-gray-400 text-sm">
+                                <td colSpan={16} className="text-center py-16 text-gray-400 text-sm">
                                     GANTT CHART 탭에서 항목을 추가하거나 엑셀을 업로드하세요.
                                 </td>
                             </tr>

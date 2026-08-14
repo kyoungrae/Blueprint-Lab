@@ -204,7 +204,10 @@ export const useYjsStore = create<YjsStore>((set, get) => ({
         // If WebSocket connects but initial Yjs sync never completes, surface a diagnostic error.
         // This typically indicates that the server at YJS_WS_URL is not a y-websocket server,
         // a path mismatch, or the room/projectId is not being handled correctly.
-        const syncTimeoutMs = 5000;
+        // 대형 WBS는 MongoDB 시드와 첫 Yjs update 전송에 수 초가 걸릴 수 있다.
+        // 연결은 유지된 정상 시드 중에는 편집을 잠근 채 기다리고, 30초가 지나도
+        // handshake가 끝나지 않는 경우에만 실제 연결 오류로 표시한다.
+        const syncTimeoutMs = 30_000;
         const syncTimeout = setTimeout(() => {
             const st = get();
             if (st.provider === provider && st.isConnected && !st.isSynced) {

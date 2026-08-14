@@ -287,11 +287,21 @@ interface AdminBackupRow {
     filename: string;
     projectId: string;
     projectName: string;
-    backupKind: 'wbs-detail' | 'wbs-schedule';
+    backupKind: 'wbs-detail' | 'wbs-schedule' | 'wbs-schedule-import';
     backupKindLabel: string;
     backedUpAt: string;
     wbsVersion?: number;
     sizeBytes: number;
+    sourceFileName?: string;
+    uploadedByName?: string;
+    importSummary?: {
+        added: number;
+        updated: number;
+        unchanged: number;
+        conflicts: number;
+        excluded: number;
+    };
+    auditStatus?: 'COMPLETED' | 'FAILED' | 'BACKUP_CREATED';
 }
 
 function backupDownloadFilename(projectName: string, backedUpAt: string, ext: 'json' | 'xlsx'): string {
@@ -1751,12 +1761,14 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                             </div>
                         ) : (
                             <div className="overflow-auto">
-                                <table className="w-full text-left min-w-[900px]">
+                                <table className="w-full text-left min-w-[1120px]">
                                     <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                                         <tr>
                                             <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">백업 일시</th>
                                             <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">프로젝트</th>
                                             <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">백업 유형</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">업로드 파일 · 사용자</th>
+                                            <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">Import 처리 결과</th>
                                             <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">버전</th>
                                             <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">크기</th>
                                             <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase w-48">다운로드</th>
@@ -1778,10 +1790,31 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                                                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
                                                         b.backupKind === 'wbs-detail'
                                                             ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                                                            : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                                            : b.backupKind === 'wbs-schedule-import'
+                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                                : 'bg-amber-50 text-amber-700 border border-amber-100'
                                                     }`}>
                                                         {b.backupKindLabel}
                                                     </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-xs text-gray-600">
+                                                    {b.sourceFileName ? (
+                                                        <>
+                                                            <p className="font-semibold text-gray-700 max-w-[190px] truncate" title={b.sourceFileName}>{b.sourceFileName}</p>
+                                                            <p className="text-[11px] text-gray-400 mt-0.5">{b.uploadedByName ?? '알 수 없음'}</p>
+                                                        </>
+                                                    ) : '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                                                    {b.importSummary ? (
+                                                        <div>
+                                                            <p className="font-semibold text-gray-700">추가 {b.importSummary.added} · 수정 {b.importSummary.updated} · 유지 {b.importSummary.unchanged}</p>
+                                                            <p className={b.importSummary.conflicts || b.importSummary.excluded ? 'text-rose-600 mt-0.5' : 'text-gray-400 mt-0.5'}>
+                                                                충돌 {b.importSummary.conflicts} · 제외 {b.importSummary.excluded}
+                                                                {b.auditStatus === 'FAILED' ? ' · 실패' : b.auditStatus === 'COMPLETED' ? ' · 완료' : ''}
+                                                            </p>
+                                                        </div>
+                                                    ) : '—'}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-600 tabular-nums">
                                                     {b.wbsVersion != null ? `v${b.wbsVersion}` : '—'}
@@ -1833,6 +1866,9 @@ const AdminPage: React.FC<{ onBack: () => void; initialTab?: AdminTab; embedded?
                             </p>
                             <p className="mt-1">
                                 * <strong className="text-gray-600">간트·일정</strong>: projectSchedule + detailSchedules JSON (간트/일정 탭 데이터)
+                            </p>
+                            <p className="mt-1">
+                                * <strong className="text-gray-600">일정 Import 직전</strong>: 확정 import 전에 생성된 detailSchedules 전체 스냅샷과 업로드 파일·사용자·처리 결과·감사 기록입니다. 복원은 제공하지 않습니다.
                             </p>
                         </div>
                     </div>

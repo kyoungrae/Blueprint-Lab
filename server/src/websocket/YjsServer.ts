@@ -26,6 +26,10 @@ import { Types } from 'mongoose';
 import logger from '../utils/logger';
 import { touchProjectMemberLastEditedAtMany } from '../services/projectMemberActivity';
 import { recordProjectAccessLog } from '../services/recordProjectAccessLog';
+import {
+    getWbsScheduleSnapshotHash,
+    type WbsDetailScheduleRecord,
+} from '../services/wbsScheduleImportService';
 
 // ─── 상수 ───────────────────────────────────────────────────────────────────
 const YJS_PORT = parseInt(process.env.YJS_PORT || '4000', 10);
@@ -61,6 +65,10 @@ interface DocInfo {
 const docs = new Map<string, DocInfo>();
 
 const IMMEDIATE_SAVE_DEBOUNCE_MS = 2000; // 2초 후 즉시 저장
+/** 일정 import는 별도 원자 저장 경로를 사용하므로 일반 debounce 저장을 만들지 않는다. */
+const WBS_SCHEDULE_IMPORT_ORIGIN = { kind: 'wbs-schedule-import' };
+/** MongoDB 원본을 빈 Y.Doc에 읽어 넣는 초기화는 저장 변경이 아니다. */
+const MONGO_SEED_ORIGIN = { kind: 'mongo-seed' };
 
 function getOrCreateDoc(projectId: string): DocInfo {
     return map.setIfUndefined(docs, projectId, () => {
@@ -88,6 +96,10 @@ function getOrCreateDoc(projectId: string): DocInfo {
                     info.editorsSinceLastSave.add(uid);
                 }
             }
+
+            // 일정 import는 백업 이후 단일 MongoDB update를 직접 기다린다.
+            // 여기서 별도 debounce 저장이 끼어들면 이전 스냅샷과 순서가 뒤바뀔 수 있다.
+            if (origin === WBS_SCHEDULE_IMPORT_ORIGIN || origin === MONGO_SEED_ORIGIN) return;
 
             // 모든 문서 변경마다 디바운스 저장 (origin 조건 제거 — 화면 memos 등이 누락되던 원인)
             if (info.immediateSaveTimer) {
@@ -239,7 +251,7 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
                     meta.set('hasProjectSchedule', false);
                 }
                 meta.set('initialized', true);
-            });
+            }, MONGO_SEED_ORIGIN);
             logger.info(`✅ Yjs WBS doc seeded from MongoDB: project ${projectId}`);
             return;
         }
@@ -328,7 +340,7 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
                     sectionsMap.set(sec.id, yMap);
                 }
             });
-        });
+        }, MONGO_SEED_ORIGIN);
 
         logger.info(`✅ Yjs doc seeded from MongoDB: project ${projectId}`);
     } catch (err) {
@@ -524,11 +536,169 @@ export async function patchWbsRowInYjs(
     return true;
 }
 
+function wbsDetailSchedulesFromDoc(doc: Y.Doc): WbsDetailScheduleRecord[] {
+    return Array.from(doc.getMap<any>('wbs_detail_schedules').values())
+        .map((item) => item instanceof Y.Map ? item.toJSON() : item)
+        .filter((item): item is WbsDetailScheduleRecord => Boolean(item?.id));
+}
+
+function createWbsScheduleRecord(record: WbsDetailScheduleRecord): Y.Map<any> {
+    const map = new Y.Map<any>();
+    Object.entries(record).forEach(([key, value]) => {
+        if (value !== undefined) map.set(key, value);
+    });
+    return map;
+}
+
+async function persistImportedWbsSchedules(
+    projectId: string,
+    detailSchedules: WbsDetailScheduleRecord[],
+): Promise<void> {
+    const now = new Date();
+    const updated = await Project.findOneAndUpdate(
+        { _id: projectId, projectType: 'WBS' },
+        {
+            $set: {
+                'wbsSnapshot.detailSchedules': detailSchedules,
+                'wbsSnapshot.savedAt': now,
+                updatedAt: now,
+            },
+            $inc: { 'wbsSnapshot.version': 1 },
+        },
+        { new: false },
+    ).lean();
+    if (!updated) throw new Error('일정 스냅샷을 저장할 WBS 프로젝트를 찾을 수 없습니다.');
+}
+
+/** 서버 import 미리보기는 Yjs의 최신 일정 원본만 읽는다. DB write는 수행하지 않는다. */
+export async function readWbsScheduleSnapshotInYjs(projectId: string): Promise<WbsDetailScheduleRecord[]> {
+    const info = await ensureDocSeeded(projectId);
+    const meta = info.doc.getMap<any>('wbs_meta');
+    if (meta.get('initialized') !== true) throw new Error('WBS 원본 시드가 완료되지 않았습니다.');
+    return wbsDetailSchedulesFromDoc(info.doc);
+}
+
+export interface WbsScheduleImportMutation {
+    expectedBaseSnapshotHash: string;
+    added: WbsDetailScheduleRecord[];
+    updates: Array<{ id: string; patch: Partial<Omit<WbsDetailScheduleRecord, 'id'>> }>;
+}
+
+/**
+ * 일정 import의 최종 반영 경로.
+ *
+ * - 이미 대기 중인 일반 Yjs 저장을 먼저 끝내고 최신 hash를 다시 확인한다.
+ * - 일정 Y.Map의 각 레코드만 upsert한다. menus/rows/프로젝트 일정은 전혀 건드리지 않는다.
+ * - 모든 일정 변경은 하나의 Yjs transaction으로 broadcast되고, MongoDB도 detailSchedules만
+ *   단일 update로 저장한다. MongoDB 저장 실패 시 방금 변경한 필드만 원상 복구한다.
+ */
+export async function applyWbsScheduleImportInYjs(
+    projectId: string,
+    mutation: WbsScheduleImportMutation,
+): Promise<WbsDetailScheduleRecord[]> {
+    const info = await ensureDocSeeded(projectId);
+    const meta = info.doc.getMap<any>('wbs_meta');
+    if (meta.get('initialized') !== true) throw new Error('WBS 원본 시드가 완료되지 않았습니다.');
+
+    // 기존 일반 편집의 저장이 import보다 뒤늦게 오래된 스냅샷을 덮어쓰지 않게 직렬화한다.
+    if (info.immediateSaveTimer) {
+        clearTimeout(info.immediateSaveTimer);
+        info.immediateSaveTimer = null;
+        await saveDocToMongo(projectId, info.doc);
+    }
+    await info.saveQueue;
+
+    const before = wbsDetailSchedulesFromDoc(info.doc);
+    if (getWbsScheduleSnapshotHash(before) !== mutation.expectedBaseSnapshotHash) {
+        throw new Error('미리보기 이후 일정 데이터가 변경되었습니다. 최신 상태로 다시 미리보기를 실행하세요.');
+    }
+
+    const records = info.doc.getMap<Y.Map<any>>('wbs_detail_schedules');
+    const existingIds = new Set(before.map((item) => item.id));
+    const addedIds = new Set(mutation.added.map((item) => item.id));
+    if (addedIds.size !== mutation.added.length || [...addedIds].some((id) => existingIds.has(id))) {
+        throw new Error('신규 일정 식별자가 현재 일정과 충돌했습니다. 최신 상태로 다시 미리보기를 실행하세요.');
+    }
+    for (const update of mutation.updates) {
+        if (!records.has(update.id)) throw new Error('수정할 기존 일정이 없어졌습니다. 최신 상태로 다시 미리보기를 실행하세요.');
+    }
+
+    const beforePatchValues = new Map<string, Record<string, unknown>>();
+    for (const update of mutation.updates) {
+        const record = records.get(update.id)!;
+        const previous: Record<string, unknown> = {};
+        Object.keys(update.patch).forEach((key) => { previous[key] = record.get(key); });
+        beforePatchValues.set(update.id, previous);
+    }
+
+    info.doc.transact(() => {
+        for (const update of mutation.updates) {
+            const record = records.get(update.id)!;
+            Object.entries(update.patch).forEach(([key, value]) => {
+                if (value === undefined) record.delete(key);
+                else record.set(key, value);
+            });
+        }
+        mutation.added.forEach((record) => records.set(record.id, createWbsScheduleRecord(record)));
+    }, WBS_SCHEDULE_IMPORT_ORIGIN);
+
+    const after = wbsDetailSchedulesFromDoc(info.doc);
+    try {
+        // saveQueue 뒤에 추가해 일반 Yjs 저장과 MongoDB 쓰기 순서를 보장한다.
+        const persisted = info.saveQueue
+            .catch(() => {})
+            .then(() => persistImportedWbsSchedules(projectId, after));
+        info.saveQueue = persisted.catch(() => {});
+        await persisted;
+    } catch (error) {
+        // 저장 실패 시 import가 만든 레코드/필드만 되돌린다. 전체 Y.Map clear는 사용하지 않는다.
+        info.doc.transact(() => {
+            mutation.added.forEach((record) => records.delete(record.id));
+            mutation.updates.forEach((update) => {
+                const record = records.get(update.id);
+                const previous = beforePatchValues.get(update.id);
+                if (!record || !previous) return;
+                Object.entries(previous).forEach(([key, value]) => {
+                    if (value === undefined) record.delete(key);
+                    else record.set(key, value);
+                });
+            });
+        });
+        throw error;
+    }
+
+    return after;
+}
+
 // ─── WebSocket 연결 처리 ─────────────────────────────────────────────────────
 
 async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: string): Promise<void> {
     const pendingInfo = getOrCreateDoc(projectId);
     pendingInfo.pendingConnections += 1;
+
+    /**
+     * `WebsocketProvider`는 open 직후 syncStep1을 보낸다. MongoDB 시드를 await한 뒤에
+     * message listener를 등록하면 이 첫 메시지가 유실되어 WebSocket은 connected인데
+     * provider의 sync 이벤트가 영원히 오지 않을 수 있다.
+     *
+     * 시드 전에는 편집 update를 받지 않고, 최초 syncStep1만 보관한다. 시드가 끝난 뒤
+     * 정상 핸들러에서 이를 처리해 syncStep2를 응답한다.
+     */
+    let queuedSyncStep1: Uint8Array | null = null;
+    const captureInitialSyncStep1 = (rawData: Buffer) => {
+        if (queuedSyncStep1) return;
+        try {
+            const data = new Uint8Array(rawData);
+            const decoder = decoding.createDecoder(data);
+            if (decoding.readVarUint(decoder) !== MESSAGE_SYNC) return;
+            if (decoding.readVarUint(decoder) !== syncProtocol.messageYjsSyncStep1) return;
+            queuedSyncStep1 = data;
+        } catch {
+            // 시드 전의 malformed/편집 메시지는 버린다. 빈 문서에 반영하지 않는다.
+        }
+    };
+    ws.on('message', captureInitialSyncStep1);
+
     let info: DocInfo;
     try {
         /**
@@ -538,6 +708,7 @@ async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: st
          */
         info = await ensureDocSeeded(projectId);
     } catch (error) {
+        ws.off('message', captureInitialSyncStep1);
         pendingInfo.pendingConnections = Math.max(0, pendingInfo.pendingConnections - 1);
         discardUnseededDoc(projectId);
         throw error;
@@ -545,6 +716,7 @@ async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: st
 
     // 시드 대기 중 브라우저가 떠난 경우 빈/미사용 문서를 연결하지 않는다.
     if (ws.readyState !== WebSocket.OPEN) {
+        ws.off('message', captureInitialSyncStep1);
         info.pendingConnections = Math.max(0, info.pendingConnections - 1);
         if (info.conns.size === 0) await persistAndUnloadIdleDoc(projectId, info);
         return;
@@ -559,7 +731,7 @@ async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: st
         void recordProjectAccessLog(yjsUserId, projectId, 'YJS_CONNECT');
     }
 
-    ws.on('message', (rawData: Buffer) => {
+    const handleMessage = (rawData: Buffer | Uint8Array) => {
         try {
             const data = new Uint8Array(rawData);
             const decoder = decoding.createDecoder(data);
@@ -588,7 +760,9 @@ async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: st
         } catch (_err) {
             logger.error('Yjs message handling error: %o', _err);
         }
-    });
+    };
+    ws.off('message', captureInitialSyncStep1);
+    ws.on('message', handleMessage);
 
     ws.on('close', () => {
         awarenessProtocol.removeAwarenessStates(
@@ -608,8 +782,12 @@ async function handleConnection(ws: WebSocket, projectId: string, yjsUserId?: st
         void closeConnAndPersist(projectId, ws);
     });
 
-    // 클라이언트에게 현재 문서 상태 + awareness 전송 (syncStep1)
-    {
+    // 보관한 client syncStep1에는 syncStep2를 응답해야 provider가 isSynced=true가 된다.
+    // (서버 syncStep1만 보내면 client는 step2를 돌려줄 뿐 자체 sync 완료로 판단하지 않는다.)
+    if (queuedSyncStep1) {
+        handleMessage(queuedSyncStep1);
+    } else {
+        // 비표준 클라이언트/재접속 예외에서는 서버 측 step1로 동기화를 시작한다.
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, MESSAGE_SYNC);
         syncProtocol.writeSyncStep1(encoder, info.doc);
