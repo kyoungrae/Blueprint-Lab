@@ -393,9 +393,16 @@ const WbsScheduleTable: React.FC = () => {
                                         )}
                                     </td>
 
-                                    {/* 엑셀 B열 WBS 번호만 표시한다. 원본에 없는 번호는 임의 계산하지 않는다. */}
-                                    <td className="border border-gray-100 px-2 py-1.5 text-center align-top text-[11px] font-medium text-slate-600 tabular-nums">
-                                        {!isCategory && (normalizeScheduleCode(node.scheduleCode) ?? '—')}
+                                    {/* 엑셀 B열 WBS 번호 — 더블클릭 편집 */}
+                                    <td className="border border-gray-100 px-2 py-1.5 text-center align-top">
+                                        {!isCategory && (
+                                            <EditCell
+                                                value={normalizeScheduleCode(node.scheduleCode) ?? ''}
+                                                onSave={(v) => upd(node.id, { scheduleCode: normalizeScheduleCode(v) })}
+                                                placeholder="-"
+                                                className="text-[11px] font-medium text-slate-600 tabular-nums text-center"
+                                            />
+                                        )}
                                     </td>
 
                                     {/* 세부항목 */}
