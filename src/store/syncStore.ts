@@ -296,7 +296,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
         socket.on('wbs_updated', (data: {
             projectId: string;
             updatedBy: string;
-            wbsSnapshot: { menus: any[]; rows: any[]; projectSchedule: any; detailSchedules: any[] };
+            wbsSnapshot: { menus: any[]; rows: any[]; projectSchedule: any; detailSchedules: any[]; menuScheduleLinks?: any[] };
         }) => {
             // 최신 WBS는 Yjs가 단일 원본이다. 레거시 전체 스냅샷 이벤트로
             // Yjs에서 병합된 로컬 상태를 다시 교체하지 않는다.
@@ -318,6 +318,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
                             rows: snap.rows,
                             projectSchedule: snap.projectSchedule ?? undefined,
                             detailSchedules: snap.detailSchedules,
+                            menuScheduleLinks: snap.menuScheduleLinks,
                         });
                     });
                 });

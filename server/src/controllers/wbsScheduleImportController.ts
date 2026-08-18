@@ -49,8 +49,8 @@ async function authorizeScheduleImport(req: AuthRequest): Promise<{
         (error as Error & { statusCode?: number }).statusCode = 403;
         throw error;
     }
-    if (user.tier !== 'PRO' && user.tier !== 'MASTER' && user.tier !== 'ADMIN') {
-        const error = new Error('일정 엑셀 업로드는 Pro tier 이상에서 사용할 수 있습니다.');
+    if (user.tier !== 'MASTER' && user.tier !== 'ADMIN') {
+        const error = new Error('일정 엑셀 업로드는 Master tier 이상에서 사용할 수 있습니다.');
         (error as Error & { statusCode?: number }).statusCode = 403;
         throw error;
     }

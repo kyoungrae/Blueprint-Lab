@@ -87,11 +87,24 @@ export interface WbsDetailSchedule {
     actualEndDate?: string;        // 실적 종료일
 }
 
+/** 개발상세 메뉴+담당자 ↔ 일정 탭 3.2.x 항목 연결 */
+export interface WbsMenuScheduleLink {
+    menuId: string;
+    /** 담당자 표시명 (정규화 trim) */
+    assignee: string;
+    /** 담당자 사용자 ID — 있으면 매칭 키 우선 */
+    assigneeUserId?: string;
+    /** WbsDetailSchedule.id */
+    scheduleId: string;
+}
+
 export interface WbsData {
     menus: WbsMenuNode[];
     rows: WbsDevRow[];
     projectSchedule?: WbsProjectSchedule;
     detailSchedules?: WbsDetailSchedule[];
+    /** 개발상세 → 일정(3.2.x) 동기화 고정 링크 */
+    menuScheduleLinks?: WbsMenuScheduleLink[];
 }
 
 export const WBS_DEFAULT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html','Debuging', '기능','직접입력'];

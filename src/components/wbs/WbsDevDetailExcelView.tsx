@@ -11,6 +11,7 @@ import {
 } from './wbsDevRowUtils';
 import { getAllAssignees, getFilteredMenuIds } from './wbsDevFilterUtils';
 import WbsDevDetailFilterBar from './WbsDevDetailFilterBar';
+import WbsDevScheduleSyncButton from './WbsDevScheduleSyncButton';
 import { StatusCell, CategoryCell, AssigneeCell, ImeSafeTextInput, LockTooltip } from './WbsDevDetail';
 import { useWbsStore } from '../../store/wbsStore';
 import { useProjectStore } from '../../store/projectStore';
@@ -192,6 +193,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                         {hasActiveFilter ? ' (필터 적용)' : ''}
                     </p>
                 </div>
+                <WbsDevScheduleSyncButton compact />
                 <div className="flex-1 min-w-0 max-w-3xl">
                     <WbsDevDetailFilterBar
                         allAssignees={allAssignees}

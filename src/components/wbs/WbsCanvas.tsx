@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties, Hash, Copy, Check, CalendarDays } from 'lucide-react';
+import { ArrowLeft, GanttChartSquare, FileSpreadsheet, FileDown, FileUp, FileJson, Network, ListTree, BarChart3, Layers, ShieldCheck, TableProperties, Hash, Copy, Check, CalendarDays, RefreshCw } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { useWbsStore } from '../../store/wbsStore';
 import { useYjsStore } from '../../store/yjsStore';
@@ -22,6 +22,8 @@ import { getAllAssignees } from './wbsDevFilterUtils';
 import { downloadWbsJson, parseWbsJson } from './wbsIO';
 import { downloadScheduleExcel, downloadScheduleJson } from './wbsScheduleIO';
 import { copyToClipboard } from '../../utils/clipboard';
+import { syncDevDetailToSchedule } from '../../services/wbsDevScheduleSync';
+import { canUploadWbsExcel, canUploadWbsJson, canViewWbsSchedule } from '../../utils/tierAccess';
 
 type WbsTab = 'hierarchy' | 'detail' | 'progress' | 'schedule' | 'schedule-table';
 type DetailViewMode = 'hierarchy' | 'excel';
@@ -62,11 +64,13 @@ const WbsCanvas: React.FC = () => {
     const yjsRows = useWbsYjsStore((s) => s.rows);
     const yjsProjectSchedule = useWbsYjsStore((s) => s.projectSchedule);
     const yjsDetailSchedules = useWbsYjsStore((s) => s.detailSchedules);
+    const yjsMenuScheduleLinks = useWbsYjsStore((s) => s.menuScheduleLinks);
 
     const { user } = useAuthStore();
     const isMaster = user?.tier === 'MASTER' || user?.tier === 'ADMIN';
-    // 엑셀/JSON 업로드 권한: PRO tier 이상 (PRO / MASTER / ADMIN)
-    const canUpload = user?.tier === 'PRO' || user?.tier === 'MASTER' || user?.tier === 'ADMIN';
+    const canViewSchedule = canViewWbsSchedule(user?.tier);
+    const canUploadExcel = canUploadWbsExcel(user?.tier);
+    const canUploadJson = canUploadWbsJson(user?.tier);
 
     const project = projects.find((p) => p.id === currentProjectId);
     const isRemoteWbs = Boolean(currentProjectId && !currentProjectId.startsWith('local_'));
@@ -263,8 +267,9 @@ const WbsCanvas: React.FC = () => {
             rows: yjsRows,
             projectSchedule: yjsProjectSchedule ?? undefined,
             detailSchedules: yjsDetailSchedules,
+            menuScheduleLinks: yjsMenuScheduleLinks,
         });
-    }, [currentProjectId, loadProject, wbsYjsProjectId, wbsYjsReady, wbsYjsRevision, yjsDetailSchedules, yjsMenus, yjsProjectSchedule, yjsRows]);
+    }, [currentProjectId, loadProject, wbsYjsProjectId, wbsYjsReady, wbsYjsRevision, yjsDetailSchedules, yjsMenuScheduleLinks, yjsMenus, yjsProjectSchedule, yjsRows]);
 
     if (isRemoteWbs && (!yjsIsSynced || !wbsYjsReady)) {
         return (
@@ -342,8 +347,8 @@ const WbsCanvas: React.FC = () => {
                             );
                         })}
                     </div>
-                    {/* 일정 그룹 — MASTER 이상만 표시 */}
-                    {isMaster && <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+                    {/* 일정 그룹 — Pro 이상 */}
+                    {canViewSchedule && <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
                         <span className="text-[10px] font-bold text-gray-400 px-2 select-none">일정</span>
                         <div className="w-px h-4 bg-gray-300 mx-0.5" />
                         {SCHEDULE_TABS.map((t) => (
@@ -456,8 +461,8 @@ const WbsCanvas: React.FC = () => {
                     />
                 )}
                 {tab === 'progress' && <WbsProgress />}
-                {tab === 'schedule' && isMaster && <WbsSchedule />}
-                {tab === 'schedule-table' && isMaster && <WbsScheduleTable />}
+                {tab === 'schedule' && canViewSchedule && <WbsSchedule />}
+                {tab === 'schedule-table' && canViewSchedule && <WbsScheduleTable />}
             </main>
 
             {/* 개발 상세 보기 방식 선택 — Portal */}
@@ -580,14 +585,32 @@ const WbsCanvas: React.FC = () => {
                                 {[
                                     {
                                         delay: '0ms',
+                                        icon: <RefreshCw size={14} />,
+                                        label: '시스템 개발 동기화',
+                                        className: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
+                                        onClick: async () => {
+                                            setShowActions(false);
+                                            if (!currentProjectId) return;
+                                            const result = await syncDevDetailToSchedule(currentProjectId, { force: true });
+                                            const lines = [
+                                                '개발상세 ↔ 시스템 개발 일정을 동기화했습니다.',
+                                                `매칭 ${result.matched}건 · 업데이트 ${result.updated}건`,
+                                            ];
+                                            if (result.unmatched > 0) lines.push(`연결되지 않은 메뉴/담당자 ${result.unmatched}건`);
+                                            window.alert(lines.join('\n'));
+                                        },
+                                        title: '개발 상세와 매칭된 시스템 개발(3.2.x) 시작일·종료일을 동기화',
+                                    },
+                                    {
+                                        delay: '55ms',
                                         icon: <FileSpreadsheet size={14} />,
                                         label: '엑셀 다운로드',
                                         className: 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm',
                                         onClick: () => { downloadScheduleExcel(detailSchedules, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '일정 WBS를 엑셀로 다운로드',
                                     },
-                                    ...(canUpload ? [{
-                                        delay: '55ms',
+                                    ...(canUploadExcel ? [{
+                                        delay: '110ms',
                                         icon: <FileUp size={14} />,
                                         label: '엑셀 업로드',
                                         className: 'bg-white text-blue-700 border border-blue-200 hover:bg-blue-50',
@@ -595,15 +618,15 @@ const WbsCanvas: React.FC = () => {
                                         title: '엑셀 파일로 일정 데이터 업데이트',
                                     }] : []),
                                     {
-                                        delay: '110ms',
+                                        delay: '165ms',
                                         icon: <FileDown size={14} />,
                                         label: 'JSON 다운로드',
                                         className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
                                         onClick: () => { downloadScheduleJson(detailSchedules, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '일정 WBS 데이터를 JSON으로 다운로드',
                                     },
-                                    ...(canUpload ? [{
-                                        delay: '165ms',
+                                    ...(canUploadJson ? [{
+                                        delay: '220ms',
                                         icon: <FileJson size={14} />,
                                         label: 'JSON 업로드',
                                         className: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
@@ -627,15 +650,33 @@ const WbsCanvas: React.FC = () => {
                             // ── 개발 탭 버튼 ──
                             <>
                                 {[
-                                    {
+                                    ...(tab === 'detail' ? [{
                                         delay: '0ms',
+                                        icon: <RefreshCw size={14} />,
+                                        label: '시스템 개발 동기화',
+                                        className: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
+                                        onClick: async () => {
+                                            setShowActions(false);
+                                            if (!currentProjectId) return;
+                                            const result = await syncDevDetailToSchedule(currentProjectId, { force: true });
+                                            const lines = [
+                                                '개발상세 ↔ 시스템 개발 일정을 동기화했습니다.',
+                                                `매칭 ${result.matched}건 · 업데이트 ${result.updated}건`,
+                                            ];
+                                            if (result.unmatched > 0) lines.push(`연결되지 않은 메뉴/담당자 ${result.unmatched}건`);
+                                            window.alert(lines.join('\n'));
+                                        },
+                                        title: '개발 상세와 매칭된 시스템 개발(3.2.x) 시작일·종료일을 동기화',
+                                    }] : []),
+                                    {
+                                        delay: tab === 'detail' ? '55ms' : '0ms',
                                         icon: <FileSpreadsheet size={14} />,
                                         label: '엑셀 다운로드',
                                         className: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
                                         onClick: () => { downloadWbsExcel({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '현재 WBS를 엑셀로 다운로드',
                                     },
-                                    ...(canUpload && (tab === 'hierarchy' || tab === 'detail') ? [{
+                                    ...(canUploadExcel && (tab === 'hierarchy' || tab === 'detail') ? [{
                                         delay: '55ms',
                                         icon: <FileUp size={14} />,
                                         label: '엑셀 업로드',
@@ -657,7 +698,7 @@ const WbsCanvas: React.FC = () => {
                                         onClick: () => { downloadWbsJson({ menus, rows }, project?.name ?? 'WBS'); setShowActions(false); },
                                         title: '현재 WBS 데이터를 JSON으로 다운로드',
                                     },
-                                    ...(canUpload ? [{
+                                    ...(canUploadJson ? [{
                                         delay: '165ms',
                                         icon: <FileJson size={14} />,
                                         label: 'JSON 업로드',

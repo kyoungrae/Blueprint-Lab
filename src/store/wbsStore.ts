@@ -1,10 +1,12 @@
 import { create } from 'zustand';
-import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule, WbsDetailSchedule } from '../types/wbs';
+import type { WbsData, WbsMenuNode, WbsDevRow, WbsStatus, WbsProjectSchedule, WbsDetailSchedule, WbsMenuScheduleLink } from '../types/wbs';
 import { normalizeWbsDevRows, isWbsDebugingCategoryRow, WBS_DEBUGING_CATEGORY } from '../types/wbs';
 import { SCHEDULE_SEED, deriveStatus } from '../data/scheduleSeedData';
 import { useProjectStore } from './projectStore';
 import { enrichRowsWithAssigneeUserIds } from '../utils/wbsAssigneeMatch';
 import { scheduleSyncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
+import { scheduleSyncDevDetailToSchedule } from '../services/wbsDevScheduleSync';
+import { isDevScheduleSyncTriggerPatch, normalizeMenuScheduleLinks } from '../utils/wbsScheduleMatch';
 import { useWbsYjsStore } from './wbsYjsStore';
 import { formatWbsDuration } from '../components/wbs/wbsDateUtils';
 
@@ -27,11 +29,13 @@ interface WbsState {
     currentProjectId: string | null;
     projectSchedule: WbsProjectSchedule | null;
     detailSchedules: WbsDetailSchedule[];
+    menuScheduleLinks: WbsMenuScheduleLink[];
 
     /** 프로젝트 진입 시 데이터 로드 */
     loadProject: (projectId: string, data: Partial<WbsData> | undefined | null) => void;
     importData: (data: Partial<WbsData>) => void;
     exportData: () => WbsData;
+    setMenuScheduleLinks: (links: WbsMenuScheduleLink[]) => void;
     setProjectSchedule: (schedule: WbsProjectSchedule | null) => void;
     addDetailSchedule: (schedule: Omit<WbsDetailSchedule, 'id'>) => void;
     updateDetailSchedule: (id: string, patch: Partial<Omit<WbsDetailSchedule, 'id'>>) => void;
@@ -72,6 +76,10 @@ function syncLinkedPersonalSchedulesAfterYjsChange(projectId: string | null, cha
     if (changed && projectId) scheduleSyncWbsToLinkedPersonalSchedules(projectId);
 }
 
+function syncDevDetailToScheduleAfterChange(projectId: string | null, changed: boolean): void {
+    if (changed && projectId) scheduleSyncDevDetailToSchedule(projectId);
+}
+
 /**
  * 개발 상세의 실적 수행일은 계획 수행일과 마찬가지로 실적 시작/종료일에서 계산한다.
  * 새 필드가 없는 기존 행도 빈 문자열로 자연스럽게 호환된다.
@@ -93,6 +101,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     currentProjectId: null,
     projectSchedule: null,
     detailSchedules: [],
+    menuScheduleLinks: [],
 
     loadProject: (projectId, data) => {
         const rawRows = Array.isArray(data?.rows) ? (data!.rows as WbsDevRow[]) : [];
@@ -105,6 +114,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             rows,
             projectSchedule: (data as WbsData)?.projectSchedule ?? null,
             detailSchedules: Array.isArray((data as WbsData)?.detailSchedules) ? ((data as WbsData).detailSchedules as WbsDetailSchedule[]) : [],
+            menuScheduleLinks: normalizeMenuScheduleLinks((data as WbsData)?.menuScheduleLinks),
         });
     },
 
@@ -118,6 +128,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         if (yjs) {
             const changed = yjs.replaceData(normalizedData);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            if (Array.isArray(data.rows)) syncDevDetailToScheduleAfterChange(currentProjectId, changed);
             return;
         }
         // 서버 WBS는 Yjs 초기화 완료 전에는 쓰기를 허용하지 않는다.
@@ -127,8 +138,12 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             rows: normalizedRows,
             projectSchedule: data.projectSchedule !== undefined ? (data.projectSchedule ?? null) : get().projectSchedule,
             detailSchedules: Array.isArray(data.detailSchedules) ? (data.detailSchedules as WbsDetailSchedule[]) : get().detailSchedules,
+            menuScheduleLinks: data.menuScheduleLinks !== undefined
+                ? normalizeMenuScheduleLinks(data.menuScheduleLinks)
+                : get().menuScheduleLinks,
         });
         get().scheduleSave();
+        if (Array.isArray(data.rows)) syncDevDetailToScheduleAfterChange(currentProjectId, true);
     },
 
     exportData: () => ({
@@ -136,7 +151,21 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         rows: get().rows,
         projectSchedule: get().projectSchedule ?? undefined,
         detailSchedules: get().detailSchedules,
+        menuScheduleLinks: get().menuScheduleLinks,
     }),
+
+    setMenuScheduleLinks: (links) => {
+        const normalized = normalizeMenuScheduleLinks(links);
+        const currentProjectId = get().currentProjectId;
+        const yjs = activeWbsYjs(currentProjectId);
+        if (yjs) {
+            yjs.setMenuScheduleLinks(normalized);
+            return;
+        }
+        if (currentProjectId && !currentProjectId.startsWith('local_')) return;
+        set({ menuScheduleLinks: normalized });
+        get().scheduleSave();
+    },
 
     setProjectSchedule: (schedule) => {
         const currentProjectId = get().currentProjectId;
@@ -358,6 +387,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             const rowIds = rows.filter((row) => toDelete.has(row.menuId)).map((row) => row.id);
             const didChange = yjs.deleteMenusAndRows(Array.from(toDelete), rowIds);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, didChange);
+            syncDevDetailToScheduleAfterChange(currentProjectId, didChange);
             return;
         }
         if (currentProjectId && !currentProjectId.startsWith('local_')) return;
@@ -366,6 +396,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             rows: rows.filter((r) => !toDelete.has(r.menuId)),
         });
         get().scheduleSave();
+        syncDevDetailToScheduleAfterChange(currentProjectId, true);
     },
 
     moveMenu: (id, newParentId, newOrder) => {
@@ -463,11 +494,13 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         if (yjs) {
             const changed = yjs.addRows([row, ...(debugRow ? [debugRow] : [])]);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            syncDevDetailToScheduleAfterChange(currentProjectId, changed);
             return id;
         }
         if (currentProjectId && !currentProjectId.startsWith('local_')) return id;
         set({ rows: [...existing, row, ...(debugRow ? [debugRow] : [])] });
         get().scheduleSave();
+        syncDevDetailToScheduleAfterChange(currentProjectId, true);
         return id;
     },
 
@@ -508,11 +541,13 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         if (yjs) {
             const changed = yjs.addRows([...newRows, ...(debugRow ? [debugRow] : [])]);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            syncDevDetailToScheduleAfterChange(currentProjectId, changed);
             return;
         }
         if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({ rows: [...existing, ...newRows, ...(debugRow ? [debugRow] : [])] });
         get().scheduleSave();
+        syncDevDetailToScheduleAfterChange(currentProjectId, true);
     },
 
     updateRow: (id, patch) => {
@@ -529,9 +564,12 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             : patch;
         const currentProjectId = get().currentProjectId;
         const yjs = activeWbsYjs(currentProjectId);
+        const shouldSyncSchedule = isDevScheduleSyncTriggerPatch(patch)
+            && !(currentRow && isWbsDebugingCategoryRow(currentRow));
         if (yjs) {
             const changed = yjs.updateRow(id, patchWithActualWorkDate);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            if (shouldSyncSchedule) syncDevDetailToScheduleAfterChange(currentProjectId, changed);
             return;
         }
         if (currentProjectId && !currentProjectId.startsWith('local_')) return;
@@ -542,6 +580,7 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             }),
         });
         get().scheduleSave();
+        if (shouldSyncSchedule) syncDevDetailToScheduleAfterChange(currentProjectId, true);
     },
 
     deleteRow: (id) => {
@@ -550,11 +589,13 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         if (yjs) {
             const changed = yjs.deleteRow(id);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            syncDevDetailToScheduleAfterChange(currentProjectId, changed);
             return;
         }
         if (currentProjectId && !currentProjectId.startsWith('local_')) return;
         set({ rows: get().rows.filter((r) => r.id !== id) });
         get().scheduleSave();
+        syncDevDetailToScheduleAfterChange(currentProjectId, true);
     },
 
     scheduleSave: () => {
@@ -567,13 +608,19 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     saveNow: async () => {
-        const { currentProjectId, menus, rows, projectSchedule, detailSchedules } = get();
+        const { currentProjectId, menus, rows, projectSchedule, detailSchedules, menuScheduleLinks } = get();
         if (!currentProjectId) return;
         if (!currentProjectId.startsWith('local_')) return;
         const wbsProject = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
         const enrichedRows = enrichRowsWithAssigneeUserIds(rows, wbsProject?.members ?? []);
         if (enrichedRows !== rows) set({ rows: enrichedRows });
-        const data = { menus, rows: enrichedRows, ...(projectSchedule ? { projectSchedule } : {}), detailSchedules };
+        const data = {
+            menus,
+            rows: enrichedRows,
+            ...(projectSchedule ? { projectSchedule } : {}),
+            detailSchedules,
+            menuScheduleLinks,
+        };
         // 전역 프로젝트 캐시 즉시 갱신(새로고침 전까지 데이터 유지)
         useProjectStore.getState().updateProjectData(currentProjectId, data);
         // 연결된 개인일정 미러링 — 디바운스(과도한 API 호출 방지)

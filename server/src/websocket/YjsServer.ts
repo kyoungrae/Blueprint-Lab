@@ -250,6 +250,8 @@ async function seedDocFromMongo(projectId: string, doc: Y.Doc): Promise<void> {
                 } else {
                     meta.set('hasProjectSchedule', false);
                 }
+                const links = Array.isArray(snapshot.menuScheduleLinks) ? snapshot.menuScheduleLinks : [];
+                meta.set('menuScheduleLinks', links);
                 meta.set('initialized', true);
             }, MONGO_SEED_ORIGIN);
             logger.info(`✅ Yjs WBS doc seeded from MongoDB: project ${projectId}`);
@@ -449,6 +451,9 @@ async function persistDocToMongo(projectId: string, doc: Y.Doc): Promise<void> {
             const detailSchedulesArr = extractJson(doc.getMap<any>('wbs_detail_schedules').values());
             const scheduleMap = doc.getMap<any>('wbs_project_schedule');
             const projectSchedule = wbsMeta.get('hasProjectSchedule') === true ? scheduleMap.toJSON() : null;
+            const menuScheduleLinks = Array.isArray(wbsMeta.get('menuScheduleLinks'))
+                ? wbsMeta.get('menuScheduleLinks')
+                : [];
             const previousVersion = Number((project as any).wbsSnapshot?.version || 0);
 
             await Project.findByIdAndUpdate(projectId, {
@@ -458,6 +463,7 @@ async function persistDocToMongo(projectId: string, doc: Y.Doc): Promise<void> {
                     rows: rowsArr,
                     projectSchedule,
                     detailSchedules: detailSchedulesArr,
+                    menuScheduleLinks,
                     savedAt: new Date(),
                 },
                 updatedAt: new Date(),

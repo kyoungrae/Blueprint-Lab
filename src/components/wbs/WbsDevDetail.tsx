@@ -14,6 +14,7 @@ import WbsMenuTree, { ASSIGNEE_PALETTE } from './WbsMenuTree';
 import WbsDevDetailFilterBar from './WbsDevDetailFilterBar';
 import { getAllAssignees } from './wbsDevFilterUtils';
 import { confirmDeleteWbsRow } from './wbsDevRowUtils';
+import WbsDevScheduleSyncButton from './WbsDevScheduleSyncButton';
 
 /** '+ ALL' 클릭 시 자동 추가되는 산출물 구분 행 */
 const ALL_ARTIFACT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html'];
@@ -758,6 +759,7 @@ const WbsDevDetail: React.FC<{
                             </div>
 
                             <div className="shrink-0 flex items-center gap-2">
+                                <WbsDevScheduleSyncButton />
                                 <button
                                     type="button"
                                     onClick={() => addRow(selectedMenu.id)}

@@ -1,7 +1,8 @@
 import * as Y from 'yjs';
 import { create } from 'zustand';
-import type { WbsData, WbsDetailSchedule, WbsDevRow, WbsMenuNode, WbsProjectSchedule } from '../types/wbs';
+import type { WbsData, WbsDetailSchedule, WbsDevRow, WbsMenuNode, WbsMenuScheduleLink, WbsProjectSchedule } from '../types/wbs';
 import { useProjectStore } from './projectStore';
+import { normalizeMenuScheduleLinks } from '../utils/wbsScheduleMatch';
 
 type WbsRecord = WbsMenuNode | WbsDevRow | WbsDetailSchedule;
 
@@ -14,6 +15,7 @@ interface WbsYjsState {
     rows: WbsDevRow[];
     projectSchedule: WbsProjectSchedule | null;
     detailSchedules: WbsDetailSchedule[];
+    menuScheduleLinks: WbsMenuScheduleLink[];
     _cleanup: (() => void) | null;
 
     bind: (projectId: string, ydoc: Y.Doc) => void;
@@ -28,6 +30,7 @@ interface WbsYjsState {
     addDetailSchedule: (schedule: WbsDetailSchedule) => boolean;
     updateDetailSchedule: (id: string, patch: Partial<Omit<WbsDetailSchedule, 'id'>>) => boolean;
     deleteDetailSchedule: (id: string) => boolean;
+    setMenuScheduleLinks: (links: WbsMenuScheduleLink[]) => boolean;
     replaceData: (data: Partial<WbsData>) => boolean;
 }
 
@@ -78,6 +81,7 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
             rows: records<WbsDevRow>(root.rows),
             ...(projectSchedule ? { projectSchedule } : {}),
             detailSchedules: records<WbsDetailSchedule>(root.detailSchedules),
+            menuScheduleLinks: normalizeMenuScheduleLinks(root.meta.get('menuScheduleLinks')),
         };
 
         // Yjs가 WBS의 단일 원본이다. projectStore는 다른 화면·개인일정 연동을 위한 캐시만 갱신한다.
@@ -89,6 +93,7 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
             rows: data.rows,
             projectSchedule,
             detailSchedules: data.detailSchedules ?? [],
+            menuScheduleLinks: data.menuScheduleLinks ?? [],
             revision: state.revision + 1,
         }));
     };
@@ -109,6 +114,7 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
         rows: [],
         projectSchedule: null,
         detailSchedules: [],
+        menuScheduleLinks: [],
         _cleanup: null,
 
         bind: (projectId, ydoc) => {
@@ -132,6 +138,7 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
                 rows: [],
                 projectSchedule: null,
                 detailSchedules: [],
+                menuScheduleLinks: [],
                 _cleanup: () => {
                     root.meta.unobserve(sync);
                     root.menus.unobserveDeep(sync);
@@ -153,6 +160,7 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
                 rows: [],
                 projectSchedule: null,
                 detailSchedules: [],
+                menuScheduleLinks: [],
                 _cleanup: null,
             });
         },
@@ -219,6 +227,10 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
             roots(ydoc).detailSchedules.delete(id);
         }),
 
+        setMenuScheduleLinks: (links) => withWritableDoc((ydoc) => {
+            roots(ydoc).meta.set('menuScheduleLinks', cloneValue(normalizeMenuScheduleLinks(links)));
+        }),
+
         // JSON/엑셀 업로드처럼 사용자가 명시적으로 전체 교체를 승인한 경우에만 사용한다.
         replaceData: (data) => withWritableDoc((ydoc) => {
             const root = roots(ydoc);
@@ -242,6 +254,9 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
                 } else {
                     root.meta.set('hasProjectSchedule', false);
                 }
+            }
+            if (data.menuScheduleLinks !== undefined) {
+                root.meta.set('menuScheduleLinks', cloneValue(normalizeMenuScheduleLinks(data.menuScheduleLinks)));
             }
         }),
     };

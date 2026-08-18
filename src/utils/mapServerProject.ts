@@ -63,6 +63,7 @@ export function mapServerProjectResponse(p: any, localProject?: Project | null):
                 rows: p.wbsSnapshot.rows || [],
                 projectSchedule: (p.wbsSnapshot as any).projectSchedule ?? undefined,
                 detailSchedules: (p.wbsSnapshot as any).detailSchedules || [],
+                menuScheduleLinks: (p.wbsSnapshot as any).menuScheduleLinks || [],
             };
         } else if (localProject?.data && Array.isArray((localProject.data as any).menus)) {
             // 목록 응답은 wbsSnapshot을 생략한다. 이미 상세 조회한 상태를 빈 값으로 바꾸지 않는다.

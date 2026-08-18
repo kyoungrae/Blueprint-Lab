@@ -235,6 +235,8 @@ export interface IWbsSnapshot {
     projectSchedule?: any;
     /** 간트차트 상세 일정 항목 목록 */
     detailSchedules?: any[];
+    /** 개발상세 메뉴+담당자 ↔ 일정 3.2.x 연결 */
+    menuScheduleLinks?: any[];
     savedAt: Date;
 }
 
@@ -528,6 +530,7 @@ const WbsSnapshotSchema = new Schema({
     rows: { type: [Schema.Types.Mixed], default: [] },
     projectSchedule: { type: Schema.Types.Mixed, default: null },
     detailSchedules: { type: [Schema.Types.Mixed], default: [] },
+    menuScheduleLinks: { type: [Schema.Types.Mixed], default: [] },
     savedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
