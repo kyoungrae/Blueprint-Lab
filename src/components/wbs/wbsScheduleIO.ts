@@ -4,7 +4,16 @@
 // @ts-ignore
 import XLSXStyle from 'xlsx-js-style';
 import * as XLSX from 'xlsx';
-import type { WbsDetailSchedule } from '../../types/wbs';
+import type { ScheduleStatus, WbsDetailSchedule } from '../../types/wbs';
+
+const SCHEDULE_STATUSES: ScheduleStatus[] = ['완료', '진행중', '대기', '보류'];
+
+function parseScheduleStatus(value: unknown): ScheduleStatus | undefined {
+    const status = String(value ?? '').trim();
+    return SCHEDULE_STATUSES.includes(status as ScheduleStatus)
+        ? status as ScheduleStatus
+        : undefined;
+}
 
 // ── 타입 헬퍼 ──────────────────────────────────────────
 type XStyle = {
@@ -66,7 +75,7 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
 
     const headers = [
         'ID', '부모ID', '순서', '항목명',
-        '계획시작일', '계획종료일', '진행율(%)',
+        '계획시작일', '계획종료일', '상태', '진행율(%)',
         '작업자', '산출물명',
         '실적시작일', '실적종료일',
     ];
@@ -103,6 +112,7 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
             sc(indent + item.title, cellStyle('left')),
             sc(item.startDate, cellStyle('center')),
             sc(item.endDate, cellStyle('center')),
+            sc(item.status ?? '', cellStyle('center')),
             sc(item.progress ?? 0, cellStyle('center')),
             sc(item.worker ?? '', cellStyle('center')),
             sc(item.deliverable ?? '', cellStyle('left')),
@@ -118,7 +128,7 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
     const ws = XLSXStyle.utils.aoa_to_sheet(aoa);
     ws['!cols'] = [
         { wch: 26 }, { wch: 26 }, { wch: 6 }, { wch: 40 },
-        { wch: 14 }, { wch: 14 }, { wch: 10 },
+        { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 },
         { wch: 12 }, { wch: 30 },
         { wch: 14 }, { wch: 14 }, { wch: 12 },
     ];
@@ -133,6 +143,7 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
         [sc('항목명'), sc('WBS 항목명 (들여쓰기는 표시용 — 실제 계층은 부모ID로 결정)'), sc('사업관리')],
         [sc('계획시작일'), sc('계획 시작일 (YYYY.MM.DD 형식)'), sc('2025.10.15')],
         [sc('계획종료일'), sc('계획 종료일 (YYYY.MM.DD 형식)'), sc('2027.12.31')],
+        [sc('상태'), sc('완료 / 진행중 / 대기 / 보류. 보류는 개발상세 HOLD와 동기화됩니다.'), sc('보류')],
         [sc('진행율(%)'), sc('진행율 0~100 숫자'), sc('0')],
         [sc('작업자'), sc('담당 작업자명'), sc('홍길동')],
         [sc('산출물명'), sc('작업 결과 산출물 이름'), sc('설계서')],
@@ -200,6 +211,7 @@ export async function parseScheduleExcel(
     const colTitle = colFirst('항목명', 'WBS 항목명', '항목', 'title', '작업명');
     const colStart = colFirst('계획시작일', '시작일', '시작', 'startDate', 'start');
     const colEnd = colFirst('계획종료일', '종료일', '종료', 'endDate', 'end');
+    const colStatus = colFirst('상태', 'status');
     const colProgress = colFirst('진행율(%)', '진행율', '진행률(%)', '진행률', 'progress');
     const colWorker = colFirst('작업자', 'worker');
     const colDeliverable = colFirst('산출물명', 'deliverable');
@@ -234,6 +246,7 @@ export async function parseScheduleExcel(
         const parentId = colParent !== -1 ? String(row[colParent] ?? '').trim() || undefined : undefined;
         const order = colOrder !== -1 ? Number(row[colOrder] ?? 0) : 0;
         const progress = colProgress !== -1 ? Math.min(100, Math.max(0, Number(row[colProgress] ?? 0))) : 0;
+        const status = colStatus !== -1 ? parseScheduleStatus(row[colStatus]) : undefined;
         const worker = colWorker !== -1 ? String(row[colWorker] ?? '').trim() || undefined : undefined;
         const deliverable = colDeliverable !== -1 ? String(row[colDeliverable] ?? '').trim() || undefined : undefined;
         const actualStartDate = colActualStart !== -1 ? String(row[colActualStart] ?? '').trim() || undefined : undefined;
@@ -245,6 +258,7 @@ export async function parseScheduleExcel(
                 ...prev, title, startDate, endDate, progress, order,
                 parentId: parentId ?? null,
                 worker, deliverable, actualStartDate, actualEndDate,
+                ...(status ? { status } : {}),
             };
             const changed = JSON.stringify(prev) !== JSON.stringify(next);
             if (changed) updated.push(next);
@@ -258,6 +272,7 @@ export async function parseScheduleExcel(
                 startDate,
                 endDate,
                 progress,
+                ...(status ? { status } : {}),
                 worker,
                 deliverable,
                 actualStartDate,

@@ -8,7 +8,7 @@ import * as XLSX from 'xlsx';
  * wbsSnapshot.detailSchedules에 대응하는 값만 후보로 만든다.
  */
 
-export type ScheduleStatus = '완료' | '진행중' | '대기';
+export type ScheduleStatus = '완료' | '진행중' | '대기' | '보류';
 
 export interface WbsDetailScheduleRecord {
     id: string;
@@ -130,6 +130,7 @@ const STATUS_MAP: Record<string, ScheduleStatus> = {
     진행: '진행중',
     진행중: '진행중',
     대기: '대기',
+    보류: '보류',
 };
 
 const normalizeText = (value: unknown): string => String(value ?? '')

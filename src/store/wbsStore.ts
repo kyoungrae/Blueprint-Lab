@@ -5,10 +5,14 @@ import { SCHEDULE_SEED, deriveStatus } from '../data/scheduleSeedData';
 import { useProjectStore } from './projectStore';
 import { enrichRowsWithAssigneeUserIds } from '../utils/wbsAssigneeMatch';
 import { scheduleSyncWbsToLinkedPersonalSchedules } from '../services/wbsPersonalScheduleSync';
-import { scheduleSyncDevDetailToSchedule } from '../services/wbsDevScheduleSync';
+import { isDevToScheduleSyncing, scheduleSyncDevDetailToSchedule } from '../services/wbsDevScheduleSync';
+import { isScheduleToDevSyncing, scheduleSyncScheduleToDevDetail } from '../services/wbsScheduleDevSync';
 import { isDevScheduleSyncTriggerPatch, normalizeMenuScheduleLinks } from '../utils/wbsScheduleMatch';
 import { useWbsYjsStore } from './wbsYjsStore';
 import { formatWbsDuration } from '../components/wbs/wbsDateUtils';
+import { rowEditingKey, scheduleEditingKey } from '../utils/wbsEditingKey';
+import { useSyncStore } from './syncStore';
+import { useAuthStore } from './authStore';
 
 const uid = (prefix: string) =>
     `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -78,6 +82,39 @@ function syncLinkedPersonalSchedulesAfterYjsChange(projectId: string | null, cha
 
 function syncDevDetailToScheduleAfterChange(projectId: string | null, changed: boolean): void {
     if (changed && projectId) scheduleSyncDevDetailToSchedule(projectId);
+}
+
+function isScheduleToDevSyncPatch(patch: object): boolean {
+    return ['startDate', 'endDate', 'actualStartDate', 'actualEndDate', 'status', 'progress']
+        .some((field) => field in patch);
+}
+
+function syncScheduleToDevDetailAfterChange(
+    projectId: string | null,
+    scheduleId: string,
+    patch: object,
+    changed: boolean,
+): void {
+    // 개발상세→일정 반영 중 생성된 일정 변경은 다시 개발상세로 되돌리지 않는다.
+    if (changed && projectId && isScheduleToDevSyncPatch(patch)) {
+        scheduleSyncScheduleToDevDetail(projectId, scheduleId);
+    }
+}
+
+/**
+ * WBS 인라인 편집은 서버가 승인한 잠금 소유자만 Yjs에 반영한다.
+ * 첫 포커스에서 잠금 응답을 기다리는 짧은 동안의 입력도 버려서, 동시에 눌렀을 때
+ * 뒤늦게 도착한 오래된 화면 값이 서버 문서를 덮지 않게 한다.
+ */
+function canWriteLockedWbsEntity(projectId: string | null, entityKey: string): boolean {
+    if (!projectId || projectId.startsWith('local_')) return true;
+    const sync = useSyncStore.getState();
+    // Socket 연결/프로젝트 입장이 아직 완료되지 않은 초기 렌더에서는 기존 편집 흐름을 막지 않는다.
+    if (!sync.isConnected || sync.currentProjectId !== projectId) return true;
+    if (sync.pendingWbsLocks.has(entityKey)) return false;
+
+    const lock = sync.locks.get(entityKey);
+    return !lock || lock.userId === useAuthStore.getState().user?.id;
 }
 
 /**
@@ -204,8 +241,12 @@ export const useWbsStore = create<WbsState>((set, get) => ({
     },
 
     updateDetailSchedule: (id, patch) => {
+        const currentProjectId = get().currentProjectId;
+        // 개발상세→일정 자동 반영은 이미 원본 개발상세의 잠금을 획득한 작업이므로 통과시킨다.
+        if (!isDevToScheduleSyncing() && !canWriteLockedWbsEntity(currentProjectId, scheduleEditingKey(id))) return;
+
         // 1. 해당 항목 업데이트 (progress 변경 시 status 자동 반영)
-        const patchWithStatus = 'progress' in patch
+        const patchWithStatus = 'progress' in patch && !('status' in patch)
             ? { ...patch, status: deriveStatus(patch.progress as number) }
             : patch;
         let updated = get().detailSchedules.map((s) => (s.id === id ? { ...s, ...patchWithStatus } : s));
@@ -225,7 +266,6 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             updated = recalcParent(updated, id);
         }
 
-        const currentProjectId = get().currentProjectId;
         const yjs = activeWbsYjs(currentProjectId);
         if (yjs) {
             let changed = false;
@@ -237,12 +277,14 @@ export const useWbsStore = create<WbsState>((set, get) => ({
                 changed = yjs.updateDetailSchedule(scheduleId, nextPatch) || changed;
             });
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
+            syncScheduleToDevDetailAfterChange(currentProjectId, id, patch, changed);
             return;
         }
         if (currentProjectId && !currentProjectId.startsWith('local_')) return;
 
         set({ detailSchedules: updated });
         get().scheduleSave();
+        syncScheduleToDevDetailAfterChange(currentProjectId, id, patch, true);
     },
 
     applySeedData: () => {
@@ -552,6 +594,14 @@ export const useWbsStore = create<WbsState>((set, get) => ({
 
     updateRow: (id, patch) => {
         const currentRow = get().rows.find((row) => row.id === id);
+        const currentProjectId = get().currentProjectId;
+        // 일정→개발상세 자동 반영은 이미 원본 일정의 잠금을 획득한 작업이므로 통과시킨다.
+        if (
+            currentRow
+            && !isScheduleToDevSyncing()
+            && !canWriteLockedWbsEntity(currentProjectId, rowEditingKey(currentRow, get().menuScheduleLinks))
+        ) return;
+
         // 실적 날짜를 바꿀 때만 실적 수행일을 함께 갱신한다. 계획 날짜는 절대 참조·수정하지 않는다.
         const patchWithActualWorkDate = ('actualStartDate' in patch || 'actualEndDate' in patch)
             ? {
@@ -562,14 +612,15 @@ export const useWbsStore = create<WbsState>((set, get) => ({
                 ),
             }
             : patch;
-        const currentProjectId = get().currentProjectId;
         const yjs = activeWbsYjs(currentProjectId);
         const shouldSyncSchedule = isDevScheduleSyncTriggerPatch(patch)
             && !(currentRow && isWbsDebugingCategoryRow(currentRow));
         if (yjs) {
             const changed = yjs.updateRow(id, patchWithActualWorkDate);
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
-            if (shouldSyncSchedule) syncDevDetailToScheduleAfterChange(currentProjectId, changed);
+            if (shouldSyncSchedule && !isScheduleToDevSyncing()) {
+                syncDevDetailToScheduleAfterChange(currentProjectId, changed);
+            }
             return;
         }
         if (currentProjectId && !currentProjectId.startsWith('local_')) return;
@@ -580,7 +631,9 @@ export const useWbsStore = create<WbsState>((set, get) => ({
             }),
         });
         get().scheduleSave();
-        if (shouldSyncSchedule) syncDevDetailToScheduleAfterChange(currentProjectId, true);
+        if (shouldSyncSchedule && !isScheduleToDevSyncing()) {
+            syncDevDetailToScheduleAfterChange(currentProjectId, true);
+        }
     },
 
     deleteRow: (id) => {

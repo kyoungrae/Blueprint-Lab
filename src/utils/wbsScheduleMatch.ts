@@ -341,13 +341,18 @@ export function aggregateMenuAssigneeRows(
     if (group.length === 0) return null;
 
     const progress = Math.round(group.reduce((sum, row) => sum + (row.progress || 0), 0) / group.length);
+    // 메뉴·담당자 단위 일정은 여러 산출물 행을 묶는다. 하나라도 보류이면 해당 작업은
+    // 진행하지 않는 것으로 보아 일정에도 보류를 우선 반영한다.
+    const status: ScheduleStatus = group.some((row) => row.status === 'HOLD')
+        ? '보류'
+        : deriveStatus(progress);
     return {
         startDate: minDate(group.map((row) => row.startDate)),
         endDate: maxDate(group.map((row) => row.endDate)),
         actualStartDate: minDate(group.map((row) => row.actualStartDate ?? '')),
         actualEndDate: maxDate(group.map((row) => row.actualEndDate ?? '')),
         progress,
-        status: deriveStatus(progress),
+        status,
     };
 }
 
@@ -424,7 +429,7 @@ export function buildSchedulePatchFromAggregate(
     if ((current.progress ?? 0) !== aggregate.progress) {
         patch.progress = aggregate.progress;
     }
-    if (current.status !== aggregate.status && !('progress' in patch)) {
+    if (current.status !== aggregate.status) {
         patch.status = aggregate.status;
     }
     return Object.keys(patch).length > 0 ? patch : null;

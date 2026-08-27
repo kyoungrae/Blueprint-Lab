@@ -6,6 +6,7 @@ import { useWbsStore } from '../../store/wbsStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
+import { scheduleEditingKey } from '../../utils/wbsEditingKey';
 import type { WbsDetailSchedule, ScheduleStatus } from '../../types/wbs';
 import {
     EMPTY_SCHEDULE_DATE_RANGES,
@@ -60,9 +61,10 @@ const STATUS_STYLE: Record<ScheduleStatus, string> = {
     완료: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     진행중: 'bg-blue-100 text-blue-700 border-blue-200',
     대기: 'bg-gray-100 text-gray-500 border-gray-200',
+    보류: 'bg-amber-100 text-amber-700 border-amber-200',
 };
 
-const STATUS_OPTIONS: ScheduleStatus[] = ['완료', '진행중', '대기'];
+const STATUS_OPTIONS: ScheduleStatus[] = ['완료', '진행중', '대기', '보류'];
 
 // ── 트리 평탄화 ──────────────────────────────────────────────────────────
 interface FlatNode extends WbsDetailSchedule {
@@ -773,7 +775,8 @@ const WbsScheduleTable: React.FC = () => {
                             // 대분류 / 세부항목 구분: depth 0,1 = 대분류, depth 2+ = 세부항목
                             const isCategory = node.depth <= 1;
 
-                            const schedEditEntry = editingMap.get(`schedule_${node.id}`);
+                            const editKey = scheduleEditingKey(node.id);
+                            const schedEditEntry = editingMap.get(editKey);
                             const isSchedBeingEdited = !!schedEditEntry && schedEditEntry.userId !== currentUserId;
 
                             return (
@@ -781,8 +784,8 @@ const WbsScheduleTable: React.FC = () => {
                                     key={node.id}
                                     className={`border-b border-gray-100 hover:bg-sky-50/50 transition-colors group ${rowBg} ${isSchedBeingEdited ? 'pointer-events-none select-none' : ''}`}
                                     style={isSchedBeingEdited ? { boxShadow: `inset 3px 0 0 ${schedEditEntry!.color}` } : undefined}
-                                    onFocus={() => { if (!isSchedBeingEdited) emitFocus(`schedule_${node.id}`); }}
-                                    onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(`schedule_${node.id}`); }}
+                                    onFocus={() => { if (!isSchedBeingEdited) emitFocus(editKey); }}
+                                    onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(editKey); }}
                                 >
                                     {/* 대분류 */}
                                     <td className="border border-gray-100 px-2 py-1.5 align-top">

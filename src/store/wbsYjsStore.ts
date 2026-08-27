@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import type { WbsData, WbsDetailSchedule, WbsDevRow, WbsMenuNode, WbsMenuScheduleLink, WbsProjectSchedule } from '../types/wbs';
 import { useProjectStore } from './projectStore';
 import { normalizeMenuScheduleLinks } from '../utils/wbsScheduleMatch';
+import { scheduleSyncScheduleToDevDetail } from '../services/wbsScheduleDevSync';
 
 type WbsRecord = WbsMenuNode | WbsDevRow | WbsDetailSchedule;
 
@@ -124,11 +125,32 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
 
             const root = roots(ydoc);
             const sync = () => syncFromDoc(projectId, ydoc);
+            const syncDetailSchedules = (events: Y.YEvent<any>[] = []) => {
+                syncFromDoc(projectId, ydoc);
+
+                // 브라우저 인라인 수정뿐 아니라 서버 엑셀 import처럼 Yjs를 직접 갱신하는
+                // 경로도 일정→개발상세 반영을 놓치지 않는다.
+                const changedScheduleIds = new Set<string>();
+                events.forEach((event) => {
+                    const scheduleId = event.path[0];
+                    if (typeof scheduleId === 'string') {
+                        changedScheduleIds.add(scheduleId);
+                        return;
+                    }
+                    if (event.path.length === 0 && 'keysChanged' in event) {
+                        const keysChanged = event.keysChanged as Set<string | number>;
+                        keysChanged.forEach((id) => changedScheduleIds.add(String(id)));
+                    }
+                });
+                changedScheduleIds.forEach((scheduleId) => {
+                    scheduleSyncScheduleToDevDetail(projectId, scheduleId);
+                });
+            };
             root.meta.observe(sync);
             root.menus.observeDeep(sync);
             root.rows.observeDeep(sync);
             root.projectSchedule.observe(sync);
-            root.detailSchedules.observeDeep(sync);
+            root.detailSchedules.observeDeep(syncDetailSchedules);
 
             set({
                 ydoc,
@@ -144,7 +166,7 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
                     root.menus.unobserveDeep(sync);
                     root.rows.unobserveDeep(sync);
                     root.projectSchedule.unobserve(sync);
-                    root.detailSchedules.unobserveDeep(sync);
+                    root.detailSchedules.unobserveDeep(syncDetailSchedules);
                 },
             });
             sync();

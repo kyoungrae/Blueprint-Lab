@@ -9,6 +9,7 @@ import { useWbsStore } from '../../store/wbsStore';
 import { useWbsEditingStore } from '../../store/wbsEditingStore';
 import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
+import { scheduleEditingKey } from '../../utils/wbsEditingKey';
 import type { WbsDetailSchedule } from '../../types/wbs';
 
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────────────
@@ -1106,7 +1107,8 @@ const WbsSchedule: React.FC = () => {
                                         parseDate(node.endDate) < new Date() &&
                                         (node.progress ?? 0) < 100;
 
-                                    const ganttEditEntry = editingMap.get(`schedule_${node.id}`);
+                                    const editKey = scheduleEditingKey(node.id);
+                                    const ganttEditEntry = editingMap.get(editKey);
                                     const isGanttBeingEdited = !!ganttEditEntry && ganttEditEntry.userId !== currentUserId;
 
                                     return (
@@ -1122,8 +1124,8 @@ const WbsSchedule: React.FC = () => {
                                                 paddingBottom: 6,
                                                 ...(isGanttBeingEdited ? { boxShadow: `inset 3px 0 0 ${ganttEditEntry!.color}` } : {}),
                                             }}
-                                            onFocus={() => emitFocus(`schedule_${node.id}`)}
-                                            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(`schedule_${node.id}`); }}
+                                            onFocus={() => emitFocus(editKey)}
+                                            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(editKey); }}
                                         >
                                             {/* 수정중 배지 */}
                                             {isGanttBeingEdited && (

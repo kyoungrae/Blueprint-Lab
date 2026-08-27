@@ -20,6 +20,7 @@ import { useSyncStore } from '../../store/syncStore';
 import { useAuthStore } from '../../store/authStore';
 import { isWbsDebugingCategoryRow } from '../../types/wbs';
 import type { WbsDevRow } from '../../types/wbs';
+import { rowEditingKey } from '../../utils/wbsEditingKey';
 
 const cellInput = 'w-full bg-transparent px-2 py-1.5 text-[11px] outline-none focus:bg-emerald-50/50 rounded';
 
@@ -90,6 +91,7 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
 }) => {
     const menus = useWbsStore((s) => s.menus);
     const rows = useWbsStore((s) => s.rows);
+    const menuScheduleLinks = useWbsStore((s) => s.menuScheduleLinks);
     const updateRow = useWbsStore((s) => s.updateRow);
     const deleteRow = useWbsStore((s) => s.deleteRow);
     const [dateFilterField, setDateFilterField] = useState<ExcelDateFilterField>('planPeriod');
@@ -309,7 +311,8 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                 const dbgLocked = isDbg && !debugUnlockedByMenu.get(r.menuId);
                                 const rowBg = isDbg ? palette.debug : palette.base;
                                 const parts = menuPathParts(menus, r.menuId);
-                                const rowEditEntry = editingMap.get(`row_${r.id}`);
+                                const editKey = rowEditingKey(r, menuScheduleLinks);
+                                const rowEditEntry = editingMap.get(editKey);
                                 const isRowBeingEdited = !!rowEditEntry && rowEditEntry.userId !== currentUserId;
 
                                 return (
@@ -317,8 +320,8 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                                         key={r.id}
                                         className={`border-b border-gray-100 hover:bg-sky-50/50 transition-colors group ${rowBg} ${isRowBeingEdited ? 'pointer-events-none select-none' : ''}`}
                                         style={isRowBeingEdited ? { boxShadow: `inset 3px 0 0 ${rowEditEntry!.color}` } : undefined}
-                                        onFocus={() => { if (!isRowBeingEdited) emitFocus(`row_${r.id}`); }}
-                                        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(`row_${r.id}`); }}
+                                        onFocus={() => { if (!isRowBeingEdited) emitFocus(editKey); }}
+                                        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(editKey); }}
                                     >
                                         {Array.from({ length: pathDepth }, (_, i) => (
                                             <td key={i} className="border border-gray-100 px-2 py-1.5 align-middle text-[11px] text-gray-700">

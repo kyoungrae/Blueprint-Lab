@@ -61,7 +61,8 @@ export interface WbsProjectSchedule {
     endDate: string;
 }
 
-export type ScheduleStatus = '완료' | '진행중' | '대기';
+/** 일정 탭의 상태. 개발상세의 HOLD(보류)와 1:1로 동기화한다. */
+export type ScheduleStatus = '완료' | '진행중' | '대기' | '보류';
 
 export interface WbsDetailSchedule {
     id: string;

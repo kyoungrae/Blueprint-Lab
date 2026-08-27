@@ -443,24 +443,30 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
             });
         });
 
-        // Handle lock requests
-        socket.on('request_lock', async (data: { entityId: string }) => {
-            if (!socketData.projectId) return;
+        const acquireAndBroadcastLock = async (entityId: string) => {
+            if (!socketData.projectId) return { success: false };
 
             const result = await lockManager.acquireLock(
                 socketData.projectId,
-                data.entityId,
+                entityId,
                 socketData.user.id,
                 socketData.user.name
             );
 
             if (result.success) {
-                // Notify all clients of lock acquisition
                 io.to(`project:${socketData.projectId}`).emit('lock_acquired', {
-                    entityId: data.entityId,
+                    entityId,
                     userId: socketData.user.id,
                     userName: socketData.user.name,
                 });
+            }
+            return result;
+        };
+
+        // Handle lock requests. LockManager performs the check-and-set atomically in Redis.
+        socket.on('request_lock', async (data: { entityId: string }) => {
+            const result = await acquireAndBroadcastLock(data.entityId);
+            if (result.success) {
                 socket.emit('lock_result', { success: true, entityId: data.entityId });
             } else {
                 socket.emit('lock_result', {
@@ -488,22 +494,52 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
             }
         });
 
-        // WBS 필드 포커스 브로드캐스트 (수정중 인디케이터)
-        socket.on('wbs_field_focus', (data: { elementId: string }) => {
+        // Keep an active edit lock alive while the input remains focused.
+        socket.on('extend_lock', async (data: { entityId: string }) => {
             if (!socketData.projectId) return;
-            socket.to(`project:${socketData.projectId}`).emit('wbs_field_focus', {
-                elementId: data.elementId,
-                userId: socketData.user.id,
-                userName: socketData.user.name,
-            });
+            const extended = await lockManager.extendLock(
+                socketData.projectId,
+                data.entityId,
+                socketData.user.id,
+            );
+            if (extended) {
+                // Reuse the existing event so every client refreshes its local 30s expiry.
+                io.to(`project:${socketData.projectId}`).emit('lock_acquired', {
+                    entityId: data.entityId,
+                    userId: socketData.user.id,
+                    userName: socketData.user.name,
+                });
+            }
         });
 
-        socket.on('wbs_field_blur', (data: { elementId: string }) => {
+        // 구버전 WBS 클라이언트 호환 경로도 같은 서버 잠금을 사용한다.
+        socket.on('wbs_field_focus', async (data: { elementId: string }) => {
+            const result = await acquireAndBroadcastLock(data.elementId);
+            if (result.success && socketData.projectId) {
+                socket.to(`project:${socketData.projectId}`).emit('wbs_field_focus', {
+                    elementId: data.elementId,
+                    userId: socketData.user.id,
+                    userName: socketData.user.name,
+                });
+            }
+        });
+
+        socket.on('wbs_field_blur', async (data: { elementId: string }) => {
             if (!socketData.projectId) return;
-            socket.to(`project:${socketData.projectId}`).emit('wbs_field_blur', {
-                elementId: data.elementId,
-                userId: socketData.user.id,
-            });
+            const released = await lockManager.releaseLock(
+                socketData.projectId,
+                data.elementId,
+                socketData.user.id,
+            );
+            if (released) {
+                io.to(`project:${socketData.projectId}`).emit('lock_released', {
+                    entityId: data.elementId,
+                });
+                socket.to(`project:${socketData.projectId}`).emit('wbs_field_blur', {
+                    elementId: data.elementId,
+                    userId: socketData.user.id,
+                });
+            }
         });
 
         // Handle disconnect

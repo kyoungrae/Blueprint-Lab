@@ -19,7 +19,7 @@ interface WbsEditingState {
 }
 
 /** 네트워크 문제 등으로 blur 이벤트가 누락될 경우 자동 만료 시간 */
-const AUTO_EXPIRE_MS = 8000;
+const AUTO_EXPIRE_MS = 30000;
 
 export const useWbsEditingStore = create<WbsEditingState>((set, get) => ({
     editing: new Map(),

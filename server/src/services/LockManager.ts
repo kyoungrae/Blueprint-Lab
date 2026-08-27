@@ -22,26 +22,38 @@ export class LockManager {
         const lockKey = `project:${projectId}:locks`;
 
         try {
-            const existing = await redis.hget(lockKey, entityId);
-
-            if (existing) {
-                const lock: LockInfo = JSON.parse(existing);
-
-                // Check if lock is expired
-                if (Date.now() < lock.expiresAt && lock.userId !== userId) {
-                    return { success: false, holder: lock };
-                }
-            }
-
+            const now = Date.now();
             const lockData: LockInfo = {
                 userId,
                 userName,
-                lockedAt: Date.now(),
-                expiresAt: Date.now() + this.LOCK_TTL,
+                lockedAt: now,
+                expiresAt: now + this.LOCK_TTL,
             };
 
-            await redis.hset(lockKey, entityId, JSON.stringify(lockData));
-            return { success: true };
+            // HGET → HSET은 두 사용자가 같은 순간에 요청했을 때 둘 다 성공할 수 있다.
+            // Redis Lua에서 검사와 설정을 한 번에 수행해 잠금 획득을 원자적으로 보장한다.
+            const result = await redis.eval(
+                `
+                local existing = redis.call('HGET', KEYS[1], ARGV[1])
+                if existing then
+                    local ok, lock = pcall(cjson.decode, existing)
+                    if ok and lock and tonumber(lock.expiresAt) > tonumber(ARGV[2]) and lock.userId ~= ARGV[3] then
+                        return {0, existing}
+                    end
+                end
+                redis.call('HSET', KEYS[1], ARGV[1], ARGV[4])
+                return {1, ''}
+                `,
+                1,
+                lockKey,
+                entityId,
+                String(now),
+                userId,
+                JSON.stringify(lockData),
+            ) as [number, string];
+
+            if (result[0] === 1) return { success: true };
+            return { success: false, holder: JSON.parse(result[1]) as LockInfo };
 
         } catch (error) {
             // console.error('Lock acquisition error:', error);
@@ -126,9 +138,6 @@ export class LockManager {
                 // Only include non-expired locks
                 if (now < lock.expiresAt) {
                     locks.set(entityId, lock);
-                } else {
-                    // Clean up expired lock
-                    await redis.hdel(lockKey, entityId);
                 }
             }
 

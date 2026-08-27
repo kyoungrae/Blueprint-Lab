@@ -101,7 +101,18 @@ function getOrCreateDoc(projectId: string): DocInfo {
             // 여기서 별도 debounce 저장이 끼어들면 이전 스냅샷과 순서가 뒤바뀔 수 있다.
             if (origin === WBS_SCHEDULE_IMPORT_ORIGIN || origin === MONGO_SEED_ORIGIN) return;
 
-            // 모든 문서 변경마다 디바운스 저장 (origin 조건 제거 — 화면 memos 등이 누락되던 원인)
+            // WBS는 새로고침·다중 사용자 재접속 시에도 DB 스냅샷이 기준이 되어야 한다.
+            // 따라서 WBS 변경은 지연 저장하지 않고, 문서별 saveQueue를 통해 즉시 MongoDB에
+            // 직렬 저장한다. 다른 문서의 기존 디바운스 동작은 유지한다.
+            const isWbsDocument = doc.getMap<any>('wbs_meta').get('initialized') === true;
+            if (isWbsDocument) {
+                void saveDocToMongo(projectId, doc).catch((error) => {
+                    logger.error('Immediate WBS MongoDB save failed: %o', error);
+                });
+                return;
+            }
+
+            // 모든 비-WBS 문서 변경마다 디바운스 저장 (origin 조건 제거 — 화면 memos 등이 누락되던 원인)
             if (info.immediateSaveTimer) {
                 clearTimeout(info.immediateSaveTimer);
             }
@@ -479,6 +490,8 @@ async function persistDocToMongo(projectId: string, doc: Y.Doc): Promise<void> {
         }
     } catch (err) {
         logger.error('Yjs saveDocToMongo failed: %o', err);
+        // 호출자가 실패를 감지해 다음 저장에서 재시도하고, 즉시 저장 실패도 로그로 남긴다.
+        throw err;
     }
 }
 

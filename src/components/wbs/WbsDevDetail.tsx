@@ -15,6 +15,7 @@ import WbsDevDetailFilterBar from './WbsDevDetailFilterBar';
 import { getAllAssignees } from './wbsDevFilterUtils';
 import { confirmDeleteWbsRow } from './wbsDevRowUtils';
 import WbsDevScheduleSyncButton from './WbsDevScheduleSyncButton';
+import { rowEditingKey } from '../../utils/wbsEditingKey';
 
 /** '+ ALL' 클릭 시 자동 추가되는 산출물 구분 행 */
 const ALL_ARTIFACT_CATEGORIES = ['Controller', 'Service', 'ServiceImpl', 'VO', 'Mapper', 'Html'];
@@ -478,6 +479,7 @@ const WbsDevDetail: React.FC<{
 }) => {
     const menus     = useWbsStore((s) => s.menus);
     const rows      = useWbsStore((s) => s.rows);
+    const menuScheduleLinks = useWbsStore((s) => s.menuScheduleLinks);
     const addRow    = useWbsStore((s) => s.addRow);
     const addRows   = useWbsStore((s) => s.addRows);
     const updateRow = useWbsStore((s) => s.updateRow);
@@ -842,7 +844,8 @@ const WbsDevDetail: React.FC<{
                                         menuRows.map((r) => {
                                             const isDbg = isWbsDebugingCategoryRow(r);
                                             const dbgLocked = isDbg && !debugUnlocked;
-                                            const rowEditEntry = editingMap.get(`row_${r.id}`);
+                                            const editKey = rowEditingKey(r, menuScheduleLinks);
+                                            const rowEditEntry = editingMap.get(editKey);
                                             const isRowBeingEdited = !!rowEditEntry && rowEditEntry.userId !== currentUserId;
                                             return (
                                             <tr
@@ -853,8 +856,8 @@ const WbsDevDetail: React.FC<{
                                                         : 'bg-white hover:bg-gray-50'
                                                 } ${isRowBeingEdited ? 'pointer-events-none select-none' : ''}`}
                                                 style={isRowBeingEdited ? { boxShadow: `inset 3px 0 0 ${rowEditEntry!.color}` } : undefined}
-                                                onFocus={() => { if (!isRowBeingEdited) emitFocus(`row_${r.id}`); }}
-                                                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(`row_${r.id}`); }}
+                                                onFocus={() => { if (!isRowBeingEdited) emitFocus(editKey); }}
+                                                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) emitBlur(editKey); }}
                                             >
                                                 <td className="align-middle">
                                                     {isDbg ? (

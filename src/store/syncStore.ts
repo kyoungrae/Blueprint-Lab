@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import type { ERDState, HistoryLog } from '../types/erd';
+import { useAuthStore } from './authStore';
 
 // Socket Server URL
 // - Dev: localhost:3001 (backend)
@@ -12,6 +13,23 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL
         : (typeof window !== 'undefined'
             ? window.location.origin
             : 'http://localhost:3001'));
+
+const WBS_LOCK_HEARTBEAT_MS = 10_000;
+const wbsLockHeartbeats = new Map<string, ReturnType<typeof setInterval>>();
+
+const isWbsCollaborationKey = (entityId: string) =>
+    entityId.startsWith('wbs_') || entityId.startsWith('menu_');
+
+const clearWbsLockHeartbeat = (entityId: string) => {
+    const timer = wbsLockHeartbeats.get(entityId);
+    if (timer) clearInterval(timer);
+    wbsLockHeartbeats.delete(entityId);
+};
+
+const clearAllWbsLockHeartbeats = () => {
+    wbsLockHeartbeats.forEach((timer) => clearInterval(timer));
+    wbsLockHeartbeats.clear();
+};
 
 // console.log('📡 Collaboration Server URL:', SOCKET_URL);
 
@@ -69,6 +87,8 @@ interface SyncStore {
     // Cursors (other sessions)
     cursors: Map<string, CursorInfo & { userId: string; clientId: string; userName: string; userPicture?: string }>; // clientId -> cursor
     locks: Map<string, LockInfo>;
+    /** 서버 잠금 승인 대기 중인 WBS 항목. 승인 전 입력값을 저장하지 않는다. */
+    pendingWbsLocks: Set<string>;
 
     // Lamport clock
     lamportClock: number;
@@ -109,6 +129,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
     onlineUsers: [],
     cursors: new Map(),
     locks: new Map(),
+    pendingWbsLocks: new Set(),
     lamportClock: 0,
 
     connect: () => {
@@ -167,6 +188,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
                 isConnected: false,
                 isConnecting: false,
             });
+            clearAllWbsLockHeartbeats();
         });
 
         socket.on('connect_error', (_error) => {
@@ -189,6 +211,11 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
             const locksMap = new Map<string, LockInfo>();
             Object.entries(data.locks).forEach(([entityId, lock]) => {
                 locksMap.set(entityId, lock);
+                if (isWbsCollaborationKey(entityId)) {
+                    import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
+                        useWbsEditingStore.getState().setEditing(entityId, lock.userId, lock.userName);
+                    });
+                }
             });
             set({ locks: locksMap });
 
@@ -268,10 +295,22 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
                 lockedAt: Date.now(),
                 expiresAt: Date.now() + 30000,
             });
+            if (isWbsCollaborationKey(data.entityId)) {
+                import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
+                    useWbsEditingStore.getState().setEditing(data.entityId, data.userId, data.userName);
+                });
+            }
         });
 
         socket.on('lock_released', (data: { entityId: string }) => {
+            const priorLock = get().locks.get(data.entityId);
             get()._removeLock(data.entityId);
+            clearWbsLockHeartbeat(data.entityId);
+            if (priorLock && isWbsCollaborationKey(data.entityId)) {
+                import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
+                    useWbsEditingStore.getState().clearEditing(data.entityId, priorLock.userId);
+                });
+            }
         });
 
         // WBS 수정중 인디케이터 수신
@@ -352,7 +391,8 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
                 isSynced: true, // Local state is always "synced"
                 onlineUsers: [],
                 cursors: new Map(),
-                locks: new Map()
+                locks: new Map(),
+                pendingWbsLocks: new Set(),
             });
             return;
         }
@@ -368,7 +408,8 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
         const { socket, currentProjectId } = get();
         if (socket && currentProjectId) {
             socket.emit('leave_project', { projectId: currentProjectId });
-            set({ currentProjectId: null, onlineUsers: [], cursors: new Map(), locks: new Map() });
+            clearAllWbsLockHeartbeats();
+            set({ currentProjectId: null, onlineUsers: [], cursors: new Map(), locks: new Map(), pendingWbsLocks: new Set() });
             // 프로젝트 전환 시 수정중 표시 초기화
             import('./wbsEditingStore').then(({ useWbsEditingStore }) => {
                 useWbsEditingStore.getState().clearAll();
@@ -419,9 +460,10 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
             socket.emit('request_lock', { entityId });
 
-            const handler = (result: { success: boolean; entityId: string }) => {
+            const handler = (result: { success: boolean; entityId: string; holder?: LockInfo }) => {
                 if (result.entityId === entityId) {
                     socket.off('lock_result', handler);
+                    if (!result.success && result.holder) get()._setLock(entityId, result.holder);
                     resolve(result.success);
                 }
             };
@@ -445,16 +487,51 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
     emitWbsFieldFocus: (elementId) => {
         const { socket, currentProjectId } = get();
-        if (socket && currentProjectId && !currentProjectId.startsWith('local_')) {
-            socket.emit('wbs_field_focus', { elementId });
+        if (!socket || !currentProjectId || currentProjectId.startsWith('local_')) return;
+
+        const currentLock = get().locks.get(elementId);
+        if (currentLock?.userId === useAuthStore.getState().user?.id) {
+            if (!wbsLockHeartbeats.has(elementId)) {
+                wbsLockHeartbeats.set(elementId, setInterval(() => {
+                    const activeSocket = get().socket;
+                    const activeProjectId = get().currentProjectId;
+                    if (activeSocket && activeProjectId && !activeProjectId.startsWith('local_')) {
+                        activeSocket.emit('extend_lock', { entityId: elementId });
+                    }
+                }, WBS_LOCK_HEARTBEAT_MS));
+            }
+            return;
         }
+        if (get().pendingWbsLocks.has(elementId)) return;
+
+        set((state) => ({ pendingWbsLocks: new Set(state.pendingWbsLocks).add(elementId) }));
+        void get().requestLock(elementId).then((acquired) => {
+            if (acquired && !wbsLockHeartbeats.has(elementId)) {
+                wbsLockHeartbeats.set(elementId, setInterval(() => {
+                    const activeSocket = get().socket;
+                    const activeProjectId = get().currentProjectId;
+                    if (activeSocket && activeProjectId && !activeProjectId.startsWith('local_')) {
+                        activeSocket.emit('extend_lock', { entityId: elementId });
+                    }
+                }, WBS_LOCK_HEARTBEAT_MS));
+            }
+        }).finally(() => {
+            set((state) => {
+                const pendingWbsLocks = new Set(state.pendingWbsLocks);
+                pendingWbsLocks.delete(elementId);
+                return { pendingWbsLocks };
+            });
+        });
     },
 
     emitWbsFieldBlur: (elementId) => {
-        const { socket, currentProjectId } = get();
-        if (socket && currentProjectId && !currentProjectId.startsWith('local_')) {
-            socket.emit('wbs_field_blur', { elementId });
-        }
+        clearWbsLockHeartbeat(elementId);
+        set((state) => {
+            const pendingWbsLocks = new Set(state.pendingWbsLocks);
+            pendingWbsLocks.delete(elementId);
+            return { pendingWbsLocks };
+        });
+        get().releaseLock(elementId);
     },
 
     _setOnlineUsers: (users) => set({ onlineUsers: users }),
