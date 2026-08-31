@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import type { WbsData, WbsDetailSchedule, WbsDevRow, WbsMenuNode, WbsMenuScheduleLink, WbsProjectSchedule } from '../types/wbs';
 import { useProjectStore } from './projectStore';
 import { normalizeMenuScheduleLinks } from '../utils/wbsScheduleMatch';
+import { isDevToScheduleSyncing } from '../services/wbsDevScheduleSync';
 import { scheduleSyncScheduleToDevDetail } from '../services/wbsScheduleDevSync';
 
 type WbsRecord = WbsMenuNode | WbsDevRow | WbsDetailSchedule;
@@ -130,6 +131,9 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
 
                 // 브라우저 인라인 수정뿐 아니라 서버 엑셀 import처럼 Yjs를 직접 갱신하는
                 // 경로도 일정→개발상세 반영을 놓치지 않는다.
+                // 단, 개발상세를 집계해 일정에 반영하는 중의 변경은 다시 각 행에 펼치지 않는다.
+                // 같은 메뉴·담당자의 기능 행이 집계된 일정값으로 함께 덮어써지는 것을 막는다.
+                if (isDevToScheduleSyncing()) return;
                 const changedScheduleIds = new Set<string>();
                 events.forEach((event) => {
                     const scheduleId = event.path[0];

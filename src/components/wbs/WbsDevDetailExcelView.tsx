@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, RotateCcw, Trash2 } from 'lucide-react';
 import WheelDatePicker, { WheelProgressPicker } from './WheelDatePicker';
 import { buildAssigneeMenuDateRanges, formatWbsDuration, normalizeYmd } from './wbsDateUtils';
 import {
@@ -39,6 +39,9 @@ type ExcelDateFilterField =
     | 'actualStart'
     | 'actualEnd'
     | 'actualPeriod';
+
+type ExcelDateSortField = 'startDate' | 'endDate' | 'actualStartDate' | 'actualEndDate';
+type ExcelDateSort = { field: ExcelDateSortField; direction: 'asc' | 'desc' };
 
 const EXCEL_DATE_FILTER_OPTIONS: { value: ExcelDateFilterField; label: string }[] = [
     { value: 'planStart', label: '계획 시작일' },
@@ -82,6 +85,34 @@ function matchesDateFilter(
     }
 }
 
+interface SortableDateHeaderProps {
+    label: string;
+    field: ExcelDateSortField;
+    sort: ExcelDateSort | null;
+    onSort: (field: ExcelDateSortField) => void;
+    className: string;
+}
+
+const SortableDateHeader: React.FC<SortableDateHeaderProps> = ({ label, field, sort, onSort, className }) => {
+    const direction = sort?.field === field ? sort.direction : null;
+    const SortIcon = direction === 'asc' ? ArrowUp : direction === 'desc' ? ArrowDown : ArrowUpDown;
+    const sortLabel = direction === 'asc' ? '오름차순' : direction === 'desc' ? '내림차순' : '정렬';
+
+    return (
+        <th className={className} aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}>
+            <button
+                type="button"
+                onClick={() => onSort(field)}
+                className="flex w-full items-center justify-center gap-1 rounded text-inherit outline-none hover:text-amber-200 focus-visible:ring-2 focus-visible:ring-amber-300"
+                title={`${label} ${sortLabel}`}
+            >
+                {label}
+                <SortIcon size={12} strokeWidth={direction ? 3 : 2} aria-hidden="true" />
+            </button>
+        </th>
+    );
+};
+
 const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
     menuSearch,
     onMenuSearchChange,
@@ -97,6 +128,9 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
     const [dateFilterField, setDateFilterField] = useState<ExcelDateFilterField>('planPeriod');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
+    const [showDebugging, setShowDebugging] = useState(false);
+    const [showCompleted, setShowCompleted] = useState(false);
+    const [dateSort, setDateSort] = useState<ExcelDateSort | null>(null);
 
     const editingMap = useWbsEditingStore((s) => s.editing);
     const emitFocus = useSyncStore((s) => s.emitWbsFieldFocus);
@@ -136,12 +170,31 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
         normalizedDateFrom && normalizedDateTo && normalizedDateFrom > normalizedDateTo,
     );
     const displayedRows = useMemo(() => {
-        if (!hasDateFilter) return sortedRows;
-        if (hasInvalidDateRange) return [];
-        return sortedRows.filter((row) => (
-            matchesDateFilter(row, dateFilterField, normalizedDateFrom, normalizedDateTo)
-        ));
-    }, [dateFilterField, hasDateFilter, hasInvalidDateRange, normalizedDateFrom, normalizedDateTo, sortedRows]);
+        const rowsWithVisibleDebugging = showDebugging
+            ? sortedRows
+            : sortedRows.filter((row) => !isWbsDebugingCategoryRow(row));
+        const rowsWithVisibleCompletion = showCompleted
+            ? rowsWithVisibleDebugging
+            : rowsWithVisibleDebugging.filter((row) => row.status !== 'DONE');
+        const dateFilteredRows = !hasDateFilter
+            ? rowsWithVisibleCompletion
+            : hasInvalidDateRange
+                ? []
+                : rowsWithVisibleCompletion.filter((row) => (
+                    matchesDateFilter(row, dateFilterField, normalizedDateFrom, normalizedDateTo)
+                ));
+        if (!dateSort) return dateFilteredRows;
+
+        return [...dateFilteredRows].sort((a, b) => {
+            const aDate = normalizeYmd(a[dateSort.field] ?? '');
+            const bDate = normalizeYmd(b[dateSort.field] ?? '');
+            if (!aDate && !bDate) return 0;
+            if (!aDate) return 1;
+            if (!bDate) return -1;
+            const result = aDate.localeCompare(bDate);
+            return dateSort.direction === 'asc' ? result : -result;
+        });
+    }, [dateFilterField, dateSort, hasDateFilter, hasInvalidDateRange, normalizedDateFrom, normalizedDateTo, showCompleted, showDebugging, sortedRows]);
 
     const debugUnlockedByMenu = useMemo(() => {
         const map = new Map<string, boolean>();
@@ -184,6 +237,13 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
         setDateFrom('');
         setDateTo('');
     };
+    const toggleDateSort = (field: ExcelDateSortField) => {
+        setDateSort((current) => (
+            current?.field === field
+                ? { field, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+                : { field, direction: 'asc' }
+        ));
+    };
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
@@ -208,6 +268,24 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                         layout="inline"
                     />
                     <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
+                        <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 text-xs font-bold text-amber-800 transition-colors hover:border-amber-300">
+                            <input
+                                type="checkbox"
+                                checked={showDebugging}
+                                onChange={(event) => setShowDebugging(event.target.checked)}
+                                className="h-3.5 w-3.5 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            디버깅
+                        </label>
+                        <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-xs font-bold text-emerald-800 transition-colors hover:border-emerald-300">
+                            <input
+                                type="checkbox"
+                                checked={showCompleted}
+                                onChange={(event) => setShowCompleted(event.target.checked)}
+                                className="h-3.5 w-3.5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            완료
+                        </label>
                         <span className="text-[11px] font-bold text-gray-500 mr-0.5">날짜 필터</span>
                         <select
                             value={dateFilterField}
@@ -272,11 +350,35 @@ const WbsDevDetailExcelView: React.FC<WbsDevDetailExcelViewProps> = ({
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-24">구분(산출물)</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[156px]">기능명</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black w-20">담당자</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800">시작일</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800">종료일</th>
+                            <SortableDateHeader
+                                label="시작일"
+                                field="startDate"
+                                sort={dateSort}
+                                onSort={toggleDateSort}
+                                className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800"
+                            />
+                            <SortableDateHeader
+                                label="종료일"
+                                field="endDate"
+                                sort={dateSort}
+                                onSort={toggleDateSort}
+                                className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-indigo-800"
+                            />
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[72px] w-[72px] bg-indigo-800">수행일</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-emerald-800">실적 시작일</th>
-                            <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-emerald-800">실적 종료일</th>
+                            <SortableDateHeader
+                                label="실적 시작일"
+                                field="actualStartDate"
+                                sort={dateSort}
+                                onSort={toggleDateSort}
+                                className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-emerald-800"
+                            />
+                            <SortableDateHeader
+                                label="실적 종료일"
+                                field="actualEndDate"
+                                sort={dateSort}
+                                onSort={toggleDateSort}
+                                className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[132px] w-[132px] bg-emerald-800"
+                            />
                             <th className="border border-slate-600 px-2 py-1.5 text-center text-[10px] font-black min-w-[72px] w-[72px] bg-emerald-800">실적 수행일</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-left text-[10px] font-black min-w-[100px] w-[100px]">상태</th>
                             <th className="border border-slate-600 px-2 py-1.5 text-left text-[10px] font-black min-w-[88px] w-[88px] bg-emerald-800">진행율(%)</th>

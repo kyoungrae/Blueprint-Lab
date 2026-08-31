@@ -109,23 +109,28 @@ export async function syncScheduleToDevDetail(
         };
 
         for (const assignment of assignments) {
-            for (const row of latestRows().filter((item) => matchesGroup(item, assignment.group))) {
-                const patch: Partial<Omit<WbsDevRow, 'id' | 'menuId'>> = {};
-                const startDate = toDevDate(schedule.startDate);
-                const endDate = toDevDate(schedule.endDate);
-                const actualStartDate = toDevDate(schedule.actualStartDate);
-                const actualEndDate = toDevDate(schedule.actualEndDate);
+            const matchingRows = latestRows().filter((item) => matchesGroup(item, assignment.group));
+            // 일정 연결은 레거시상 메뉴·담당자 단위다. 같은 그룹에 기능 행이 여러 개면
+            // 일정의 집계값을 어느 한 행의 원본값으로 볼 수 없으므로 개발상세에 역반영하지 않는다.
+            // 각 기능·Debugging 행의 상태와 진행률은 독립적으로 유지한다.
+            if (matchingRows.length !== 1) continue;
 
-                if (row.startDate !== startDate) patch.startDate = startDate;
-                if (row.endDate !== endDate) patch.endDate = endDate;
-                if ((row.actualStartDate ?? '') !== actualStartDate) patch.actualStartDate = actualStartDate;
-                if ((row.actualEndDate ?? '') !== actualEndDate) patch.actualEndDate = actualEndDate;
-                Object.assign(patch, statusPatch(schedule.status, schedule.progress, row));
+            const row = matchingRows[0];
+            const patch: Partial<Omit<WbsDevRow, 'id' | 'menuId'>> = {};
+            const startDate = toDevDate(schedule.startDate);
+            const endDate = toDevDate(schedule.endDate);
+            const actualStartDate = toDevDate(schedule.actualStartDate);
+            const actualEndDate = toDevDate(schedule.actualEndDate);
 
-                if (Object.keys(patch).length === 0) continue;
-                useWbsStore.getState().updateRow(row.id, patch);
-                updatedRows += 1;
-            }
+            if (row.startDate !== startDate) patch.startDate = startDate;
+            if (row.endDate !== endDate) patch.endDate = endDate;
+            if ((row.actualStartDate ?? '') !== actualStartDate) patch.actualStartDate = actualStartDate;
+            if ((row.actualEndDate ?? '') !== actualEndDate) patch.actualEndDate = actualEndDate;
+            Object.assign(patch, statusPatch(schedule.status, schedule.progress, row));
+
+            if (Object.keys(patch).length === 0) continue;
+            useWbsStore.getState().updateRow(row.id, patch);
+            updatedRows += 1;
         }
 
         return { matched: assignments.length, updatedRows };

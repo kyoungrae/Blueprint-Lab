@@ -96,7 +96,7 @@ function syncScheduleToDevDetailAfterChange(
     changed: boolean,
 ): void {
     // 개발상세→일정 반영 중 생성된 일정 변경은 다시 개발상세로 되돌리지 않는다.
-    if (changed && projectId && isScheduleToDevSyncPatch(patch)) {
+    if (changed && projectId && isScheduleToDevSyncPatch(patch) && !isDevToScheduleSyncing()) {
         scheduleSyncScheduleToDevDetail(projectId, scheduleId);
     }
 }
