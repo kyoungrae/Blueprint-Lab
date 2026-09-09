@@ -19,6 +19,12 @@ export interface WbsDetailScheduleRecord {
     title: string;
     startDate: string;
     endDate: string;
+    /** 원본 엑셀 J열 계획일 */
+    planDays?: number;
+    /** 원본 엑셀 K열 계획 진척도(0~100) */
+    planProgress?: number;
+    /** 원본 엑셀 L열 계획율(0~100) */
+    planRate?: number;
     progress?: number;
     worker?: string;
     deliverable?: string;
@@ -26,9 +32,11 @@ export interface WbsDetailScheduleRecord {
     status?: ScheduleStatus;
     actualStartDate?: string;
     actualEndDate?: string;
+    /** 원본 엑셀 O열 실적 투입일 */
+    actualDays?: number;
 }
 
-type ImportResult = '신규 추가' | '기존 일정 수정' | '변경 없음' | '충돌/검토 필요' | '제외';
+type ImportResult = '신규 추가' | '기존 일정 수정' | '변경 없음' | '웹 데이터 유지' | '충돌/검토 필요' | '제외';
 
 export interface ScheduleImportFieldChange {
     field: string;
@@ -53,6 +61,7 @@ export interface ScheduleImportSummary {
     added: number;
     updated: number;
     unchanged: number;
+    protected: number;
     conflicts: number;
     excluded: number;
 }
@@ -77,18 +86,26 @@ interface ParsedLeaf {
     title: string;
     startDate: string;
     endDate: string;
+    planDays?: number;
+    planProgress?: number;
+    planRate?: number;
     worker?: string;
     deliverable?: string;
     completionCriteria?: string;
     status?: ScheduleStatus;
     actualStartDate?: string;
     actualEndDate?: string;
+    actualDays?: number;
     progress?: number;
 }
 
 interface Candidate {
     key: string;
     parentKey: string | null;
+    /** 번호 우선 매칭용 코드. 제목이 바뀌어도 기존 일정을 찾는다. */
+    matchCode: string;
+    /** 보호 하위 분류가 있는 상위 집계는 기존 웹 집계값을 유지한다. */
+    preserveAggregateFields?: boolean;
     sourceRows: number[];
     hierarchyPath: string;
     value: Omit<WbsDetailScheduleRecord, 'id' | 'parentId'>;
@@ -96,7 +113,7 @@ interface Candidate {
 
 const COL = {
     group: 0, // A 구분
-    code: 1, // B 작업 식별 코드 (검증용, 현재 모델에는 저장하지 않음)
+    code: 1, // B 작업 식별 코드
     title: 2, // C 작업명
     worker: 3,
     deliverable: 4,
@@ -104,8 +121,12 @@ const COL = {
     status: 6,
     planStart: 7,
     planEnd: 8,
+    planDays: 9,
+    planProgress: 10,
+    planRate: 11,
     actualStart: 12,
     actualEnd: 13,
+    actualDays: 14,
     actualProgress: 15,
 } as const;
 
@@ -116,14 +137,20 @@ const FIELD_LABEL: Record<string, string> = {
     title: '항목명',
     startDate: '계획 시작일',
     endDate: '계획 종료일',
+    planDays: '계획일',
+    planProgress: '계획 진척도',
+    planRate: '계획율',
     worker: '작업자',
     deliverable: '산출물명',
     completionCriteria: '완료기준',
     status: '상태',
     actualStartDate: '실적 시작일',
     actualEndDate: '실적 종료일',
+    actualDays: '실적 투입일',
     progress: '실적 진척도',
 };
+
+const PROTECTED_GROUP_CODE = '3.2';
 
 const STATUS_MAP: Record<string, ScheduleStatus> = {
     완료: '완료',
@@ -206,6 +233,38 @@ function cellProgress(ws: XLSX.WorkSheet, row: number, col: number): number | un
     return Math.round(percent * 100) / 100;
 }
 
+function cellNonNegativeNumber(ws: XLSX.WorkSheet, row: number, col: number): number | undefined | 'invalid' {
+    const cell = readCell(ws, row, col);
+    if (!cell || cell.v === undefined || cell.v === null || cell.v === '') return undefined;
+    const normalized = normalizeText(cell.v).replace(/[^0-9.+-]/g, '');
+    if (typeof cell.v !== 'number' && !normalized) return undefined;
+    const raw = typeof cell.v === 'number' ? cell.v : Number(normalized);
+    if (!Number.isFinite(raw) || raw < 0) return 'invalid';
+    return Math.round(raw * 100) / 100;
+}
+
+function normalizeScheduleCode(value: string): string {
+    return normalizeText(value).replace(/\s+/g, '');
+}
+
+function headingCode(value: string): string {
+    return normalizeText(value).match(/^(\d+(?:\.\d+)*)\.?\s+/)?.[1] ?? '';
+}
+
+function parentCode(value: string, depth: number): string {
+    return normalizeScheduleCode(value).split('.').slice(0, depth).join('.');
+}
+
+function orderFromCode(value: string, depth: number, fallback: number): number {
+    const part = Number(normalizeScheduleCode(value).split('.')[depth - 1]);
+    return Number.isInteger(part) && part > 0 ? part - 1 : fallback;
+}
+
+function isProtectedCode(value: string): boolean {
+    const code = normalizeScheduleCode(value);
+    return code === PROTECTED_GROUP_CODE || code.startsWith(`${PROTECTED_GROUP_CODE}.`);
+}
+
 function findHeaderRow(ws: XLSX.WorkSheet, maxRow: number): number {
     for (let row = 0; row <= Math.min(maxRow, 30); row += 1) {
         const group = cellText(ws, row, COL.group);
@@ -236,6 +295,8 @@ function parseLeaves(buffer: Buffer): {
     sheetName: string;
     leaves: ParsedLeaf[];
     excluded: ScheduleImportPreviewItem[];
+    protectedItems: ScheduleImportPreviewItem[];
+    protectedRootTitles: Set<string>;
 } {
     const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false });
     const sheetName = workbook.SheetNames.includes('관리_WBS') ? '관리_WBS' : '';
@@ -251,6 +312,8 @@ function parseLeaves(buffer: Buffer): {
 
     const leaves: ParsedLeaf[] = [];
     const excluded: ScheduleImportPreviewItem[] = [];
+    const protectedItems: ScheduleImportPreviewItem[] = [];
+    const protectedRootTitles = new Set<string>();
     let rootTitle = '';
     let groupTitle = '';
 
@@ -270,6 +333,22 @@ function parseLeaves(buffer: Buffer): {
 
         const rowNumber = row + 1;
         const sourceRows = [rowNumber];
+
+        if (group) groupTitle = group;
+        if (isProtectedCode(sourceCode) || headingCode(groupTitle) === PROTECTED_GROUP_CODE) {
+            if (rootTitle) protectedRootTitles.add(rootTitle);
+            protectedItems.push({
+                key: `protected:${rowNumber}`,
+                sourceRows,
+                hierarchyPath: [rootTitle, groupTitle].filter(Boolean).join(' > ') || '3.2 시스템 개발',
+                title: title || sourceCode || '3.2 시스템 개발',
+                result: '웹 데이터 유지',
+                reason: '3.2 시스템 개발은 웹 WBS가 기준이므로 엑셀 값을 병합하지 않습니다.',
+                changes: [],
+            });
+            continue;
+        }
+
         if (!sourceCode || !title) {
             excluded.push({
                 key: `excluded:${rowNumber}`,
@@ -283,7 +362,6 @@ function parseLeaves(buffer: Buffer): {
             continue;
         }
 
-        if (group) groupTitle = group;
         if (!rootTitle || !groupTitle) {
             excluded.push({
                 key: `excluded:${rowNumber}`,
@@ -367,6 +445,35 @@ function parseLeaves(buffer: Buffer): {
             continue;
         }
 
+        const planDays = cellNonNegativeNumber(ws, row, COL.planDays);
+        const actualDays = cellNonNegativeNumber(ws, row, COL.actualDays);
+        if (planDays === 'invalid' || actualDays === 'invalid') {
+            excluded.push({
+                key: `excluded:${rowNumber}`,
+                sourceRows,
+                hierarchyPath: `${rootTitle} > ${groupTitle}`,
+                title,
+                result: '제외',
+                reason: '계획일(J열)과 실적 투입일(O열)은 0 이상의 숫자여야 합니다.',
+                changes: [],
+            });
+            continue;
+        }
+        const planProgress = cellProgress(ws, row, COL.planProgress);
+        const planRate = cellProgress(ws, row, COL.planRate);
+        if (planProgress === 'invalid' || planRate === 'invalid') {
+            excluded.push({
+                key: `excluded:${rowNumber}`,
+                sourceRows,
+                hierarchyPath: `${rootTitle} > ${groupTitle}`,
+                title,
+                result: '제외',
+                reason: '계획 진척도(K열)와 계획율(L열)은 0%~100% 값이어야 합니다.',
+                changes: [],
+            });
+            continue;
+        }
+
         leaves.push({
             rowNumber,
             sourceCode,
@@ -375,17 +482,21 @@ function parseLeaves(buffer: Buffer): {
             title,
             startDate,
             endDate,
-            ...(cellText(ws, row, COL.worker) ? { worker: cellText(ws, row, COL.worker) } : {}),
-            ...(cellText(ws, row, COL.deliverable) ? { deliverable: cellText(ws, row, COL.deliverable) } : {}),
-            ...(cellText(ws, row, COL.completionCriteria) ? { completionCriteria: cellText(ws, row, COL.completionCriteria) } : {}),
-            ...(status ? { status } : {}),
-            ...(actualStartDate ? { actualStartDate } : {}),
-            ...(actualEndDate ? { actualEndDate } : {}),
-            ...(typeof progress === 'number' ? { progress } : {}),
+            planDays,
+            planProgress,
+            planRate,
+            worker: cellText(ws, row, COL.worker) || undefined,
+            deliverable: cellText(ws, row, COL.deliverable) || undefined,
+            completionCriteria: cellText(ws, row, COL.completionCriteria) || undefined,
+            status,
+            actualStartDate: actualStartDate || undefined,
+            actualEndDate: actualEndDate || undefined,
+            actualDays,
+            progress: typeof progress === 'number' ? progress : undefined,
         });
     }
 
-    return { sheetName, leaves, excluded };
+    return { sheetName, leaves, excluded, protectedItems, protectedRootTitles };
 }
 
 function deriveStatus(progress: number): ScheduleStatus {
@@ -402,6 +513,18 @@ function maxDate(values: Array<string | undefined>): string {
     return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? '';
 }
 
+function average(values: Array<number | undefined>): number | undefined {
+    const numbers = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    if (numbers.length === 0) return undefined;
+    return Math.round((numbers.reduce((sum, value) => sum + value, 0) / numbers.length) * 100) / 100;
+}
+
+function sum(values: Array<number | undefined>): number | undefined {
+    const numbers = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    if (numbers.length === 0) return undefined;
+    return Math.round(numbers.reduce((total, value) => total + value, 0) * 100) / 100;
+}
+
 function makeKey(parentKey: string | null, title: string): string {
     return parentKey ? `${parentKey}\u001F${keyPart(title)}` : keyPart(title);
 }
@@ -411,8 +534,13 @@ function importedScheduleId(identityKey: string): string {
     return `schimp_${crypto.createHash('sha256').update(identityKey).digest('hex')}`;
 }
 
-function buildCandidates(leaves: ParsedLeaf[], excluded: ScheduleImportPreviewItem[]): Candidate[] {
+function buildCandidates(
+    leaves: ParsedLeaf[],
+    excluded: ScheduleImportPreviewItem[],
+    protectedRootTitles: Set<string>,
+): Candidate[] {
     const duplicateKeys = new Map<string, ParsedLeaf[]>();
+    const duplicateCodes = new Map<string, ParsedLeaf[]>();
     for (const leaf of leaves) {
         const rootKey = makeKey(null, leaf.rootTitle);
         const groupKey = makeKey(rootKey, leaf.groupTitle);
@@ -420,21 +548,32 @@ function buildCandidates(leaves: ParsedLeaf[], excluded: ScheduleImportPreviewIt
         const group = duplicateKeys.get(leafKey) ?? [];
         group.push(leaf);
         duplicateKeys.set(leafKey, group);
+
+        const code = normalizeScheduleCode(leaf.sourceCode);
+        const sameCode = duplicateCodes.get(code) ?? [];
+        sameCode.push(leaf);
+        duplicateCodes.set(code, sameCode);
     }
     const duplicateLeafKeys = new Set([...duplicateKeys.entries()]
         .filter(([, same]) => same.length > 1)
         .map(([key]) => key));
+    const duplicateSourceCodes = new Set([...duplicateCodes.entries()]
+        .filter(([, same]) => same.length > 1)
+        .map(([code]) => code));
 
     const validLeaves = leaves.filter((leaf) => {
         const leafKey = makeKey(makeKey(makeKey(null, leaf.rootTitle), leaf.groupTitle), leaf.title);
-        if (!duplicateLeafKeys.has(leafKey)) return true;
+        const sourceCode = normalizeScheduleCode(leaf.sourceCode);
+        if (!duplicateLeafKeys.has(leafKey) && !duplicateSourceCodes.has(sourceCode)) return true;
         excluded.push({
             key: `duplicate:${leaf.rowNumber}`,
             sourceRows: [leaf.rowNumber],
             hierarchyPath: `${leaf.rootTitle} > ${leaf.groupTitle}`,
             title: leaf.title,
             result: '충돌/검토 필요',
-            reason: '같은 상위 계약/과업 안에 동일한 일정명이 여러 번 있습니다. 자동 병합하지 않습니다.',
+            reason: duplicateSourceCodes.has(sourceCode)
+                ? `동일한 WBS 번호(${leaf.sourceCode})가 여러 행에 있습니다. 자동 병합하지 않습니다.`
+                : '같은 상위 계약/과업 안에 동일한 일정명이 여러 번 있습니다. 자동 병합하지 않습니다.',
             changes: [],
         });
         return false;
@@ -455,19 +594,26 @@ function buildCandidates(leaves: ParsedLeaf[], excluded: ScheduleImportPreviewIt
     let rootOrder = 0;
     for (const [rootKey, rootLeaves] of byRoot) {
         const rootTitle = rootLeaves[0].rootTitle;
+        const rootMatchCode = headingCode(rootTitle) || parentCode(rootLeaves[0].sourceCode, 1);
         const rootProgress = Math.round((rootLeaves.reduce((sum, leaf) => sum + (leaf.progress ?? 0), 0) / rootLeaves.length) * 100) / 100;
         candidates.push({
             key: rootKey,
             parentKey: null,
+            matchCode: rootMatchCode,
+            preserveAggregateFields: protectedRootTitles.has(rootTitle),
             sourceRows: rootLeaves.map((leaf) => leaf.rowNumber),
             hierarchyPath: rootTitle,
             value: {
-                order: rootOrder++,
+                order: orderFromCode(rootMatchCode, 1, rootOrder++),
                 title: rootTitle,
                 startDate: minDate(rootLeaves.map((leaf) => leaf.startDate)),
                 endDate: maxDate(rootLeaves.map((leaf) => leaf.endDate)),
-                ...(minDate(rootLeaves.map((leaf) => leaf.actualStartDate)) ? { actualStartDate: minDate(rootLeaves.map((leaf) => leaf.actualStartDate)) } : {}),
-                ...(maxDate(rootLeaves.map((leaf) => leaf.actualEndDate)) ? { actualEndDate: maxDate(rootLeaves.map((leaf) => leaf.actualEndDate)) } : {}),
+                planDays: sum(rootLeaves.map((leaf) => leaf.planDays)),
+                planProgress: average(rootLeaves.map((leaf) => leaf.planProgress)),
+                planRate: average(rootLeaves.map((leaf) => leaf.planRate)),
+                actualStartDate: minDate(rootLeaves.map((leaf) => leaf.actualStartDate)) || undefined,
+                actualEndDate: maxDate(rootLeaves.map((leaf) => leaf.actualEndDate)) || undefined,
+                actualDays: sum(rootLeaves.map((leaf) => leaf.actualDays)),
                 progress: rootProgress,
                 status: deriveStatus(rootProgress),
             },
@@ -477,19 +623,25 @@ function buildCandidates(leaves: ParsedLeaf[], excluded: ScheduleImportPreviewIt
         for (const [groupKey, groupLeaves] of byGroup) {
             if (!groupKey.startsWith(`${rootKey}\u001F`)) continue;
             const groupTitle = groupLeaves[0].groupTitle;
+            const groupMatchCode = headingCode(groupTitle) || parentCode(groupLeaves[0].sourceCode, 2);
             const groupProgress = Math.round((groupLeaves.reduce((sum, leaf) => sum + (leaf.progress ?? 0), 0) / groupLeaves.length) * 100) / 100;
             candidates.push({
                 key: groupKey,
                 parentKey: rootKey,
+                matchCode: groupMatchCode,
                 sourceRows: groupLeaves.map((leaf) => leaf.rowNumber),
                 hierarchyPath: `${rootTitle} > ${groupTitle}`,
                 value: {
-                    order: groupOrder++,
+                    order: orderFromCode(groupMatchCode, 2, groupOrder++),
                     title: groupTitle,
                     startDate: minDate(groupLeaves.map((leaf) => leaf.startDate)),
                     endDate: maxDate(groupLeaves.map((leaf) => leaf.endDate)),
-                    ...(minDate(groupLeaves.map((leaf) => leaf.actualStartDate)) ? { actualStartDate: minDate(groupLeaves.map((leaf) => leaf.actualStartDate)) } : {}),
-                    ...(maxDate(groupLeaves.map((leaf) => leaf.actualEndDate)) ? { actualEndDate: maxDate(groupLeaves.map((leaf) => leaf.actualEndDate)) } : {}),
+                    planDays: sum(groupLeaves.map((leaf) => leaf.planDays)),
+                    planProgress: average(groupLeaves.map((leaf) => leaf.planProgress)),
+                    planRate: average(groupLeaves.map((leaf) => leaf.planRate)),
+                    actualStartDate: minDate(groupLeaves.map((leaf) => leaf.actualStartDate)) || undefined,
+                    actualEndDate: maxDate(groupLeaves.map((leaf) => leaf.actualEndDate)) || undefined,
+                    actualDays: sum(groupLeaves.map((leaf) => leaf.actualDays)),
                     progress: groupProgress,
                     status: deriveStatus(groupProgress),
                 },
@@ -497,24 +649,30 @@ function buildCandidates(leaves: ParsedLeaf[], excluded: ScheduleImportPreviewIt
 
             let leafOrder = 0;
             for (const leaf of groupLeaves) {
+                const leafMatchCode = normalizeScheduleCode(leaf.sourceCode);
                 candidates.push({
                     key: makeKey(groupKey, leaf.title),
                     parentKey: groupKey,
+                    matchCode: leafMatchCode,
                     sourceRows: [leaf.rowNumber],
                     hierarchyPath: `${rootTitle} > ${groupTitle}`,
                     value: {
-                        order: leafOrder++,
+                        order: orderFromCode(leafMatchCode, 3, leafOrder++),
                         scheduleCode: leaf.sourceCode,
                         title: leaf.title,
                         startDate: leaf.startDate,
                         endDate: leaf.endDate,
-                        ...(leaf.worker ? { worker: leaf.worker } : {}),
-                        ...(leaf.deliverable ? { deliverable: leaf.deliverable } : {}),
-                        ...(leaf.completionCriteria ? { completionCriteria: leaf.completionCriteria } : {}),
-                        ...(leaf.status ? { status: leaf.status } : {}),
-                        ...(leaf.actualStartDate ? { actualStartDate: leaf.actualStartDate } : {}),
-                        ...(leaf.actualEndDate ? { actualEndDate: leaf.actualEndDate } : {}),
-                        ...(typeof leaf.progress === 'number' ? { progress: leaf.progress } : {}),
+                        planDays: leaf.planDays,
+                        planProgress: leaf.planProgress,
+                        planRate: leaf.planRate,
+                        worker: leaf.worker,
+                        deliverable: leaf.deliverable,
+                        completionCriteria: leaf.completionCriteria,
+                        status: leaf.status,
+                        actualStartDate: leaf.actualStartDate,
+                        actualEndDate: leaf.actualEndDate,
+                        actualDays: leaf.actualDays,
+                        progress: leaf.progress,
                     },
                 });
             }
@@ -547,7 +705,7 @@ function changedFields(
     after: Partial<Omit<WbsDetailScheduleRecord, 'id'>>,
 ): ScheduleImportFieldChange[] {
     return Object.entries(after)
-        .filter(([field, value]) => value !== undefined && before[field as keyof WbsDetailScheduleRecord] !== value)
+        .filter(([field, value]) => before[field as keyof WbsDetailScheduleRecord] !== value)
         .map(([field, value]) => ({
             field,
             label: FIELD_LABEL[field] ?? field,
@@ -564,25 +722,53 @@ export function buildWbsScheduleImportPreview(
     fileBuffer: Buffer,
     current: WbsDetailScheduleRecord[],
 ): ScheduleImportPreview {
-    const { sheetName, leaves, excluded } = parseLeaves(fileBuffer);
-    const candidates = buildCandidates(leaves, excluded);
+    const { sheetName, leaves, excluded, protectedItems, protectedRootTitles } = parseLeaves(fileBuffer);
+    const candidates = buildCandidates(leaves, excluded, protectedRootTitles);
     const pathById = currentPathById(current);
     const currentByKey = new Map<string, WbsDetailScheduleRecord[]>();
+    const currentByCode = new Map<string, WbsDetailScheduleRecord[]>();
     for (const item of current) {
         const key = pathById.get(item.id);
         if (!key) continue;
         const same = currentByKey.get(key) ?? [];
         same.push(item);
         currentByKey.set(key, same);
+
+        const code = normalizeScheduleCode(item.scheduleCode || headingCode(item.title));
+        if (code) {
+            const sameCode = currentByCode.get(code) ?? [];
+            sameCode.push(item);
+            currentByCode.set(code, sameCode);
+        }
     }
 
-    const items: ScheduleImportPreviewItem[] = [...excluded];
+    const items: ScheduleImportPreviewItem[] = [...excluded, ...protectedItems];
     const added: WbsDetailScheduleRecord[] = [];
     const updates: Array<{ id: string; patch: Partial<Omit<WbsDetailScheduleRecord, 'id'>> }> = [];
     const resolvedIdByKey = new Map<string, string>();
 
     for (const candidate of candidates) {
-        const matches = currentByKey.get(candidate.key) ?? [];
+        const codeMatches = candidate.matchCode ? currentByCode.get(candidate.matchCode) ?? [] : [];
+        const pathMatches = currentByKey.get(candidate.key) ?? [];
+        const codeIds = new Set(codeMatches.map((item) => item.id));
+        const pathIds = new Set(pathMatches.map((item) => item.id));
+        if (
+            codeIds.size > 0
+            && pathIds.size > 0
+            && (codeIds.size !== pathIds.size || [...codeIds].some((id) => !pathIds.has(id)))
+        ) {
+            items.push({
+                key: candidate.key,
+                sourceRows: candidate.sourceRows,
+                hierarchyPath: candidate.hierarchyPath,
+                title: candidate.value.title,
+                result: '충돌/검토 필요',
+                reason: 'WBS 번호와 계층/항목명이 서로 다른 기존 일정을 가리킵니다. 자동 병합하지 않습니다.',
+                changes: [],
+            });
+            continue;
+        }
+        const matches = codeMatches.length > 0 ? codeMatches : pathMatches;
         const parentId = candidate.parentKey ? resolvedIdByKey.get(candidate.parentKey) : null;
         if (candidate.parentKey && !parentId) {
             items.push({
@@ -609,12 +795,19 @@ export function buildWbsScheduleImportPreview(
             continue;
         }
 
+        const candidateValue = { ...candidate.value } as Partial<Omit<WbsDetailScheduleRecord, 'id'>>;
+        if (candidate.preserveAggregateFields && matches.length === 1) {
+            for (const field of [
+                'startDate', 'endDate', 'planDays', 'planProgress', 'planRate',
+                'actualStartDate', 'actualEndDate', 'actualDays', 'progress', 'status',
+            ] as const) delete candidateValue[field];
+        }
         const nextPatch: Partial<Omit<WbsDetailScheduleRecord, 'id'>> = {
-            ...candidate.value,
+            ...candidateValue,
             parentId: parentId ?? null,
         };
         if (matches.length === 0) {
-            const id = importedScheduleId(candidate.key);
+            const id = importedScheduleId(candidate.matchCode ? `code:${candidate.matchCode}` : candidate.key);
             if (current.some((item) => item.id === id)) {
                 items.push({
                     key: candidate.key,
@@ -678,6 +871,7 @@ export function buildWbsScheduleImportPreview(
         added: items.filter((item) => item.result === '신규 추가').length,
         updated: items.filter((item) => item.result === '기존 일정 수정').length,
         unchanged: items.filter((item) => item.result === '변경 없음').length,
+        protected: items.filter((item) => item.result === '웹 데이터 유지').length,
         conflicts: items.filter((item) => item.result === '충돌/검토 필요').length,
         excluded: items.filter((item) => item.result === '제외').length,
     };
@@ -692,6 +886,7 @@ export function buildWbsScheduleImportPreview(
         sheetName,
         sourceRowCount: new Set([
             ...leaves.map((leaf) => leaf.rowNumber),
+            ...protectedItems.flatMap((item) => item.sourceRows),
             ...excluded.flatMap((item) => item.sourceRows),
         ]).size,
         baseSnapshotHash,

@@ -67,7 +67,17 @@ export function normalizeMenuScheduleLinks(value: unknown): WbsMenuScheduleLink[
             && (item as WbsMenuScheduleLink).assigneeUserId!.trim()
             ? (item as WbsMenuScheduleLink).assigneeUserId!.trim()
             : undefined;
-        result.push({ menuId, assignee, ...(assigneeUserId ? { assigneeUserId } : {}), scheduleId });
+        const rowId = typeof (item as WbsMenuScheduleLink).rowId === 'string'
+            && (item as WbsMenuScheduleLink).rowId!.trim()
+            ? (item as WbsMenuScheduleLink).rowId!.trim()
+            : undefined;
+        result.push({
+            ...(rowId ? { rowId } : {}),
+            menuId,
+            assignee,
+            ...(assigneeUserId ? { assigneeUserId } : {}),
+            scheduleId,
+        });
     }
     return result;
 }
@@ -296,6 +306,32 @@ export function findScheduleCandidates(
         .sort((a, b) => compareScheduleCode(a.scheduleCode, b.scheduleCode));
 }
 
+/** 기능명으로 일정 3.2.x 말단 항목을 찾는다. 메뉴명이 아니라 기능 행을 기준으로 매칭한다. */
+export function findFeatureScheduleCandidates(
+    row: WbsDevRow,
+    menu: WbsMenuNode,
+    path: string[],
+    candidates: WbsDetailSchedule[],
+): WbsDetailSchedule[] {
+    const featureName = row.featureName.trim();
+    if (!featureName) return [];
+    return findScheduleCandidates(
+        {
+            menu: { ...menu, name: featureName },
+            path,
+            assignee: row.assignee,
+        },
+        candidates,
+    );
+}
+
+export function findStoredRowScheduleLink(
+    links: WbsMenuScheduleLink[],
+    rowId: string,
+): WbsMenuScheduleLink | undefined {
+    return links.find((link) => link.rowId === rowId);
+}
+
 export function findStoredMenuScheduleLink(
     links: WbsMenuScheduleLink[],
     menuId: string,
@@ -394,18 +430,48 @@ export function upsertMenuScheduleLink(
     return [...filtered, next];
 }
 
+export function upsertRowScheduleLink(
+    links: WbsMenuScheduleLink[],
+    next: WbsMenuScheduleLink & { rowId: string },
+): WbsMenuScheduleLink[] {
+    return [...links.filter((link) => link.rowId !== next.rowId), next];
+}
+
 export function pruneMenuScheduleLinks(
     links: WbsMenuScheduleLink[],
-    groups: MenuAssigneeGroup[],
+    rows: WbsDevRow[],
     validScheduleIds: Set<string>,
 ): WbsMenuScheduleLink[] {
+    const activeRowIds = new Set(
+        rows.filter((row) => !isWbsDebugingCategoryRow(row)).map((row) => row.id),
+    );
+    const groups = collectMenuAssigneeGroups(rows);
     const activeKeys = new Set(
         groups.map((group) => menuScheduleLinkKey(group.menuId, group.assignee, group.assigneeUserId)),
     );
     return links.filter((link) => (
         validScheduleIds.has(link.scheduleId)
-        && activeKeys.has(menuScheduleLinkKey(link.menuId, link.assignee, link.assigneeUserId))
+        && (
+            (link.rowId && activeRowIds.has(link.rowId))
+            || (!link.rowId && activeKeys.has(menuScheduleLinkKey(link.menuId, link.assignee, link.assigneeUserId)))
+        )
     ));
+}
+
+/** 개발상세 한 행의 값을 일정 행에 그대로 반영하는 패치. */
+export function buildSchedulePatchFromRow(
+    current: WbsDetailSchedule,
+    row: WbsDevRow,
+): Partial<Omit<WbsDetailSchedule, 'id'>> | null {
+    const progress = Math.round(row.progress || 0);
+    return buildSchedulePatchFromAggregate(current, {
+        startDate: toScheduleDate(row.startDate),
+        endDate: toScheduleDate(row.endDate),
+        actualStartDate: toScheduleDate(row.actualStartDate ?? ''),
+        actualEndDate: toScheduleDate(row.actualEndDate ?? ''),
+        progress,
+        status: row.status === 'HOLD' ? '보류' : deriveStatus(progress),
+    });
 }
 
 export function buildSchedulePatchFromAggregate(

@@ -18,7 +18,7 @@ interface RemotePreviewItem {
     sourceRows: number[];
     hierarchyPath: string;
     title: string;
-    result: '신규 추가' | '기존 일정 수정' | '변경 없음' | '충돌/검토 필요' | '제외';
+    result: '신규 추가' | '기존 일정 수정' | '변경 없음' | '웹 데이터 유지' | '충돌/검토 필요' | '제외';
     reason?: string;
     changes: PreviewChange[];
 }
@@ -34,6 +34,7 @@ interface RemotePreview {
         added: number;
         updated: number;
         unchanged: number;
+        protected: number;
         conflicts: number;
         excluded: number;
     };
@@ -56,6 +57,7 @@ const resultStyle: Record<RemotePreviewItem['result'], string> = {
     '신규 추가': 'bg-emerald-50 text-emerald-700 border-emerald-200',
     '기존 일정 수정': 'bg-blue-50 text-blue-700 border-blue-200',
     '변경 없음': 'bg-gray-50 text-gray-600 border-gray-200',
+    '웹 데이터 유지': 'bg-violet-50 text-violet-700 border-violet-200',
     '충돌/검토 필요': 'bg-amber-50 text-amber-700 border-amber-200',
     '제외': 'bg-rose-50 text-rose-700 border-rose-200',
 };
@@ -187,6 +189,7 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
     const addedCount = remotePreview?.summary.added ?? analysis?.added.length ?? (jsonItems ? jsonItems.filter((item) => !current.some((currentItem) => currentItem.id === item.id)).length : 0);
     const updatedCount = remotePreview?.summary.updated ?? analysis?.updated.length ?? (jsonItems ? jsonItems.filter((item) => current.some((currentItem) => currentItem.id === item.id)).length : 0);
     const unchangedCount = remotePreview?.summary.unchanged ?? analysis?.unchanged.length ?? 0;
+    const protectedCount = remotePreview?.summary.protected ?? 0;
     const conflictsCount = remotePreview?.summary.conflicts ?? 0;
     const excludedCount = remotePreview?.summary.excluded ?? analysis?.errors.length ?? 0;
     const hasPreview = Boolean(remotePreview || analysis || jsonItems);
@@ -219,6 +222,7 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
                             <p className="text-xs font-black text-emerald-700 mb-0.5">일정 탭 데이터만 영향받습니다</p>
                             <p className="text-[11px] text-gray-500 leading-relaxed">
                                 메뉴 구조도·개발 상세·개발 상세 진척률·진척률 계산식은 변경하지 않습니다.<br />
+                                계약추진일정 엑셀의 3.2 시스템 개발 및 3.2.x 하위 항목은 항상 웹 데이터를 유지합니다.<br />
                                 {isRemoteExcel
                                     ? '미리보기와 취소 단계에서는 서버 데이터가 변경되지 않으며, 최종 확인 뒤 백업 성공 시에만 일정 항목을 병합합니다.'
                                     : `현재 저장된 일정 항목: ${current.length}개`}
@@ -271,11 +275,12 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
                                 {[
                                     { label: '신규 추가', count: addedCount, cls: 'bg-emerald-50 border-emerald-100 text-emerald-700', icon: <Plus size={12} /> },
                                     { label: '기존 일정 수정', count: updatedCount, cls: 'bg-blue-50 border-blue-100 text-blue-700', icon: <RefreshCw size={12} /> },
                                     { label: '변경 없음', count: unchangedCount, cls: 'bg-gray-50 border-gray-200 text-gray-600', icon: <Minus size={12} /> },
+                                    { label: '웹 데이터 유지', count: protectedCount, cls: 'bg-violet-50 border-violet-100 text-violet-700', icon: <ShieldCheck size={12} /> },
                                     { label: '충돌/검토', count: conflictsCount, cls: 'bg-amber-50 border-amber-100 text-amber-700', icon: <AlertCircle size={12} /> },
                                     { label: '제외', count: excludedCount, cls: 'bg-rose-50 border-rose-100 text-rose-700', icon: <Ban size={12} /> },
                                 ].map((item) => (
@@ -290,7 +295,7 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
                                 <>
                                     {!remotePreview.canApply && (
                                         <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-3 text-[11px] leading-relaxed text-amber-800">
-                                            충돌·중복·형식 오류가 있는 파일은 부분 반영하지 않습니다. 아래 제외/충돌 행을 모두 해결한 새 파일로 다시 미리보기하세요.
+                                            충돌·중복·형식 오류가 있는 파일은 부분 반영하지 않습니다. 아래 제외/충돌 행을 모두 해결한 새 파일로 다시 미리보기하세요. “웹 데이터 유지”는 정상 보호 처리이므로 수정할 필요가 없습니다.
                                         </div>
                                     )}
                                     <div className="rounded-xl border border-gray-200 overflow-hidden">

@@ -29,13 +29,6 @@ function toDevDate(value: string | undefined): string {
     return normalized || String(value ?? '').trim();
 }
 
-function matchesGroup(row: WbsDevRow, group: { menuId: string; assignee: string; assigneeUserId?: string }): boolean {
-    if (row.menuId !== group.menuId || isWbsDebugingCategoryRow(row)) return false;
-    const groupUserId = group.assigneeUserId?.trim();
-    if (groupUserId && row.assigneeUserId?.trim() === groupUserId) return true;
-    return row.assignee.trim() === group.assignee.trim();
-}
-
 function statusPatch(
     scheduleStatus: ScheduleStatus | undefined,
     scheduleProgress: number | undefined,
@@ -63,7 +56,7 @@ function statusPatch(
 }
 
 /**
- * 연결된 일정(3.2.x)을 수정하면 메뉴·담당자 그룹의 개발상세 행으로 날짜·상태를 되돌린다.
+ * 연결된 일정(3.2.x)을 수정하면 연결된 개발상세 기능 행 하나로 날짜·상태를 되돌린다.
  * 개발상세→일정 동기화 중에 호출될 때는 반대 방향으로 되돌아가는 순환을 막는다.
  */
 export async function syncScheduleToDevDetail(
@@ -109,13 +102,9 @@ export async function syncScheduleToDevDetail(
         };
 
         for (const assignment of assignments) {
-            const matchingRows = latestRows().filter((item) => matchesGroup(item, assignment.group));
-            // 일정 연결은 레거시상 메뉴·담당자 단위다. 같은 그룹에 기능 행이 여러 개면
-            // 일정의 집계값을 어느 한 행의 원본값으로 볼 수 없으므로 개발상세에 역반영하지 않는다.
-            // 각 기능·Debugging 행의 상태와 진행률은 독립적으로 유지한다.
-            if (matchingRows.length !== 1) continue;
-
-            const row = matchingRows[0];
+            const row = latestRows().find((item) => item.id === assignment.row.id);
+            // Debugging 행은 개발 진행 일정의 동기화 대상이 아니다.
+            if (!row || isWbsDebugingCategoryRow(row)) continue;
             const patch: Partial<Omit<WbsDevRow, 'id' | 'menuId'>> = {};
             const startDate = toDevDate(schedule.startDate);
             const endDate = toDevDate(schedule.endDate);

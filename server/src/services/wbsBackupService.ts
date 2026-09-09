@@ -293,6 +293,7 @@ export interface ScheduleImportBackupInput {
             added: number;
             updated: number;
             unchanged: number;
+            protected: number;
             conflicts: number;
             excluded: number;
         };

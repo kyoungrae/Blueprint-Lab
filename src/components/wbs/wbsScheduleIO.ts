@@ -75,13 +75,13 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
 
     const headers = [
         'ID', '부모ID', '순서', '항목명',
-        '계획시작일', '계획종료일', '상태', '진행율(%)',
-        '작업자', '산출물명',
-        '실적시작일', '실적종료일',
+        '계획시작일', '계획종료일', '계획일', '계획진척도(%)', '계획율(%)',
+        '상태', '실적진척도(%)', '작업자', '산출물명', '완료기준',
+        '실적시작일', '실적종료일', '실적투입일',
     ];
 
-    // 실적 투입일 계산 헬퍼
-    function calcActualDays(start?: string, end?: string): number {
+    // 계획일/실적 투입일 계산 헬퍼
+    function calcDays(start?: string, end?: string): number {
         if (!start || !end) return 0;
         const s = new Date(start.replace(/\./g, '-'));
         const e = new Date(end.replace(/\./g, '-'));
@@ -103,7 +103,8 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
             border: thinBorder,
         });
 
-        const actualDays = calcActualDays(item.actualStartDate, item.actualEndDate);
+        const planDays = calcDays(item.startDate, item.endDate);
+        const actualDays = calcDays(item.actualStartDate, item.actualEndDate);
 
         return [
             sc(item.id, cellStyle('center')),
@@ -112,24 +113,26 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
             sc(indent + item.title, cellStyle('left')),
             sc(item.startDate, cellStyle('center')),
             sc(item.endDate, cellStyle('center')),
+            sc(item.planDays ?? (planDays > 0 ? planDays : ''), cellStyle('center')),
+            sc(item.planProgress ?? '', cellStyle('center')),
+            sc(item.planRate ?? '', cellStyle('center')),
             sc(item.status ?? '', cellStyle('center')),
             sc(item.progress ?? 0, cellStyle('center')),
             sc(item.worker ?? '', cellStyle('center')),
             sc(item.deliverable ?? '', cellStyle('left')),
+            sc(item.completionCriteria ?? '', cellStyle('left')),
             sc(item.actualStartDate ?? '', cellStyle('center')),
             sc(item.actualEndDate ?? '', cellStyle('center')),
-            sc(actualDays > 0 ? actualDays : '', cellStyle('center')),
+            sc(item.actualDays ?? (actualDays > 0 ? actualDays : ''), cellStyle('center')),
         ];
     });
 
-    // 실적 투입일 헤더 추가 (읽기전용 안내)
-    const allHeaders = [...headers, '실적투입일(자동)'];
-    const aoa = [allHeaders.map(headerCell), ...dataRows];
+    const aoa = [headers.map(headerCell), ...dataRows];
     const ws = XLSXStyle.utils.aoa_to_sheet(aoa);
     ws['!cols'] = [
         { wch: 26 }, { wch: 26 }, { wch: 6 }, { wch: 40 },
-        { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 },
-        { wch: 12 }, { wch: 30 },
+        { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 10 },
+        { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 30 }, { wch: 30 },
         { wch: 14 }, { wch: 14 }, { wch: 12 },
     ];
     ws['!rows'] = [{ hpt: 22 }, ...dataRows.map(() => ({ hpt: 16 }))];
@@ -143,13 +146,17 @@ export function downloadScheduleExcel(items: WbsDetailSchedule[], projectName: s
         [sc('항목명'), sc('WBS 항목명 (들여쓰기는 표시용 — 실제 계층은 부모ID로 결정)'), sc('사업관리')],
         [sc('계획시작일'), sc('계획 시작일 (YYYY.MM.DD 형식)'), sc('2025.10.15')],
         [sc('계획종료일'), sc('계획 종료일 (YYYY.MM.DD 형식)'), sc('2027.12.31')],
+        [sc('계획일'), sc('계약추진일정 엑셀의 계획일 값'), sc('10')],
+        [sc('계획진척도(%)'), sc('계획 진척도 0~100 숫자'), sc('50')],
+        [sc('계획율(%)'), sc('계획율 0~100 숫자'), sc('50')],
         [sc('상태'), sc('완료 / 진행중 / 대기 / 보류. 보류는 개발상세 HOLD와 동기화됩니다.'), sc('보류')],
-        [sc('진행율(%)'), sc('진행율 0~100 숫자'), sc('0')],
+        [sc('실적진척도(%)'), sc('실적 진척도 0~100 숫자'), sc('0')],
         [sc('작업자'), sc('담당 작업자명'), sc('홍길동')],
         [sc('산출물명'), sc('작업 결과 산출물 이름'), sc('설계서')],
+        [sc('완료기준'), sc('작업 완료 판단 기준'), sc('승인 완료')],
         [sc('실적시작일'), sc('실제 시작일 (YYYY.MM.DD 형식)'), sc('2025.11.01')],
         [sc('실적종료일'), sc('실제 종료일 (YYYY.MM.DD 형식)'), sc('2025.11.30')],
-        [sc('실적투입일(자동)'), sc('실적시작일~종료일 기간 자동 계산 (입력 불필요)'), sc('30')],
+        [sc('실적투입일'), sc('계약추진일정 엑셀의 실적 투입일 값'), sc('30')],
         [sc('')],
         [sc('※ 신규 항목 추가 시 ID 열을 비워두면 자동 생성됩니다.')],
         [sc('※ ID가 있으면 기존 항목을 업데이트하고, 없으면 신규 추가합니다.')],
@@ -211,12 +218,17 @@ export async function parseScheduleExcel(
     const colTitle = colFirst('항목명', 'WBS 항목명', '항목', 'title', '작업명');
     const colStart = colFirst('계획시작일', '시작일', '시작', 'startDate', 'start');
     const colEnd = colFirst('계획종료일', '종료일', '종료', 'endDate', 'end');
+    const colPlanDays = colFirst('계획일', 'planDays');
+    const colPlanProgress = colFirst('계획진척도(%)', '계획진척도', 'planProgress');
+    const colPlanRate = colFirst('계획율(%)', '계획율', 'planRate');
     const colStatus = colFirst('상태', 'status');
-    const colProgress = colFirst('진행율(%)', '진행율', '진행률(%)', '진행률', 'progress');
+    const colProgress = colFirst('실적진척도(%)', '실적진척도', '진행율(%)', '진행율', '진행률(%)', '진행률', 'progress');
     const colWorker = colFirst('작업자', 'worker');
     const colDeliverable = colFirst('산출물명', 'deliverable');
+    const colCompletionCriteria = colFirst('완료기준', 'completionCriteria');
     const colActualStart = colFirst('실적시작일', 'actualStartDate');
     const colActualEnd = colFirst('실적종료일', 'actualEndDate');
+    const colActualDays = colFirst('실적투입일', '실적투입일(자동)', 'actualDays');
 
     if (colTitle === -1 || colStart === -1 || colEnd === -1) {
         throw new Error(`필수 열을 찾을 수 없습니다.\n인식된 헤더: [${header.filter(Boolean).join(', ')}]\n필요한 열: 항목명(또는 WBS 항목명), 계획시작일, 계획종료일`);
@@ -245,19 +257,33 @@ export async function parseScheduleExcel(
         const rawId = colId !== -1 ? String(row[colId] ?? '').trim() : '';
         const parentId = colParent !== -1 ? String(row[colParent] ?? '').trim() || undefined : undefined;
         const order = colOrder !== -1 ? Number(row[colOrder] ?? 0) : 0;
-        const progress = colProgress !== -1 ? Math.min(100, Math.max(0, Number(row[colProgress] ?? 0))) : 0;
+        const optionalNumber = (col: number): number | undefined => {
+            if (col === -1 || row[col] === undefined || row[col] === null || String(row[col]).trim() === '') return undefined;
+            const value = Number(String(row[col]).replace('%', '').trim());
+            return Number.isFinite(value) ? value : undefined;
+        };
+        const optionalPercent = (col: number): number | undefined => {
+            const value = optionalNumber(col);
+            return value === undefined ? undefined : Math.min(100, Math.max(0, value));
+        };
+        const progress = optionalPercent(colProgress) ?? 0;
+        const planDays = optionalNumber(colPlanDays);
+        const planProgress = optionalPercent(colPlanProgress);
+        const planRate = optionalPercent(colPlanRate);
+        const actualDays = optionalNumber(colActualDays);
         const status = colStatus !== -1 ? parseScheduleStatus(row[colStatus]) : undefined;
         const worker = colWorker !== -1 ? String(row[colWorker] ?? '').trim() || undefined : undefined;
         const deliverable = colDeliverable !== -1 ? String(row[colDeliverable] ?? '').trim() || undefined : undefined;
+        const completionCriteria = colCompletionCriteria !== -1 ? String(row[colCompletionCriteria] ?? '').trim() || undefined : undefined;
         const actualStartDate = colActualStart !== -1 ? String(row[colActualStart] ?? '').trim() || undefined : undefined;
         const actualEndDate = colActualEnd !== -1 ? String(row[colActualEnd] ?? '').trim() || undefined : undefined;
 
         if (rawId && currentMap.has(rawId)) {
             const prev = currentMap.get(rawId)!;
             const next: WbsDetailSchedule = {
-                ...prev, title, startDate, endDate, progress, order,
+                ...prev, title, startDate, endDate, planDays, planProgress, planRate, progress, order,
                 parentId: parentId ?? null,
-                worker, deliverable, actualStartDate, actualEndDate,
+                worker, deliverable, completionCriteria, actualStartDate, actualEndDate, actualDays,
                 ...(status ? { status } : {}),
             };
             const changed = JSON.stringify(prev) !== JSON.stringify(next);
@@ -271,12 +297,17 @@ export async function parseScheduleExcel(
                 title,
                 startDate,
                 endDate,
+                planDays,
+                planProgress,
+                planRate,
                 progress,
                 ...(status ? { status } : {}),
                 worker,
                 deliverable,
+                completionCriteria,
                 actualStartDate,
                 actualEndDate,
+                actualDays,
             });
         }
     }
@@ -308,6 +339,9 @@ export function parseScheduleJson(text: string): WbsDetailSchedule[] {
         title: String(x.title ?? ''),
         startDate: String(x.startDate ?? ''),
         endDate: String(x.endDate ?? ''),
+        ...(x.planDays !== undefined ? { planDays: Number(x.planDays) } : {}),
+        ...(x.planProgress !== undefined ? { planProgress: Math.min(100, Math.max(0, Number(x.planProgress))) } : {}),
+        ...(x.planRate !== undefined ? { planRate: Math.min(100, Math.max(0, Number(x.planRate))) } : {}),
         progress: Math.min(100, Math.max(0, Number(x.progress ?? 0))),
         ...(x.worker !== undefined ? { worker: x.worker } : {}),
         ...(x.deliverable !== undefined ? { deliverable: x.deliverable } : {}),
@@ -315,5 +349,6 @@ export function parseScheduleJson(text: string): WbsDetailSchedule[] {
         ...(x.status !== undefined ? { status: x.status } : {}),
         ...(x.actualStartDate !== undefined ? { actualStartDate: x.actualStartDate } : {}),
         ...(x.actualEndDate !== undefined ? { actualEndDate: x.actualEndDate } : {}),
+        ...(x.actualDays !== undefined ? { actualDays: Number(x.actualDays) } : {}),
     }));
 }

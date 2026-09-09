@@ -45,6 +45,11 @@ function diffDays(start: string, end: string): number {
     return Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000) + 1);
 }
 
+function formatPercent(value: number | undefined): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+    return `${Math.round(value * 100) / 100}%`;
+}
+
 function toInputDate(iso: string): string {
     if (!iso) return '';
     return iso.replace(/\./g, '-').replace(/(\d{4})-(\d{1,2})-(\d{1,2})/, (_, y, m, d) =>
@@ -595,7 +600,7 @@ const WbsScheduleTable: React.FC = () => {
                 case 'worker':          valA = a.worker ?? '';           valB = b.worker ?? '';           break;
                 case 'startDate':       valA = a.startDate ?? '';        valB = b.startDate ?? '';        break;
                 case 'endDate':         valA = a.endDate ?? '';          valB = b.endDate ?? '';          break;
-                case 'planRate':        valA = a.progress ?? 0;          valB = b.progress ?? 0;          break;
+                case 'planRate':        valA = a.planRate ?? -1;         valB = b.planRate ?? -1;         break;
                 case 'actualStartDate': valA = a.actualStartDate ?? '';  valB = b.actualStartDate ?? ''; break;
                 case 'actualEndDate':   valA = a.actualEndDate ?? '';    valB = b.actualEndDate ?? '';   break;
                 case 'progress':        valA = a.progress ?? 0;          valB = b.progress ?? 0;          break;
@@ -635,8 +640,13 @@ const WbsScheduleTable: React.FC = () => {
     // 통계 — 필터가 걸리면 걸러진 범위만 집계한다
     const totals = useMemo(() => {
         const leaves = visibleSchedules.filter((s) => !visibleSchedules.some((c) => c.parentId === s.id));
-        const planDays = leaves.reduce((sum, s) => sum + diffDays(s.startDate, s.endDate), 0);
-        const actualDays = leaves.reduce((sum, s) => sum + diffDays(s.actualStartDate ?? '', s.actualEndDate ?? ''), 0);
+        const planDays = leaves.reduce((sum, s) => sum + (s.planDays ?? diffDays(s.startDate, s.endDate)), 0);
+        const actualDays = leaves.reduce((sum, s) => sum + (s.actualDays ?? diffDays(s.actualStartDate ?? '', s.actualEndDate ?? '')), 0);
+        const averageDefined = (values: Array<number | undefined>): number | undefined => {
+            const defined = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+            if (defined.length === 0) return undefined;
+            return Math.round((defined.reduce((sum, value) => sum + value, 0) / defined.length) * 100) / 100;
+        };
         const avgProgress = leaves.length ? Math.round(leaves.reduce((sum, s) => sum + (s.progress ?? 0), 0) / leaves.length) : 0;
         const minDate = (values: string[]) => values.filter(Boolean).sort()[0] ?? '';
         const maxDate = (values: string[]) => values.filter(Boolean).sort().at(-1) ?? '';
@@ -644,6 +654,8 @@ const WbsScheduleTable: React.FC = () => {
             planDays,
             actualDays,
             avgProgress,
+            planProgress: averageDefined(leaves.map((s) => s.planProgress)),
+            planRate: averageDefined(leaves.map((s) => s.planRate)),
             planStartDate: minDate(leaves.map((s) => s.startDate)),
             planEndDate: maxDate(leaves.map((s) => s.endDate)),
             actualStartDate: minDate(leaves.map((s) => s.actualStartDate ?? '')),
@@ -753,8 +765,8 @@ const WbsScheduleTable: React.FC = () => {
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{totals.planStartDate || '—'}</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{totals.planEndDate || '—'}</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{totals.planDays}일</td>
-                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">—</td>
-                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">—</td>
+                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{formatPercent(totals.planProgress)}</td>
+                            <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-indigo-700">{formatPercent(totals.planRate)}</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-emerald-700">{totals.actualStartDate || '—'}</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-emerald-700">{totals.actualEndDate || '—'}</td>
                             <td className="border border-slate-200 px-2 py-1.5 text-center text-[11px] text-emerald-700">{totals.actualDays}일</td>
@@ -766,8 +778,8 @@ const WbsScheduleTable: React.FC = () => {
                         {sortedRows.map((node) => {
                             const isParent = hasChildren(node.id);
                             const isCollapsed = collapsed.has(node.id);
-                            const planDays = diffDays(node.startDate, node.endDate);
-                            const actualDays = diffDays(node.actualStartDate ?? '', node.actualEndDate ?? '');
+                            const planDays = node.planDays ?? diffDays(node.startDate, node.endDate);
+                            const actualDays = node.actualDays ?? diffDays(node.actualStartDate ?? '', node.actualEndDate ?? '');
                             const rowBg = isParent
                                 ? node.depth === 0 ? 'bg-blue-50/70' : 'bg-slate-50/80'
                                 : 'bg-white';
@@ -877,7 +889,7 @@ const WbsScheduleTable: React.FC = () => {
                                     <td className="border border-gray-100 px-2 py-1.5 text-center align-top bg-indigo-50/30">
                                         <EditCell
                                             value={node.startDate}
-                                            onSave={(v) => upd(node.id, { startDate: v })}
+                                            onSave={(v) => upd(node.id, { startDate: v, planDays: undefined, planProgress: undefined, planRate: undefined })}
                                             type="date"
                                             className="text-[11px] text-indigo-700 text-center"
                                         />
@@ -887,7 +899,7 @@ const WbsScheduleTable: React.FC = () => {
                                     <td className="border border-gray-100 px-2 py-1.5 text-center align-top bg-indigo-50/30">
                                         <EditCell
                                             value={node.endDate}
-                                            onSave={(v) => upd(node.id, { endDate: v })}
+                                            onSave={(v) => upd(node.id, { endDate: v, planDays: undefined, planProgress: undefined, planRate: undefined })}
                                             type="date"
                                             className="text-[11px] text-indigo-700 text-center"
                                         />
@@ -898,21 +910,19 @@ const WbsScheduleTable: React.FC = () => {
                                         {planDays > 0 ? `${planDays}일` : '-'}
                                     </td>
 
-                                    {/* 엑셀의 계획 진척도/계획율은 현재 일정 데이터 모델에 저장 필드가 없다.
-                                        기존 실적 진척도를 재사용하지 않고, 값이 없음을 명시한다. */}
                                     <td className="border border-gray-100 px-2 py-1.5 text-center text-[11px] bg-indigo-50/30 align-top">
-                                        <span className="text-indigo-600">—</span>
+                                        <span className="text-indigo-600">{formatPercent(node.planProgress)}</span>
                                     </td>
 
                                     <td className="border border-gray-100 px-2 py-1.5 text-center text-[11px] bg-indigo-50/30 align-top">
-                                        <span className="text-indigo-600">—</span>
+                                        <span className="text-indigo-600">{formatPercent(node.planRate)}</span>
                                     </td>
 
                                     {/* 실적 시작일 */}
                                     <td className="border border-gray-100 px-2 py-1.5 text-center align-top bg-emerald-50/30">
                                         <EditCell
                                             value={node.actualStartDate ?? ''}
-                                            onSave={(v) => upd(node.id, { actualStartDate: v })}
+                                            onSave={(v) => upd(node.id, { actualStartDate: v, actualDays: undefined })}
                                             type="date"
                                             placeholder="-"
                                             className="text-[11px] text-emerald-700 text-center"
@@ -923,7 +933,7 @@ const WbsScheduleTable: React.FC = () => {
                                     <td className="border border-gray-100 px-2 py-1.5 text-center align-top bg-emerald-50/30">
                                         <EditCell
                                             value={node.actualEndDate ?? ''}
-                                            onSave={(v) => upd(node.id, { actualEndDate: v })}
+                                            onSave={(v) => upd(node.id, { actualEndDate: v, actualDays: undefined })}
                                             type="date"
                                             placeholder="-"
                                             className="text-[11px] text-emerald-700 text-center"

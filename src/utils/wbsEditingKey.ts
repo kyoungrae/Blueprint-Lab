@@ -6,14 +6,8 @@ export function scheduleEditingKey(scheduleId: string): string {
 }
 
 export function rowEditingKey(row: WbsDevRow, links: WbsMenuScheduleLink[]): string {
-    const userId = row.assigneeUserId?.trim();
-    const assignee = row.assignee.trim();
-    const link = links.find((item) => (
-        item.menuId === row.menuId
-        && (
-            (userId && item.assigneeUserId === userId)
-            || item.assignee.trim() === assignee
-        )
-    ));
+    // 메뉴 코드·담당자가 같아도 기능 행은 서로 다른 일정과 연결된다.
+    // rowId 없는 이전 연결은 공유 잠금으로 사용하지 않아 기능 행끼리 편집이 막히지 않게 한다.
+    const link = links.find((item) => item.rowId === row.id);
     return link ? scheduleEditingKey(link.scheduleId) : `wbs_row_${row.id}`;
 }

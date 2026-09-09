@@ -9,6 +9,7 @@
         "start": "node dist/index.js",
         "stop": "lsof -ti:3001,5173 -sTCP:LISTEN | xargs kill -9 || true",
         "restart": "npm run stop && npm run dev",
+        "test:wbs-schedule-import": "node -r ts-node/register --test tests/wbsScheduleImportService.test.ts",
         "lint": "eslint src --ext .ts"
     },
     "dependencies": {

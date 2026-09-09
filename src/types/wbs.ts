@@ -77,6 +77,12 @@ export interface WbsDetailSchedule {
     startDate: string;
     /** 계획 종료일 (YYYY.MM.DD) — 간트차트 기준 */
     endDate: string;
+    /** 계약추진일정 엑셀 J열 계획일. 없으면 화면에서 시작일~종료일로 계산한다. */
+    planDays?: number;
+    /** 계약추진일정 엑셀 K열 계획 진척도 (0~100) */
+    planProgress?: number;
+    /** 계약추진일정 엑셀 L열 계획율 (0~100) */
+    planRate?: number;
     /** 진행율 0~100 */
     progress?: number;
     // ── 일정 상세 테이블 전용 ──────────────────────────
@@ -86,10 +92,14 @@ export interface WbsDetailSchedule {
     status?: ScheduleStatus;       // 상태
     actualStartDate?: string;      // 실적 시작일
     actualEndDate?: string;        // 실적 종료일
+    /** 계약추진일정 엑셀 O열 실적 투입일. 없으면 화면에서 시작일~종료일로 계산한다. */
+    actualDays?: number;
 }
 
-/** 개발상세 메뉴+담당자 ↔ 일정 탭 3.2.x 항목 연결 */
+/** 개발상세 기능 행 ↔ 일정 탭 3.2.x 항목 연결 */
 export interface WbsMenuScheduleLink {
+    /** 개발상세 행 ID. 없는 값은 이전 메뉴+담당자 방식으로 저장된 레거시 연결이다. */
+    rowId?: string;
     menuId: string;
     /** 담당자 표시명 (정규화 trim) */
     assignee: string;

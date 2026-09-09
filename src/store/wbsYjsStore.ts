@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { create } from 'zustand';
 import type { WbsData, WbsDetailSchedule, WbsDevRow, WbsMenuNode, WbsMenuScheduleLink, WbsProjectSchedule } from '../types/wbs';
 import { useProjectStore } from './projectStore';
+import { useYjsStore } from './yjsStore';
 import { normalizeMenuScheduleLinks } from '../utils/wbsScheduleMatch';
 import { isDevToScheduleSyncing } from '../services/wbsDevScheduleSync';
 import { scheduleSyncScheduleToDevDetail } from '../services/wbsScheduleDevSync';
@@ -133,7 +134,9 @@ export const useWbsYjsStore = create<WbsYjsState>((set, get) => {
                 // 경로도 일정→개발상세 반영을 놓치지 않는다.
                 // 단, 개발상세를 집계해 일정에 반영하는 중의 변경은 다시 각 행에 펼치지 않는다.
                 // 같은 메뉴·담당자의 기능 행이 집계된 일정값으로 함께 덮어써지는 것을 막는다.
-                if (isDevToScheduleSyncing()) return;
+                // 최초 서버 문서를 받는 과정의 schedule 삽입은 사용자의 일정 수정이 아니다.
+                // 이를 역동기화하면 새로고침만으로 기존 일정값이 개발상세 행을 덮어쓸 수 있다.
+                if (isDevToScheduleSyncing() || !useYjsStore.getState().isSynced) return;
                 const changedScheduleIds = new Set<string>();
                 events.forEach((event) => {
                     const scheduleId = event.path[0];
