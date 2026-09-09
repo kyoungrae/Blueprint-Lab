@@ -601,13 +601,14 @@ export interface WbsScheduleImportMutation {
     expectedBaseSnapshotHash: string;
     added: WbsDetailScheduleRecord[];
     updates: Array<{ id: string; patch: Partial<Omit<WbsDetailScheduleRecord, 'id'>> }>;
+    deletedIds: string[];
 }
 
 /**
  * 일정 import의 최종 반영 경로.
  *
  * - 이미 대기 중인 일반 Yjs 저장을 먼저 끝내고 최신 hash를 다시 확인한다.
- * - 일정 Y.Map의 각 레코드만 upsert한다. menus/rows/프로젝트 일정은 전혀 건드리지 않는다.
+ * - 일정 Y.Map의 각 레코드만 추가·수정·삭제한다. menus/rows/프로젝트 일정은 전혀 건드리지 않는다.
  * - 모든 일정 변경은 하나의 Yjs transaction으로 broadcast되고, MongoDB도 detailSchedules만
  *   단일 update로 저장한다. MongoDB 저장 실패 시 방금 변경한 필드만 원상 복구한다.
  */
@@ -641,6 +642,13 @@ export async function applyWbsScheduleImportInYjs(
     for (const update of mutation.updates) {
         if (!records.has(update.id)) throw new Error('수정할 기존 일정이 없어졌습니다. 최신 상태로 다시 미리보기를 실행하세요.');
     }
+    const deletedIds = new Set(mutation.deletedIds);
+    if (deletedIds.size !== mutation.deletedIds.length || [...deletedIds].some((id) => !records.has(id))) {
+        throw new Error('삭제할 기존 일정이 없어졌습니다. 최신 상태로 다시 미리보기를 실행하세요.');
+    }
+    if (mutation.updates.some((update) => deletedIds.has(update.id))) {
+        throw new Error('동일한 일정을 동시에 수정·삭제할 수 없습니다. 파일을 다시 미리보기하세요.');
+    }
 
     const beforePatchValues = new Map<string, Record<string, unknown>>();
     for (const update of mutation.updates) {
@@ -649,6 +657,9 @@ export async function applyWbsScheduleImportInYjs(
         Object.keys(update.patch).forEach((key) => { previous[key] = record.get(key); });
         beforePatchValues.set(update.id, previous);
     }
+    const deletedRecords = new Map(before
+        .filter((item) => deletedIds.has(item.id))
+        .map((item) => [item.id, item]));
 
     info.doc.transact(() => {
         for (const update of mutation.updates) {
@@ -658,6 +669,7 @@ export async function applyWbsScheduleImportInYjs(
                 else record.set(key, value);
             });
         }
+        mutation.deletedIds.forEach((id) => records.delete(id));
         mutation.added.forEach((record) => records.set(record.id, createWbsScheduleRecord(record)));
     }, WBS_SCHEDULE_IMPORT_ORIGIN);
 
@@ -673,6 +685,7 @@ export async function applyWbsScheduleImportInYjs(
         // 저장 실패 시 import가 만든 레코드/필드만 되돌린다. 전체 Y.Map clear는 사용하지 않는다.
         info.doc.transact(() => {
             mutation.added.forEach((record) => records.delete(record.id));
+            deletedRecords.forEach((record, id) => records.set(id, createWbsScheduleRecord(record)));
             mutation.updates.forEach((update) => {
                 const record = records.get(update.id);
                 const previous = beforePatchValues.get(update.id);

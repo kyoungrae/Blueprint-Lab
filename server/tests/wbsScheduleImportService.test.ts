@@ -42,6 +42,7 @@ function currentSchedules(): WbsDetailScheduleRecord[] {
         { id: 'leaf-311', parentId: 'group-31', order: 0, scheduleCode: '3.1.1', title: '프로토타입 작업', startDate: '2026.02.01', endDate: '2026.02.05', progress: 100 },
         { id: 'group-32', parentId: 'root-3', order: 1, title: '3.2 시스템 개발', startDate: '2099.01.01', endDate: '2099.01.31', progress: 91 },
         { id: 'leaf-321', parentId: 'group-32', order: 0, scheduleCode: '3.2.1', title: '웹 최신 시스템 개발', startDate: '2099.01.01', endDate: '2099.01.31', worker: '웹 작업자', progress: 91 },
+        { id: 'leaf-32999', parentId: 'group-32', order: 998, scheduleCode: '3.2.999', title: '엑셀에 없는 웹 전용 시스템 개발', startDate: '2099.02.01', endDate: '2099.02.28', progress: 10 },
         { id: 'group-33', parentId: 'root-3', order: 2, title: '3.3 데이터 이관', startDate: '2026.03.01', endDate: '2026.03.10', progress: 0 },
         { id: 'leaf-331', parentId: 'group-33', order: 0, scheduleCode: '3.3.1', title: '데이터 이관 작업', startDate: '2026.03.01', endDate: '2026.03.10', progress: 0 },
         { id: 'web-only', parentId: null, order: 99, title: '웹에만 있는 일정', startDate: '2026.04.01', endDate: '2026.04.02', progress: 0 },
@@ -76,10 +77,11 @@ test('3.2 branch stays web-owned while other rows merge by WBS number', () => {
     const group33Update = preview.updates.find((item) => item.id === 'group-33');
     assert.ok(group33Update);
     assert.equal(group33Update.patch.order, 2, '보호 분류를 건너뛰어도 3.3 순서는 2로 유지한다');
-    assert.equal(preview.updates.some((item) => item.id === 'web-only'), false, '파일에 없는 웹 일정은 삭제하지 않는다');
+    assert.ok(preview.deletedIds.includes('web-only'), '파일에 없는 3.2 외 웹 일정은 삭제한다');
+    assert.equal(preview.deletedIds.includes('leaf-32999'), false, '파일에 없어도 3.2 하위 웹 일정은 보존한다');
 });
 
-test('WBS number wins when the current title path points to another item', () => {
+test('title path wins when WBS numbers shifted after insertion or deletion', () => {
     const current = currentSchedules();
     current.find((item) => item.id === 'root-1')!.title = '1. 사업관리';
     current.find((item) => item.id === 'group-11')!.title = '1.1 계획';
@@ -98,6 +100,35 @@ test('WBS number wins when the current title path points to another item', () =>
 
     assert.equal(preview.canApply, true);
     assert.equal(preview.summary.conflicts, 0);
-    assert.ok(preview.updates.some((item) => item.id === 'leaf-111'));
-    assert.equal(preview.updates.some((item) => item.id === 'same-path-different-code'), false);
+    const pathMatch = preview.updates.find((item) => item.id === 'same-path-different-code');
+    assert.ok(pathMatch);
+    assert.equal(pathMatch.patch.scheduleCode, '1.1.1');
+    assert.ok(preview.deletedIds.includes('leaf-111'));
+});
+
+test('insertion renumbers the same titled item and adds the new item without reusing it', () => {
+    const rows = [
+        header,
+        ['1. 사업관리', '', ''],
+        ['1.1 계획', '1.1.1', '신규 삽입 작업', '신규팀', '', '', '대기', '2026.01.01', '2026.01.02', 2, 0, 0, '', '', '', 0],
+        ['', '1.1.2', '기존 작업', '기존팀', '', '', '진행', '2026.01.03', '2026.01.04', 2, 0.5, 0.5, '', '', '', 0.5],
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), '관리_WBS');
+    const current: WbsDetailScheduleRecord[] = [
+        { id: 'root', parentId: null, title: '1. 사업관리', startDate: '2025.01.01', endDate: '2025.12.31' },
+        { id: 'group', parentId: 'root', title: '1.1 계획', startDate: '2025.01.01', endDate: '2025.12.31' },
+        { id: 'existing', parentId: 'group', scheduleCode: '1.1.1', title: '기존 작업', startDate: '2025.01.01', endDate: '2025.01.02' },
+        { id: 'removed', parentId: 'group', scheduleCode: '1.1.9', title: '삭제된 작업', startDate: '2025.02.01', endDate: '2025.02.02' },
+    ];
+
+    const preview = buildWbsScheduleImportPreview(
+        XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }),
+        current,
+    );
+
+    assert.equal(preview.canApply, true);
+    assert.equal(preview.summary.added, 1);
+    assert.ok(preview.updates.some((item) => item.id === 'existing' && item.patch.scheduleCode === '1.1.2'));
+    assert.deepEqual(preview.deletedIds, ['removed']);
 });

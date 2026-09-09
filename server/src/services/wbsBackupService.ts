@@ -25,7 +25,9 @@ export interface WbsBackupFileMeta {
     importSummary?: {
         added: number;
         updated: number;
+        deleted: number;
         unchanged: number;
+        protected: number;
         conflicts: number;
         excluded: number;
     };
@@ -226,7 +228,9 @@ export function listBackupFiles(): WbsBackupFileMeta[] {
                 importSummary: {
                     added: Number(doc.importPreview.summary.added ?? 0),
                     updated: Number(doc.importPreview.summary.updated ?? 0),
+                    deleted: Number(doc.importPreview.summary.deleted ?? 0),
                     unchanged: Number(doc.importPreview.summary.unchanged ?? 0),
+                    protected: Number(doc.importPreview.summary.protected ?? 0),
                     conflicts: Number(doc.importPreview.summary.conflicts ?? 0),
                     excluded: Number(doc.importPreview.summary.excluded ?? 0),
                 },
@@ -292,6 +296,7 @@ export interface ScheduleImportBackupInput {
         summary: {
             added: number;
             updated: number;
+            deleted: number;
             unchanged: number;
             protected: number;
             conflicts: number;

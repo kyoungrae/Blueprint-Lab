@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { X, UploadCloud, Loader2, AlertCircle, FileSpreadsheet, FileJson, Plus, RefreshCw, Minus, ShieldCheck, ArrowRight, Ban, CheckCircle2 } from 'lucide-react';
+import { X, UploadCloud, Loader2, AlertCircle, FileSpreadsheet, FileJson, Plus, RefreshCw, Minus, ShieldCheck, ArrowRight, Ban, CheckCircle2, Trash2 } from 'lucide-react';
 import type { WbsDetailSchedule } from '../../types/wbs';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { parseScheduleExcel, parseScheduleJson, type ScheduleExcelParseResult } from './wbsScheduleIO';
@@ -18,7 +18,7 @@ interface RemotePreviewItem {
     sourceRows: number[];
     hierarchyPath: string;
     title: string;
-    result: '신규 추가' | '기존 일정 수정' | '변경 없음' | '웹 데이터 유지' | '충돌/검토 필요' | '제외';
+    result: '신규 추가' | '기존 일정 수정' | '기존 일정 삭제' | '변경 없음' | '웹 데이터 유지' | '충돌/검토 필요' | '제외';
     reason?: string;
     changes: PreviewChange[];
 }
@@ -33,6 +33,7 @@ interface RemotePreview {
         total: number;
         added: number;
         updated: number;
+        deleted: number;
         unchanged: number;
         protected: number;
         conflicts: number;
@@ -56,6 +57,7 @@ type Mode = 'merge' | 'replace';
 const resultStyle: Record<RemotePreviewItem['result'], string> = {
     '신규 추가': 'bg-emerald-50 text-emerald-700 border-emerald-200',
     '기존 일정 수정': 'bg-blue-50 text-blue-700 border-blue-200',
+    '기존 일정 삭제': 'bg-rose-50 text-rose-700 border-rose-200',
     '변경 없음': 'bg-gray-50 text-gray-600 border-gray-200',
     '웹 데이터 유지': 'bg-violet-50 text-violet-700 border-violet-200',
     '충돌/검토 필요': 'bg-amber-50 text-amber-700 border-amber-200',
@@ -188,6 +190,7 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
 
     const addedCount = remotePreview?.summary.added ?? analysis?.added.length ?? (jsonItems ? jsonItems.filter((item) => !current.some((currentItem) => currentItem.id === item.id)).length : 0);
     const updatedCount = remotePreview?.summary.updated ?? analysis?.updated.length ?? (jsonItems ? jsonItems.filter((item) => current.some((currentItem) => currentItem.id === item.id)).length : 0);
+    const deletedCount = remotePreview?.summary.deleted ?? 0;
     const unchangedCount = remotePreview?.summary.unchanged ?? analysis?.unchanged.length ?? 0;
     const protectedCount = remotePreview?.summary.protected ?? 0;
     const conflictsCount = remotePreview?.summary.conflicts ?? 0;
@@ -223,6 +226,7 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
                             <p className="text-[11px] text-gray-500 leading-relaxed">
                                 메뉴 구조도·개발 상세·개발 상세 진척률·진척률 계산식은 변경하지 않습니다.<br />
                                 계약추진일정 엑셀의 3.2 시스템 개발 및 3.2.x 하위 항목은 항상 웹 데이터를 유지합니다.<br />
+                                3.2 외 항목은 엑셀을 최신 원본으로 삼아 추가·수정·번호 변경·삭제까지 동기화합니다.<br />
                                 {isRemoteExcel
                                     ? '미리보기와 취소 단계에서는 서버 데이터가 변경되지 않으며, 최종 확인 뒤 백업 성공 시에만 일정 항목을 병합합니다.'
                                     : `현재 저장된 일정 항목: ${current.length}개`}
@@ -275,10 +279,11 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-7 gap-2">
                                 {[
                                     { label: '신규 추가', count: addedCount, cls: 'bg-emerald-50 border-emerald-100 text-emerald-700', icon: <Plus size={12} /> },
                                     { label: '기존 일정 수정', count: updatedCount, cls: 'bg-blue-50 border-blue-100 text-blue-700', icon: <RefreshCw size={12} /> },
+                                    { label: '기존 일정 삭제', count: deletedCount, cls: 'bg-rose-50 border-rose-100 text-rose-700', icon: <Trash2 size={12} /> },
                                     { label: '변경 없음', count: unchangedCount, cls: 'bg-gray-50 border-gray-200 text-gray-600', icon: <Minus size={12} /> },
                                     { label: '웹 데이터 유지', count: protectedCount, cls: 'bg-violet-50 border-violet-100 text-violet-700', icon: <ShieldCheck size={12} /> },
                                     { label: '충돌/검토', count: conflictsCount, cls: 'bg-amber-50 border-amber-100 text-amber-700', icon: <AlertCircle size={12} /> },
@@ -293,6 +298,11 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
 
                             {isRemoteExcel && remotePreview && (
                                 <>
+                                    {deletedCount > 0 && (
+                                        <div className="rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-3 text-[11px] leading-relaxed text-rose-800">
+                                            엑셀에 없는 3.2 외 기존 일정 {deletedCount}건은 전체 백업을 생성한 뒤 삭제합니다. 아래 삭제 대상을 확인하세요.
+                                        </div>
+                                    )}
                                     {!remotePreview.canApply && (
                                         <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-3 text-[11px] leading-relaxed text-amber-800">
                                             충돌·중복·형식 오류가 있는 파일은 부분 반영하지 않습니다. 아래 제외/충돌 행을 모두 해결한 새 파일로 다시 미리보기하세요. “웹 데이터 유지”는 정상 보호 처리이므로 수정할 필요가 없습니다.
@@ -307,7 +317,9 @@ const WbsScheduleImportModal: React.FC<Props> = ({ open, kind, current, projectN
                                                         <span className={`shrink-0 border rounded-full px-1.5 py-0.5 text-[10px] font-black ${resultStyle[item.result]}`}>{item.result}</span>
                                                         <div className="min-w-0 flex-1">
                                                             <p className="font-bold text-gray-800 truncate" title={item.hierarchyPath}>{item.hierarchyPath} <span className="text-gray-400">/</span> {item.title}</p>
-                                                            <p className="mt-0.5 text-[10px] text-gray-400">엑셀 {item.sourceRows.map((row) => `${row}행`).join(', ')}</p>
+                                                            <p className="mt-0.5 text-[10px] text-gray-400">
+                                                                {item.sourceRows.length > 0 ? `엑셀 ${item.sourceRows.map((row) => `${row}행`).join(', ')}` : '엑셀에 없음'}
+                                                            </p>
                                                             {item.reason && <p className="mt-1 text-amber-700">{item.reason}</p>}
                                                             {item.changes.length > 0 && (
                                                                 <div className="mt-1.5 space-y-0.5 text-[10px] text-gray-600">

@@ -36,7 +36,7 @@ export interface WbsDetailScheduleRecord {
     actualDays?: number;
 }
 
-type ImportResult = '신규 추가' | '기존 일정 수정' | '변경 없음' | '웹 데이터 유지' | '충돌/검토 필요' | '제외';
+type ImportResult = '신규 추가' | '기존 일정 수정' | '기존 일정 삭제' | '변경 없음' | '웹 데이터 유지' | '충돌/검토 필요' | '제외';
 
 export interface ScheduleImportFieldChange {
     field: string;
@@ -60,6 +60,7 @@ export interface ScheduleImportSummary {
     total: number;
     added: number;
     updated: number;
+    deleted: number;
     unchanged: number;
     protected: number;
     conflicts: number;
@@ -76,6 +77,7 @@ export interface ScheduleImportPreview {
     items: ScheduleImportPreviewItem[];
     added: WbsDetailScheduleRecord[];
     updates: Array<{ id: string; patch: Partial<Omit<WbsDetailScheduleRecord, 'id'>> }>;
+    deletedIds: string[];
 }
 
 interface ParsedLeaf {
@@ -534,6 +536,19 @@ function importedScheduleId(identityKey: string): string {
     return `schimp_${crypto.createHash('sha256').update(identityKey).digest('hex')}`;
 }
 
+function nextImportedScheduleId(identityKey: string, occupiedIds: Set<string>): string {
+    let attempt = 0;
+    while (true) {
+        const suffix = attempt === 0 ? '' : `#${attempt}`;
+        const id = importedScheduleId(`${identityKey}${suffix}`);
+        if (!occupiedIds.has(id)) {
+            occupiedIds.add(id);
+            return id;
+        }
+        attempt += 1;
+    }
+}
+
 function buildCandidates(
     leaves: ParsedLeaf[],
     excluded: ScheduleImportPreviewItem[],
@@ -700,6 +715,38 @@ function currentPathById(current: WbsDetailScheduleRecord[]): Map<string, string
     return cache;
 }
 
+function currentProtectedScheduleIds(current: WbsDetailScheduleRecord[]): {
+    branchIds: Set<string>;
+    keepIds: Set<string>;
+} {
+    const byId = new Map(current.map((item) => [item.id, item]));
+    const branchIds = new Set(current
+        .filter((item) => isProtectedCode(item.scheduleCode ?? '') || headingCode(item.title) === PROTECTED_GROUP_CODE)
+        .map((item) => item.id));
+
+    let expanded = true;
+    while (expanded) {
+        expanded = false;
+        for (const item of current) {
+            if (branchIds.has(item.id) || !item.parentId || !branchIds.has(item.parentId)) continue;
+            branchIds.add(item.id);
+            expanded = true;
+        }
+    }
+
+    const keepIds = new Set(branchIds);
+    for (const id of branchIds) {
+        let parentId = byId.get(id)?.parentId;
+        const visited = new Set<string>();
+        while (parentId && !visited.has(parentId)) {
+            visited.add(parentId);
+            keepIds.add(parentId);
+            parentId = byId.get(parentId)?.parentId;
+        }
+    }
+    return { branchIds, keepIds };
+}
+
 function changedFields(
     before: WbsDetailScheduleRecord,
     after: Partial<Omit<WbsDetailScheduleRecord, 'id'>>,
@@ -745,15 +792,66 @@ export function buildWbsScheduleImportPreview(
     const items: ScheduleImportPreviewItem[] = [...excluded, ...protectedItems];
     const added: WbsDetailScheduleRecord[] = [];
     const updates: Array<{ id: string; patch: Partial<Omit<WbsDetailScheduleRecord, 'id'>> }> = [];
+    const deletedIds: string[] = [];
     const resolvedIdByKey = new Map<string, string>();
+    const matchedByCandidateKey = new Map<string, WbsDetailScheduleRecord>();
+    const conflictByCandidateKey = new Map<string, string>();
+    const claimedCurrentIds = new Set<string>();
+    const occupiedIds = new Set(current.map((item) => item.id));
+    const { branchIds: protectedBranchIds, keepIds: protectedKeepIds } = currentProtectedScheduleIds(current);
+
+    // 1차: 제목·계층 경로가 유일하면 번호가 바뀌어도 같은 작업으로 분류한다.
+    // 중간 항목이 삽입/삭제되어 후속 WBS 번호가 연쇄적으로 밀리는 경우를 위한다.
+    for (const candidate of candidates) {
+        const pathMatches = (currentByKey.get(candidate.key) ?? [])
+            .filter((item) => !protectedBranchIds.has(item.id) && !claimedCurrentIds.has(item.id));
+        if (pathMatches.length === 1) {
+            matchedByCandidateKey.set(candidate.key, pathMatches[0]);
+            claimedCurrentIds.add(pathMatches[0].id);
+            continue;
+        }
+        if (pathMatches.length > 1) {
+            const sameCode = pathMatches.filter((item) => normalizeScheduleCode(item.scheduleCode || headingCode(item.title)) === candidate.matchCode);
+            if (sameCode.length === 1) {
+                matchedByCandidateKey.set(candidate.key, sameCode[0]);
+                claimedCurrentIds.add(sameCode[0].id);
+            } else {
+                conflictByCandidateKey.set(candidate.key, '동일한 제목·계층 경로의 기존 일정이 여러 건이어서 대상을 확정할 수 없습니다.');
+            }
+        }
+    }
+
+    // 2차: 경로로 찾지 못한 항목만 유일한 WBS 번호로 보조 매칭한다.
+    // 이미 다른 엑셀 항목이 경로로 차지한 기존 항목은 재사용하지 않는다.
+    for (const candidate of candidates) {
+        if (matchedByCandidateKey.has(candidate.key) || conflictByCandidateKey.has(candidate.key)) continue;
+        const codeMatches = candidate.matchCode
+            ? (currentByCode.get(candidate.matchCode) ?? [])
+                .filter((item) => !protectedBranchIds.has(item.id) && !claimedCurrentIds.has(item.id))
+            : [];
+        if (codeMatches.length === 1) {
+            matchedByCandidateKey.set(candidate.key, codeMatches[0]);
+            claimedCurrentIds.add(codeMatches[0].id);
+        } else if (codeMatches.length > 1) {
+            conflictByCandidateKey.set(candidate.key, `동일한 WBS 번호(${candidate.matchCode})의 기존 일정이 여러 건이어서 대상을 확정할 수 없습니다.`);
+        }
+    }
 
     for (const candidate of candidates) {
-        const codeMatches = candidate.matchCode ? currentByCode.get(candidate.matchCode) ?? [] : [];
-        const pathMatches = currentByKey.get(candidate.key) ?? [];
-        // 3.2 외 항목은 엑셀이 최신 원본이므로 WBS 번호를 절대 우선한다.
-        // 제목/계층이 바뀌어 경로 매칭이 다른 기존 항목을 가리켜도,
-        // 번호가 유일하면 해당 항목을 엑셀 경로/제목으로 재배치한다.
-        const matches = codeMatches.length > 0 ? codeMatches : pathMatches;
+        const conflictReason = conflictByCandidateKey.get(candidate.key);
+        if (conflictReason) {
+            items.push({
+                key: candidate.key,
+                sourceRows: candidate.sourceRows,
+                hierarchyPath: candidate.hierarchyPath,
+                title: candidate.value.title,
+                result: '충돌/검토 필요',
+                reason: conflictReason,
+                changes: [],
+            });
+            continue;
+        }
+        const existing = matchedByCandidateKey.get(candidate.key);
         const parentId = candidate.parentKey ? resolvedIdByKey.get(candidate.parentKey) : null;
         if (candidate.parentKey && !parentId) {
             items.push({
@@ -767,21 +865,9 @@ export function buildWbsScheduleImportPreview(
             });
             continue;
         }
-        if (matches.length > 1) {
-            items.push({
-                key: candidate.key,
-                sourceRows: candidate.sourceRows,
-                hierarchyPath: candidate.hierarchyPath,
-                title: candidate.value.title,
-                result: '충돌/검토 필요',
-                reason: '동일한 계약/과업/일정 식별 조합의 기존 일정이 여러 건입니다. 자동 수정하지 않습니다.',
-                changes: [],
-            });
-            continue;
-        }
 
         const candidateValue = { ...candidate.value } as Partial<Omit<WbsDetailScheduleRecord, 'id'>>;
-        if (candidate.preserveAggregateFields && matches.length === 1) {
+        if (candidate.preserveAggregateFields && existing) {
             for (const field of [
                 'startDate', 'endDate', 'planDays', 'planProgress', 'planRate',
                 'actualStartDate', 'actualEndDate', 'actualDays', 'progress', 'status',
@@ -791,20 +877,8 @@ export function buildWbsScheduleImportPreview(
             ...candidateValue,
             parentId: parentId ?? null,
         };
-        if (matches.length === 0) {
-            const id = importedScheduleId(candidate.matchCode ? `code:${candidate.matchCode}` : candidate.key);
-            if (current.some((item) => item.id === id)) {
-                items.push({
-                    key: candidate.key,
-                    sourceRows: candidate.sourceRows,
-                    hierarchyPath: candidate.hierarchyPath,
-                    title: candidate.value.title,
-                    result: '충돌/검토 필요',
-                    reason: '신규 일정 식별자가 기존 일정과 충돌했습니다. 자동 병합하지 않습니다.',
-                    changes: [],
-                });
-                continue;
-            }
+        if (!existing) {
+            const id = nextImportedScheduleId(`path:${candidate.key}`, occupiedIds);
             resolvedIdByKey.set(candidate.key, id);
             const next = { id, ...nextPatch } as WbsDetailScheduleRecord;
             added.push(next);
@@ -824,7 +898,6 @@ export function buildWbsScheduleImportPreview(
             continue;
         }
 
-        const existing = matches[0];
         resolvedIdByKey.set(candidate.key, existing.id);
         const changes = changedFields(existing, nextPatch);
         if (changes.length === 0) {
@@ -851,10 +924,30 @@ export function buildWbsScheduleImportPreview(
         }
     }
 
+    for (const existing of current) {
+        if (claimedCurrentIds.has(existing.id) || protectedKeepIds.has(existing.id)) continue;
+        deletedIds.push(existing.id);
+        const path = pathById.get(existing.id);
+        const hierarchy = path
+            ? path.split('\u001F').slice(0, -1).join(' > ')
+            : '';
+        items.push({
+            key: `deleted:${existing.id}`,
+            sourceRows: [],
+            hierarchyPath: hierarchy || '기존 웹 일정',
+            title: existing.title,
+            result: '기존 일정 삭제',
+            reason: '엑셀에 존재하지 않는 3.2 외 일정이므로 백업 후 삭제합니다.',
+            scheduleId: existing.id,
+            changes: [],
+        });
+    }
+
     const summary: ScheduleImportSummary = {
         total: items.length,
         added: items.filter((item) => item.result === '신규 추가').length,
         updated: items.filter((item) => item.result === '기존 일정 수정').length,
+        deleted: items.filter((item) => item.result === '기존 일정 삭제').length,
         unchanged: items.filter((item) => item.result === '변경 없음').length,
         protected: items.filter((item) => item.result === '웹 데이터 유지').length,
         conflicts: items.filter((item) => item.result === '충돌/검토 필요').length,
@@ -881,5 +974,6 @@ export function buildWbsScheduleImportPreview(
         items,
         added,
         updates,
+        deletedIds,
     };
 }

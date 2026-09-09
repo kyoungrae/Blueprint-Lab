@@ -118,7 +118,7 @@ export const applyWbsScheduleImport = async (req: UploadRequest, res: Response) 
                 preview: publicPreview(preview),
             });
         }
-        if (preview.summary.added === 0 && preview.summary.updated === 0) {
+        if (preview.summary.added === 0 && preview.summary.updated === 0 && preview.summary.deleted === 0) {
             return res.json({
                 message: '변경할 일정이 없습니다. 기존 일정은 그대로 유지했습니다.',
                 noChanges: true,
@@ -137,6 +137,7 @@ export const applyWbsScheduleImport = async (req: UploadRequest, res: Response) 
             affectedScheduleIds: [
                 ...preview.updates.map((update) => update.id),
                 ...preview.added.map((schedule) => schedule.id),
+                ...preview.deletedIds,
             ],
             importPreview: {
                 sourceRowCount: preview.sourceRowCount,
@@ -149,10 +150,12 @@ export const applyWbsScheduleImport = async (req: UploadRequest, res: Response) 
             expectedBaseSnapshotHash,
             added: preview.added,
             updates: preview.updates,
+            deletedIds: preview.deletedIds,
         });
         const actualChangedScheduleIds = [
             ...preview.updates.map((update) => update.id),
             ...preview.added.map((schedule) => schedule.id),
+            ...preview.deletedIds,
         ];
         finalizeScheduleImportAudit(backup.filename, {
             status: 'COMPLETED',
@@ -164,6 +167,7 @@ export const applyWbsScheduleImport = async (req: UploadRequest, res: Response) 
             message: '일정 import를 안전하게 반영했습니다.',
             backup: { id: backup.backupId, filename: backup.filename, backedUpAt: backup.backedUpAt },
             changedScheduleIds: actualChangedScheduleIds,
+            deletedScheduleIds: preview.deletedIds,
             detailScheduleCount: detailSchedules.length,
             preview: publicPreview(preview),
         });
