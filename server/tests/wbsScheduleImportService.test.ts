@@ -78,3 +78,26 @@ test('3.2 branch stays web-owned while other rows merge by WBS number', () => {
     assert.equal(group33Update.patch.order, 2, '보호 분류를 건너뛰어도 3.3 순서는 2로 유지한다');
     assert.equal(preview.updates.some((item) => item.id === 'web-only'), false, '파일에 없는 웹 일정은 삭제하지 않는다');
 });
+
+test('WBS number wins when the current title path points to another item', () => {
+    const current = currentSchedules();
+    current.find((item) => item.id === 'root-1')!.title = '1. 사업관리';
+    current.find((item) => item.id === 'group-11')!.title = '1.1 계획';
+    current.push({
+        id: 'same-path-different-code',
+        parentId: 'group-11',
+        order: 99,
+        scheduleCode: '9.9.9',
+        title: '엑셀 최신 제목',
+        startDate: '2025.01.01',
+        endDate: '2025.01.02',
+        progress: 0,
+    });
+
+    const preview = buildWbsScheduleImportPreview(sourceWorkbook(), current);
+
+    assert.equal(preview.canApply, true);
+    assert.equal(preview.summary.conflicts, 0);
+    assert.ok(preview.updates.some((item) => item.id === 'leaf-111'));
+    assert.equal(preview.updates.some((item) => item.id === 'same-path-different-code'), false);
+});

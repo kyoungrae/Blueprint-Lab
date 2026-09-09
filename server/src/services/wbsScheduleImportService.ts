@@ -750,24 +750,9 @@ export function buildWbsScheduleImportPreview(
     for (const candidate of candidates) {
         const codeMatches = candidate.matchCode ? currentByCode.get(candidate.matchCode) ?? [] : [];
         const pathMatches = currentByKey.get(candidate.key) ?? [];
-        const codeIds = new Set(codeMatches.map((item) => item.id));
-        const pathIds = new Set(pathMatches.map((item) => item.id));
-        if (
-            codeIds.size > 0
-            && pathIds.size > 0
-            && (codeIds.size !== pathIds.size || [...codeIds].some((id) => !pathIds.has(id)))
-        ) {
-            items.push({
-                key: candidate.key,
-                sourceRows: candidate.sourceRows,
-                hierarchyPath: candidate.hierarchyPath,
-                title: candidate.value.title,
-                result: '충돌/검토 필요',
-                reason: 'WBS 번호와 계층/항목명이 서로 다른 기존 일정을 가리킵니다. 자동 병합하지 않습니다.',
-                changes: [],
-            });
-            continue;
-        }
+        // 3.2 외 항목은 엑셀이 최신 원본이므로 WBS 번호를 절대 우선한다.
+        // 제목/계층이 바뀌어 경로 매칭이 다른 기존 항목을 가리켜도,
+        // 번호가 유일하면 해당 항목을 엑셀 경로/제목으로 재배치한다.
         const matches = codeMatches.length > 0 ? codeMatches : pathMatches;
         const parentId = candidate.parentKey ? resolvedIdByKey.get(candidate.parentKey) : null;
         if (candidate.parentKey && !parentId) {
