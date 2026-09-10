@@ -672,7 +672,7 @@ const WbsScheduleTable: React.FC = () => {
                     <p className="text-[11px] text-gray-400">
                         {filterActive
                             ? `필터 적용 중 · ${sortedRows.length}행 표시`
-                            : '항목을 더블클릭하여 편집 · 시스템 개발 동기화로 개발상세 시작·종료일을 반영'}
+                            : '항목을 더블클릭하여 편집 · 연결 키가 설정된 개발상세 항목과 동기화'}
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">

@@ -216,19 +216,29 @@ const LEVEL_TAIL = 1;
  */
 function tailMatchLevel(segments: string[], menuName: string): number {
     const leaf = normalizeCompact(menuName);
+    const leafWithoutDevSuffix = normalizeCompact(menuName.replace(DEV_TITLE_SUFFIX_RE, ''));
     if (!leaf || segments.length === 0) return 0;
 
     const last = segments[segments.length - 1];
     if (normalizeCompact(last) === leaf) return LEVEL_SEGMENT;
-    if (normalizeCompact(last.replace(DEV_TITLE_SUFFIX_RE, '')) === leaf) return LEVEL_SEGMENT_SUFFIX;
+    if (
+        normalizeCompact(last.replace(DEV_TITLE_SUFFIX_RE, '')) === leafWithoutDevSuffix
+        || normalizeCompact(last) === leafWithoutDevSuffix
+    ) return LEVEL_SEGMENT_SUFFIX;
 
     for (let k = 2; k <= Math.min(3, segments.length); k++) {
         const joined = segments.slice(segments.length - k).join('-');
         if (normalizeCompact(joined) === leaf) return LEVEL_JOINED;
-        if (normalizeCompact(joined.replace(DEV_TITLE_SUFFIX_RE, '')) === leaf) return LEVEL_JOINED;
+        if (
+            normalizeCompact(joined.replace(DEV_TITLE_SUFFIX_RE, '')) === leafWithoutDevSuffix
+            || normalizeCompact(joined) === leafWithoutDevSuffix
+        ) return LEVEL_JOINED;
     }
 
-    if (leaf.length >= 3 && normalizeCompact(last).endsWith(leaf)) return LEVEL_TAIL;
+    if (
+        leafWithoutDevSuffix.length >= 3
+        && normalizeCompact(last.replace(DEV_TITLE_SUFFIX_RE, '')).endsWith(leafWithoutDevSuffix)
+    ) return LEVEL_TAIL;
     return 0;
 }
 

@@ -10,12 +10,7 @@ import {
     buildParentDateRollups,
     buildSchedulePatchFromRow,
     findFeatureScheduleCandidates,
-    findStoredMenuScheduleLink,
-    findStoredRowScheduleLink,
     getSyncScopeLeaves,
-    menuScheduleLinkKey,
-    pruneMenuScheduleLinks,
-    upsertRowScheduleLink,
 } from '../utils/wbsScheduleMatch';
 
 export interface DevScheduleSyncResult {
@@ -30,16 +25,41 @@ export interface DevScheduleAssignment {
     schedule: WbsDetailSchedule;
 }
 
+export type DevScheduleLinkPreviewStatus =
+    | 'linked'
+    | 'candidate'
+    | 'ambiguous'
+    | 'unmatched'
+    | 'broken';
+
+export interface DevScheduleLinkPreviewItem {
+    rowId: string;
+    menuName: string;
+    featureName: string;
+    assignee: string;
+    status: DevScheduleLinkPreviewStatus;
+    scheduleId?: string;
+    scheduleCode?: string;
+    scheduleTitle?: string;
+    candidates: Array<Pick<WbsDetailSchedule, 'id' | 'scheduleCode' | 'title'>>;
+}
+
+export interface DevScheduleLinkPreview {
+    items: DevScheduleLinkPreviewItem[];
+    proposedLinks: WbsMenuScheduleLink[];
+    nextLinks: WbsMenuScheduleLink[];
+    counts: Record<DevScheduleLinkPreviewStatus, number>;
+}
+
 /**
- * 저장된 행별 연결을 우선 사용하고, 없는 경우에만 기능명·메뉴 경로·담당자로 안전하게 후보를 좁힌다.
- * 양방향 동기화가 동일한 연결 규칙을 쓰도록 이 함수로 통합한다.
+ * 실제 양방향 동기화는 저장된 rowId ↔ scheduleId 키만 사용한다.
+ * 문자열 비교는 buildDevScheduleLinkPreview의 최초 연결 후보 생성에서만 수행한다.
  */
 export function resolveDevScheduleAssignments(
-    menus: WbsMenuNode[],
+    _menus: WbsMenuNode[],
     rows: WbsDevRow[],
     detailSchedules: WbsDetailSchedule[],
     storedLinks: WbsMenuScheduleLink[],
-    options?: { rebuildLinks?: boolean },
 ): {
     assignments: DevScheduleAssignment[];
     links: WbsMenuScheduleLink[];
@@ -47,91 +67,166 @@ export function resolveDevScheduleAssignments(
     unmatched: number;
 } {
     const syncRows = rows.filter((row) => !isWbsDebugingCategoryRow(row));
-    const rowCountByLegacyGroup = new Map<string, number>();
-    for (const row of syncRows) {
-        const key = menuScheduleLinkKey(row.menuId, row.assignee.trim(), row.assigneeUserId?.trim());
-        rowCountByLegacyGroup.set(key, (rowCountByLegacyGroup.get(key) ?? 0) + 1);
-    }
-    const menuById = new Map(menus.map((menu) => [menu.id, menu]));
-    let links: WbsMenuScheduleLink[] = options?.rebuildLinks ? [] : [...storedLinks];
-    let linksChanged = options?.rebuildLinks === true && storedLinks.length > 0;
-    let unmatched = 0;
-
+    const rowById = new Map(syncRows.map((row) => [row.id, row]));
     const scope = getSyncScopeLeaves(detailSchedules);
     const scopeById = new Map(scope.map((item) => [item.id, item]));
-    const claimedScheduleIds = new Set<string>();
+    const keyedLinks = storedLinks.filter((link): link is WbsMenuScheduleLink & { rowId: string } => Boolean(link.rowId));
+    const rowLinkCounts = new Map<string, number>();
+    const scheduleLinkCounts = new Map<string, number>();
+    for (const link of keyedLinks) {
+        rowLinkCounts.set(link.rowId, (rowLinkCounts.get(link.rowId) ?? 0) + 1);
+        scheduleLinkCounts.set(link.scheduleId, (scheduleLinkCounts.get(link.scheduleId) ?? 0) + 1);
+    }
+
     const assignments: DevScheduleAssignment[] = [];
-    const pending: Array<{ row: WbsDevRow; candidates: WbsDetailSchedule[] }> = [];
+    for (const link of keyedLinks) {
+        // 중복 키는 임의로 하나를 선택하지 않는다. 연결 관리 화면에서 충돌로 표시한다.
+        if (rowLinkCounts.get(link.rowId) !== 1 || scheduleLinkCounts.get(link.scheduleId) !== 1) continue;
+        const row = rowById.get(link.rowId);
+        const schedule = scopeById.get(link.scheduleId);
+        if (row && schedule) assignments.push({ row, schedule });
+    }
+
+    return {
+        assignments,
+        links: storedLinks,
+        linksChanged: false,
+        unmatched: syncRows.length - assignments.length,
+    };
+}
+
+/**
+ * 현재 업무 데이터는 변경하지 않고 최초 rowId ↔ scheduleId 연결 후보만 계산한다.
+ * 자동 제안은 행과 일정 양쪽에서 모두 유일한 1:1 후보에 한정한다.
+ */
+export function buildDevScheduleLinkPreview(
+    menus: WbsMenuNode[],
+    rows: WbsDevRow[],
+    detailSchedules: WbsDetailSchedule[],
+    storedLinks: WbsMenuScheduleLink[],
+): DevScheduleLinkPreview {
+    const syncRows = rows.filter((row) => !isWbsDebugingCategoryRow(row));
+    const menuById = new Map(menus.map((menu) => [menu.id, menu]));
+    const scope = getSyncScopeLeaves(detailSchedules);
+    const scopeById = new Map(scope.map((item) => [item.id, item]));
+    const keyedLinks = storedLinks.filter((link): link is WbsMenuScheduleLink & { rowId: string } => Boolean(link.rowId));
+    const rowLinkCounts = new Map<string, number>();
+    const scheduleLinkCounts = new Map<string, number>();
+    for (const link of keyedLinks) {
+        rowLinkCounts.set(link.rowId, (rowLinkCounts.get(link.rowId) ?? 0) + 1);
+        scheduleLinkCounts.set(link.scheduleId, (scheduleLinkCounts.get(link.scheduleId) ?? 0) + 1);
+    }
+
+    const claimedScheduleIds = new Set<string>();
+    const itemsByRowId = new Map<string, DevScheduleLinkPreviewItem>();
+    const pending: Array<{ row: WbsDevRow; menu: WbsMenuNode; candidates: WbsDetailSchedule[] }> = [];
 
     for (const row of syncRows) {
         const menu = menuById.get(row.menuId);
-        if (!menu) {
-            unmatched += 1;
+        const stored = keyedLinks.find((link) => link.rowId === row.id);
+        if (stored) {
+            const schedule = scopeById.get(stored.scheduleId);
+            const valid = Boolean(
+                schedule
+                && rowLinkCounts.get(row.id) === 1
+                && scheduleLinkCounts.get(stored.scheduleId) === 1
+            );
+            if (valid && schedule) claimedScheduleIds.add(schedule.id);
+            itemsByRowId.set(row.id, {
+                rowId: row.id,
+                menuName: menu?.name ?? '',
+                featureName: row.featureName,
+                assignee: row.assignee,
+                status: valid ? 'linked' : 'broken',
+                ...(schedule ? {
+                    scheduleId: schedule.id,
+                    scheduleCode: schedule.scheduleCode,
+                    scheduleTitle: schedule.title,
+                } : {}),
+                candidates: [],
+            });
             continue;
         }
-        const stored = findStoredRowScheduleLink(links, row.id);
-        const linked = stored ? scopeById.get(stored.scheduleId) : undefined;
-        if (linked && !claimedScheduleIds.has(linked.id)) {
-            claimedScheduleIds.add(linked.id);
-            assignments.push({ row, schedule: linked });
+        if (!menu || !row.featureName.trim()) {
+            itemsByRowId.set(row.id, {
+                rowId: row.id,
+                menuName: menu?.name ?? '',
+                featureName: row.featureName,
+                assignee: row.assignee,
+                status: 'unmatched',
+                candidates: [],
+            });
             continue;
         }
+        pending.push({ row, menu, candidates: [] });
+    }
 
-        // 이전 버전은 메뉴+담당자 한 묶음에 일정 하나만 연결했다. 그 묶음에 기능 행이
-        // 하나뿐일 때만 안전하게 행별 연결로 승격한다. 둘 이상이면 절대 공유하지 않는다.
-        const legacyKey = menuScheduleLinkKey(row.menuId, row.assignee.trim(), row.assigneeUserId?.trim());
-        const legacy = rowCountByLegacyGroup.get(legacyKey) === 1
-            ? findStoredMenuScheduleLink(links, row.menuId, row.assignee, row.assigneeUserId)
-            : undefined;
-        const legacySchedule = legacy ? scopeById.get(legacy.scheduleId) : undefined;
-        if (legacySchedule && !claimedScheduleIds.has(legacySchedule.id)) {
-            claimedScheduleIds.add(legacySchedule.id);
-            assignments.push({ row, schedule: legacySchedule });
-            links = upsertRowScheduleLink(links, {
+    const availableScope = scope.filter((schedule) => !claimedScheduleIds.has(schedule.id));
+    for (const entry of pending) {
+        entry.candidates = findFeatureScheduleCandidates(
+            entry.row,
+            entry.menu,
+            buildMenuPath(entry.row.menuId, menuById),
+            availableScope,
+        );
+    }
+
+    const candidateOwners = new Map<string, Set<string>>();
+    for (const entry of pending) {
+        for (const candidate of entry.candidates) {
+            if (!candidateOwners.has(candidate.id)) candidateOwners.set(candidate.id, new Set());
+            candidateOwners.get(candidate.id)!.add(entry.row.id);
+        }
+    }
+
+    const proposedLinks: WbsMenuScheduleLink[] = [];
+    for (const { row, menu, candidates } of pending) {
+        const sole = candidates.length === 1 ? candidates[0] : undefined;
+        const isUniquePair = Boolean(sole && candidateOwners.get(sole.id)?.size === 1);
+        const status: DevScheduleLinkPreviewStatus = isUniquePair
+            ? 'candidate'
+            : candidates.length > 0 ? 'ambiguous' : 'unmatched';
+        if (isUniquePair && sole) {
+            proposedLinks.push({
                 rowId: row.id,
                 menuId: row.menuId,
                 assignee: row.assignee.trim(),
                 ...(row.assigneeUserId?.trim() ? { assigneeUserId: row.assigneeUserId.trim() } : {}),
-                scheduleId: legacySchedule.id,
+                scheduleId: sole.id,
             });
-            linksChanged = true;
-            continue;
         }
-
-        pending.push({ row, candidates: [] });
-    }
-
-    const unlinkedScope = scope.filter((item) => !claimedScheduleIds.has(item.id));
-    for (const entry of pending) {
-        entry.candidates = findFeatureScheduleCandidates(
-            entry.row,
-            menuById.get(entry.row.menuId)!,
-            buildMenuPath(entry.row.menuId, menuById),
-            unlinkedScope,
-        );
-    }
-    // 후보가 적은 기능 행부터 확정해야 선점 때문에 다른 행이 밀리는 일이 줄어든다.
-    pending.sort((a, b) => a.candidates.length - b.candidates.length);
-
-    for (const { row, candidates } of pending) {
-        const schedule = candidates.find((item) => !claimedScheduleIds.has(item.id));
-        if (!schedule) {
-            unmatched += 1;
-            continue;
-        }
-        claimedScheduleIds.add(schedule.id);
-        assignments.push({ row, schedule });
-        links = upsertRowScheduleLink(links, {
+        itemsByRowId.set(row.id, {
             rowId: row.id,
-            menuId: row.menuId,
-            assignee: row.assignee.trim(),
-            ...(row.assigneeUserId?.trim() ? { assigneeUserId: row.assigneeUserId.trim() } : {}),
-            scheduleId: schedule.id,
+            menuName: menu.name,
+            featureName: row.featureName,
+            assignee: row.assignee,
+            status,
+            ...(isUniquePair && sole ? {
+                scheduleId: sole.id,
+                scheduleCode: sole.scheduleCode,
+                scheduleTitle: sole.title,
+            } : {}),
+            candidates: candidates.map(({ id, scheduleCode, title }) => ({ id, scheduleCode, title })),
         });
-        linksChanged = true;
     }
 
-    return { assignments, links, linksChanged, unmatched };
+    const items = syncRows.map((row) => itemsByRowId.get(row.id)!).filter(Boolean);
+    const counts: Record<DevScheduleLinkPreviewStatus, number> = {
+        linked: 0,
+        candidate: 0,
+        ambiguous: 0,
+        unmatched: 0,
+        broken: 0,
+    };
+    items.forEach((item) => { counts[item.status] += 1; });
+
+    return {
+        items,
+        proposedLinks,
+        // 기존 연결은 삭제·변경하지 않고 새로 확정된 rowId 연결만 추가한다.
+        nextLinks: [...storedLinks, ...proposedLinks],
+        counts,
+    };
 }
 
 const EMPTY_RESULT: DevScheduleSyncResult = { matched: 0, updated: 0, unmatched: 0 };
@@ -150,8 +245,7 @@ export function scheduleSyncDevDetailToSchedule(wbsProjectId: string): void {
 
 export async function syncDevDetailToSchedule(
     wbsProjectId: string,
-    /** rebuildLinks: 저장된 연결을 버리고 기능명·메뉴 경로로 다시 매칭한다 */
-    options?: { force?: boolean; rebuildLinks?: boolean },
+    options?: { force?: boolean },
 ): Promise<DevScheduleSyncResult> {
     if (syncTimer) {
         clearTimeout(syncTimer);
@@ -188,9 +282,8 @@ export async function syncDevDetailToSchedule(
 
     devToScheduleSyncing = true;
     try {
-        const resolved = resolveDevScheduleAssignments(menus, rows, detailSchedules, storedLinks, options);
+        const resolved = resolveDevScheduleAssignments(menus, rows, detailSchedules, storedLinks);
         const { assignments, unmatched } = resolved;
-        let { links, linksChanged } = resolved;
 
         for (const { row, schedule } of assignments) {
             const latest = latestSchedules().find((item) => item.id === schedule.id) ?? schedule;
@@ -204,21 +297,6 @@ export async function syncDevDetailToSchedule(
         for (const { id, patch } of buildParentDateRollups(latestSchedules())) {
             useWbsStore.getState().updateDetailSchedule(id, patch);
             updated += 1;
-        }
-
-        const scopeIds = new Set(getSyncScopeLeaves(latestSchedules()).map((item) => item.id));
-        const pruned = pruneMenuScheduleLinks(
-            links,
-            rows,
-            scopeIds,
-        );
-        if (JSON.stringify(pruned) !== JSON.stringify(links)) {
-            links = pruned;
-            linksChanged = true;
-        }
-
-        if (linksChanged) {
-            useWbsStore.getState().setMenuScheduleLinks(links);
         }
 
         return { matched: assignments.length, updated, unmatched };

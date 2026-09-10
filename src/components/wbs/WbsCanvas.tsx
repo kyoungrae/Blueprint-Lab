@@ -586,20 +586,20 @@ const WbsCanvas: React.FC = () => {
                                     {
                                         delay: '0ms',
                                         icon: <RefreshCw size={14} />,
-                                        label: '시스템 개발 동기화',
+                                        label: '연결된 데이터 동기화',
                                         className: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
                                         onClick: async () => {
                                             setShowActions(false);
                                             if (!currentProjectId) return;
                                             const result = await syncDevDetailToSchedule(currentProjectId, { force: true });
                                             const lines = [
-                                                '개발상세 ↔ 시스템 개발 일정을 동기화했습니다.',
+                                                '저장된 연결 키 기준으로 개발상세 ↔ 일정을 동기화했습니다.',
                                                 `매칭 ${result.matched}건 · 업데이트 ${result.updated}건`,
                                             ];
-                                            if (result.unmatched > 0) lines.push(`연결되지 않은 메뉴/담당자 ${result.unmatched}건`);
+                                            if (result.unmatched > 0) lines.push(`연결 키가 없는 개발상세 ${result.unmatched}건`);
                                             window.alert(lines.join('\n'));
                                         },
-                                        title: '개발 상세와 매칭된 시스템 개발(3.2.x) 시작일·종료일을 동기화',
+                                        title: '저장된 rowId ↔ scheduleId 연결 키가 있는 항목만 동기화',
                                     },
                                     {
                                         delay: '55ms',
@@ -653,20 +653,20 @@ const WbsCanvas: React.FC = () => {
                                     ...(tab === 'detail' ? [{
                                         delay: '0ms',
                                         icon: <RefreshCw size={14} />,
-                                        label: '시스템 개발 동기화',
+                                        label: '연결된 데이터 동기화',
                                         className: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
                                         onClick: async () => {
                                             setShowActions(false);
                                             if (!currentProjectId) return;
                                             const result = await syncDevDetailToSchedule(currentProjectId, { force: true });
                                             const lines = [
-                                                '개발상세 ↔ 시스템 개발 일정을 동기화했습니다.',
+                                                '저장된 연결 키 기준으로 개발상세 ↔ 일정을 동기화했습니다.',
                                                 `매칭 ${result.matched}건 · 업데이트 ${result.updated}건`,
                                             ];
-                                            if (result.unmatched > 0) lines.push(`연결되지 않은 메뉴/담당자 ${result.unmatched}건`);
+                                            if (result.unmatched > 0) lines.push(`연결 키가 없는 개발상세 ${result.unmatched}건`);
                                             window.alert(lines.join('\n'));
                                         },
-                                        title: '개발 상세와 매칭된 시스템 개발(3.2.x) 시작일·종료일을 동기화',
+                                        title: '저장된 rowId ↔ scheduleId 연결 키가 있는 항목만 동기화',
                                     }] : []),
                                     {
                                         delay: tab === 'detail' ? '55ms' : '0ms',

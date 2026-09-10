@@ -89,6 +89,21 @@ function isScheduleToDevSyncPatch(patch: object): boolean {
         .some((field) => field in patch);
 }
 
+/** 일정 상태를 직접 바꾼 이후에도 같은 행 안에서 상태와 진척도가 어긋나지 않게 한다. */
+function withScheduleStatusProgress(
+    current: WbsDetailSchedule | undefined,
+    patch: Partial<Omit<WbsDetailSchedule, 'id'>>,
+): Partial<Omit<WbsDetailSchedule, 'id'>> {
+    if (!('status' in patch) || 'progress' in patch) return patch;
+    if (patch.status === '완료') return { ...patch, progress: 100 };
+    if (patch.status === '대기') return { ...patch, progress: 0 };
+    if (patch.status === '진행중') {
+        const progress = Math.min(99, Math.max(1, Math.round(current?.progress ?? 1)));
+        return { ...patch, progress };
+    }
+    return patch;
+}
+
 function syncScheduleToDevDetailAfterChange(
     projectId: string | null,
     scheduleId: string,
@@ -245,14 +260,18 @@ export const useWbsStore = create<WbsState>((set, get) => ({
         // 개발상세→일정 자동 반영은 이미 원본 개발상세의 잠금을 획득한 작업이므로 통과시킨다.
         if (!isDevToScheduleSyncing() && !canWriteLockedWbsEntity(currentProjectId, scheduleEditingKey(id))) return;
 
-        // 1. 해당 항목 업데이트 (progress 변경 시 status 자동 반영)
-        const patchWithStatus = 'progress' in patch && !('status' in patch)
-            ? { ...patch, status: deriveStatus(patch.progress as number) }
-            : patch;
+        // 1. 해당 항목 업데이트 (progress↔status 어느 쪽을 편집해도 두 값이 일치하도록 반영)
+        const statusProgressPatch = withScheduleStatusProgress(
+            get().detailSchedules.find((schedule) => schedule.id === id),
+            patch,
+        );
+        const patchWithStatus = 'progress' in statusProgressPatch && !('status' in statusProgressPatch)
+            ? { ...statusProgressPatch, status: deriveStatus(statusProgressPatch.progress as number) }
+            : statusProgressPatch;
         let updated = get().detailSchedules.map((s) => (s.id === id ? { ...s, ...patchWithStatus } : s));
 
         // 2. progress가 변경된 경우, 조상 항목들의 progress를 자동 재계산 (leaf → root 방향)
-        if ('progress' in patch) {
+        if ('progress' in patchWithStatus) {
             const recalcParent = (items: typeof updated, childId: string): typeof updated => {
                 const child = items.find((s) => s.id === childId);
                 if (!child?.parentId) return items;
@@ -277,14 +296,14 @@ export const useWbsStore = create<WbsState>((set, get) => ({
                 changed = yjs.updateDetailSchedule(scheduleId, nextPatch) || changed;
             });
             syncLinkedPersonalSchedulesAfterYjsChange(currentProjectId, changed);
-            syncScheduleToDevDetailAfterChange(currentProjectId, id, patch, changed);
+            syncScheduleToDevDetailAfterChange(currentProjectId, id, patchWithStatus, changed);
             return;
         }
         if (currentProjectId && !currentProjectId.startsWith('local_')) return;
 
         set({ detailSchedules: updated });
         get().scheduleSave();
-        syncScheduleToDevDetailAfterChange(currentProjectId, id, patch, true);
+        syncScheduleToDevDetailAfterChange(currentProjectId, id, patchWithStatus, true);
     },
 
     applySeedData: () => {
