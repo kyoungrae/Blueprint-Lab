@@ -46,6 +46,7 @@ export interface DevScheduleLinkPreviewItem {
 
 export interface DevScheduleLinkPreview {
     items: DevScheduleLinkPreviewItem[];
+    availableSchedules: Array<Pick<WbsDetailSchedule, 'id' | 'scheduleCode' | 'title' | 'worker'>>;
     proposedLinks: WbsMenuScheduleLink[];
     nextLinks: WbsMenuScheduleLink[];
     counts: Record<DevScheduleLinkPreviewStatus, number>;
@@ -222,6 +223,7 @@ export function buildDevScheduleLinkPreview(
 
     return {
         items,
+        availableSchedules: scope.map(({ id, scheduleCode, title, worker }) => ({ id, scheduleCode, title, worker })),
         proposedLinks,
         // 기존 연결은 삭제·변경하지 않고 새로 확정된 rowId 연결만 추가한다.
         nextLinks: [...storedLinks, ...proposedLinks],

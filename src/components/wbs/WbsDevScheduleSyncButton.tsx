@@ -53,6 +53,7 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
     const setMenuScheduleLinks = useWbsStore((s) => s.setMenuScheduleLinks);
     const [open, setOpen] = useState(false);
     const [savedCount, setSavedCount] = useState<number | null>(null);
+    const [manualSelections, setManualSelections] = useState<Record<string, string>>({});
 
     const preview = useMemo(() => buildDevScheduleLinkPreview(
         menus,
@@ -63,17 +64,59 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
 
     const openPreview = () => {
         setSavedCount(null);
+        setManualSelections({});
         setOpen(true);
     };
 
+    const existingClaimedScheduleIds = useMemo(() => new Set(
+        preview.items
+            .filter((item) => item.status === 'linked' && item.scheduleId)
+            .map((item) => item.scheduleId!),
+    ), [preview.items]);
+    const autoClaimedScheduleIds = useMemo(() => new Set(
+        preview.proposedLinks.map((link) => link.scheduleId),
+    ), [preview.proposedLinks]);
+    const manualSelectionCount = Object.values(manualSelections).filter(Boolean).length;
+
+    const selectManualSchedule = (rowId: string, scheduleId: string) => {
+        setSavedCount(null);
+        setManualSelections((current) => {
+            const next = { ...current };
+            if (scheduleId) next[rowId] = scheduleId;
+            else delete next[rowId];
+            return next;
+        });
+    };
+
     const applyLinksOnly = () => {
-        if (!currentProjectId || preview.proposedLinks.length === 0) return;
+        if (!currentProjectId) return;
+        const manuallySelectedScheduleIds = new Set<string>();
+        const manualLinks = Object.entries(manualSelections).flatMap(([rowId, scheduleId]) => {
+            const row = rows.find((item) => item.id === rowId);
+            if (
+                !row
+                || !scheduleId
+                || existingClaimedScheduleIds.has(scheduleId)
+                || autoClaimedScheduleIds.has(scheduleId)
+                || manuallySelectedScheduleIds.has(scheduleId)
+            ) return [];
+            manuallySelectedScheduleIds.add(scheduleId);
+            return [{
+                rowId: row.id,
+                menuId: row.menuId,
+                assignee: row.assignee.trim(),
+                ...(row.assigneeUserId?.trim() ? { assigneeUserId: row.assigneeUserId.trim() } : {}),
+                scheduleId,
+            }];
+        });
+        const linksToAdd = [...preview.proposedLinks, ...manualLinks];
+        if (linksToAdd.length === 0) return;
         const before = JSON.stringify({
             menus: useWbsStore.getState().menus,
             rows: useWbsStore.getState().rows,
             detailSchedules: useWbsStore.getState().detailSchedules,
         });
-        setMenuScheduleLinks(preview.nextLinks);
+        setMenuScheduleLinks([...menuScheduleLinks, ...linksToAdd]);
         const afterState = useWbsStore.getState();
         const after = JSON.stringify({
             menus: afterState.menus,
@@ -84,7 +127,7 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
             window.alert('연결 키 저장 중 업무 데이터 변경이 감지되어 결과를 확인해야 합니다.');
             return;
         }
-        setSavedCount(preview.proposedLinks.length);
+        setSavedCount(linksToAdd.length);
         onDone?.();
     };
 
@@ -155,6 +198,30 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
                                             <td className="border border-gray-100 px-2 py-2 text-center text-gray-600">{item.assignee || '-'}</td>
                                             <td className="border border-gray-100 px-2 py-2 text-gray-600">
                                                 <span className={item.status === 'candidate' ? 'font-bold text-blue-700' : ''}>{scheduleLabel(item)}</span>
+                                                {(item.status === 'ambiguous' || item.status === 'unmatched') && (
+                                                    <select
+                                                        value={manualSelections[item.rowId] ?? ''}
+                                                        onChange={(event) => selectManualSchedule(item.rowId, event.target.value)}
+                                                        className="mt-1.5 w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-200"
+                                                        aria-label={`${item.featureName || item.menuName} 수동 일정 연결`}
+                                                    >
+                                                        <option value="">일정 항목을 직접 선택하세요</option>
+                                                        {preview.availableSchedules.map((schedule) => {
+                                                            const selectedByAnotherRow = Object.entries(manualSelections).some(
+                                                                ([rowId, scheduleId]) => rowId !== item.rowId && scheduleId === schedule.id,
+                                                            );
+                                                            const unavailable = existingClaimedScheduleIds.has(schedule.id)
+                                                                || autoClaimedScheduleIds.has(schedule.id)
+                                                                || selectedByAnotherRow;
+                                                            return (
+                                                                <option key={schedule.id} value={schedule.id} disabled={unavailable}>
+                                                                    {[schedule.scheduleCode, schedule.title, schedule.worker].filter(Boolean).join(' · ')}
+                                                                    {unavailable ? ' · 연결 사용 중' : ''}
+                                                                </option>
+                                                            );
+                                                        })}
+                                                    </select>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -169,7 +236,9 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
                                         <ShieldCheck size={15} /> 연결 키 {savedCount}건 저장 완료 · 업무 데이터 변경 없음
                                     </span>
                                 ) : (
-                                    <span className="text-gray-500">자동 적용은 양쪽에서 유일한 1:1 후보 {preview.proposedLinks.length}건으로 제한됩니다.</span>
+                                    <span className="text-gray-500">
+                                        자동 연결 {preview.proposedLinks.length}건 · 수동 선택 {manualSelectionCount}건 · 업무 데이터 값은 변경하지 않습니다.
+                                    </span>
                                 )}
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
@@ -179,7 +248,7 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
                                 <button
                                     type="button"
                                     onClick={applyLinksOnly}
-                                    disabled={preview.proposedLinks.length === 0 || savedCount !== null}
+                                    disabled={(preview.proposedLinks.length + manualSelectionCount) === 0 || savedCount !== null}
                                     className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     연결 키만 저장
