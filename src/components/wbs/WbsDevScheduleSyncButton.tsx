@@ -76,15 +76,6 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
     const autoClaimedScheduleIds = useMemo(() => new Set(
         preview.proposedLinks.map((link) => link.scheduleId),
     ), [preview.proposedLinks]);
-    const storedScheduleOwnerRows = useMemo(() => {
-        const owners = new Map<string, Set<string>>();
-        menuScheduleLinks.forEach((link) => {
-            if (!link.rowId) return;
-            if (!owners.has(link.scheduleId)) owners.set(link.scheduleId, new Set());
-            owners.get(link.scheduleId)!.add(link.rowId);
-        });
-        return owners;
-    }, [menuScheduleLinks]);
     const manualSelectionCount = Object.values(manualSelections).filter(Boolean).length;
 
     const selectManualSchedule = (rowId: string, scheduleId: string) => {
@@ -99,19 +90,15 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
 
     const applyLinksOnly = () => {
         if (!currentProjectId) return;
-        const rowsBeingReconnected = new Set(Object.keys(manualSelections));
         const manuallySelectedScheduleIds = new Set<string>();
         const manualLinks = Object.entries(manualSelections).flatMap(([rowId, scheduleId]) => {
             const row = rows.find((item) => item.id === rowId);
-            const usedByUnchangedRow = [...(storedScheduleOwnerRows.get(scheduleId) ?? [])]
-                .some((ownerRowId) => ownerRowId !== rowId && !rowsBeingReconnected.has(ownerRowId));
             if (
                 !row
                 || !scheduleId
                 || existingClaimedScheduleIds.has(scheduleId)
                 || autoClaimedScheduleIds.has(scheduleId)
                 || manuallySelectedScheduleIds.has(scheduleId)
-                || usedByUnchangedRow
             ) return [];
             manuallySelectedScheduleIds.add(scheduleId);
             return [{
@@ -125,15 +112,20 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
         const linksToAdd = [...preview.proposedLinks, ...manualLinks];
         if (linksToAdd.length === 0) return;
         const reconnectedRowIds = new Set(manualLinks.map((link) => link.rowId));
+        const reconnectedScheduleIds = new Set(manualLinks.map((link) => link.scheduleId));
         const retainedLinks = menuScheduleLinks.filter(
-            (link) => !link.rowId || !reconnectedRowIds.has(link.rowId),
+            (link) => !link.rowId || (
+                !reconnectedRowIds.has(link.rowId)
+                && !reconnectedScheduleIds.has(link.scheduleId)
+            ),
         );
         const before = JSON.stringify({
             menus: useWbsStore.getState().menus,
             rows: useWbsStore.getState().rows,
             detailSchedules: useWbsStore.getState().detailSchedules,
         });
-        // 끊어진 행을 복구할 때는 그 행의 오래된 링크만 제거하고 새 키로 교체한다.
+        // 명시적으로 선택한 행/일정에 충돌하는 끊어진 키만 제거하고 새 키로 교체한다.
+        // 정상 연결 일정은 위 검증에서 제외되며 행·일정 업무 데이터는 변경하지 않는다.
         setMenuScheduleLinks([...retainedLinks, ...linksToAdd]);
         const afterState = useWbsStore.getState();
         const after = JSON.stringify({
@@ -230,13 +222,9 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
                                                             const selectedByAnotherRow = Object.entries(manualSelections).some(
                                                                 ([rowId, scheduleId]) => rowId !== item.rowId && scheduleId === schedule.id,
                                                             );
-                                                            const manuallyReconnectingRows = new Set(Object.keys(manualSelections));
-                                                            const usedByUnchangedRow = [...(storedScheduleOwnerRows.get(schedule.id) ?? [])]
-                                                                .some((ownerRowId) => ownerRowId !== item.rowId && !manuallyReconnectingRows.has(ownerRowId));
                                                             const unavailable = existingClaimedScheduleIds.has(schedule.id)
                                                                 || autoClaimedScheduleIds.has(schedule.id)
-                                                                || selectedByAnotherRow
-                                                                || usedByUnchangedRow;
+                                                                || selectedByAnotherRow;
                                                             return (
                                                                 <option key={schedule.id} value={schedule.id} disabled={unavailable}>
                                                                     {[schedule.scheduleCode, schedule.title, schedule.worker].filter(Boolean).join(' · ')}

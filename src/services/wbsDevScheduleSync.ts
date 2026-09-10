@@ -125,7 +125,13 @@ export function buildDevScheduleLinkPreview(
         scheduleLinkCounts.set(link.scheduleId, (scheduleLinkCounts.get(link.scheduleId) ?? 0) + 1);
     }
 
-    const claimedScheduleIds = new Set<string>();
+    // 기존 키가 가리키는 일정은 연결이 끊어진 상태여도 자동 후보로 재사용하지 않는다.
+    // 끊어진 키의 충돌 해소는 사용자가 연결 관리 화면에서 명시적으로 선택할 때만 수행한다.
+    const reservedScheduleIds = new Set(
+        keyedLinks
+            .filter((link) => scopeById.has(link.scheduleId))
+            .map((link) => link.scheduleId),
+    );
     const itemsByRowId = new Map<string, DevScheduleLinkPreviewItem>();
     const pending: Array<{
         row: WbsDevRow;
@@ -144,7 +150,6 @@ export function buildDevScheduleLinkPreview(
                 && rowLinkCounts.get(row.id) === 1
                 && scheduleLinkCounts.get(stored.scheduleId) === 1
             );
-            if (valid && schedule) claimedScheduleIds.add(schedule.id);
             itemsByRowId.set(row.id, {
                 rowId: row.id,
                 menuName: menu?.name ?? '',
@@ -181,7 +186,7 @@ export function buildDevScheduleLinkPreview(
         });
     }
 
-    const availableScope = scope.filter((schedule) => !claimedScheduleIds.has(schedule.id));
+    const availableScope = scope.filter((schedule) => !reservedScheduleIds.has(schedule.id));
     for (const entry of pending) {
         entry.candidates = findFeatureScheduleCandidates(
             entry.row,
