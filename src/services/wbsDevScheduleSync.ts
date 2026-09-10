@@ -148,10 +148,10 @@ export function buildDevScheduleLinkPreview(
             });
             continue;
         }
-        if (!menu || !row.featureName.trim()) {
+        if (!menu) {
             itemsByRowId.set(row.id, {
                 rowId: row.id,
-                menuName: menu?.name ?? '',
+                menuName: '',
                 featureName: row.featureName,
                 assignee: row.assignee,
                 status: 'unmatched',

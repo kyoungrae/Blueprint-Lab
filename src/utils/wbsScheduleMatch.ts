@@ -316,6 +316,109 @@ export function findScheduleCandidates(
         .sort((a, b) => compareScheduleCode(a.scheduleCode, b.scheduleCode));
 }
 
+function commonSuffixLength(left: string, right: string): number {
+    let count = 0;
+    while (
+        count < left.length
+        && count < right.length
+        && left[left.length - 1 - count] === right[right.length - 1 - count]
+    ) count += 1;
+    return count;
+}
+
+function hierarchyLeafScore(scheduleLeaf: string, names: string[]): number {
+    const normalizedLeaf = normalizeCompact(scheduleLeaf.replace(DEV_TITLE_SUFFIX_RE, ''));
+    let best = 0;
+    for (const name of names) {
+        const normalizedName = normalizeCompact(name.replace(DEV_TITLE_SUFFIX_RE, ''));
+        if (!normalizedName) continue;
+        if (normalizedLeaf === normalizedName) best = Math.max(best, 30);
+        else if (
+            Math.min(normalizedLeaf.length, normalizedName.length) >= 4
+            && (normalizedLeaf.includes(normalizedName) || normalizedName.includes(normalizedLeaf))
+        ) best = Math.max(best, 24);
+        else if (commonSuffixLength(normalizedLeaf, normalizedName) >= 4) best = Math.max(best, 16);
+    }
+    return best;
+}
+
+function hierarchySegmentScore(scheduleSegment: string, menuSegment: string): number {
+    if (scheduleSegment === menuSegment) return 6;
+    return Math.min(scheduleSegment.length, menuSegment.length) >= 2
+        && (scheduleSegment.includes(menuSegment) || menuSegment.includes(scheduleSegment))
+        ? 3
+        : 0;
+}
+
+/** 중간 단계 추가·누락은 허용하되 상위 경로의 순서는 유지하는 가중 LCS 비교. */
+function hierarchyAncestorScore(scheduleSegments: string[], menuPath: string[]): { matches: number; score: number } {
+    const schedulePath = scheduleSegments
+        .map(normalizeCompact)
+        .filter((segment) => segment && !['web', 'app', '웹', '앱'].includes(segment));
+    const normalizedPath = menuPath.map(normalizeCompact).filter(Boolean);
+    const empty = (): { matches: number; score: number } => ({ matches: 0, score: 0 });
+    const dp = Array.from({ length: schedulePath.length + 1 }, () => (
+        Array.from({ length: normalizedPath.length + 1 }, empty)
+    ));
+    const better = (left: { matches: number; score: number }, right: { matches: number; score: number }) => (
+        left.score !== right.score ? left.score > right.score : left.matches >= right.matches
+    ) ? left : right;
+
+    for (let i = 1; i <= schedulePath.length; i++) {
+        for (let j = 1; j <= normalizedPath.length; j++) {
+            let best = better(dp[i - 1][j], dp[i][j - 1]);
+            const segmentScore = hierarchySegmentScore(schedulePath[i - 1], normalizedPath[j - 1]);
+            if (segmentScore > 0) {
+                const matched = {
+                    matches: dp[i - 1][j - 1].matches + 1,
+                    score: dp[i - 1][j - 1].score + segmentScore,
+                };
+                best = better(best, matched);
+            }
+            dp[i][j] = best;
+        }
+    }
+    return dp[schedulePath.length][normalizedPath.length];
+}
+
+/**
+ * 기능명이 직접 일치하지 않을 때 사용하는 보수적인 경로 후보 검색.
+ * 말단 핵심어와 상위 경로가 함께 맞고 담당자/플랫폼이 충돌하지 않는 후보만 반환한다.
+ */
+function findHierarchyScheduleCandidates(
+    row: WbsDevRow,
+    menu: WbsMenuNode,
+    path: string[],
+    candidates: WbsDetailSchedule[],
+): WbsDetailSchedule[] {
+    const menuPlatform = platformOfMenuPath(path);
+    const leafNames = [row.featureName, menu.name].filter((name) => name.trim());
+    const menuAncestors = path.slice(0, -1);
+    const scored = candidates.flatMap((item) => {
+        const segments = titleSegments(item.title);
+        if (segments.length === 0) return [];
+        const titlePlatform = platformOfTitle(segments);
+        if (menuPlatform && titlePlatform && menuPlatform !== titlePlatform) return [];
+        if (item.worker?.trim() && row.assignee.trim() && !workersMatch(item.worker, row.assignee)) return [];
+
+        const leafScore = hierarchyLeafScore(segments[segments.length - 1], leafNames);
+        if (leafScore === 0) return [];
+        const ancestor = hierarchyAncestorScore(segments.slice(0, -1), menuAncestors);
+        // 공통 접미사만 같은 약한 말단 일치는 상위 경로가 최소 2단계 맞아야 인정한다.
+        if (leafScore === 16 && ancestor.matches < 2) return [];
+        if (leafScore > 16 && ancestor.matches < 1) return [];
+
+        const workerScore = workersMatch(item.worker, row.assignee) ? 4 : 0;
+        return [{ item, score: leafScore + ancestor.score + workerScore }];
+    });
+    if (scored.length === 0) return [];
+    const bestScore = Math.max(...scored.map((entry) => entry.score));
+    return scored
+        .filter((entry) => entry.score === bestScore)
+        .map((entry) => entry.item)
+        .sort((a, b) => compareScheduleCode(a.scheduleCode, b.scheduleCode));
+}
+
 /** 기능명으로 일정 3.2.x 말단 항목을 찾는다. 메뉴명이 아니라 기능 행을 기준으로 매칭한다. */
 export function findFeatureScheduleCandidates(
     row: WbsDevRow,
@@ -324,15 +427,18 @@ export function findFeatureScheduleCandidates(
     candidates: WbsDetailSchedule[],
 ): WbsDetailSchedule[] {
     const featureName = row.featureName.trim();
-    if (!featureName) return [];
-    return findScheduleCandidates(
-        {
-            menu: { ...menu, name: featureName },
-            path,
-            assignee: row.assignee,
-        },
-        candidates,
-    );
+    const direct = featureName
+        ? findScheduleCandidates(
+            {
+                menu: { ...menu, name: featureName },
+                path,
+                assignee: row.assignee,
+            },
+            candidates,
+        )
+        : [];
+    if (direct.length > 0) return direct;
+    return findHierarchyScheduleCandidates(row, menu, path, candidates);
 }
 
 export function findStoredRowScheduleLink(
