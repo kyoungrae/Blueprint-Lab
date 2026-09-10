@@ -35,6 +35,7 @@ export type DevScheduleLinkPreviewStatus =
 export interface DevScheduleLinkPreviewItem {
     rowId: string;
     menuName: string;
+    menuPath: string;
     featureName: string;
     assignee: string;
     status: DevScheduleLinkPreviewStatus;
@@ -120,7 +121,12 @@ export function buildDevScheduleLinkPreview(
 
     const claimedScheduleIds = new Set<string>();
     const itemsByRowId = new Map<string, DevScheduleLinkPreviewItem>();
-    const pending: Array<{ row: WbsDevRow; menu: WbsMenuNode; candidates: WbsDetailSchedule[] }> = [];
+    const pending: Array<{
+        row: WbsDevRow;
+        menu: WbsMenuNode;
+        menuPath: string[];
+        candidates: WbsDetailSchedule[];
+    }> = [];
 
     for (const row of syncRows) {
         const menu = menuById.get(row.menuId);
@@ -136,6 +142,7 @@ export function buildDevScheduleLinkPreview(
             itemsByRowId.set(row.id, {
                 rowId: row.id,
                 menuName: menu?.name ?? '',
+                menuPath: menu ? buildMenuPath(row.menuId, menuById).join(' > ') : '',
                 featureName: row.featureName,
                 assignee: row.assignee,
                 status: valid ? 'linked' : 'broken',
@@ -152,6 +159,7 @@ export function buildDevScheduleLinkPreview(
             itemsByRowId.set(row.id, {
                 rowId: row.id,
                 menuName: '',
+                menuPath: '',
                 featureName: row.featureName,
                 assignee: row.assignee,
                 status: 'unmatched',
@@ -159,7 +167,12 @@ export function buildDevScheduleLinkPreview(
             });
             continue;
         }
-        pending.push({ row, menu, candidates: [] });
+        pending.push({
+            row,
+            menu,
+            menuPath: buildMenuPath(row.menuId, menuById),
+            candidates: [],
+        });
     }
 
     const availableScope = scope.filter((schedule) => !claimedScheduleIds.has(schedule.id));
@@ -167,7 +180,7 @@ export function buildDevScheduleLinkPreview(
         entry.candidates = findFeatureScheduleCandidates(
             entry.row,
             entry.menu,
-            buildMenuPath(entry.row.menuId, menuById),
+            entry.menuPath,
             availableScope,
         );
     }
@@ -181,7 +194,7 @@ export function buildDevScheduleLinkPreview(
     }
 
     const proposedLinks: WbsMenuScheduleLink[] = [];
-    for (const { row, menu, candidates } of pending) {
+    for (const { row, menu, menuPath, candidates } of pending) {
         const sole = candidates.length === 1 ? candidates[0] : undefined;
         const isUniquePair = Boolean(sole && candidateOwners.get(sole.id)?.size === 1);
         const status: DevScheduleLinkPreviewStatus = isUniquePair
@@ -199,6 +212,7 @@ export function buildDevScheduleLinkPreview(
         itemsByRowId.set(row.id, {
             rowId: row.id,
             menuName: menu.name,
+            menuPath: menuPath.join(' > '),
             featureName: row.featureName,
             assignee: row.assignee,
             status,

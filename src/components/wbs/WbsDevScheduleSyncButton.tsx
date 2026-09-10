@@ -175,11 +175,11 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
                         </div>
 
                         <div className="min-h-0 flex-1 overflow-auto">
-                            <table className="w-full min-w-[900px] table-fixed border-collapse text-xs">
+                            <table className="w-full min-w-[1040px] table-fixed border-collapse text-xs">
                                 <thead className="sticky top-0 z-10 bg-slate-700 text-white">
                                     <tr>
                                         <th className="w-24 border border-slate-600 px-2 py-2 text-center">상태</th>
-                                        <th className="w-52 border border-slate-600 px-2 py-2 text-left">메뉴</th>
+                                        <th className="w-80 border border-slate-600 px-2 py-2 text-left">메뉴 경로</th>
                                         <th className="w-64 border border-slate-600 px-2 py-2 text-left">개발상세 기능명</th>
                                         <th className="w-24 border border-slate-600 px-2 py-2 text-center">담당자</th>
                                         <th className="border border-slate-600 px-2 py-2 text-left">일정 연결 대상</th>
@@ -193,7 +193,9 @@ const WbsDevScheduleSyncButton: React.FC<WbsDevScheduleSyncButtonProps> = ({
                                                     {STATUS_LABEL[item.status]}
                                                 </span>
                                             </td>
-                                            <td className="border border-gray-100 px-2 py-2 text-gray-600">{item.menuName || '-'}</td>
+                                            <td className="border border-gray-100 px-2 py-2 leading-relaxed text-gray-600" title={item.menuPath}>
+                                                {item.menuPath || item.menuName || '-'}
+                                            </td>
                                             <td className="border border-gray-100 px-2 py-2 font-bold text-gray-800">{item.featureName || '-'}</td>
                                             <td className="border border-gray-100 px-2 py-2 text-center text-gray-600">{item.assignee || '-'}</td>
                                             <td className="border border-gray-100 px-2 py-2 text-gray-600">
