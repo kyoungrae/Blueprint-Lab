@@ -25,6 +25,12 @@ export interface DevScheduleAssignment {
     schedule: WbsDetailSchedule;
 }
 
+/** 담당자가 확정된 일반 개발상세 행만 일정 연결 및 동기화 대상으로 사용한다. */
+function isLinkableDevScheduleRow(row: WbsDevRow): boolean {
+    return !isWbsDebugingCategoryRow(row)
+        && Boolean(row.assignee.trim() || row.assigneeUserId?.trim());
+}
+
 export type DevScheduleLinkPreviewStatus =
     | 'linked'
     | 'candidate'
@@ -68,7 +74,7 @@ export function resolveDevScheduleAssignments(
     linksChanged: boolean;
     unmatched: number;
 } {
-    const syncRows = rows.filter((row) => !isWbsDebugingCategoryRow(row));
+    const syncRows = rows.filter(isLinkableDevScheduleRow);
     const rowById = new Map(syncRows.map((row) => [row.id, row]));
     const scope = getSyncScopeLeaves(detailSchedules);
     const scopeById = new Map(scope.map((item) => [item.id, item]));
@@ -107,7 +113,7 @@ export function buildDevScheduleLinkPreview(
     detailSchedules: WbsDetailSchedule[],
     storedLinks: WbsMenuScheduleLink[],
 ): DevScheduleLinkPreview {
-    const syncRows = rows.filter((row) => !isWbsDebugingCategoryRow(row));
+    const syncRows = rows.filter(isLinkableDevScheduleRow);
     const menuById = new Map(menus.map((menu) => [menu.id, menu]));
     const scope = getSyncScopeLeaves(detailSchedules);
     const scopeById = new Map(scope.map((item) => [item.id, item]));
